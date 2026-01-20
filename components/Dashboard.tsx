@@ -42,6 +42,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
   const [activeIndex, setActiveIndex] = useState(-1);
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat']);
 
+  // Lấy thông tin người dùng đang được chọn để tính BMI (chiều cao)
+  const selectedUser = useMemo(() => users.find(u => ((u as any).id || (u as any)._id) === selectedUserId) || user, [users, selectedUserId, user]);
+
   useEffect(() => {
     const load = async () => {
       const data = await Database.getMetrics(selectedUserId);
@@ -50,30 +53,39 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
     load();
   }, [selectedUserId]);
 
-  const onPieEnter = (_: any, index: number) => {
-    setActiveIndex(index);
-  };
+  const latestMetric = useMemo(() => {
+    if (metrics.length === 0) return null;
+    return [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  }, [metrics]);
 
-  const onPieLeave = () => {
-    setActiveIndex(-1);
-  };
+  const bmiInfo = useMemo(() => {
+    if (!latestMetric || !selectedUser.height) return { value: 0, label: 'N/A', color: 'text-slate-400' };
+    const bmi = latestMetric.weight / Math.pow(selectedUser.height / 100, 2);
+    let label = 'Bình thường';
+    let color = 'text-emerald-600';
+    if (bmi < 18.5) { label = 'Cân nặng thấp'; color = 'text-amber-500'; }
+    else if (bmi >= 25 && bmi < 30) { label = 'Thừa cân'; color = 'text-orange-500'; }
+    else if (bmi >= 30) { label = 'Béo phì'; color = 'text-red-500'; }
+    return { value: bmi.toFixed(1), label, color };
+  }, [latestMetric, selectedUser]);
+
+  const onPieEnter = (_: any, index: number) => setActiveIndex(index);
+  const onPieLeave = () => setActiveIndex(-1);
 
   const renderActiveShape = (props: any) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
     return (
       <g>
         <Sector
-          cx={cx}
-          cy={cy}
+          cx={cx} cy={cy}
           innerRadius={innerRadius - 4}
           outerRadius={outerRadius + 14}
-          startAngle={startAngle}
-          endAngle={endAngle}
+          startAngle={startAngle} endAngle={endAngle}
           fill={fill}
           filter="url(#activeShadow)"
           style={{ 
             cursor: 'pointer', 
-            outline: 'none', // LOẠI BỎ VIỀN ĐEN KHI CLICK
+            outline: 'none',
             transition: 'all 1.2s cubic-bezier(0.19, 1, 0.22, 1)', 
             filter: 'brightness(1.08) contrast(1.05)',
           }}
@@ -87,11 +99,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
       prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
     );
   };
-
-  const latestMetric = useMemo(() => {
-    if (metrics.length === 0) return null;
-    return [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-  }, [metrics]);
 
   const bodyCompData = useMemo(() => {
     if (!latestMetric) return [];
@@ -127,15 +134,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
 
   return (
     <div className="space-y-6 pb-12">
+      {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub Dashboard</h2>
           {user.role !== UserRole.MEMBER ? (
             <div className="mt-2 flex items-center space-x-2">
-              <span className="text-sm text-slate-500">Đang theo dõi:</span>
+              <span className="text-sm text-slate-500 font-medium">Đang theo dõi:</span>
               <select 
                 value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}
-                className="bg-emerald-50 text-emerald-700 font-bold px-3 py-1 rounded-lg border-none text-sm outline-none ring-1 ring-emerald-100"
+                className="bg-emerald-50 text-emerald-700 font-bold px-3 py-1.5 rounded-xl border-none text-sm outline-none ring-1 ring-emerald-100 focus:ring-2 focus:ring-emerald-400 transition-all"
               >
                 {users.map(u => <option key={(u as any).id || (u as any)._id} value={(u as any).id || (u as any)._id}>{u.fullName}</option>)}
               </select>
@@ -144,10 +152,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
             <p className="text-slate-500 font-medium">Chào {user.fullName}! Mục tiêu: <span className="text-emerald-600 font-bold">{user.healthGoal}</span></p>
           )}
         </div>
-        <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-2.5 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
+        <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
+      </div>
+
+      {/* QUICK STATS CARDS */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[
+          { label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800', desc: 'Lần đo cuối' },
+          { label: 'Chỉ số BMI', value: bmiInfo.value || '--', unit: '', icon: '📊', color: bmiInfo.color, desc: bmiInfo.label },
+          { label: 'Tỉ lệ mỡ', value: latestMetric?.bodyFat || '--', unit: '%', icon: '🔥', color: 'text-rose-500', desc: 'Mỡ cơ thể' },
+          { label: 'Mỡ nội tạng', value: latestMetric?.visceralFat || '--', unit: 'Lv', icon: '⚠️', color: (latestMetric?.visceralFat || 0) > 9 ? 'text-red-500' : 'text-amber-500', desc: (latestMetric?.visceralFat || 0) > 9 ? 'Cần chú ý' : 'Bình thường' },
+          { label: 'Cơ bắp', value: latestMetric?.muscleMass || '--', unit: 'kg', icon: '💪', color: 'text-blue-600', desc: 'Khối lượng cơ' },
+          { label: 'Tuổi SH', value: latestMetric?.bioAge || '--', unit: 't', icon: '🧬', color: 'text-indigo-600', desc: `Chênh lệch: ${(latestMetric?.bioAge || 0) - (new Date().getFullYear() - new Date(selectedUser.birthDate).getFullYear())}t` },
+        ].map((stat, i) => (
+          <div key={i} className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</span>
+              <span className="text-lg group-hover:scale-125 transition-transform">{stat.icon}</span>
+            </div>
+            <div className={`text-2xl font-black ${stat.color}`}>
+              {stat.value} <span className="text-xs font-bold text-slate-400">{stat.unit}</span>
+            </div>
+            <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">{stat.desc}</div>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* PIE CHART - 3D BODY STRUCTURE */}
         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
           <h3 className="font-bold text-slate-700 mb-2 w-full text-center">Cấu trúc cơ thể 3D</h3>
           {latestMetric ? (
@@ -158,24 +190,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                     <filter id="shadow" height="150%">
                       <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
                       <feOffset dx="0" dy="4" result="offsetblur" />
-                      <feComponentTransfer>
-                        <feFuncA type="linear" slope="0.1" />
-                      </feComponentTransfer>
-                      <feMerge>
-                        <feMergeNode />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
+                      <feComponentTransfer><feFuncA type="linear" slope="0.1" /></feComponentTransfer>
+                      <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
                     </filter>
                     <filter id="activeShadow" height="150%">
                       <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
                       <feOffset dx="0" dy="15" result="offsetblur" />
-                      <feComponentTransfer>
-                        <feFuncA type="linear" slope="0.3" />
-                      </feComponentTransfer>
-                      <feMerge>
-                        <feMergeNode />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
+                      <feComponentTransfer><feFuncA type="linear" slope="0.3" /></feComponentTransfer>
+                      <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
                     </filter>
                   </defs>
                   <Pie
@@ -183,8 +205,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                     activeShape={renderActiveShape}
                     data={bodyCompData}
                     cx="50%" cy="50%"
-                    innerRadius={75}
-                    outerRadius={95}
+                    innerRadius={75} outerRadius={95}
                     paddingAngle={6}
                     dataKey="value"
                     stroke="none"
@@ -197,11 +218,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                     style={{ outline: 'none' }}
                   >
                     {bodyCompData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.color} 
-                        style={{ outline: 'none', transition: 'all 0.8s ease' }}
-                      />
+                      <Cell key={`cell-${index}`} fill={entry.color} style={{ outline: 'none', transition: 'all 0.8s ease' }} />
                     ))}
                   </Pie>
                   <Tooltip 
@@ -222,10 +239,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
               </div>
               <div className="flex flex-wrap justify-center gap-4 mt-2">
                 {bodyCompData.map((item, index) => (
-                  <div 
-                    key={item.name} 
-                    className={`flex items-center gap-1.5 transition-all duration-700 ${activeIndex === index ? 'scale-110 opacity-100' : 'opacity-60'}`}
-                  >
+                  <div key={item.name} className={`flex items-center gap-1.5 transition-all duration-700 ${activeIndex === index ? 'scale-110 opacity-100' : 'opacity-60'}`}>
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
                     <span className="text-[10px] font-black text-slate-500 uppercase">{item.name}</span>
                   </div>
@@ -235,22 +249,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
           ) : <div className="h-[320px] flex items-center justify-center text-slate-400 italic font-medium">Chưa có dữ liệu đo lường</div>}
         </div>
 
+        {/* LINE CHART - TRENDS */}
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col transition-all hover:shadow-md">
           <div className="flex flex-col space-y-8 mb-10">
+            {/* Tiêu đề nằm riêng */}
             <div>
               <h3 className="font-black text-slate-800 text-xl tracking-tight">Biểu đồ xu hướng sức khỏe</h3>
-              <p className="text-xs text-slate-400 font-medium mt-1">Phân tích dữ liệu lịch sử đo lường của bạn</p>
+              <p className="text-xs text-slate-400 font-medium mt-1">Phân tích dữ liệu lịch sử đo lường qua thời gian</p>
             </div>
 
+            {/* Khoảng thời gian full width */}
             <div className="w-full">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Khoảng thời gian:</span>
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Khoảng thời gian phân tích:</span>
               </div>
               <div className="flex overflow-x-auto gap-2 pb-4 scrollbar-hide no-scrollbar -mx-2 px-2">
                 {TIME_RANGES.map(range => (
                   <button 
                     key={range.key} onClick={() => setTimeRange(range.key)}
-                    className={`flex-1 min-w-[80px] px-4 py-2.5 text-[10px] font-black rounded-2xl transition-all border ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-xl shadow-emerald-100 scale-105' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50 hover:text-emerald-600'}`}
+                    className={`flex-1 min-w-[80px] px-4 py-3 text-[10px] font-black rounded-2xl transition-all border ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-xl shadow-emerald-100 scale-105' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50 hover:text-emerald-600'}`}
                   >
                     {range.label.toUpperCase()}
                   </button>
@@ -258,8 +275,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
               </div>
             </div>
 
+            {/* Tùy chọn hiển thị chỉ số */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-5 bg-slate-50/50 rounded-[2rem] border border-slate-100 shadow-inner">
-              <span className="text-[10px] font-black text-slate-400 uppercase col-span-full mb-1 tracking-widest text-center md:text-left">Tùy chọn hiển thị:</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase col-span-full mb-1 tracking-widest text-center md:text-left">Chỉ số hiển thị:</span>
               {AVAILABLE_METRICS.map(metric => (
                 <label key={metric.key} className="flex items-center gap-3 cursor-pointer group select-none">
                   <div className="relative flex items-center justify-center">

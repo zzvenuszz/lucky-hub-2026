@@ -2,27 +2,21 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { HealthMetric, Message, AIKnowledge } from "../types.ts";
 
-/**
- * Hàm hỗ trợ để làm sạch chuỗi JSON từ phản hồi của AI.
- */
 const cleanJsonResponse = (text: string): string => {
   const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (match) {
-    return match[0];
-  }
+  if (match) return match[0];
   return text.trim();
 };
 
 export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric>> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: "Bạn là một AI chuyên trích xuất dữ liệu y tế từ ảnh chụp cân điện tử hoặc bảng ghi tay. Hãy trích xuất các chỉ số sau và trả về định dạng JSON: date (YYYY-MM-DD), weight (kg), bodyFat (%), boneMinerals (kg), waterPercent (%), muscleMass (kg), balanceIndex, energy (kcal), bioAge, visceralFat. Nếu không thấy chỉ số nào, hãy để null." }
+          { text: "Trích xuất các chỉ số sức khỏe từ ảnh chụp và trả về JSON chuẩn." }
         ]
       },
       config: {
@@ -44,12 +38,9 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
         }
       }
     });
-
-    const text = response.text || "{}";
-    const cleanedText = cleanJsonResponse(text);
-    return JSON.parse(cleanedText);
+    return JSON.parse(cleanJsonResponse(response.text || "{}"));
   } catch (e) {
-    console.error("Lỗi khi trích xuất chỉ số từ ảnh:", e);
+    console.error("Lỗi trích xuất ảnh:", e);
     return {};
   }
 };
@@ -61,33 +52,46 @@ export const getAICoachResponse = async (
 ): Promise<string | null> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const relevantKnowledge = knowledge
-    .filter(k => latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()))
-    .map(k => k.content)
+  // Lọc kiến thức thực sự liên quan dựa trên ngữ cảnh
+  const contextKnowledge = knowledge
+    .filter(k => 
+      latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()) ||
+      k.keyword.toLowerCase().split(' ').some(word => latestUserMessage.toLowerCase().includes(word))
+    )
+    .map(k => `- ${k.keyword}: ${k.content}`)
     .join("\n");
 
-  if (!relevantKnowledge && latestUserMessage.length < 10) return null;
-
-  const systemPrompt = `Bạn là một Huấn Luyện Viên AI (AI Coach) đóng vai trò cố vấn tại Lucky Hub.
-  Bạn đang tham gia cuộc trò chuyện giữa Hội viên và Huấn luyện viên con người.
-  Nhiệm vụ của bạn:
-  1. Theo dõi lịch sử trò chuyện.
-  2. Chỉ trả lời nếu bạn có kiến thức liên quan hoặc người dùng đang hỏi về sức khỏe.
-  3. Nếu không có kiến thức chuyên sâu, hãy khuyên họ đợi phản hồi từ HLV chính.
-  4. Kiến thức cấu hình sẵn của bạn: ${relevantKnowledge || "Hãy tư vấn dựa trên kiến thức sức khỏe chung một cách khoa học."}
+  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe thông minh tại Lucky Hub.
   
-  Hãy trả lời ngắn gọn, chuyên nghiệp, lịch sự.`;
+  NHIỆM VỤ CỦA BẠN:
+  1. Hỗ trợ Huấn luyện viên (Coach) giải đáp thắc mắc của Hội viên.
+  2. ƯU TIÊN KIẾN THỨC ĐÃ ĐƯỢC TRAIN: Nếu câu hỏi nằm trong danh sách dưới đây, hãy trả lời bám sát nội dung đó.
+  3. KIẾN THỨC ĐÃ ĐƯỢC HUẤN LUYỆN TỪ HỆ THỐNG:
+  ${contextKnowledge || "Sử dụng kiến thức y khoa và dinh dưỡng khoa học hiện đại."}
+  
+  NGUYÊN TẮC PHẢN HỒI:
+  - Trả lời bằng tiếng Việt, giọng văn chuyên nghiệp, ấm áp, khuyến khích.
+  - Ngắn gọn (dưới 100 chữ).
+  - Nếu không biết chắc chắn, hãy khuyên hội viên chờ HLV con người phản hồi chính xác nhất.
+  - Không tự ý đưa ra phác đồ điều trị y tế thay thế bác sĩ.`;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: history.map(m => `${m.senderName} (${m.senderRole}): ${m.content}`).join("\n") + `\nThành viên mới nhắn: ${latestUserMessage}`,
-      config: { systemInstruction: systemPrompt }
+      contents: [
+        { text: `Lịch sử chat:\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
+        { text: `Câu hỏi mới nhất: ${latestUserMessage}` }
+      ],
+      config: { 
+        systemInstruction,
+        temperature: 0.7,
+        topP: 0.95
+      }
     });
 
-    return response.text || "Tôi đang nghiên cứu thêm về vấn đề này, HLV của bạn sẽ sớm phản hồi.";
+    return response.text || "Lucky AI đang bận một chút, HLV của bạn sẽ phản hồi sớm nhé!";
   } catch (e) {
-    console.error("Lỗi khi gọi AI Coach:", e);
-    return "Xin lỗi, tôi đang gặp chút vấn đề kỹ thuật. HLV của bạn sẽ hỗ trợ bạn ngay.";
+    console.error("Gemini AI Error:", e);
+    return null;
   }
 };
