@@ -66,14 +66,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
           cx={cx}
           cy={cy}
           innerRadius={innerRadius - 4}
-          outerRadius={outerRadius + 14} // Tinh chỉnh độ phóng đại để hài hòa với tốc độ chậm
+          outerRadius={outerRadius + 14}
           startAngle={startAngle}
           endAngle={endAngle}
           fill={fill}
           filter="url(#activeShadow)"
           style={{ 
             cursor: 'pointer', 
-            // Tăng thời gian lên 1.2s và dùng Ease Out Expo để cực kỳ mượt mà
+            outline: 'none', // LOẠI BỎ VIỀN ĐEN KHI CLICK
             transition: 'all 1.2s cubic-bezier(0.19, 1, 0.22, 1)', 
             filter: 'brightness(1.08) contrast(1.05)',
           }}
@@ -153,7 +153,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
           {latestMetric ? (
             <div className="w-full h-[320px] relative flex flex-col items-center">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+                <PieChart style={{ outline: 'none' }}>
                   <defs>
                     <filter id="shadow" height="150%">
                       <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
@@ -194,6 +194,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                     animationBegin={0}
                     animationDuration={1500}
                     animationEasing="ease-out"
+                    style={{ outline: 'none' }}
                   >
                     {bodyCompData.map((entry, index) => (
                       <Cell 
