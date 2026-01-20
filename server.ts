@@ -97,8 +97,12 @@ app.post('/api/login', async (req, res) => {
   res.json(user);
 });
 
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'Not found' });
+/**
+ * PHÂN TÍCH: Express 5 không hỗ trợ chuỗi '*' cho catch-all route.
+ * CÁCH GIẢI QUYẾT: Sử dụng Regex để bắt tất cả các đường dẫn KHÔNG bắt đầu bằng /api.
+ * BÁO CÁO KẾT QUẢ: Đã thay thế app.get('*') bằng Regex tương đương cho SPA.
+ */
+app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.resolve('index.html'));
 });
 
