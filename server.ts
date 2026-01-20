@@ -10,11 +10,17 @@ dotenv.config();
 
 const app = express();
 
-// Express 5 middleware casting để tránh xung đột kiểu dữ liệu
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '10mb' }) as any);
 
-// Phục vụ các file tĩnh (css, js, images) từ thư mục gốc
+// Đảm bảo trình duyệt nhận diện đúng các file
+app.use((req, res, next) => {
+  if (req.path.endsWith('.tsx') || req.path.endsWith('.ts')) {
+    res.type('application/javascript');
+  }
+  next();
+});
+
 app.use(express.static('.') as any);
 
 const PORT = process.env.PORT || 3000;
@@ -57,22 +63,15 @@ const User = mongoose.model('User', userSchema);
 const Metric = mongoose.model('Metric', metricSchema);
 const Knowledge = mongoose.model('Knowledge', knowledgeSchema);
 
-// --- DB INITIALIZATION ---
 async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ KẾT NỐI DATABASE THÀNH CÔNG');
-    
     const admin = await User.findOne({ role: UserRole.ADMIN });
     if (!admin) {
       const pass = 'admin';
       const newAdmin = new User({
-        username: 'admin',
-        password: pass,
-        fullName: 'Tổng Quản Trị',
-        role: UserRole.ADMIN,
-        status: AccountStatus.ACTIVE,
-        healthGoal: HealthGoal.STRENGTHEN_HEALTH
+        username: 'admin', password: pass, fullName: 'Tổng Quản Trị', role: UserRole.ADMIN, status: AccountStatus.ACTIVE, healthGoal: HealthGoal.STRENGTHEN_HEALTH
       });
       await newAdmin.save();
       console.log('🚀 ĐÃ TẠO TÀI KHOẢN ADMIN MỚI: admin/admin');
@@ -84,11 +83,7 @@ async function initDB() {
 
 initDB();
 
-// --- API ROUTES ---
-
 app.get('/api/health', (req, res) => {
-  // Sửa lỗi TS2339: Property 'uptime' does not exist on type 'Process'.
-  // Ép kiểu process sang any để truy cập phương thức uptime() có sẵn trong Node.js.
   res.status(200).json({ status: 'ok', uptime: (process as any).uptime() });
 });
 
@@ -97,17 +92,10 @@ app.post('/api/register', async (req, res) => {
     const { username, password, fullName, birthDate, height, gender, healthGoal } = req.body;
     const existing = await User.findOne({ username });
     if (existing) return res.status(400).json({ message: 'Tên đăng nhập đã tồn tại' });
-
-    const newUser = new User({
-      username, password, fullName, birthDate, height, gender, healthGoal,
-      role: UserRole.MEMBER,
-      status: AccountStatus.ACTIVE
-    });
+    const newUser = new User({ username, password, fullName, birthDate, height, gender, healthGoal, role: UserRole.MEMBER, status: AccountStatus.ACTIVE });
     await newUser.save();
     res.json(newUser);
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server' });
-  }
+  } catch (err) { res.status(500).json({ message: 'Lỗi server' }); }
 });
 
 app.post('/api/login', async (req, res) => {
@@ -117,9 +105,7 @@ app.post('/api/login', async (req, res) => {
     if (!user) return res.status(401).json({ message: 'Sai thông tin đăng nhập' });
     if (user.status === AccountStatus.SUSPENDED) return res.status(403).json({ message: 'Tài khoản đã bị tạm dừng' });
     res.json(user);
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server' });
-  }
+  } catch (err) { res.status(500).json({ message: 'Lỗi server' }); }
 });
 
 app.get('/api/users', async (req, res) => {
@@ -130,12 +116,6 @@ app.get('/api/users', async (req, res) => {
 app.put('/api/users/:id', async (req, res) => {
   const updated = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
   res.json(updated);
-});
-
-app.post('/api/users/:id/reset-password', async (req, res) => {
-  const newPass = Math.random().toString(36).slice(-8);
-  await User.findByIdAndUpdate(req.params.id, { password: newPass });
-  res.json({ message: 'Thành công', newPassword: newPass });
 });
 
 app.get('/api/metrics/:userId', async (req, res) => {
@@ -174,16 +154,11 @@ app.delete('/api/knowledge/:id', async (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
-// SPA FALLBACK ĐẶC BIỆT CHO EXPRESS 5:
-// Sử dụng app.use không tham số đường dẫn để bắt tất cả các request còn lại.
-// Điều này giúp tránh hoàn toàn lỗi 'Missing parameter name' của path-to-regexp.
 app.use((req, res) => {
-  // Nếu là request API không tồn tại, trả về 404 JSON thay vì index.html
   if (req.path.startsWith('/api/')) {
     res.status(404).json({ message: `API route ${req.path} not found` });
     return;
   }
-  // Mọi route khác (Frontend) sẽ trả về index.html để React Router xử lý
   res.sendFile(path.resolve('index.html'));
 });
 
