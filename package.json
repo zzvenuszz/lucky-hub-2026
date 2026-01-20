@@ -1,27 +1,22 @@
+
 {
   "name": "lucky-hub-2026",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Lucky Hub Health Management Platform",
+  "main": "run.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "start": "node run.js",
+    "dev": "tsx watch server.ts"
   },
   "dependencies": {
     "@google/genai": "^1.37.0",
-    "recharts": "^3.6.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "express": "^5.2.1",
-    "dotenv": "^17.2.3",
     "cors": "^2.8.5",
-    "mongoose": "^9.1.4"
-  },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mongoose": "^9.1.4",
+    "tsx": "^4.19.2"
   }
 }

@@ -3,15 +3,18 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import { UserRole, AccountStatus, HealthGoal } from './types';
 
 dotenv.config();
 
 const app = express();
-// Add comments and cast to any to resolve middleware type mismatch in Express (NextHandleFunction vs RequestHandler)
 app.use(cors({ origin: '*' }) as any);
-// Cast express.json to any as well to ensure consistent middleware application and avoid similar type errors
 app.use(express.json({ limit: '10mb' }) as any);
+
+// Cấu hình phục vụ file tĩnh từ thư mục gốc
+// Điều này cho phép trình duyệt tải index.html, index.tsx, v.v.
+app.use(express.static('.') as any);
 
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
@@ -33,7 +36,6 @@ const userSchema = new mongoose.Schema({
 const metricSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   date: String,
-  // Fix: Use 'Number' constructor instead of 'number' type for Mongoose schema fields
   weight: Number,
   bodyFat: Number,
   boneMinerals: Number,
@@ -61,10 +63,9 @@ async function initDB() {
     console.log('--------------------------------------------------');
     console.log('✅ KẾT NỐI DATABASE THÀNH CÔNG');
     
-    // Kiểm tra và tạo Admin mặc định
     const admin = await User.findOne({ role: UserRole.ADMIN });
     if (!admin) {
-      const pass = 'admin'; // Cập nhật mật khẩu cố định là "admin" theo yêu cầu
+      const pass = 'admin';
       const newAdmin = new User({
         username: 'admin',
         password: pass,
@@ -91,18 +92,15 @@ initDB();
 
 // --- API ROUTES ---
 
-// Health Check Endpoint
 app.get('/api/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
   if (dbStatus === 'connected') {
-    // Fix: Cast process to any to access uptime() function when type definition mismatch occurs
     res.status(200).json({ status: 'ok', database: dbStatus, uptime: (process as any).uptime() });
   } else {
     res.status(503).json({ status: 'unhealthy', database: dbStatus });
   }
 });
 
-// Đăng ký (Register)
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password, fullName, birthDate, height, gender, healthGoal } = req.body;
@@ -121,7 +119,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// Đăng nhập (Login)
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   const user = await User.findOne({ username, password });
@@ -130,7 +127,6 @@ app.post('/api/login', async (req, res) => {
   res.json(user);
 });
 
-// Quản lý User
 app.get('/api/users', async (req, res) => {
   const users = await User.find().select('-password');
   res.json(users);
@@ -147,7 +143,6 @@ app.post('/api/users/:id/reset-password', async (req, res) => {
   res.json({ message: 'Thành công', newPassword: newPass });
 });
 
-// Chỉ số sức khỏe
 app.get('/api/metrics/:userId', async (req, res) => {
   const metrics = await Metric.find({ userId: req.params.userId }).sort({ date: -1 });
   res.json(metrics);
@@ -169,7 +164,6 @@ app.post('/api/metrics/bulk', async (req, res) => {
   res.json(results);
 });
 
-// Kiến thức AI
 app.get('/api/knowledge', async (req, res) => {
   res.json(await Knowledge.find());
 });
@@ -183,6 +177,11 @@ app.post('/api/knowledge', async (req, res) => {
 app.delete('/api/knowledge/:id', async (req, res) => {
   await Knowledge.findByIdAndDelete(req.params.id);
   res.json({ message: 'Deleted' });
+});
+
+// SPA Fallback: Trả về index.html cho bất kỳ route nào không phải API
+app.get('*', (req, res) => {
+  res.sendFile(path.resolve('index.html'));
 });
 
 app.listen(PORT, () => console.log(`🚀 Lucky Hub Server đang chạy tại cổng ${PORT}`));
