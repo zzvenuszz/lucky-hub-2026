@@ -53,15 +53,19 @@ export const getAICoachResponse = async (
 ): Promise<string | null> => {
   const log = (msg: string, type: string = 'info') => {
     if (window.debugLog) window.debugLog(`[GeminiService] ${msg}`, type);
-    // Gửi sự kiện để AdminPanel có thể bắt được log nếu cần
     window.dispatchEvent(new CustomEvent('ai-sandbox-log', { detail: { msg, type } }));
   };
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  log("Bắt đầu chuẩn bị dữ liệu gửi tới Gemini...", "system");
+  // Danh sách các model để thử (theo thứ tự ưu tiên)
+  const modelsToTry = [
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash-lite-latest',
+    'gemini-3-pro-preview'
+  ];
 
-  // Lọc kiến thức liên quan
+  // Chuẩn bị dữ liệu Prompt
   const contextKnowledge = knowledge
     .filter(k => 
       latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()) ||
@@ -70,12 +74,7 @@ export const getAICoachResponse = async (
     .map(k => `- ${k.keyword}: ${k.content}`)
     .join("\n");
 
-  if (contextKnowledge) log(`Đã tìm thấy kiến thức liên quan cho từ khóa: ${contextKnowledge.split('\n').map(l => l.split(':')[0]).join(', ')}`, "success");
-  else log("Không tìm thấy kiến thức huấn luyện đặc thù, AI sẽ trả lời dựa trên dữ liệu y khoa chuẩn.", "info");
-
-  // Tổng hợp quy tắc
   const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
-  log(`Đang áp dụng ${rules.length} quy tắc tuân thủ giao tiếp.`, "info");
 
   const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe thông minh tại Lucky Hub.
   
@@ -92,41 +91,53 @@ export const getAICoachResponse = async (
   - Trả lời chân thực, nếu không có kiến thức nạp vào về chủ đề đó, hãy dùng kiến thức y khoa chuẩn.
   - Tuyệt đối không xưng hô thiếu tôn trọng.`;
 
-  try {
-    log("Đang gọi API gemini-3-flash-preview...", "system");
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: [
-        { text: `Lịch sử hội thoại (5 câu gần nhất):\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
-        { text: `Câu hỏi hiện tại của người dùng: ${latestUserMessage}` }
-      ],
-      config: { 
-        systemInstruction,
-        temperature: 0.7,
-        topP: 0.9
-      }
-    });
+  // Vòng lặp thử từng model nếu bị lỗi overload
+  for (let i = 0; i < modelsToTry.length; i++) {
+    const currentModel = modelsToTry[i];
+    log(`Đang thử sử dụng Model: ${currentModel} (Lần thử ${i + 1}/${modelsToTry.length})`, "system");
 
-    const result = response.text;
-    if (result) {
-      log("AI phản hồi thành công.", "success");
-      return result;
-    } else {
-      log("AI trả về kết quả rỗng (Empty response).", "error");
-      return "Lucky AI hiện không thể trả lời câu hỏi này. Vui lòng thử lại sau.";
+    try {
+      const response = await ai.models.generateContent({
+        model: currentModel,
+        contents: [
+          { text: `Lịch sử hội thoại (5 câu gần nhất):\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
+          { text: `Câu hỏi hiện tại của người dùng: ${latestUserMessage}` }
+        ],
+        config: { 
+          systemInstruction,
+          temperature: 0.7,
+          topP: 0.9
+        }
+      });
+
+      const result = response.text;
+      if (result) {
+        log(`Model ${currentModel} phản hồi thành công.`, "success");
+        return result;
+      }
+    } catch (e: any) {
+      const isOverloaded = e.message?.includes("503") || e.message?.includes("overloaded");
+      const isQuotaExceeded = e.message?.includes("429") || e.message?.includes("quota");
+
+      if (isOverloaded) {
+        log(`Model ${currentModel} đang bị quá tải (503).`, "warning");
+      } else if (isQuotaExceeded) {
+        log(`Model ${currentModel} hết hạn mức (429).`, "warning");
+      } else {
+        log(`Lỗi không mong muốn tại ${currentModel}: ${e.message}`, "error");
+      }
+
+      // Nếu còn model dự phòng trong danh sách, tiếp tục vòng lặp
+      if (i < modelsToTry.length - 1) {
+        log(`Đang kích hoạt cơ chế dự phòng, chuyển sang model tiếp theo...`, "info");
+        continue;
+      }
+
+      // Nếu đã thử hết mà vẫn lỗi
+      log("Đã thử tất cả các model khả dụng nhưng không thành công.", "error");
+      return `[LỖI HỆ THỐNG]: Toàn bộ hệ thống AI đang quá tải. Vui lòng thử lại sau ít phút.`;
     }
-  } catch (e: any) {
-    let friendlyError = "Lỗi hệ thống không xác định.";
-    if (e.message?.includes("429")) {
-      friendlyError = "LỖI 429: Tài khoản AI (Free Tier) đã hết hạn mức sử dụng trong ngày. Vui lòng thử lại sau 1-2 phút hoặc nâng cấp API Key.";
-      log(friendlyError, "error");
-    } else if (e.message?.includes("400")) {
-      friendlyError = "LỖI 400: Yêu cầu không hợp lệ (có thể do nội dung quá dài hoặc vi phạm chính sách của Google).";
-      log(friendlyError, "error");
-    } else {
-      log(`Lỗi không xác định: ${e.message}`, "error");
-      friendlyError = `LỖI: ${e.message}`;
-    }
-    return friendlyError;
   }
+
+  return "Xin lỗi, tôi gặp trục trặc kỹ thuật. Hãy thử lại sau nhé!";
 };

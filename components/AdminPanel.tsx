@@ -367,12 +367,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
                     <div key={i} className={`flex gap-2 leading-relaxed ${
                       log.type === 'error' ? 'text-red-500' : 
                       log.type === 'success' ? 'text-emerald-500' : 
+                      log.type === 'warning' ? 'text-amber-500' :
                       log.type === 'system' ? 'text-blue-500' : 
-                      log.type === 'user' ? 'text-amber-500' : 'text-slate-500'
+                      log.type === 'user' ? 'text-slate-300' : 'text-slate-500'
                     }`}>
                       <span className="text-slate-700 shrink-0 font-bold">[{log.time}]</span>
                       <span className="break-words">
-                        {log.type === 'error' ? '✖ ' : log.type === 'success' ? '✔ ' : 'i '}
+                        {log.type === 'error' ? '✖ ' : log.type === 'success' ? '✔ ' : log.type === 'warning' ? '⚠ ' : 'i '}
                         {log.msg}
                       </span>
                     </div>
