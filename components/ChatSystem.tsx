@@ -143,9 +143,11 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                       <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">🤖 Lucky AI Advisor</span>
                     </div>
                   )}
-                  <div className={`max-w-[80%] p-4 rounded-3xl text-sm shadow-sm leading-relaxed transition-all ${
-                    msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none' : msg.senderId === currentUser.id ? 'bg-emerald-600 text-white rounded-tr-none shadow-emerald-50' : 'bg-white text-slate-800 rounded-tl-none border border-slate-100'
-                  }`}>
+                  <div 
+                    className={`max-w-[80%] p-4 rounded-3xl text-sm shadow-sm leading-relaxed whitespace-pre-wrap transition-all ${
+                      msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none' : msg.senderId === currentUser.id ? 'bg-emerald-600 text-white rounded-tr-none shadow-emerald-50' : 'bg-white text-slate-800 rounded-tl-none border border-slate-100'
+                    }`}
+                  >
                     {msg.content}
                   </div>
                   <span className="text-[9px] text-slate-400 mt-1.5 px-2 font-bold uppercase tracking-tighter">

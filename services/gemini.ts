@@ -58,7 +58,6 @@ export const getAICoachResponse = async (
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Danh sách các model để thử (Đã sửa lỗi tên model 404)
   const modelsToTry = [
     'gemini-3-flash-preview',
     'gemini-flash-latest',
@@ -66,7 +65,6 @@ export const getAICoachResponse = async (
     'gemini-3-pro-preview'
   ];
 
-  // Chuẩn bị dữ liệu Prompt
   const contextKnowledge = knowledge
     .filter(k => 
       latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()) ||
@@ -77,22 +75,28 @@ export const getAICoachResponse = async (
 
   const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
 
-  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe thông minh tại Lucky Hub.
-  
-  NHIỆM VỤ CỦA BẠN:
-  1. Hỗ trợ Huấn luyện viên (Coach) giải đáp thắc mắc của Hội viên.
-  2. ƯU TIÊN KIẾN THỨC ĐÃ ĐƯỢC TRAIN:
-  ${contextKnowledge || "Sử dụng kiến thức y khoa và dinh dưỡng khoa học hiện đại."}
-  
-  TIÊU CHUẨN GIAO TIẾP (BẮT BUỘC TUÂN THỦ):
-  ${systemRules || "- Phải thân thiện và chuyên nghiệp.\n- Trả lời bằng tiếng Việt.\n- Không bịa đặt thông tin."}
-  
-  NGUYÊN TẮC PHẢN HỒI:
-  - Ngắn gọn (dưới 100 chữ).
-  - Trả lời chân thực, nếu không có kiến thức nạp vào về chủ đề đó, hãy dùng kiến thức y khoa chuẩn.
-  - Tuyệt đối không xưng hô thiếu tôn trọng.`;
+  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe tại Lucky Hub.
 
-  // Vòng lặp thử từng model nếu bị lỗi overload hoặc quota
+NHIỆM VỤ ĐỊNH DẠNG (BẮT BUỘC):
+- Sử dụng xuống dòng (\n) thường xuyên giữa các ý.
+- Sử dụng gạch đầu dòng (• hoặc -) cho các danh sách khuyên dùng.
+- Sử dụng in đậm (**văn bản**) cho các từ khóa quan trọng.
+- Trình bày có cấu trúc: 
+  1. Lời chào ngắn.
+  2. Nội dung giải thích chính (chia thành các đoạn nhỏ).
+  3. Lời khuyên cụ thể (dùng gạch đầu dòng).
+  4. Lời chúc/Kết bài.
+
+NGUỒN KIẾN THỨC:
+${contextKnowledge || "Sử dụng kiến thức y khoa chuẩn quốc tế."}
+
+QUY TẮC GIAO TIẾP:
+${systemRules || "- Thân thiện, chuyên nghiệp, tiếng Việt.\n- Không bịa đặt."}
+
+NGUYÊN TẮC PHẢN HỒI:
+- Ngắn gọn nhưng đầy đủ ý, không viết thành một khối văn bản dài dằng dặc.
+- Nếu tư vấn về bệnh lý, phải kèm lời khuyên tham khảo ý kiến bác sĩ chuyên khoa.`;
+
   for (let i = 0; i < modelsToTry.length; i++) {
     const currentModel = modelsToTry[i];
     log(`Sử dụng động cơ: ${currentModel} (${i + 1}/${modelsToTry.length})`, "system");
@@ -122,24 +126,18 @@ export const getAICoachResponse = async (
       const isQuotaExceeded = errorMsg.includes("429") || errorMsg.includes("quota");
       const isNotFound = errorMsg.includes("404") || errorMsg.includes("not found");
 
-      if (isOverloaded) {
-        log(`Model ${currentModel} quá tải (503).`, "warning");
-      } else if (isQuotaExceeded) {
-        log(`Model ${currentModel} hết hạn mức/quota (429).`, "warning");
-      } else if (isNotFound) {
-        log(`Model ${currentModel} không tồn tại hoặc sai tên (404).`, "error");
-      } else {
-        log(`Lỗi tại ${currentModel}: ${errorMsg}`, "error");
-      }
+      if (isOverloaded) log(`Model ${currentModel} quá tải (503).`, "warning");
+      else if (isQuotaExceeded) log(`Model ${currentModel} hết hạn mức/quota (429).`, "warning");
+      else if (isNotFound) log(`Model ${currentModel} không tồn tại (404).`, "error");
+      else log(`Lỗi tại ${currentModel}: ${errorMsg}`, "error");
 
-      // Nếu còn model dự phòng, tiếp tục
       if (i < modelsToTry.length - 1) {
         log(`Đang chuyển sang model dự phòng tiếp theo...`, "info");
         continue;
       }
 
       log("Đã cạn kiệt tất cả model dự phòng.", "error");
-      return `[LỖI HỆ THỐNG]: AI Hub đang tạm thời ngưng hoạt động do quá tải toàn diện. Vui lòng quay lại sau ít phút.`;
+      return `[LỖI HỆ THỐNG]: AI đang bận xử lý dữ liệu khác. Vui lòng thử lại sau giây lát.`;
     }
   }
 

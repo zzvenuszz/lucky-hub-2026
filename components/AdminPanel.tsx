@@ -316,7 +316,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
                   )}
                   {testMessages.map(msg => (
                     <div key={msg.id} className={`flex flex-col ${msg.senderId === 'admin_test' ? 'items-end' : 'items-start'}`}>
-                      <div className={`max-w-[90%] p-3 rounded-2xl text-[11px] shadow-sm leading-relaxed ${
+                      <div className={`max-w-[90%] p-3 rounded-2xl text-[11px] shadow-sm leading-relaxed whitespace-pre-wrap ${
                         msg.senderId === 'admin_test' ? 'bg-emerald-600 text-white rounded-tr-none' : msg.content.startsWith('LỖI') ? 'bg-red-900/50 text-red-200 border border-red-800 rounded-tl-none' : 'bg-slate-800 text-slate-300 rounded-tl-none border border-slate-700'
                       }`}>
                         {msg.content}
