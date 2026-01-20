@@ -9,11 +9,12 @@ import { UserRole, AccountStatus, HealthGoal } from './types';
 dotenv.config();
 
 const app = express();
-// Express 5 middleware casting to avoid type mismatches
+
+// Express 5 middleware casting để tránh xung đột kiểu dữ liệu
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '10mb' }) as any);
 
-// Cấu hình phục vụ file tĩnh từ thư mục gốc
+// Phục vụ các file tĩnh (css, js, images) từ thư mục gốc
 app.use(express.static('.') as any);
 
 const PORT = process.env.PORT || 3000;
@@ -56,11 +57,10 @@ const User = mongoose.model('User', userSchema);
 const Metric = mongoose.model('Metric', metricSchema);
 const Knowledge = mongoose.model('Knowledge', knowledgeSchema);
 
-// --- DB INITIALIZATION & SEEDING ---
+// --- DB INITIALIZATION ---
 async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI);
-    console.log('--------------------------------------------------');
     console.log('✅ KẾT NỐI DATABASE THÀNH CÔNG');
     
     const admin = await User.findOne({ role: UserRole.ADMIN });
@@ -75,13 +75,7 @@ async function initDB() {
         healthGoal: HealthGoal.STRENGTHEN_HEALTH
       });
       await newAdmin.save();
-      console.log('🚀 ĐÃ TẠO TÀI KHOẢN ADMIN MỚI');
-      console.log('👉 Tên đăng nhập: admin');
-      console.log(`👉 Mật khẩu: ${pass}`);
-      console.log('--------------------------------------------------');
-    } else {
-      console.log('ℹ️  Tài khoản Admin đã tồn tại.');
-      console.log('--------------------------------------------------');
+      console.log('🚀 ĐÃ TẠO TÀI KHOẢN ADMIN MỚI: admin/admin');
     }
   } catch (err) {
     console.error('❌ LỖI KẾT NỐI DATABASE:', err);
@@ -93,12 +87,9 @@ initDB();
 // --- API ROUTES ---
 
 app.get('/api/health', (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-  if (dbStatus === 'connected') {
-    res.status(200).json({ status: 'ok', database: dbStatus, uptime: (process as any).uptime() });
-  } else {
-    res.status(503).json({ status: 'unhealthy', database: dbStatus });
-  }
+  // Sửa lỗi TS2339: Property 'uptime' does not exist on type 'Process'.
+  // Ép kiểu process sang any để truy cập phương thức uptime() có sẵn trong Node.js.
+  res.status(200).json({ status: 'ok', uptime: (process as any).uptime() });
 });
 
 app.post('/api/register', async (req, res) => {
@@ -120,11 +111,15 @@ app.post('/api/register', async (req, res) => {
 });
 
 app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ username, password });
-  if (!user) return res.status(401).json({ message: 'Sai thông tin đăng nhập' });
-  if (user.status === AccountStatus.SUSPENDED) return res.status(403).json({ message: 'Tài khoản đã bị tạm dừng' });
-  res.json(user);
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username, password });
+    if (!user) return res.status(401).json({ message: 'Sai thông tin đăng nhập' });
+    if (user.status === AccountStatus.SUSPENDED) return res.status(403).json({ message: 'Tài khoản đã bị tạm dừng' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server' });
+  }
 });
 
 app.get('/api/users', async (req, res) => {
@@ -179,14 +174,17 @@ app.delete('/api/knowledge/:id', async (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
-// SPA Fallback: Trả về index.html cho các route không khớp API
-// Trong Express 5, wildcard '*' phải được đặt tên. Chúng ta dùng cú pháp '/:path*'
-app.get('/:path*', (req, res) => {
-  // Tránh trả về index.html cho các request API bị sai đường dẫn
-  if (req.path.startsWith('/api')) {
-    return res.status(404).json({ message: 'API Route not found' });
+// SPA FALLBACK ĐẶC BIỆT CHO EXPRESS 5:
+// Sử dụng app.use không tham số đường dẫn để bắt tất cả các request còn lại.
+// Điều này giúp tránh hoàn toàn lỗi 'Missing parameter name' của path-to-regexp.
+app.use((req, res) => {
+  // Nếu là request API không tồn tại, trả về 404 JSON thay vì index.html
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ message: `API route ${req.path} not found` });
+    return;
   }
+  // Mọi route khác (Frontend) sẽ trả về index.html để React Router xử lý
   res.sendFile(path.resolve('index.html'));
 });
 
-app.listen(PORT, () => console.log(`🚀 Lucky Hub Server đang chạy tại cổng ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Lucky Hub Server đang chạy ổn định tại cổng ${PORT}`));

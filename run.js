@@ -1,29 +1,26 @@
 
 /**
- * File này được Render.com sử dụng để khởi chạy ứng dụng.
- * Tối ưu hóa việc gọi tsx để tránh các lỗi shell và cảnh báo bảo mật.
+ * File khởi chạy chính cho Render.com
+ * Sử dụng tsx để thực thi server.ts trực tiếp
  */
 const { spawn } = require('child_process');
-const path = require('path');
 
-console.log('🚀 Đang khởi động Lucky Hub Server (Production Mode)...');
+console.log('🚀 Đang khởi chạy hệ thống Lucky Hub...');
 
-// Sử dụng lệnh npx để gọi trực tiếp tsx mà không cần shell: true
-// Điều này giúp tránh cảnh báo DEP0190 và cải thiện hiệu năng
-const child = spawn('npx', ['tsx', 'server.ts'], {
+// Khởi chạy tsx thông qua npx để đảm bảo môi trường sạch
+const server = spawn('npx', ['tsx', 'server.ts'], {
   stdio: 'inherit',
-  // Bỏ shell: true để giải quyết DeprecationWarning
+  env: process.env
 });
 
-child.on('error', (err) => {
-  console.error('❌ Không thể khởi động server:', err);
+server.on('error', (err) => {
+  console.error('❌ Lỗi khởi động:', err.message);
+  process.exit(1);
 });
 
-child.on('exit', (code) => {
+server.on('exit', (code) => {
   if (code !== 0 && code !== null) {
-    console.log(`⚠️ Server đã dừng bất thường với mã thoát: ${code}`);
-  } else {
-    console.log(`ℹ️ Server đã đóng.`);
+    console.error(`⚠️ Hệ thống dừng với mã lỗi: ${code}`);
   }
   process.exit(code || 0);
 });
