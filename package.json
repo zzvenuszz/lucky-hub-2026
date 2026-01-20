@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Lucky Hub Health Management Platform",
   "main": "run.js",
+  "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
   },
