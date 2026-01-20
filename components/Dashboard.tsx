@@ -1,6 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
+  ResponsiveContainer, Legend, PieChart, Pie, Cell 
+} from 'recharts';
 import { HealthMetric, User, UserRole } from '../types.ts';
 import { Database } from '../services/database.ts';
 
@@ -29,6 +32,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
     if (metrics.length === 0) return null;
     return [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
   }, [metrics]);
+
+  const bodyCompData = useMemo(() => {
+    if (!latestMetric) return [];
+    // Tính toán tương đối để hiển thị biểu đồ tròn
+    // Lưu ý: Các chỉ số này có thể không tổng thành 100% nhưng ta biểu diễn tỉ lệ tương quan
+    return [
+      { name: 'Cơ bắp', value: latestMetric.muscleMass || 0, color: '#059669' },
+      { name: 'Mỡ cơ thể', value: (latestMetric.weight * (latestMetric.bodyFat / 100)) || 0, color: '#f43f5e' },
+      { name: 'Nước', value: (latestMetric.weight * (latestMetric.waterPercent / 100)) || 0, color: '#0ea5e9' },
+    ];
+  }, [latestMetric]);
 
   const filteredMetrics = useMemo(() => {
     const now = new Date();
@@ -66,16 +80,58 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center">
-          <h3 className="font-bold text-slate-700 mb-6 w-full text-center">Tỉ lệ cơ thể</h3>
+          <h3 className="font-bold text-slate-700 mb-2 w-full text-center">Cấu trúc cơ thể</h3>
           {latestMetric ? (
-            <div className="text-center">
-              <div className="text-5xl font-black text-emerald-600">{latestMetric.bodyFat}%</div>
-              <div className="text-xs text-slate-400 uppercase font-bold mt-2">Lượng mỡ hiện tại</div>
-              <div className="mt-4 text-xs font-bold text-slate-500 bg-slate-50 px-3 py-1 rounded-full">
-                {selectedUserInfo.fullName}
+            <div className="w-full h-[250px] relative flex flex-col items-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <defs>
+                    <filter id="shadow" height="130%">
+                      <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+                      <feOffset dx="2" dy="4" result="offsetblur" />
+                      <feComponentTransfer>
+                        <feFuncA type="linear" slope="0.2" />
+                      </feComponentTransfer>
+                      <feMerge>
+                        <feMergeNode />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <Pie
+                    data={bodyCompData}
+                    cx="50%" cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                    filter="url(#shadow)"
+                  >
+                    {bodyCompData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                    formatter={(value: number) => [`${value.toFixed(1)} kg`, 'Khối lượng']}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                <div className="text-2xl font-black text-slate-800">{latestMetric.weight}<span className="text-xs ml-0.5">kg</span></div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Tổng cân</div>
+              </div>
+              <div className="flex justify-center gap-4 mt-2">
+                {bodyCompData.map(item => (
+                  <div key={item.name} className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">{item.name}</span>
+                  </div>
+                ))}
               </div>
             </div>
-          ) : <div className="text-slate-400 italic">Chưa có dữ liệu đo lường</div>}
+          ) : <div className="h-[250px] flex items-center justify-center text-slate-400 italic">Chưa có dữ liệu đo lường</div>}
         </div>
 
         <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
