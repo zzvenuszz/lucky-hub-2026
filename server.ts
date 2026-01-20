@@ -13,7 +13,7 @@ const app = express();
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '10mb' }) as any);
 
-// Serve static files from the root directory
+// Cấu hình phục vụ file tĩnh từ thư mục gốc
 app.use(express.static('.') as any);
 
 const PORT = process.env.PORT || 3000;
@@ -179,10 +179,13 @@ app.delete('/api/knowledge/:id', async (req, res) => {
   res.json({ message: 'Deleted' });
 });
 
-// SPA Fallback: Serving index.html for any other route
-// In Express 5, '*' without a parameter name is deprecated/not supported in the same way.
-// We use a named parameter with a wildcard suffix `/:any*` to match everything correctly.
-app.get('/:any*', (req, res) => {
+// SPA Fallback: Trả về index.html cho các route không khớp API
+// Trong Express 5, wildcard '*' phải được đặt tên. Chúng ta dùng cú pháp '/:path*'
+app.get('/:path*', (req, res) => {
+  // Tránh trả về index.html cho các request API bị sai đường dẫn
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ message: 'API Route not found' });
+  }
   res.sendFile(path.resolve('index.html'));
 });
 
