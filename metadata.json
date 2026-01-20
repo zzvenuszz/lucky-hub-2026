@@ -1,0 +1,7 @@
+{
+  "name": "Lucky Hub 2026",
+  "description": "App mới 2026",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
