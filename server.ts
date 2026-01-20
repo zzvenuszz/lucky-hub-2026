@@ -15,16 +15,18 @@ const app = express();
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '10mb' }) as any);
 
-// MIDDLEWARE QUAN TRỌNG: Biên dịch file .ts và .tsx sang JS trên server
-app.get(['/*.ts', '/*.tsx'], (req, res, next) => {
-  // PHÂN TÍCH: TypeScript báo lỗi do thuộc tính 'cwd' không tồn tại trên kiểu 'Process'.
-  // CÁCH GIẢI QUYẾT: Sử dụng path.resolve() không tham số để lấy đường dẫn thư mục hiện tại thay cho process.cwd().
-  // BÁO CÁO KẾT QUẢ: Đã thay thế process.cwd() bằng path.resolve() để đảm bảo tính tương thích và fix lỗi type.
-  const filePath = path.join(path.resolve(), req.path);
+/**
+ * PHÂN TÍCH: Express 5 sử dụng path-to-regexp v8+, không hỗ trợ '/*.ts' như một chuỗi.
+ * CÁCH GIẢI QUYẾT: Sử dụng biểu thức chính quy (Regex) để bắt các file .ts và .tsx.
+ */
+app.get(/.*\.(ts|tsx)$/, (req, res, next) => {
+  // Lấy đường dẫn thực tế từ URL
+  const relativePath = req.path;
+  const filePath = path.join(path.resolve(), relativePath);
+  
   if (fs.existsSync(filePath)) {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      // Sử dụng sucrase để transpile cực nhanh
       const result = transform(content, {
         transforms: ['typescript', 'jsx'],
         production: false,
@@ -32,7 +34,7 @@ app.get(['/*.ts', '/*.tsx'], (req, res, next) => {
       });
       res.type('application/javascript').send(result.code);
     } catch (err) {
-      console.error(`Lỗi biên dịch ${req.path}:`, err);
+      console.error(`Lỗi biên dịch ${relativePath}:`, err);
       res.status(500).send('Error compiling file');
     }
   } else {
