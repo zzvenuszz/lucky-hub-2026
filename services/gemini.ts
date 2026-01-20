@@ -58,10 +58,11 @@ export const getAICoachResponse = async (
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Danh sách các model để thử (theo thứ tự ưu tiên)
+  // Danh sách các model để thử (Đã sửa lỗi tên model 404)
   const modelsToTry = [
     'gemini-3-flash-preview',
-    'gemini-2.5-flash-lite-latest',
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest',
     'gemini-3-pro-preview'
   ];
 
@@ -91,17 +92,17 @@ export const getAICoachResponse = async (
   - Trả lời chân thực, nếu không có kiến thức nạp vào về chủ đề đó, hãy dùng kiến thức y khoa chuẩn.
   - Tuyệt đối không xưng hô thiếu tôn trọng.`;
 
-  // Vòng lặp thử từng model nếu bị lỗi overload
+  // Vòng lặp thử từng model nếu bị lỗi overload hoặc quota
   for (let i = 0; i < modelsToTry.length; i++) {
     const currentModel = modelsToTry[i];
-    log(`Đang thử sử dụng Model: ${currentModel} (Lần thử ${i + 1}/${modelsToTry.length})`, "system");
+    log(`Sử dụng động cơ: ${currentModel} (${i + 1}/${modelsToTry.length})`, "system");
 
     try {
       const response = await ai.models.generateContent({
         model: currentModel,
         contents: [
-          { text: `Lịch sử hội thoại (5 câu gần nhất):\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
-          { text: `Câu hỏi hiện tại của người dùng: ${latestUserMessage}` }
+          { text: `Lịch sử hội thoại:\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
+          { text: `Câu hỏi: ${latestUserMessage}` }
         ],
         config: { 
           systemInstruction,
@@ -116,28 +117,31 @@ export const getAICoachResponse = async (
         return result;
       }
     } catch (e: any) {
-      const isOverloaded = e.message?.includes("503") || e.message?.includes("overloaded");
-      const isQuotaExceeded = e.message?.includes("429") || e.message?.includes("quota");
+      const errorMsg = e.message || "";
+      const isOverloaded = errorMsg.includes("503") || errorMsg.includes("overloaded");
+      const isQuotaExceeded = errorMsg.includes("429") || errorMsg.includes("quota");
+      const isNotFound = errorMsg.includes("404") || errorMsg.includes("not found");
 
       if (isOverloaded) {
-        log(`Model ${currentModel} đang bị quá tải (503).`, "warning");
+        log(`Model ${currentModel} quá tải (503).`, "warning");
       } else if (isQuotaExceeded) {
-        log(`Model ${currentModel} hết hạn mức (429).`, "warning");
+        log(`Model ${currentModel} hết hạn mức/quota (429).`, "warning");
+      } else if (isNotFound) {
+        log(`Model ${currentModel} không tồn tại hoặc sai tên (404).`, "error");
       } else {
-        log(`Lỗi không mong muốn tại ${currentModel}: ${e.message}`, "error");
+        log(`Lỗi tại ${currentModel}: ${errorMsg}`, "error");
       }
 
-      // Nếu còn model dự phòng trong danh sách, tiếp tục vòng lặp
+      // Nếu còn model dự phòng, tiếp tục
       if (i < modelsToTry.length - 1) {
-        log(`Đang kích hoạt cơ chế dự phòng, chuyển sang model tiếp theo...`, "info");
+        log(`Đang chuyển sang model dự phòng tiếp theo...`, "info");
         continue;
       }
 
-      // Nếu đã thử hết mà vẫn lỗi
-      log("Đã thử tất cả các model khả dụng nhưng không thành công.", "error");
-      return `[LỖI HỆ THỐNG]: Toàn bộ hệ thống AI đang quá tải. Vui lòng thử lại sau ít phút.`;
+      log("Đã cạn kiệt tất cả model dự phòng.", "error");
+      return `[LỖI HỆ THỐNG]: AI Hub đang tạm thời ngưng hoạt động do quá tải toàn diện. Vui lòng quay lại sau ít phút.`;
     }
   }
 
-  return "Xin lỗi, tôi gặp trục trặc kỹ thuật. Hãy thử lại sau nhé!";
+  return "Lucky AI hiện đang bảo trì, HLV sẽ hỗ trợ bạn sớm!";
 };
