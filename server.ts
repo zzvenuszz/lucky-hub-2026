@@ -181,8 +181,8 @@ app.delete('/api/knowledge/:id', async (req, res) => {
 
 // SPA Fallback: Serving index.html for any other route
 // In Express 5, '*' without a parameter name is deprecated/not supported in the same way.
-// We use a named parameter with a wildcard suffix to match everything.
-app.get('*', (req, res) => {
+// We use a named parameter with a wildcard suffix `/:any*` to match everything correctly.
+app.get('/:any*', (req, res) => {
   res.sendFile(path.resolve('index.html'));
 });
 
