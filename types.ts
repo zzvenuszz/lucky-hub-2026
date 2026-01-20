@@ -44,6 +44,8 @@ export interface User {
   fullName: string;
   birthDate: string;
   height: number;
+  weight: number; // kg - Cân nặng ban đầu
+  phoneNumber: string;
   gender: 'Nam' | 'Nữ';
   healthGoal: HealthGoal;
   role: UserRole;

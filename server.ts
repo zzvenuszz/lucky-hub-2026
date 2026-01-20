@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { transform } from 'sucrase';
-import { UserRole, AccountStatus, HealthGoal } from './types';
+import { UserRole, AccountStatus, HealthGoal } from './types.ts';
 
 dotenv.config();
 
@@ -59,9 +59,11 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   fullName: { type: String, required: true },
+  phoneNumber: { type: String, default: '' },
   birthDate: String,
-  height: Number,
-  gender: String,
+  height: { type: Number, default: 0 },
+  weight: { type: Number, default: 0 },
+  gender: { type: String, default: 'Nam' },
   healthGoal: String,
   role: { type: String, enum: Object.values(UserRole), default: UserRole.MEMBER },
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
@@ -107,7 +109,8 @@ async function initDB() {
         fullName: 'Tổng Quản Trị', 
         role: UserRole.ADMIN, 
         status: AccountStatus.ACTIVE, 
-        healthGoal: HealthGoal.STRENGTHEN_HEALTH
+        healthGoal: HealthGoal.STRENGTHEN_HEALTH,
+        phoneNumber: '0988888888'
       });
       await newAdmin.save();
       console.log('🚀 ĐÃ TẠO TÀI KHOẢN ADMIN MỚI: admin/admin');
@@ -137,6 +140,7 @@ app.post('/api/register', async (req, res) => {
     await newUser.save();
     res.json({ message: 'Đăng ký thành công' });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Lỗi đăng ký tài khoản' });
   }
 });

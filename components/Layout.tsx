@@ -11,7 +11,13 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, setActiveTab }) => {
-  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=059669&color=fff&bold=true`;
+  const getAvatar = () => {
+    if (user.avatar) return user.avatar;
+    const seed = encodeURIComponent(user.fullName);
+    return user.gender === 'Nữ'
+      ? `https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka&backgroundColor=f8fafc`
+      : `https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=f8fafc`;
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50">
@@ -52,7 +58,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
             </div>
             <div className="w-10 h-10 rounded-xl border border-slate-100 shadow-sm overflow-hidden bg-slate-50 cursor-pointer hover:ring-2 hover:ring-emerald-500 transition-all" onClick={() => setActiveTab('profile')}>
               <img 
-                src={user.avatar || defaultAvatar} 
+                src={getAvatar()} 
                 alt={user.fullName}
                 className="w-full h-full object-cover"
               />

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { User, HealthGoal } from '../types';
+import { User, HealthGoal } from '../types.ts';
 
 interface ProfileProps {
   user: User;
@@ -11,11 +11,19 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
   const [formData, setFormData] = useState({
     fullName: user.fullName,
     height: user.height,
+    weight: user.weight || 0,
+    phoneNumber: user.phoneNumber || '',
     healthGoal: user.healthGoal,
-    avatar: user.avatar || ''
+    avatar: user.avatar || '',
+    gender: user.gender
   });
 
-  const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.fullName)}&background=059669&color=fff&size=128&bold=true`;
+  const getAvatar = () => {
+    if (formData.avatar) return formData.avatar;
+    return formData.gender === 'Nữ'
+      ? `https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka&backgroundColor=f8fafc`
+      : `https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=f8fafc`;
+  };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -43,9 +51,9 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
       <div className="bg-emerald-600 h-32 relative">
         <div className="absolute -bottom-12 left-8">
           <label className="relative cursor-pointer group block">
-            <div className="w-24 h-24 rounded-2xl border-4 border-white shadow-lg overflow-hidden bg-slate-100">
+            <div className="w-24 h-24 rounded-2xl border-4 border-white shadow-lg overflow-hidden bg-white">
               <img 
-                src={formData.avatar || defaultAvatar} 
+                src={getAvatar()} 
                 alt={user.fullName}
                 className="w-full h-full object-cover transition-transform group-hover:scale-110" 
               />
@@ -79,11 +87,29 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate }) => {
             />
           </div>
           <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 ml-1">SỐ ĐIỆN THOẠI</label>
+            <input 
+              required
+              type="tel" value={formData.phoneNumber} 
+              onChange={e => setFormData({...formData, phoneNumber: e.target.value})}
+              className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" 
+            />
+          </div>
+          <div className="space-y-1">
             <label className="text-xs font-bold text-slate-500 ml-1">CHIỀU CAO (CM)</label>
             <input 
               required
               type="number" value={formData.height} 
               onChange={e => setFormData({...formData, height: Number(e.target.value)})}
+              className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" 
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-slate-500 ml-1">CÂN NẶNG HIỆN TẠI (KG)</label>
+            <input 
+              required
+              type="number" step="0.1" value={formData.weight} 
+              onChange={e => setFormData({...formData, weight: Number(e.target.value)})}
               className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" 
             />
           </div>
