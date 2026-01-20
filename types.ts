@@ -51,6 +51,7 @@ export interface User {
   role: UserRole;
   status: AccountStatus;
   avatar?: string;
+  isPasswordEncrypted?: boolean; // Mới thêm: Trạng thái mã hóa mật khẩu
 }
 
 export interface Message {

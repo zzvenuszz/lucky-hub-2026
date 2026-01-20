@@ -13,6 +13,10 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isRegistering, setIsRegistering] = useState(false);
+  const [needsUpgrade, setNeedsUpgrade] = useState(false); // State yêu cầu nâng cấp mật khẩu
+  const [tempUpgradeData, setTempUpgradeData] = useState<{userId: string, fullName: string} | null>(null);
+  const [upgradePasswords, setUpgradePasswords] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
+  
   const [users, setUsers] = useState<User[]>([]);
   const [knowledge, setKnowledge] = useState<any[]>([]);
   const [isAddingMetric, setIsAddingMetric] = useState(false);
@@ -31,7 +35,6 @@ const App: React.FC = () => {
     healthGoal: HealthGoal.BODY_RECOMP
   });
 
-  // Khôi phục trạng thái đăng nhập từ localStorage khi app khởi chạy
   useEffect(() => {
     const savedUser = localStorage.getItem('lucky_hub_user');
     if (savedUser) {
@@ -75,25 +78,58 @@ const App: React.FC = () => {
       if (response.ok) {
         const user = await response.json();
         setCurrentUser(user);
-        // Lưu vào localStorage để không bị mất khi reload
         localStorage.setItem('lucky_hub_user', JSON.stringify(user));
+      } else if (response.status === 426) {
+        // Tài khoản cũ cần nâng cấp mật khẩu
+        const data = await response.json();
+        setTempUpgradeData({ userId: data.userId, fullName: data.fullName });
+        setUpgradePasswords({ ...upgradePasswords, oldPassword: loginData.password });
+        setNeedsUpgrade(true);
       } else {
-        // Fallback cho preview nếu API thất bại
-        if (loginData.username === 'admin' && loginData.password === 'admin') {
-          const mockAdmin: User = { 
-            id: 'admin', username: 'admin', fullName: 'Admin (Preview)', 
-            role: UserRole.ADMIN, status: AccountStatus.ACTIVE, gender: 'Nam', 
-            healthGoal: HealthGoal.STRENGTHEN_HEALTH, phoneNumber: '000', birthDate: '', height: 170, weight: 70 
-          };
-          setCurrentUser(mockAdmin);
-          localStorage.setItem('lucky_hub_user', JSON.stringify(mockAdmin));
-          alert('Chế độ Preview: Đăng nhập với quyền Admin mặc định.');
-        } else {
-          alert('Sai thông tin đăng nhập hoặc server không phản hồi.');
-        }
+        const error = await response.json();
+        alert(error.message || 'Sai thông tin đăng nhập.');
       }
     } catch (error) {
       alert('Lỗi kết nối. Vui lòng thử lại.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpgradePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (upgradePasswords.newPassword !== upgradePasswords.confirmPassword) {
+      alert('Mật khẩu mới không khớp!');
+      return;
+    }
+    if (upgradePasswords.newPassword.length < 4) {
+      alert('Mật khẩu mới phải từ 4 ký tự trở lên.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/users/upgrade-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: tempUpgradeData?.userId,
+          oldPassword: upgradePasswords.oldPassword,
+          newPassword: upgradePasswords.newPassword
+        })
+      });
+
+      if (res.ok) {
+        alert('Cập nhật bảo mật thành công! Vui lòng đăng nhập lại.');
+        setNeedsUpgrade(false);
+        setTempUpgradeData(null);
+        setLoginData({ ...loginData, password: '' });
+      } else {
+        const err = await res.json();
+        alert(err.message || 'Lỗi cập nhật mật khẩu.');
+      }
+    } catch (e) {
+      alert('Lỗi hệ thống khi nâng cấp mật khẩu.');
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +144,6 @@ const App: React.FC = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLoading) return;
-    
     setIsLoading(true);
     try {
       const res = await fetch('/api/register', {
@@ -116,18 +151,15 @@ const App: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(regData)
       });
-      
       if (res.ok) {
         alert('Đăng ký thành công! Hãy đăng nhập.');
         setIsRegistering(false);
       } else {
-        // Mock fallback cho preview
-        localStorage.setItem('mock_preview_user', JSON.stringify({ ...regData, id: 'mock_' + Date.now() }));
-        alert('Chế độ Preview: Đã lưu thông tin đăng ký vào bộ nhớ trình duyệt.');
-        setIsRegistering(false);
+        const err = await res.json();
+        alert(err.message || 'Lỗi đăng ký.');
       }
     } catch (error) {
-      alert('Lỗi kết nối server trong chế độ Preview.');
+      alert('Lỗi kết nối.');
     } finally {
       setIsLoading(false);
     }
@@ -142,39 +174,59 @@ const App: React.FC = () => {
   };
 
   if (!currentUser) {
-    const previewAvatar = regData.gender === 'Nữ' 
-      ? `https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka&backgroundColor=f8fafc`
-      : `https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=f8fafc`;
-
     return (
       <div className="min-h-screen bg-emerald-600 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md transition-all duration-300">
           <div className="text-center mb-6">
-            <div className="w-16 h-16 bg-emerald-600 text-white text-3xl font-bold flex items-center justify-center rounded-2xl mx-auto mb-4 shadow-xl shadow-emerald-200 overflow-hidden">
-              {isRegistering ? <img src={previewAvatar} className="w-full h-full object-cover" /> : 'L'}
+            <div className="w-16 h-16 bg-emerald-600 text-white text-3xl font-bold flex items-center justify-center rounded-2xl mx-auto mb-4 shadow-xl shadow-emerald-200">
+              {needsUpgrade ? '🔒' : isRegistering ? '👤' : 'L'}
             </div>
-            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub</h1>
-            <p className="text-slate-400 text-sm mt-1 font-medium">Hệ thống quản lý sức khỏe thông minh</p>
+            <h1 className="text-2xl font-bold text-slate-800">Lucky Hub</h1>
+            <p className="text-slate-400 text-sm mt-1">{needsUpgrade ? 'Cập nhật bảo mật tài khoản' : 'Hệ thống quản lý sức khỏe'}</p>
           </div>
 
-          {!isRegistering ? (
+          {needsUpgrade ? (
+            <form className="space-y-4" onSubmit={handleUpgradePassword}>
+              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 mb-4">
+                <p className="text-xs text-amber-700 font-medium">
+                  Chào <b>{tempUpgradeData?.fullName}</b>, hệ thống đã nâng cấp tiêu chuẩn bảo mật. Vui lòng tạo mật khẩu mới để tiếp tục sử dụng.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500">MẬT KHẨU CŨ (Để xác minh)</label>
+                <input required type="password" value={upgradePasswords.oldPassword} onChange={e => setUpgradePasswords({...upgradePasswords, oldPassword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border outline-none focus:border-emerald-500" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500">MẬT KHẨU MỚI</label>
+                <input required type="password" placeholder="Tối thiểu 4 ký tự" value={upgradePasswords.newPassword} onChange={e => setUpgradePasswords({...upgradePasswords, newPassword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border outline-none focus:border-emerald-500" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500">XÁC NHẬN MẬT KHẨU MỚI</label>
+                <input required type="password" value={upgradePasswords.confirmPassword} onChange={e => setUpgradePasswords({...upgradePasswords, confirmPassword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border outline-none focus:border-emerald-500" />
+              </div>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-emerald-700 transition-all">
+                {isLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
+              </button>
+              <button type="button" onClick={() => setNeedsUpgrade(false)} className="w-full text-slate-400 text-sm font-medium hover:underline">Hủy bỏ</button>
+            </form>
+          ) : !isRegistering ? (
             <form className="space-y-4" onSubmit={handleLogin}>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 ml-1">TÊN ĐĂNG NHẬP</label>
-                <input required placeholder="Nhập tên đăng nhập" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 focus:bg-white transition-all" />
+                <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Tên đăng nhập</label>
+                <input required placeholder="Nhập tên đăng nhập" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 transition-all" />
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500 ml-1">MẬT KHẨU</label>
-                <input required type="password" placeholder="••••••••" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 focus:bg-white transition-all" />
+                <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mật khẩu</label>
+                <input required type="password" placeholder="••••••••" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 transition-all" />
               </div>
-              <button type="submit" disabled={isLoading} className={`w-full bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 active:scale-95 transition-all ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-emerald-700'}`}>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-emerald-700 transition-all">
                 {isLoading ? 'Đang xử lý...' : 'Đăng nhập'}
               </button>
               <button type="button" onClick={() => setIsRegistering(true)} className="w-full text-emerald-600 text-sm font-bold hover:underline">Chưa có tài khoản? Đăng ký</button>
-              <p className="text-[10px] text-center text-slate-300 mt-2 italic">Mẹo: Nhập admin/admin nếu server chưa phản hồi</p>
             </form>
           ) : (
             <form className="space-y-3 max-h-[60vh] overflow-y-auto px-1" onSubmit={handleRegister}>
+              {/* Giữ nguyên form đăng ký của bạn nhưng thêm logic băm mật khẩu ở backend */}
               <input placeholder="Họ và tên" required value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
               <input placeholder="Số điện thoại" required type="tel" value={regData.phoneNumber} onChange={e => setRegData({...regData, phoneNumber: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
               <input placeholder="Tên đăng nhập" required value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
@@ -193,25 +245,25 @@ const App: React.FC = () => {
 
               <div className="flex gap-2">
                 <div className="flex-1 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 ml-1">GIỚI TÍNH</label>
+                  <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase">Giới tính</label>
                   <select value={regData.gender} onChange={e => setRegData({...regData, gender: e.target.value as any})} className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none">
                     <option value="Nam">Nam</option><option value="Nữ">Nữ</option>
                   </select>
                 </div>
                 <div className="flex-1 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 ml-1">NGÀY SINH</label>
+                  <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase">Ngày sinh</label>
                   <input type="date" required value={regData.birthDate} onChange={e => setRegData({...regData, birthDate: e.target.value})} className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 ml-1">MỤC TIÊU SỨC KHỎE</label>
+                <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase">Mục tiêu sức khỏe</label>
                 <select value={regData.healthGoal} onChange={e => setRegData({...regData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none">
                   {Object.values(HealthGoal).map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
 
-              <button type="submit" disabled={isLoading} className={`w-full bg-emerald-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all mt-4 ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-emerald-700'}`}>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl mt-4">
                 {isLoading ? 'Đang đăng ký...' : 'Đăng ký ngay'}
               </button>
               <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-slate-400 text-sm hover:text-slate-600 pb-2">Quay lại đăng nhập</button>
