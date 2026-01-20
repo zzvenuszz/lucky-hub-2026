@@ -1,20 +1,20 @@
 
 import React, { useState, useEffect } from 'react';
-import Layout from './components/Layout';
-import Dashboard from './components/Dashboard';
-import ChatSystem from './components/ChatSystem';
-import AdminPanel from './components/AdminPanel';
-import MetricForm from './components/MetricForm';
-import Profile from './components/Profile';
-import { User, UserRole, HealthMetric, AIKnowledge, HealthGoal, AccountStatus } from './types';
-import { Database } from './services/database';
+import Layout from './components/Layout.tsx';
+import Dashboard from './components/Dashboard.tsx';
+import ChatSystem from './components/ChatSystem.tsx';
+import AdminPanel from './components/AdminPanel.tsx';
+import MetricForm from './components/MetricForm.tsx';
+import Profile from './components/Profile.tsx';
+import { User, HealthGoal } from './types.ts';
+import { Database } from './services/database.ts';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isRegistering, setIsRegistering] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
-  const [knowledge, setKnowledge] = useState<AIKnowledge[]>([]);
+  const [knowledge, setKnowledge] = useState<any[]>([]);
   const [isAddingMetric, setIsAddingMetric] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -48,12 +48,11 @@ const App: React.FC = () => {
       if (res.ok) {
         setCurrentUser(data);
       } else {
-        // Hiển thị thông báo lỗi cụ thể từ server hoặc thông báo mặc định
         alert(data.message || 'Sai thông tin đăng nhập hoặc tài khoản đã bị khóa.');
       }
     } catch (error) {
       console.error('Login error:', error);
-      alert('Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng hoặc server.');
+      alert('Không thể kết nối đến máy chủ.');
     } finally {
       setIsLoading(false);
     }
@@ -75,7 +74,7 @@ const App: React.FC = () => {
         setIsRegistering(false);
       } else {
         const data = await res.json();
-        alert(data.message || 'Tên đăng nhập đã tồn tại hoặc có lỗi xảy ra.');
+        alert(data.message || 'Lỗi xảy ra khi đăng ký.');
       }
     } catch (error) {
       alert('Lỗi kết nối khi đăng ký.');
@@ -86,7 +85,7 @@ const App: React.FC = () => {
 
   const handleSaveMetric = async (metric: any) => {
     if (!currentUser) return;
-    await Database.saveMetric({ ...metric, userId: currentUser.id });
+    await Database.saveMetric({ ...metric, userId: (currentUser as any).id || (currentUser as any)._id });
     fetchData();
     setIsAddingMetric(false);
   };
@@ -105,31 +104,14 @@ const App: React.FC = () => {
             <form className="space-y-4" onSubmit={handleLogin}>
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 ml-1">TÊN ĐĂNG NHẬP</label>
-                <input 
-                  required
-                  placeholder="Nhập tên đăng nhập" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 focus:bg-white transition-all" 
-                />
+                <input required placeholder="Nhập tên đăng nhập" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 focus:bg-white transition-all" />
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 ml-1">MẬT KHẨU</label>
-                <input 
-                  required
-                  type="password" placeholder="••••••••" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 focus:bg-white transition-all" 
-                />
+                <input required type="password" placeholder="••••••••" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent outline-none focus:border-emerald-500 focus:bg-white transition-all" />
               </div>
-              <button 
-                type="submit" 
-                disabled={isLoading}
-                className={`w-full bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 active:scale-95 transition-all ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-emerald-700'}`}
-              >
-                {isLoading ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                    Đang xử lý...
-                  </>
-                ) : 'Đăng nhập'}
+              <button type="submit" disabled={isLoading} className={`w-full bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 active:scale-95 transition-all ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-emerald-700'}`}>
+                {isLoading ? 'Đang xử lý...' : 'Đăng nhập'}
               </button>
               <button type="button" onClick={() => setIsRegistering(true)} className="w-full text-emerald-600 text-sm font-bold hover:underline">Chưa có tài khoản? Đăng ký</button>
             </form>
@@ -147,17 +129,12 @@ const App: React.FC = () => {
               <select value={regData.healthGoal} onChange={e => setRegData({...regData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none">
                 {Object.values(HealthGoal).map(g => <option key={g} value={g}>{g}</option>)}
               </select>
-              <button 
-                type="submit" 
-                disabled={isLoading}
-                className={`w-full bg-emerald-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-emerald-700'}`}
-              >
+              <button type="submit" disabled={isLoading} className={`w-full bg-emerald-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-all ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-emerald-700'}`}>
                 {isLoading ? 'Đang đăng ký...' : 'Đăng ký ngay'}
               </button>
               <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-slate-400 text-sm hover:text-slate-600">Quay lại đăng nhập</button>
             </form>
           )}
-          <p className="mt-8 text-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">Copyright 2025 by Huy Hoàn</p>
         </div>
       </div>
     );
@@ -167,10 +144,10 @@ const App: React.FC = () => {
     <Layout user={currentUser} onLogout={() => setCurrentUser(null)} activeTab={activeTab} setActiveTab={setActiveTab}>
       {activeTab === 'dashboard' && <Dashboard user={currentUser} users={users} onAddMetric={() => setIsAddingMetric(true)} />}
       {activeTab === 'chat' && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} />}
-      {activeTab === 'profile' && <Profile user={currentUser} onUpdate={async (d) => { const u = await Database.updateUser(currentUser.id, d); if(u) setCurrentUser(u); }} />}
-      {activeTab === 'admin' && currentUser.role === UserRole.ADMIN && <AdminPanel users={users} knowledge={knowledge} onRefresh={fetchData} />}
+      {activeTab === 'profile' && <Profile user={currentUser} onUpdate={async (d) => { const u = await Database.updateUser((currentUser as any).id || (currentUser as any)._id, d); if(u) setCurrentUser(u); }} />}
+      {activeTab === 'admin' && (currentUser as any).role === 'ADMIN' && <AdminPanel users={users} knowledge={knowledge} onRefresh={fetchData} />}
       
-      {isAddingMetric && <MetricForm onSave={handleSaveMetric} onSaveBulk={async (list) => { await Database.saveMetricsBulk(list.map(m => ({...m, userId: currentUser.id}))); fetchData(); setIsAddingMetric(false); }} onClose={() => setIsAddingMetric(false)} />}
+      {isAddingMetric && <MetricForm onSave={handleSaveMetric} onSaveBulk={async (list) => { await Database.saveMetricsBulk(list.map(m => ({...m, userId: (currentUser as any).id || (currentUser as any)._id}))); fetchData(); setIsAddingMetric(false); }} onClose={() => setIsAddingMetric(false)} />}
     </Layout>
   );
 };

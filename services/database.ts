@@ -1,5 +1,5 @@
 
-import { User, HealthMetric, AIKnowledge, UserRole } from '../types';
+import { User, HealthMetric, AIKnowledge } from '../types.ts';
 
 const API_BASE = '/api';
 
@@ -21,12 +21,10 @@ async function request<T>(url: string, method = 'GET', body?: any): Promise<T | 
 export const Database = {
   initialize: async () => {},
 
-  // User APIs
-  getUsers: () => request<User[]>(`${API_BASE}/users`) || Promise.resolve([]),
+  getUsers: () => request<User[]>(`${API_BASE}/users`),
   updateUser: (id: string, data: Partial<User>) => request<User>(`${API_BASE}/users/${id}`, 'PUT', data),
   resetPassword: (id: string) => request<{newPassword: string}>(`${API_BASE}/users/${id}/reset-password`, 'POST'),
   
-  // Metric APIs
   getMetrics: (userId?: string) => userId 
     ? request<HealthMetric[]>(`${API_BASE}/metrics/${userId}`) 
     : request<HealthMetric[]>(`${API_BASE}/all-metrics`),
@@ -34,12 +32,10 @@ export const Database = {
   saveMetric: (data: any) => request<HealthMetric>(`${API_BASE}/metrics`, 'POST', data),
   saveMetricsBulk: (data: any[]) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
 
-  // Knowledge APIs
-  getKnowledge: () => request<AIKnowledge[]>(`${API_BASE}/knowledge`) || Promise.resolve([]),
+  getKnowledge: () => request<AIKnowledge[]>(`${API_BASE}/knowledge`),
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data),
   deleteKnowledge: (id: string) => request(`${API_BASE}/knowledge/${id}`, 'DELETE'),
 
-  // Chat (Simulated Local for UI speed, could be moved to API)
   getChats: () => JSON.parse(localStorage.getItem('lucky_hub_chats') || '[]'),
   saveChats: (chats: any) => localStorage.setItem('lucky_hub_chats', JSON.stringify(chats))
 };

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole } from '../types.ts';
 
 interface LayoutProps {
   user: User;
@@ -70,13 +70,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
 
       <footer className="bg-white border-t border-slate-100 py-10 mt-10">
         <div className="container mx-auto px-4 text-center space-y-3">
-          <div className="flex justify-center items-center space-x-4">
-            <span className="w-10 h-[1px] bg-slate-100"></span>
-            <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center text-slate-300 font-bold text-xs">L</div>
-            <span className="w-10 h-[1px] bg-slate-100"></span>
-          </div>
           <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Copyright 2025 by Huy Hoàn</p>
-          <p className="text-slate-300 text-[10px] font-medium italic">Lucky Hub Health Management Platform v2.0</p>
         </div>
       </footer>
     </div>
