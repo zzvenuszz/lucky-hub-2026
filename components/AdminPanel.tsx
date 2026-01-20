@@ -32,16 +32,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
   const chatEndRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // Lắng nghe logs từ gemini service
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const handleGlobalLog = (e: any) => {
+      if (activeTab === 'ai') {
+        addSandboxLog(e.detail.msg, e.detail.type);
+      }
+    };
+    window.addEventListener('ai-sandbox-log', handleGlobalLog);
+    return () => window.removeEventListener('ai-sandbox-log', handleGlobalLog);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'ai') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [testMessages, isTestTyping]);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'ai' && logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [sandboxLogs]);
 
   const addSandboxLog = (msg: string, type: string = 'info') => {
-    setSandboxLogs(prev => [...prev, {
+    setSandboxLogs(prev => [...prev.slice(-49), { // Chỉ giữ 50 logs gần nhất để mượt
       msg,
       type,
       time: new Date().toLocaleTimeString([], { hour12: false })
@@ -108,12 +123,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
   const handleTestChat = async () => {
     if (!testInput.trim()) return;
     
-    addSandboxLog(`Người dùng gửi: "${testInput}"`, 'user');
+    addSandboxLog(`[User] ${testInput}`, 'user');
     
     const userMsg: Message = {
       id: `test_${Date.now()}`,
       senderId: 'admin_test',
-      senderName: 'Admin (Test)',
+      senderName: 'Admin',
       senderRole: UserRole.ADMIN,
       content: testInput,
       timestamp: new Date().toISOString()
@@ -124,24 +139,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
     setIsTestTyping(true);
     
     try {
-      addSandboxLog("Đang phân tích kiến thức và quy tắc...", "system");
       const aiResponse = await getAICoachResponse([...testMessages, userMsg], knowledge, rules, testInput);
       
       if (aiResponse) {
-        addSandboxLog("Đã nhận phản hồi từ AI.", "success");
         setTestMessages(prev => [...prev, {
           id: `ai_${Date.now()}`,
           senderId: 'ai_coach',
-          senderName: 'Lucky AI Advisor',
+          senderName: 'Lucky AI',
           senderRole: 'AI' as any,
           content: aiResponse,
           timestamp: new Date().toISOString()
         }]);
-      } else {
-        addSandboxLog("Phản hồi AI trống hoặc gặp lỗi.", "error");
       }
     } catch (err: any) {
-      addSandboxLog(`Lỗi Sandbox: ${err.message}`, "error");
+      addSandboxLog(`Lỗi Sandbox nghiêm trọng: ${err.message}`, "error");
     } finally {
       setIsTestTyping(false);
     }
@@ -156,7 +167,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
     <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden min-h-[70vh]">
       <div className="flex bg-slate-50/50 p-2 m-6 rounded-2xl border border-slate-100">
         <button onClick={() => { setActiveTab('users'); setSearchTerm(''); }} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Quản lý Người dùng</button>
-        <button onClick={() => { setActiveTab('ai'); setSearchTerm(''); }} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'ai' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Huấn luyện & Sandbox</button>
+        <button onClick={() => { setActiveTab('ai'); setSearchTerm(''); }} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'ai' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Huấn luyện AI & Sandbox</button>
       </div>
 
       <div className="px-8 pb-8">
@@ -166,10 +177,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
               <input 
                 placeholder="Tìm kiếm hội viên theo tên hoặc username..."
                 value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm transition-all"
+                className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm transition-all shadow-inner"
               />
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto no-scrollbar">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-slate-400 border-b border-slate-50">
@@ -219,23 +230,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
           </>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Cột 1: Quản trị Quy tắc & Kiến thức */}
+            {/* Cột 1: Cấu hình Rules & Knowledge */}
             <div className="lg:col-span-4 space-y-6">
               <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                 <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <span className="text-lg">⚖️</span> Tiêu chuẩn giao tiếp (Rules)
+                  <span className="text-lg">⚖️</span> Tiêu chuẩn giao tiếp
                 </h3>
                 <form onSubmit={handleAddRule} className="flex gap-2 mb-4">
                   <input 
-                    placeholder="VD: Phải luôn thân thiện..." 
+                    placeholder="VD: Luôn xưng hô lễ phép..." 
                     value={newRule} onChange={e => setNewRule(e.target.value)}
                     className="flex-grow px-4 py-2 bg-white rounded-xl border-none text-xs font-medium outline-none focus:ring-1 focus:ring-emerald-500 shadow-inner"
                   />
                   <button type="submit" className="bg-emerald-600 text-white px-3 rounded-xl text-lg hover:bg-emerald-700 shadow-md">+</button>
                 </form>
-                <div className="space-y-2 max-h-[150px] overflow-y-auto pr-2 no-scrollbar">
+                <div className="space-y-2 max-h-[140px] overflow-y-auto pr-2 no-scrollbar">
                   {rules.map(r => (
-                    <div key={r.id} className="flex items-center justify-between p-3 bg-white rounded-xl text-[10px] group border border-slate-50">
+                    <div key={r.id} className="flex items-center justify-between p-3 bg-white rounded-xl text-[10px] group border border-slate-100">
                       <span className="text-slate-600 font-medium italic">"{r.content}"</span>
                       <button onClick={() => handleDeleteRule(r.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">×</button>
                     </div>
@@ -249,28 +260,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
                 </h3>
                 <form onSubmit={handleAddKnowledge} className="space-y-3">
                   <input 
-                    required placeholder="Từ khóa..." 
+                    required placeholder="Từ khóa (VD: BMI, Protein...)" 
                     value={newK.keyword} onChange={e => setNewK({...newK, keyword: e.target.value})} 
                     className="w-full px-4 py-2.5 rounded-xl bg-white border-none text-xs font-medium outline-none shadow-inner" 
                   />
                   <textarea 
-                    required placeholder="Nội dung kiến thức huấn luyện..." rows={4} 
+                    required placeholder="Nội dung chuyên môn để AI học tập..." rows={4} 
                     value={newK.content} onChange={e => setNewK({...newK, content: e.target.value})} 
                     className="w-full px-4 py-2.5 rounded-xl bg-white border-none text-xs font-medium resize-none outline-none shadow-inner" 
                   />
                   <button type="submit" disabled={isSubmitting} className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-100 transition-all hover:bg-emerald-700">
-                    {isSubmitting ? 'Đang lưu...' : 'Nạp tri thức'}
+                    {isSubmitting ? 'Đang nạp...' : 'Xác nhận nạp tri thức'}
                   </button>
                 </form>
               </div>
             </div>
 
-            {/* Cột 2: Danh sách Tri thức hiện có */}
+            {/* Cột 2: Tri thức hiện có */}
             <div className="lg:col-span-4 space-y-4">
               <h3 className="font-black text-slate-400 text-[9px] uppercase tracking-[0.2em] px-2 flex justify-between">
-                Tri thức hiện tại <span>({knowledge.length})</span>
+                Thư viện tri thức <span>({knowledge.length})</span>
               </h3>
-              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 no-scrollbar">
+              <div className="space-y-3 max-h-[580px] overflow-y-auto pr-2 no-scrollbar">
                 {knowledge.map(k => (
                   <div key={k.id} className="p-4 bg-white border border-slate-50 rounded-2xl group relative shadow-sm hover:border-emerald-200 transition-all">
                     <div className="flex justify-between items-start mb-1">
@@ -280,33 +291,33 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
                     <p className="text-[10px] text-slate-500 leading-relaxed truncate group-hover:whitespace-normal">{k.content}</p>
                   </div>
                 ))}
-                {knowledge.length === 0 && <div className="text-center py-10 text-slate-300 italic text-xs">Chưa có kiến thức nào được nạp</div>}
+                {knowledge.length === 0 && <div className="text-center py-10 text-slate-300 italic text-xs">Thư viện trống</div>}
               </div>
             </div>
 
             {/* Cột 3: AI Sandbox & Debug Logs */}
-            <div className="lg:col-span-4 flex flex-col gap-4">
+            <div className="lg:col-span-4 flex flex-col gap-4 h-[630px]">
               {/* AI Sandbox Chat */}
-              <div className="flex flex-col h-[400px] bg-slate-900 rounded-[2rem] overflow-hidden shadow-2xl border-4 border-slate-800">
+              <div className="flex flex-col h-[400px] bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-4 border-slate-800">
                 <div className="p-4 bg-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">AI Sandbox</span>
+                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">AI Sandbox (Flash-3)</span>
                   </div>
-                  <button onClick={() => { setTestMessages([]); setSandboxLogs([]); }} className="text-[9px] font-bold text-slate-500 hover:text-white uppercase">Reset</button>
+                  <button onClick={() => { setTestMessages([]); setSandboxLogs([]); }} className="text-[9px] font-bold text-slate-500 hover:text-white uppercase px-2 py-1 rounded-lg hover:bg-slate-700">Clear</button>
                 </div>
                 
-                <div className="flex-grow p-4 overflow-y-auto space-y-4 scrollbar-hide">
+                <div className="flex-grow p-4 overflow-y-auto space-y-4 scrollbar-hide bg-slate-900/50">
                   {testMessages.length === 0 && (
                     <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 opacity-50 text-center px-4">
-                      <span className="text-3xl">🧪</span>
-                      <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed">Gõ câu hỏi để kiểm tra<br/>kiến thức đã huấn luyện</p>
+                      <span className="text-4xl">🤖</span>
+                      <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed">Hãy hỏi AI để kiểm tra<br/>quy tắc & kiến thức mới</p>
                     </div>
                   )}
                   {testMessages.map(msg => (
                     <div key={msg.id} className={`flex flex-col ${msg.senderId === 'admin_test' ? 'items-end' : 'items-start'}`}>
-                      <div className={`max-w-[85%] p-3 rounded-2xl text-[11px] shadow-sm leading-relaxed ${
-                        msg.senderId === 'admin_test' ? 'bg-emerald-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-300 rounded-tl-none border border-slate-700'
+                      <div className={`max-w-[90%] p-3 rounded-2xl text-[11px] shadow-sm leading-relaxed ${
+                        msg.senderId === 'admin_test' ? 'bg-emerald-600 text-white rounded-tr-none' : msg.content.startsWith('LỖI') ? 'bg-red-900/50 text-red-200 border border-red-800 rounded-tl-none' : 'bg-slate-800 text-slate-300 rounded-tl-none border border-slate-700'
                       }`}>
                         {msg.content}
                       </div>
@@ -327,38 +338,43 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
                     placeholder="Hỏi AI tại đây..." 
                     value={testInput} onChange={e => setTestInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleTestChat()}
-                    className="flex-grow bg-slate-700 border-none rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="flex-grow bg-slate-700 border-none rounded-xl px-4 py-3 text-xs text-white outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-slate-500 shadow-inner"
                   />
                   <button 
                     onClick={handleTestChat}
                     disabled={isTestTyping || !testInput.trim()}
-                    className="bg-emerald-600 text-white px-3.5 rounded-xl text-sm hover:bg-emerald-700 disabled:opacity-50 shadow-md active:scale-95 transition-all"
+                    className="bg-emerald-600 text-white px-4 rounded-xl text-sm hover:bg-emerald-700 disabled:opacity-50 shadow-md active:scale-95 transition-all"
                   >
                     🚀
                   </button>
                 </div>
               </div>
 
-              {/* Debug Logs Panel */}
-              <div className="h-[200px] bg-black rounded-[1.5rem] border border-slate-800 flex flex-col overflow-hidden">
+              {/* Debug Logs Panel (TERMINAL) */}
+              <div className="flex-grow bg-black rounded-[1.5rem] border border-slate-800 flex flex-col overflow-hidden shadow-xl">
                 <div className="bg-slate-900 px-4 py-2 flex items-center justify-between border-b border-slate-800">
-                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">System Logs</span>
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-red-500/50"></div>
-                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500/50"></div>
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/50"></div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Internal Debug Console</span>
                   </div>
+                  <span className="text-[8px] text-slate-600 font-mono">UTF-8</span>
                 </div>
-                <div className="flex-grow p-3 overflow-y-auto font-mono text-[9px] space-y-1.5 scrollbar-hide">
-                  {sandboxLogs.length === 0 && <div className="text-slate-700 italic">Chưa có hoạt động nào...</div>}
+                <div className="flex-grow p-3 overflow-y-auto font-mono text-[9px] space-y-1.5 no-scrollbar bg-black/90">
+                  {sandboxLogs.length === 0 && <div className="text-slate-800 italic">Waiting for AI activity...</div>}
                   {sandboxLogs.map((log, i) => (
-                    <div key={i} className={`flex gap-2 ${
-                      log.type === 'error' ? 'text-red-400' : 
-                      log.type === 'success' ? 'text-emerald-400' : 
-                      log.type === 'system' ? 'text-blue-400' : 'text-slate-400'
+                    <div key={i} className={`flex gap-2 leading-relaxed ${
+                      log.type === 'error' ? 'text-red-500' : 
+                      log.type === 'success' ? 'text-emerald-500' : 
+                      log.type === 'system' ? 'text-blue-500' : 
+                      log.type === 'user' ? 'text-amber-500' : 'text-slate-500'
                     }`}>
-                      <span className="text-slate-600 shrink-0">[{log.time}]</span>
-                      <span className="break-all">{log.msg}</span>
+                      <span className="text-slate-700 shrink-0 font-bold">[{log.time}]</span>
+                      <span className="break-words">
+                        {log.type === 'error' ? '✖ ' : log.type === 'success' ? '✔ ' : 'i '}
+                        {log.msg}
+                      </span>
                     </div>
                   ))}
                   <div ref={logEndRef} />

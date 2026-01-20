@@ -53,6 +53,8 @@ export const getAICoachResponse = async (
 ): Promise<string | null> => {
   const log = (msg: string, type: string = 'info') => {
     if (window.debugLog) window.debugLog(`[GeminiService] ${msg}`, type);
+    // Gửi sự kiện để AdminPanel có thể bắt được log nếu cần
+    window.dispatchEvent(new CustomEvent('ai-sandbox-log', { detail: { msg, type } }));
   };
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -68,12 +70,12 @@ export const getAICoachResponse = async (
     .map(k => `- ${k.keyword}: ${k.content}`)
     .join("\n");
 
-  if (contextKnowledge) log(`Đã tìm thấy ${contextKnowledge.split('\n').length} kiến thức liên quan.`, "success");
-  else log("Không tìm thấy kiến thức đặc thù, sử dụng kiến thức chung.", "info");
+  if (contextKnowledge) log(`Đã tìm thấy kiến thức liên quan cho từ khóa: ${contextKnowledge.split('\n').map(l => l.split(':')[0]).join(', ')}`, "success");
+  else log("Không tìm thấy kiến thức huấn luyện đặc thù, AI sẽ trả lời dựa trên dữ liệu y khoa chuẩn.", "info");
 
   // Tổng hợp quy tắc
   const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
-  log(`Áp dụng ${rules.length} tiêu chuẩn giao tiếp.`, "info");
+  log(`Đang áp dụng ${rules.length} quy tắc tuân thủ giao tiếp.`, "info");
 
   const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe thông minh tại Lucky Hub.
   
@@ -87,36 +89,44 @@ export const getAICoachResponse = async (
   
   NGUYÊN TẮC PHẢN HỒI:
   - Ngắn gọn (dưới 100 chữ).
-  - Nếu không biết chắc chắn, hãy khuyên hội viên chờ HLV con người phản hồi.
-  - Không tự ý đưa ra phác đồ điều trị y tế thay thế bác sĩ.`;
+  - Trả lời chân thực, nếu không có kiến thức nạp vào về chủ đề đó, hãy dùng kiến thức y khoa chuẩn.
+  - Tuyệt đối không xưng hô thiếu tôn trọng.`;
 
   try {
-    log("Đang gọi API gemini-3-pro-preview...", "system");
+    log("Đang gọi API gemini-3-flash-preview...", "system");
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: [
-        { text: `Lịch sử chat:\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
-        { text: `Câu hỏi mới nhất: ${latestUserMessage}` }
+        { text: `Lịch sử hội thoại (5 câu gần nhất):\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
+        { text: `Câu hỏi hiện tại của người dùng: ${latestUserMessage}` }
       ],
       config: { 
         systemInstruction,
         temperature: 0.7,
-        topP: 0.95
+        topP: 0.9
       }
     });
 
     const result = response.text;
     if (result) {
-      log("Nhận phản hồi từ AI thành công.", "success");
+      log("AI phản hồi thành công.", "success");
       return result;
     } else {
-      log("AI trả về phản hồi rỗng.", "error");
-      return "Lucky AI đang bận một chút, HLV của bạn sẽ phản hồi sớm nhé!";
+      log("AI trả về kết quả rỗng (Empty response).", "error");
+      return "Lucky AI hiện không thể trả lời câu hỏi này. Vui lòng thử lại sau.";
     }
   } catch (e: any) {
-    const errorMsg = e.message || "Lỗi không xác định";
-    log(`Lỗi Gemini API: ${errorMsg}`, "error");
-    console.error("Gemini AI Error:", e);
-    return `[LỖI HỆ THỐNG]: ${errorMsg}. Vui lòng kiểm tra API Key và kết nối mạng.`;
+    let friendlyError = "Lỗi hệ thống không xác định.";
+    if (e.message?.includes("429")) {
+      friendlyError = "LỖI 429: Tài khoản AI (Free Tier) đã hết hạn mức sử dụng trong ngày. Vui lòng thử lại sau 1-2 phút hoặc nâng cấp API Key.";
+      log(friendlyError, "error");
+    } else if (e.message?.includes("400")) {
+      friendlyError = "LỖI 400: Yêu cầu không hợp lệ (có thể do nội dung quá dài hoặc vi phạm chính sách của Google).";
+      log(friendlyError, "error");
+    } else {
+      log(`Lỗi không xác định: ${e.message}`, "error");
+      friendlyError = `LỖI: ${e.message}`;
+    }
+    return friendlyError;
   }
 };
