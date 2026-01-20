@@ -6,7 +6,7 @@ import ChatSystem from './components/ChatSystem.tsx';
 import AdminPanel from './components/AdminPanel.tsx';
 import MetricForm from './components/MetricForm.tsx';
 import Profile from './components/Profile.tsx';
-import { User, HealthGoal, UserRole, AccountStatus } from './types.ts';
+import { User, HealthGoal, UserRole, AccountStatus, AIRule } from './types.ts';
 import { Database } from './services/database.ts';
 
 const App: React.FC = () => {
@@ -19,6 +19,7 @@ const App: React.FC = () => {
   
   const [users, setUsers] = useState<User[]>([]);
   const [knowledge, setKnowledge] = useState<any[]>([]);
+  const [rules, setRules] = useState<AIRule[]>([]);
   const [isAddingMetric, setIsAddingMetric] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -49,9 +50,14 @@ const App: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [u, k] = await Promise.all([Database.getUsers(), Database.getKnowledge()]);
+      const [u, k, r] = await Promise.all([
+        Database.getUsers(), 
+        Database.getKnowledge(),
+        Database.getRules()
+      ]);
       setUsers(u || []);
       setKnowledge(k || []);
+      setRules(r || []);
     } catch (err) {
       console.error("Fetch data error:", err);
     }
@@ -271,7 +277,7 @@ const App: React.FC = () => {
   return (
     <Layout user={currentUser} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
       {activeTab === 'dashboard' && <Dashboard user={currentUser} users={users} onAddMetric={() => setIsAddingMetric(true)} />}
-      {activeTab === 'chat' && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} />}
+      {activeTab === 'chat' && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} rules={rules} />}
       {activeTab === 'profile' && (
         <Profile 
           user={currentUser} 
@@ -286,7 +292,7 @@ const App: React.FC = () => {
           }} 
         />
       )}
-      {activeTab === 'admin' && currentUser.role === UserRole.ADMIN && <AdminPanel users={users} knowledge={knowledge} onRefresh={fetchData} />}
+      {activeTab === 'admin' && currentUser.role === UserRole.ADMIN && <AdminPanel users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       
       {isAddingMetric && <MetricForm onSave={handleSaveMetric} onSaveBulk={async (list) => { 
         const uid = (currentUser as any).id || (currentUser as any)._id;

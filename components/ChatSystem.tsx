@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, UserRole, Message, ChatSession, AIKnowledge } from '../types.ts';
+import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule } from '../types.ts';
 import { getAICoachResponse } from '../services/gemini.ts';
 import { Database } from '../services/database.ts';
 
@@ -8,9 +8,10 @@ interface ChatSystemProps {
   currentUser: User;
   users: User[];
   knowledge: AIKnowledge[];
+  rules: AIRule[];
 }
 
-const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge }) => {
+const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, rules }) => {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
   const [inputText, setInputText] = useState('');
@@ -43,7 +44,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge }
 
   useEffect(() => {
     loadAllChats();
-    // Polling nhẹ để cập nhật tin nhắn mới (giả lập realtime)
     const interval = setInterval(loadAllChats, 10000);
     return () => clearInterval(interval);
   }, [currentUser, users]);
@@ -71,7 +71,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge }
 
     setIsTypingAI(true);
     try {
-      const aiResponse = await getAICoachResponse(updatedChat.messages, knowledge, inputText);
+      const aiResponse = await getAICoachResponse(updatedChat.messages, knowledge, rules, inputText);
       if (aiResponse) {
         const aiMessage: Message = {
           id: `msg_ai_${Date.now()}`, 

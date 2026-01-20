@@ -51,7 +51,7 @@ export interface User {
   role: UserRole;
   status: AccountStatus;
   avatar?: string;
-  isPasswordEncrypted?: boolean; // Mới thêm: Trạng thái mã hóa mật khẩu
+  isPasswordEncrypted?: boolean; 
 }
 
 export interface Message {
@@ -74,5 +74,10 @@ export interface ChatSession {
 export interface AIKnowledge {
   id: string;
   keyword: string;
+  content: string;
+}
+
+export interface AIRule {
+  id: string;
   content: string;
 }

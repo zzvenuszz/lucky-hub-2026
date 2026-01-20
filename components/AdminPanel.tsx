@@ -1,18 +1,31 @@
 
 import React, { useState } from 'react';
-import { User, UserRole, AccountStatus, AIKnowledge } from '../types.ts';
+import { User, UserRole, AccountStatus, AIKnowledge, AIRule, Message } from '../types.ts';
 import { Database } from '../services/database.ts';
+import { getAICoachResponse } from '../services/gemini.ts';
 
 interface AdminPanelProps {
   users: User[];
   knowledge: AIKnowledge[];
+  rules: AIRule[];
   onRefresh: () => void;
 }
 
-const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, onRefresh }) => {
+const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefresh }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'ai'>('users');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // States cho Knowledge
   const [newK, setNewK] = useState({ keyword: '', content: '' });
+  
+  // States cho Rules
+  const [newRule, setNewRule] = useState('');
+  
+  // States cho AI Test Chat
+  const [testMessages, setTestMessages] = useState<Message[]>([]);
+  const [testInput, setTestInput] = useState('');
+  const [isTestTyping, setIsTestTyping] = useState(false);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleResetPassword = async (id: string) => {
@@ -33,6 +46,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, onRefresh }) 
     onRefresh();
   };
 
+  // Logic Knowledge
   const handleAddKnowledge = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newK.keyword || !newK.content) return;
@@ -41,15 +55,66 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, onRefresh }) 
       await Database.addKnowledge(newK);
       setNewK({ keyword: '', content: '' });
       onRefresh();
-    } finally {
-      setIsSubmitting(false);
-    }
+    } finally { setIsSubmitting(false); }
   };
 
   const handleDeleteKnowledge = async (id: string) => {
-    if (confirm('Xóa kiến thức này khỏi não bộ AI?')) {
+    if (confirm('Xóa kiến thức này?')) {
       await Database.deleteKnowledge(id);
       onRefresh();
+    }
+  };
+
+  // Logic Rules
+  const handleAddRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRule.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await Database.addRule({ content: newRule });
+      setNewRule('');
+      onRefresh();
+    } finally { setIsSubmitting(false); }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    if (confirm('Xóa quy chuẩn này?')) {
+      await Database.deleteRule(id);
+      onRefresh();
+    }
+  };
+
+  // Logic AI Sandbox (Test Chat)
+  const handleTestChat = async () => {
+    if (!testInput.trim()) return;
+    
+    const userMsg: Message = {
+      id: `test_${Date.now()}`,
+      senderId: 'admin_test',
+      senderName: 'Admin (Test)',
+      senderRole: UserRole.ADMIN,
+      content: testInput,
+      timestamp: new Date().toISOString()
+    };
+    
+    setTestMessages(prev => [...prev, userMsg]);
+    setTestInput('');
+    setIsTestTyping(true);
+    
+    try {
+      const aiResponse = await getAICoachResponse([...testMessages, userMsg], knowledge, rules, testInput);
+      if (aiResponse) {
+        setTestMessages(prev => [...prev, {
+          id: `ai_${Date.now()}`,
+          senderId: 'ai_coach',
+          senderName: 'Lucky AI Advisor',
+          senderRole: 'AI' as any,
+          content: aiResponse,
+          timestamp: new Date().toISOString()
+        }]);
+      }
+    } finally {
+      setIsTestTyping(false);
     }
   };
 
@@ -58,128 +123,184 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, onRefresh }) 
     u.username.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredKnowledge = knowledge.filter(k => 
-    k.keyword.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    k.content.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   return (
     <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden min-h-[70vh]">
       <div className="flex bg-slate-50/50 p-2 m-6 rounded-2xl border border-slate-100">
         <button onClick={() => { setActiveTab('users'); setSearchTerm(''); }} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Quản lý Người dùng</button>
-        <button onClick={() => { setActiveTab('ai'); setSearchTerm(''); }} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'ai' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Huấn luyện Lucky AI</button>
+        <button onClick={() => { setActiveTab('ai'); setSearchTerm(''); }} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${activeTab === 'ai' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Huấn luyện & Sandbox</button>
       </div>
 
       <div className="px-8 pb-8">
-        <div className="mb-6">
-          <div className="relative">
-            <input 
-              placeholder={activeTab === 'users' ? "Tìm kiếm hội viên theo tên hoặc username..." : "Tìm kiếm từ khóa kiến thức..."}
-              value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-              className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm transition-all"
-            />
-            <span className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300">🔍</span>
-          </div>
-        </div>
-
         {activeTab === 'users' ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400 border-b border-slate-50">
-                  <th className="pb-4 font-black uppercase text-[10px] tracking-widest">Thông tin hội viên</th>
-                  <th className="pb-4 font-black uppercase text-[10px] tracking-widest">Vai trò</th>
-                  <th className="pb-4 font-black uppercase text-[10px] tracking-widest">Trạng thái</th>
-                  <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-right">Hành động</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filteredUsers.map(u => (
-                  <tr key={u.id} className="group hover:bg-slate-50/30 transition-colors">
-                    <td className="py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
-                          {u.fullName.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="font-bold text-slate-800">{u.fullName}</div>
-                          <div className="text-[10px] text-slate-400">@{u.username} • {u.phoneNumber}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <select 
-                        value={u.role} onChange={e => handleRoleChange(u.id, e.target.value as UserRole)}
-                        className="text-[10px] font-black uppercase tracking-tighter bg-slate-100 border-none rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-500"
-                      >
-                        <option value={UserRole.MEMBER}>Hội viên</option>
-                        <option value={UserRole.COACH}>HLV</option>
-                        <option value={UserRole.ADMIN}>Admin</option>
-                      </select>
-                    </td>
-                    <td>
-                      <button onClick={() => handleToggleStatus(u)} className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${u.status === AccountStatus.ACTIVE ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
-                        {u.status}
-                      </button>
-                    </td>
-                    <td className="text-right">
-                      <button onClick={() => handleResetPassword(u.id)} className="text-[10px] font-bold text-emerald-600 hover:underline">Reset Pass</button>
-                    </td>
+          <>
+            <div className="mb-6">
+              <input 
+                placeholder="Tìm kiếm hội viên theo tên hoặc username..."
+                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-sm transition-all"
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-400 border-b border-slate-50">
+                    <th className="pb-4 font-black uppercase text-[10px] tracking-widest">Thông tin hội viên</th>
+                    <th className="pb-4 font-black uppercase text-[10px] tracking-widest">Vai trò</th>
+                    <th className="pb-4 font-black uppercase text-[10px] tracking-widest">Trạng thái</th>
+                    <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-right">Hành động</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredUsers.map(u => (
+                    <tr key={u.id} className="group hover:bg-slate-50/30 transition-colors">
+                      <td className="py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                            {u.fullName.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-800">{u.fullName}</div>
+                            <div className="text-[10px] text-slate-400">@{u.username} • {u.phoneNumber}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <select 
+                          value={u.role} onChange={e => handleRoleChange(u.id, e.target.value as UserRole)}
+                          className="text-[10px] font-black uppercase tracking-tighter bg-slate-100 border-none rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-emerald-500"
+                        >
+                          <option value={UserRole.MEMBER}>Hội viên</option>
+                          <option value={UserRole.COACH}>HLV</option>
+                          <option value={UserRole.ADMIN}>Admin</option>
+                        </select>
+                      </td>
+                      <td>
+                        <button onClick={() => handleToggleStatus(u)} className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${u.status === AccountStatus.ACTIVE ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
+                          {u.status}
+                        </button>
+                      </td>
+                      <td className="text-right">
+                        <button onClick={() => handleResetPassword(u.id)} className="text-[10px] font-bold text-emerald-600 hover:underline">Reset Pass</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1">
-              <div className="bg-emerald-50/50 p-6 rounded-[2rem] border border-emerald-100 sticky top-6">
-                <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <span className="text-xl">🧠</span> Thêm tri thức mới
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Cột 1: Quản trị Quy tắc & Kiến thức */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
+                <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <span className="text-lg">⚖️</span> Tiêu chuẩn giao tiếp (Rules)
                 </h3>
-                <form onSubmit={handleAddKnowledge} className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Từ khóa (VD: Giảm cân, Keto...)</label>
-                    <input 
-                      required placeholder="Nhập từ khóa..." 
-                      value={newK.keyword} onChange={e => setNewK({...newK, keyword: e.target.value})} 
-                      className="w-full px-4 py-3 rounded-xl bg-white border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium" 
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Nội dung tư vấn chi tiết</label>
-                    <textarea 
-                      required placeholder="Lucky AI sẽ trả lời dựa trên nội dung này..." rows={5} 
-                      value={newK.content} onChange={e => setNewK({...newK, content: e.target.value})} 
-                      className="w-full px-4 py-3 rounded-xl bg-white border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-medium resize-none" 
-                    />
-                  </div>
-                  <button 
-                    disabled={isSubmitting} type="submit"
-                    className="w-full bg-emerald-600 text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-emerald-100 hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50"
-                  >
-                    {isSubmitting ? 'Đang lưu...' : 'Nạp vào não bộ AI'}
+                <form onSubmit={handleAddRule} className="flex gap-2 mb-4">
+                  <input 
+                    placeholder="VD: Phải luôn thân thiện..." 
+                    value={newRule} onChange={e => setNewRule(e.target.value)}
+                    className="flex-grow px-4 py-2 bg-white rounded-xl border-none text-xs font-medium outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <button type="submit" className="bg-emerald-600 text-white px-3 rounded-xl text-lg hover:bg-emerald-700">+</button>
+                </form>
+                <div className="space-y-2 max-h-[150px] overflow-y-auto pr-2">
+                  {rules.map(r => (
+                    <div key={r.id} className="flex items-center justify-between p-2 bg-white rounded-lg text-[10px] group">
+                      <span className="text-slate-600 font-medium italic">"{r.content}"</span>
+                      <button onClick={() => handleDeleteRule(r.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100">×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-emerald-50/50 p-6 rounded-[2rem] border border-emerald-100">
+                <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <span className="text-lg">🧠</span> Nạp tri thức (Knowledge)
+                </h3>
+                <form onSubmit={handleAddKnowledge} className="space-y-3">
+                  <input 
+                    required placeholder="Từ khóa..." 
+                    value={newK.keyword} onChange={e => setNewK({...newK, keyword: e.target.value})} 
+                    className="w-full px-4 py-2.5 rounded-xl bg-white border-none text-xs font-medium outline-none" 
+                  />
+                  <textarea 
+                    required placeholder="Nội dung..." rows={3} 
+                    value={newK.content} onChange={e => setNewK({...newK, content: e.target.value})} 
+                    className="w-full px-4 py-2.5 rounded-xl bg-white border-none text-xs font-medium resize-none outline-none" 
+                  />
+                  <button type="submit" disabled={isSubmitting} className="w-full bg-emerald-600 text-white py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest shadow-md">
+                    {isSubmitting ? 'Đang lưu...' : 'Nạp tri thức'}
                   </button>
                 </form>
               </div>
             </div>
 
-            <div className="lg:col-span-2 space-y-4">
-              <div className="flex items-center justify-between mb-2 px-2">
-                <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-[0.2em]">Kho tri thức hiện tại ({filteredKnowledge.length})</h3>
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                {filteredKnowledge.length > 0 ? filteredKnowledge.map(k => (
-                  <div key={k.id} className="p-5 border border-slate-100 rounded-3xl bg-white hover:border-emerald-200 transition-all group relative">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase tracking-widest border border-emerald-100">#{k.keyword}</div>
-                      <button onClick={() => handleDeleteKnowledge(k.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all text-xl">×</button>
+            {/* Cột 2: Danh sách Tri thức hiện có */}
+            <div className="lg:col-span-4 space-y-4">
+              <h3 className="font-black text-slate-400 text-[9px] uppercase tracking-[0.2em] px-2">Tri thức hiện tại ({knowledge.length})</h3>
+              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                {knowledge.map(k => (
+                  <div key={k.id} className="p-4 bg-white border border-slate-50 rounded-2xl group relative shadow-sm">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-[10px] font-black text-emerald-600 uppercase">#{k.keyword}</span>
+                      <button onClick={() => handleDeleteKnowledge(k.id)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500">×</button>
                     </div>
-                    <p className="text-sm text-slate-600 leading-relaxed font-medium">{k.content}</p>
+                    <p className="text-[10px] text-slate-500 leading-relaxed truncate group-hover:whitespace-normal">{k.content}</p>
                   </div>
-                )) : (
-                  <div className="py-20 text-center text-slate-300 italic font-medium">Chưa có kiến thức nào phù hợp</div>
+                ))}
+              </div>
+            </div>
+
+            {/* Cột 3: AI Sandbox (Chat thử nghiệm) */}
+            <div className="lg:col-span-4 flex flex-col h-[550px] bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-4 border-slate-800">
+              <div className="p-4 bg-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                  <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">AI Sandbox</span>
+                </div>
+                <button onClick={() => setTestMessages([])} className="text-[9px] font-bold text-slate-500 hover:text-white uppercase">Clear</button>
+              </div>
+              
+              <div className="flex-grow p-4 overflow-y-auto space-y-4 scrollbar-hide">
+                {testMessages.length === 0 && (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-2 opacity-50 text-center px-4">
+                    <span className="text-3xl">🧪</span>
+                    <p className="text-[10px] font-bold uppercase tracking-widest">Gõ bất kỳ câu hỏi nào để test "não bộ" AI</p>
+                  </div>
                 )}
+                {testMessages.map(msg => (
+                  <div key={msg.id} className={`flex flex-col ${msg.senderId === 'admin_test' ? 'items-end' : 'items-start'}`}>
+                    <div className={`max-w-[85%] p-3 rounded-2xl text-[11px] leading-relaxed ${
+                      msg.senderId === 'admin_test' ? 'bg-emerald-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-300 rounded-tl-none border border-slate-700'
+                    }`}>
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                {isTestTyping && (
+                  <div className="flex gap-1 items-center px-2">
+                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-bounce"></div>
+                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                    <div className="w-1 h-1 bg-emerald-500 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 bg-slate-800 flex gap-2">
+                <input 
+                  placeholder="Hỏi AI tại đây..." 
+                  value={testInput} onChange={e => setTestInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleTestChat()}
+                  className="flex-grow bg-slate-700 border-none rounded-xl px-4 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                <button 
+                  onClick={handleTestChat}
+                  disabled={isTestTyping || !testInput.trim()}
+                  className="bg-emerald-600 text-white px-3 rounded-xl text-sm hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  🚀
+                </button>
               </div>
             </div>
           </div>

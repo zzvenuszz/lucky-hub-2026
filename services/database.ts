@@ -1,5 +1,5 @@
 
-import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession } from '../types.ts';
+import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule } from '../types.ts';
 
 const API_BASE = '/api';
 let isOfflineMode = false;
@@ -40,11 +40,15 @@ export const Database = {
   getMetrics: (userId?: string) => userId ? request<HealthMetric[]>(`${API_BASE}/metrics/${userId}`) : request<HealthMetric[]>(`${API_BASE}/all-metrics`),
   saveMetric: (data: any) => request<HealthMetric>(`${API_BASE}/metrics`, 'POST', data),
   saveMetricsBulk: (data: any[]) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
+  
   getKnowledge: () => request<AIKnowledge[]>(`${API_BASE}/knowledge`),
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data),
   deleteKnowledge: (id: string) => request(`${API_BASE}/knowledge/${id}`, 'DELETE'),
+
+  getRules: () => request<AIRule[]>(`${API_BASE}/rules`),
+  addRule: (data: Omit<AIRule, 'id'>) => request<AIRule>(`${API_BASE}/rules`, 'POST', data),
+  deleteRule: (id: string) => request(`${API_BASE}/rules/${id}`, 'DELETE'),
   
-  // CẬP NHẬT: Chat qua API
   getChats: () => request<ChatSession[]>(`${API_BASE}/chats`),
   saveChat: (chat: ChatSession) => request<ChatSession>(`${API_BASE}/chats`, 'POST', chat)
 };

@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { HealthMetric, Message, AIKnowledge } from "../types.ts";
+import { HealthMetric, Message, AIKnowledge, AIRule } from "../types.ts";
 
 const cleanJsonResponse = (text: string): string => {
   const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
@@ -48,11 +48,12 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 export const getAICoachResponse = async (
   history: Message[], 
   knowledge: AIKnowledge[], 
+  rules: AIRule[],
   latestUserMessage: string
 ): Promise<string | null> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Lọc kiến thức thực sự liên quan dựa trên ngữ cảnh
+  // Lọc kiến thức liên quan
   const contextKnowledge = knowledge
     .filter(k => 
       latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()) ||
@@ -61,18 +62,22 @@ export const getAICoachResponse = async (
     .map(k => `- ${k.keyword}: ${k.content}`)
     .join("\n");
 
+  // Tổng hợp quy tắc
+  const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
+
   const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe thông minh tại Lucky Hub.
   
   NHIỆM VỤ CỦA BẠN:
   1. Hỗ trợ Huấn luyện viên (Coach) giải đáp thắc mắc của Hội viên.
-  2. ƯU TIÊN KIẾN THỨC ĐÃ ĐƯỢC TRAIN: Nếu câu hỏi nằm trong danh sách dưới đây, hãy trả lời bám sát nội dung đó.
-  3. KIẾN THỨC ĐÃ ĐƯỢC HUẤN LUYỆN TỪ HỆ THỐNG:
+  2. ƯU TIÊN KIẾN THỨC ĐÃ ĐƯỢC TRAIN:
   ${contextKnowledge || "Sử dụng kiến thức y khoa và dinh dưỡng khoa học hiện đại."}
   
+  TIÊU CHUẨN GIAO TIẾP (BẮT BUỘC TUÂN THỦ):
+  ${systemRules || "- Phải thân thiện và chuyên nghiệp.\n- Trả lời bằng tiếng Việt.\n- Không bịa đặt thông tin."}
+  
   NGUYÊN TẮC PHẢN HỒI:
-  - Trả lời bằng tiếng Việt, giọng văn chuyên nghiệp, ấm áp, khuyến khích.
   - Ngắn gọn (dưới 100 chữ).
-  - Nếu không biết chắc chắn, hãy khuyên hội viên chờ HLV con người phản hồi chính xác nhất.
+  - Nếu không biết chắc chắn, hãy khuyên hội viên chờ HLV con người phản hồi.
   - Không tự ý đưa ra phác đồ điều trị y tế thay thế bác sĩ.`;
 
   try {
