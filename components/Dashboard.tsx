@@ -38,7 +38,7 @@ const TIME_RANGES = [
 const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
-  const [timeRange, setTimeRange] = useState('1m');
+  const [timeRange, setTimeRange] = useState('7d'); // CẬP NHẬT: Mặc định 7 ngày
   const [activeIndex, setActiveIndex] = useState(-1);
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat']);
 

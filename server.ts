@@ -74,12 +74,8 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: Object.values(UserRole), default: UserRole.MEMBER },
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
   avatar: String,
-  isPasswordEncrypted: { type: Boolean, default: false } // Mặc định là false cho các user cũ
-}, { 
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
+  isPasswordEncrypted: { type: Boolean, default: false }
+}, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
 
@@ -99,6 +95,23 @@ const metricSchema = new mongoose.Schema({
 
 const Metric = mongoose.model('Metric', metricSchema);
 
+const chatSchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  memberId: { type: String, required: true },
+  coachId: { type: String, required: true },
+  messages: [{
+    id: String,
+    senderId: String,
+    senderName: String,
+    senderRole: String,
+    content: String,
+    timestamp: String,
+    imageUrl: String
+  }]
+}, { timestamps: true });
+
+const Chat = mongoose.model('Chat', chatSchema);
+
 const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ 
   keyword: { type: String, required: true }, 
   content: { type: String, required: true } 
@@ -109,12 +122,11 @@ async function initDB() {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ KẾT NỐI DATABASE THÀNH CÔNG');
     
-    // Kiểm tra admin, nếu chưa có thì tạo mới với mật khẩu đã mã hóa
     const admin = await User.findOne({ username: 'admin' });
     if (!admin) {
       const newAdmin = new User({
         username: 'admin', 
-        password: hashPassword('admin'), // Mã hóa mật khẩu ngay khi tạo
+        password: hashPassword('admin'), 
         fullName: 'Tổng Quản Trị', 
         role: UserRole.ADMIN, 
         status: AccountStatus.ACTIVE, 
@@ -136,126 +148,65 @@ initDB();
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   const user = await User.findOne({ username, status: AccountStatus.ACTIVE });
-  
   if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại hoặc đã bị khóa' });
 
-  // Kiểm tra trạng thái mã hóa
   if (user.isPasswordEncrypted) {
-    // Trường hợp đã mã hóa: So sánh hash
-    const inputHash = hashPassword(password);
-    if (user.password !== inputHash) {
-      return res.status(401).json({ message: 'Sai mật khẩu' });
-    }
+    if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Sai mật khẩu' });
     res.json(user);
   } else {
-    // Trường hợp chưa mã hóa: So sánh văn bản thuần
-    if (user.password !== password) {
-      return res.status(401).json({ message: 'Sai mật khẩu' });
-    }
-    // Trả về mã lỗi 426 để yêu cầu client hiển thị form nâng cấp mật khẩu
-    res.status(426).json({ 
-      message: 'Cần nâng cấp bảo mật mật khẩu',
-      userId: user._id,
-      fullName: user.fullName
-    });
+    if (user.password !== password) return res.status(401).json({ message: 'Sai mật khẩu' });
+    res.status(426).json({ message: 'Cần nâng cấp bảo mật', userId: user._id, fullName: user.fullName });
   }
 });
 
-// Route nâng cấp mật khẩu (dành cho user cũ)
 app.post('/api/users/upgrade-password', async (req, res) => {
   const { userId, oldPassword, newPassword } = req.body;
   const user = await User.findById(userId);
-
-  if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
-  if (user.isPasswordEncrypted) return res.status(400).json({ message: 'Tài khoản này đã được bảo mật' });
-
-  // Kiểm tra lại mật khẩu cũ một lần nữa cho chắc chắn
-  if (user.password !== oldPassword) {
-    return res.status(401).json({ message: 'Mật khẩu cũ không chính xác' });
-  }
-
-  // Cập nhật mật khẩu mới (đã mã hóa)
+  if (!user || user.password !== oldPassword) return res.status(401).json({ message: 'Xác minh thất bại' });
   user.password = hashPassword(newPassword);
   user.isPasswordEncrypted = true;
   await user.save();
-
-  res.json({ message: 'Nâng cấp bảo mật thành công! Hãy đăng nhập lại.', user });
+  res.json({ message: 'Thành công' });
 });
 
 app.post('/api/register', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const existing = await User.findOne({ username });
-    if (existing) return res.status(400).json({ message: 'Tên đăng nhập đã tồn tại' });
-    
-    // Đăng ký mới luôn luôn mã hóa mật khẩu
-    const newUser = new User({ 
-      ...req.body, 
-      password: hashPassword(password), 
-      role: UserRole.MEMBER, 
-      status: AccountStatus.ACTIVE,
-      isPasswordEncrypted: true 
-    });
-    await newUser.save();
-    res.json({ message: 'Đăng ký thành công' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Lỗi đăng ký tài khoản' });
-  }
+  const existing = await User.findOne({ username: req.body.username });
+  if (existing) return res.status(400).json({ message: 'Tên đăng nhập đã tồn tại' });
+  const newUser = new User({ ...req.body, password: hashPassword(req.body.password), isPasswordEncrypted: true });
+  await newUser.save();
+  res.json({ message: 'Đăng ký thành công' });
+});
+
+// Chats
+app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
+app.post('/api/chats', async (req, res) => {
+  const { id } = req.body;
+  const chat = await Chat.findOneAndUpdate({ id }, req.body, { upsert: true, new: true });
+  res.json(chat);
 });
 
 // Users
 app.get('/api/users', async (req, res) => res.json(await User.find().select('-password')));
 app.put('/api/users/:id', async (req, res) => {
   const data = { ...req.body };
-  // Nếu có cập nhật mật khẩu ở Profile, cũng phải băm nó
-  if (data.password) {
-    data.password = hashPassword(data.password);
-    data.isPasswordEncrypted = true;
-  }
+  if (data.password) data.password = hashPassword(data.password);
   const user = await User.findByIdAndUpdate(req.params.id, data, { new: true }).select('-password');
   res.json(user);
 });
 
-app.post('/api/users/:id/reset-password', async (req, res) => {
-  const rawPassword = 'Lucky' + Math.floor(Math.random() * 9000 + 1000);
-  await User.findByIdAndUpdate(req.params.id, { 
-    password: hashPassword(rawPassword),
-    isPasswordEncrypted: true 
-  });
-  res.json({ newPassword: rawPassword });
-});
+// Metrics
+app.get('/api/metrics/:userId', async (req, res) => res.json(await Metric.find({ userId: req.params.userId }).sort({ date: 1 })));
+app.get('/api/all-metrics', async (req, res) => res.json(await Metric.find().sort({ date: -1 })));
+app.post('/api/metrics', async (req, res) => res.json(await new Metric(req.body).save()));
+app.post('/api/metrics/bulk', async (req, res) => res.json(await Metric.insertMany(req.body)));
 
-// Metrics... (giữ nguyên các phần khác)
-app.get('/api/metrics/:userId', async (req, res) => {
-  const metrics = await Metric.find({ userId: req.params.userId }).sort({ date: 1 });
-  res.json(metrics);
-});
-app.get('/api/all-metrics', async (req, res) => {
-  const metrics = await Metric.find().sort({ date: -1 });
-  res.json(metrics);
-});
-app.post('/api/metrics', async (req, res) => {
-  try { const metric = new Metric(req.body); await metric.save(); res.json(metric); } 
-  catch (err) { res.status(500).json({ message: 'Lỗi lưu chỉ số' }); }
-});
-app.post('/api/metrics/bulk', async (req, res) => {
-  try { const result = await Metric.insertMany(req.body); res.json(result); } 
-  catch (err) { res.status(500).json({ message: 'Lỗi lưu chỉ số hàng loạt' }); }
-});
-
-// Knowledge...
+// Knowledge
 app.get('/api/knowledge', async (req, res) => res.json(await Knowledge.find()));
-app.post('/api/knowledge', async (req, res) => {
-  const k = new Knowledge(req.body); await k.save(); res.json(k);
-});
+app.post('/api/knowledge', async (req, res) => res.json(await new Knowledge(req.body).save()));
 app.delete('/api/knowledge/:id', async (req, res) => {
   await Knowledge.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' });
 });
 
-app.get(/^[^\.]*$/, (req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'API Not found' });
-  res.sendFile(path.resolve('index.html'));
-});
+app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
 
-app.listen(PORT, () => console.log(`🚀 Lucky Hub Server Security Enhanced tại cổng ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Lucky Hub Server hoạt động tại cổng ${PORT}`));
