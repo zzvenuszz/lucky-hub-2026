@@ -66,15 +66,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
           cx={cx}
           cy={cy}
           innerRadius={innerRadius - 4}
-          outerRadius={outerRadius + 18}
+          outerRadius={outerRadius + 14} // Tinh chỉnh độ phóng đại để hài hòa với tốc độ chậm
           startAngle={startAngle}
           endAngle={endAngle}
           fill={fill}
           filter="url(#activeShadow)"
           style={{ 
             cursor: 'pointer', 
-            transition: 'all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            filter: 'brightness(1.05) contrast(1.1)',
+            // Tăng thời gian lên 1.2s và dùng Ease Out Expo để cực kỳ mượt mà
+            transition: 'all 1.2s cubic-bezier(0.19, 1, 0.22, 1)', 
+            filter: 'brightness(1.08) contrast(1.05)',
           }}
         />
       </g>
@@ -126,7 +127,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Header section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub Dashboard</h2>
@@ -148,7 +148,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Biểu đồ tròn cấu trúc cơ thể 3D */}
         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
           <h3 className="font-bold text-slate-700 mb-2 w-full text-center">Cấu trúc cơ thể 3D</h3>
           {latestMetric ? (
@@ -168,10 +167,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                       </feMerge>
                     </filter>
                     <filter id="activeShadow" height="150%">
-                      <feGaussianBlur in="SourceAlpha" stdDeviation="8" />
-                      <feOffset dx="0" dy="12" result="offsetblur" />
+                      <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
+                      <feOffset dx="0" dy="15" result="offsetblur" />
                       <feComponentTransfer>
-                        <feFuncA type="linear" slope="0.4" />
+                        <feFuncA type="linear" slope="0.3" />
                       </feComponentTransfer>
                       <feMerge>
                         <feMergeNode />
@@ -193,14 +192,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                     onMouseEnter={onPieEnter}
                     onMouseLeave={onPieLeave}
                     animationBegin={0}
-                    animationDuration={1200}
+                    animationDuration={1500}
                     animationEasing="ease-out"
                   >
                     {bodyCompData.map((entry, index) => (
                       <Cell 
                         key={`cell-${index}`} 
                         fill={entry.color} 
-                        style={{ outline: 'none', transition: 'all 0.5s ease' }}
+                        style={{ outline: 'none', transition: 'all 0.8s ease' }}
                       />
                     ))}
                   </Pie>
@@ -211,12 +210,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                   />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="absolute top-[45%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none transition-all duration-500">
-                <div className={`font-black transition-all duration-500 ${activeIndex !== -1 ? 'text-4xl scale-110 text-emerald-600' : 'text-3xl text-slate-800'}`}>
+              <div className="absolute top-[45%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                <div className={`font-black transition-all duration-1000 ${activeIndex !== -1 ? 'text-4xl scale-110 text-emerald-600' : 'text-3xl text-slate-800'}`}>
                   {activeIndex !== -1 ? bodyCompData[activeIndex].value.toFixed(1) : latestMetric.weight}
                   <span className="text-xs ml-0.5">kg</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 transition-all">
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 transition-all duration-1000">
                   {activeIndex !== -1 ? bodyCompData[activeIndex].name : 'Tổng cân'}
                 </div>
               </div>
@@ -224,7 +223,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
                 {bodyCompData.map((item, index) => (
                   <div 
                     key={item.name} 
-                    className={`flex items-center gap-1.5 transition-all duration-300 ${activeIndex === index ? 'scale-110' : 'opacity-60'}`}
+                    className={`flex items-center gap-1.5 transition-all duration-700 ${activeIndex === index ? 'scale-110 opacity-100' : 'opacity-60'}`}
                   >
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
                     <span className="text-[10px] font-black text-slate-500 uppercase">{item.name}</span>
@@ -235,16 +234,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
           ) : <div className="h-[320px] flex items-center justify-center text-slate-400 italic font-medium">Chưa có dữ liệu đo lường</div>}
         </div>
 
-        {/* Biểu đồ đường xu hướng chuyên sâu (TÁI CẤU TRÚC LAYOUT TẠI ĐÂY) */}
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col transition-all hover:shadow-md">
           <div className="flex flex-col space-y-8 mb-10">
-            {/* Dòng 1: Tiêu đề nằm riêng */}
             <div>
               <h3 className="font-black text-slate-800 text-xl tracking-tight">Biểu đồ xu hướng sức khỏe</h3>
               <p className="text-xs text-slate-400 font-medium mt-1">Phân tích dữ liệu lịch sử đo lường của bạn</p>
             </div>
 
-            {/* Dòng 2: Khoảng thời gian full width */}
             <div className="w-full">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Khoảng thời gian:</span>
@@ -261,7 +257,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
               </div>
             </div>
 
-            {/* Dòng 3: Checkboxes chọn chỉ số */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-5 bg-slate-50/50 rounded-[2rem] border border-slate-100 shadow-inner">
               <span className="text-[10px] font-black text-slate-400 uppercase col-span-full mb-1 tracking-widest text-center md:text-left">Tùy chọn hiển thị:</span>
               {AVAILABLE_METRICS.map(metric => (
