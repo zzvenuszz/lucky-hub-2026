@@ -13,7 +13,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [needsUpgrade, setNeedsUpgrade] = useState(false); // State yêu cầu nâng cấp mật khẩu
+  const [needsUpgrade, setNeedsUpgrade] = useState(false); 
   const [tempUpgradeData, setTempUpgradeData] = useState<{userId: string, fullName: string} | null>(null);
   const [upgradePasswords, setUpgradePasswords] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
   
@@ -80,7 +80,6 @@ const App: React.FC = () => {
         setCurrentUser(user);
         localStorage.setItem('lucky_hub_user', JSON.stringify(user));
       } else if (response.status === 426) {
-        // Tài khoản cũ cần nâng cấp mật khẩu
         const data = await response.json();
         setTempUpgradeData({ userId: data.userId, fullName: data.fullName });
         setUpgradePasswords({ ...upgradePasswords, oldPassword: loginData.password });
@@ -176,7 +175,7 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-emerald-600 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md transition-all duration-300">
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md">
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-emerald-600 text-white text-3xl font-bold flex items-center justify-center rounded-2xl mx-auto mb-4 shadow-xl shadow-emerald-200">
               {needsUpgrade ? '🔒' : isRegistering ? '👤' : 'L'}
@@ -187,13 +186,11 @@ const App: React.FC = () => {
 
           {needsUpgrade ? (
             <form className="space-y-4" onSubmit={handleUpgradePassword}>
-              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 mb-4">
-                <p className="text-xs text-amber-700 font-medium">
-                  Chào <b>{tempUpgradeData?.fullName}</b>, hệ thống đã nâng cấp tiêu chuẩn bảo mật. Vui lòng tạo mật khẩu mới để tiếp tục sử dụng.
-                </p>
+              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 mb-4 text-xs text-amber-700 font-medium">
+                Chào <b>{tempUpgradeData?.fullName}</b>, hệ thống đã nâng cấp tiêu chuẩn bảo mật. Vui lòng tạo mật khẩu mới.
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-500">MẬT KHẨU CŨ (Để xác minh)</label>
+                <label className="text-xs font-bold text-slate-500">MẬT KHẨU CŨ</label>
                 <input required type="password" value={upgradePasswords.oldPassword} onChange={e => setUpgradePasswords({...upgradePasswords, oldPassword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border outline-none focus:border-emerald-500" />
               </div>
               <div className="space-y-1">
@@ -226,7 +223,6 @@ const App: React.FC = () => {
             </form>
           ) : (
             <form className="space-y-3 max-h-[60vh] overflow-y-auto px-1" onSubmit={handleRegister}>
-              {/* Giữ nguyên form đăng ký của bạn nhưng thêm logic băm mật khẩu ở backend */}
               <input placeholder="Họ và tên" required value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
               <input placeholder="Số điện thoại" required type="tel" value={regData.phoneNumber} onChange={e => setRegData({...regData, phoneNumber: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
               <input placeholder="Tên đăng nhập" required value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
@@ -234,12 +230,12 @@ const App: React.FC = () => {
               
               <div className="flex gap-2">
                 <div className="flex-1 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 ml-1">CHIỀU CAO (CM)</label>
-                  <input placeholder="Chiều cao" type="number" required value={regData.height} onChange={e => setRegData({...regData, height: Number(e.target.value)})} className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
+                  <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase">Cao (cm)</label>
+                  <input type="number" required value={regData.height} onChange={e => setRegData({...regData, height: Number(e.target.value)})} className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
                 </div>
                 <div className="flex-1 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 ml-1">CÂN NẶNG (KG)</label>
-                  <input placeholder="Cân nặng" type="number" step="0.1" required value={regData.weight} onChange={e => setRegData({...regData, weight: Number(e.target.value)})} className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
+                  <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase">Cân (kg)</label>
+                  <input type="number" step="0.1" required value={regData.weight} onChange={e => setRegData({...regData, weight: Number(e.target.value)})} className="w-full px-4 py-2 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none" />
                 </div>
               </div>
 
@@ -257,16 +253,14 @@ const App: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase">Mục tiêu sức khỏe</label>
+                <label className="text-[10px] font-bold text-slate-400 ml-1 uppercase">Mục tiêu</label>
                 <select value={regData.healthGoal} onChange={e => setRegData({...regData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none">
                   {Object.values(HealthGoal).map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
 
-              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl mt-4">
-                {isLoading ? 'Đang đăng ký...' : 'Đăng ký ngay'}
-              </button>
-              <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-slate-400 text-sm hover:text-slate-600 pb-2">Quay lại đăng nhập</button>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl mt-4">Đăng ký ngay</button>
+              <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-slate-400 text-sm hover:text-slate-600 pb-2">Quay lại</button>
             </form>
           )}
         </div>
@@ -278,15 +272,21 @@ const App: React.FC = () => {
     <Layout user={currentUser} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
       {activeTab === 'dashboard' && <Dashboard user={currentUser} users={users} onAddMetric={() => setIsAddingMetric(true)} />}
       {activeTab === 'chat' && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} />}
-      {activeTab === 'profile' && <Profile user={currentUser} onUpdate={async (d) => { 
-        const uid = (currentUser as any).id || (currentUser as any)._id;
-        const u = await Database.updateUser(uid, d); 
-        if(u) {
-          setCurrentUser(u);
-          localStorage.setItem('lucky_hub_user', JSON.stringify(u));
-        }
-      }} />}
-      {activeTab === 'admin' && (currentUser as any).role === 'ADMIN' && <AdminPanel users={users} knowledge={knowledge} onRefresh={fetchData} />}
+      {activeTab === 'profile' && (
+        <Profile 
+          user={currentUser} 
+          onNavigateToAdmin={() => setActiveTab('admin')}
+          onUpdate={async (d) => { 
+            const uid = (currentUser as any).id || (currentUser as any)._id;
+            const u = await Database.updateUser(uid, d); 
+            if(u) {
+              setCurrentUser(u);
+              localStorage.setItem('lucky_hub_user', JSON.stringify(u));
+            }
+          }} 
+        />
+      )}
+      {activeTab === 'admin' && currentUser.role === UserRole.ADMIN && <AdminPanel users={users} knowledge={knowledge} onRefresh={fetchData} />}
       
       {isAddingMetric && <MetricForm onSave={handleSaveMetric} onSaveBulk={async (list) => { 
         const uid = (currentUser as any).id || (currentUser as any)._id;

@@ -13,7 +13,6 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, setActiveTab }) => {
   const getAvatar = () => {
     if (user.avatar) return user.avatar;
-    const seed = encodeURIComponent(user.fullName);
     return user.gender === 'Nữ'
       ? `https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka&backgroundColor=f8fafc`
       : `https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=f8fafc`;
@@ -30,7 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
           
           <nav className="hidden md:flex items-center space-x-1 bg-slate-50 p-1 rounded-2xl">
             {[
-              { id: 'dashboard', label: 'Bảng điều khiển' },
+              { id: 'dashboard', label: 'Dashboard' },
               { id: 'chat', label: 'Trò chuyện' },
               { id: 'profile', label: 'Cá nhân' }
             ].map(tab => (
@@ -44,9 +43,9 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
             {user.role === UserRole.ADMIN && (
               <button 
                 onClick={() => setActiveTab('admin')} 
-                className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${activeTab === 'admin' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'admin' ? 'bg-amber-500 text-white shadow-lg shadow-amber-100' : 'bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100'}`}
               >
-                Quản trị
+                🛡️ Quản trị
               </button>
             )}
           </nav>
@@ -57,11 +56,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
               <div className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">{user.role}</div>
             </div>
             <div className="w-10 h-10 rounded-xl border border-slate-100 shadow-sm overflow-hidden bg-slate-50 cursor-pointer hover:ring-2 hover:ring-emerald-500 transition-all" onClick={() => setActiveTab('profile')}>
-              <img 
-                src={getAvatar()} 
-                alt={user.fullName}
-                className="w-full h-full object-cover"
-              />
+              <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover" />
             </div>
             <button onClick={onLogout} className="p-2.5 hover:bg-red-50 text-red-400 rounded-xl transition-all hover:scale-110 active:scale-90" title="Đăng xuất">🚪</button>
           </div>
@@ -76,7 +71,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
 
       <footer className="bg-white border-t border-slate-100 py-10 mt-10">
         <div className="container mx-auto px-4 text-center space-y-3">
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Copyright 2025 by Huy Hoàn</p>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Copyright 2026 by Lucky Hub Team</p>
         </div>
       </footer>
     </div>
