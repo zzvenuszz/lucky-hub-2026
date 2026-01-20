@@ -16,30 +16,42 @@ app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '10mb' }) as any);
 
 /**
- * PHÂN TÍCH: Express 5 sử dụng path-to-regexp v8+, không hỗ trợ '/*.ts' như một chuỗi.
- * CÁCH GIẢI QUYẾT: Sử dụng biểu thức chính quy (Regex) để bắt các file .ts và .tsx.
+ * PHÂN TÍCH: Trình duyệt yêu cầu module mà thường bỏ qua .ts/.tsx.
+ * CÁCH GIẢI QUYẾT: Middleware kiểm tra file tồn tại với extension tương ứng và biên dịch.
  */
-app.get(/.*\.(ts|tsx)$/, (req, res, next) => {
-  // Lấy đường dẫn thực tế từ URL
-  const relativePath = req.path;
-  const filePath = path.join(path.resolve(), relativePath);
-  
-  if (fs.existsSync(filePath)) {
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+
+  const rootDir = path.resolve();
+  let relativePath = req.path;
+  let filePath = path.join(rootDir, relativePath);
+
+  // Thử tìm file với các đuôi mở rộng nếu không thấy file gốc
+  let targetFile = null;
+  if (fs.existsSync(filePath) && !fs.lstatSync(filePath).isDirectory()) {
+    targetFile = filePath;
+  } else if (fs.existsSync(filePath + '.ts')) {
+    targetFile = filePath + '.ts';
+  } else if (fs.existsSync(filePath + '.tsx')) {
+    targetFile = filePath + '.tsx';
+  }
+
+  if (targetFile && (targetFile.endsWith('.ts') || targetFile.endsWith('.tsx'))) {
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = fs.readFileSync(targetFile, 'utf-8');
       const result = transform(content, {
         transforms: ['typescript', 'jsx'],
         production: false,
         jsxRuntime: 'automatic'
       });
       res.type('application/javascript').send(result.code);
+      return;
     } catch (err) {
-      console.error(`Lỗi biên dịch ${relativePath}:`, err);
-      res.status(500).send('Error compiling file');
+      console.error(`Lỗi biên dịch ${targetFile}:`, err);
+      return res.status(500).send('Error compiling file');
     }
-  } else {
-    next();
   }
+  next();
 });
 
 app.use(express.static('.') as any);
@@ -97,12 +109,9 @@ app.post('/api/login', async (req, res) => {
   res.json(user);
 });
 
-/**
- * PHÂN TÍCH: Express 5 không hỗ trợ chuỗi '*' cho catch-all route.
- * CÁCH GIẢI QUYẾT: Sử dụng Regex để bắt tất cả các đường dẫn KHÔNG bắt đầu bằng /api.
- * BÁO CÁO KẾT QUẢ: Đã thay thế app.get('*') bằng Regex tương đương cho SPA.
- */
-app.get(/^(?!\/api).*/, (req, res) => {
+// Catch-all cho SPA: Chỉ trả về index.html cho các đường dẫn không có dấu chấm (không phải file)
+app.get(/^[^\.]*$/, (req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'API Not found' });
   res.sendFile(path.resolve('index.html'));
 });
 

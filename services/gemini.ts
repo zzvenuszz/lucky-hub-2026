@@ -1,14 +1,11 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { HealthMetric, Message, AIKnowledge } from "../types";
+import { HealthMetric, Message, AIKnowledge } from "../types.ts";
 
 /**
  * Hàm hỗ trợ để làm sạch chuỗi JSON từ phản hồi của AI.
- * Đôi khi mô hình trả về JSON nằm trong các khối markdown ```json ... ``` 
- * hoặc đi kèm với văn bản thừa.
  */
 const cleanJsonResponse = (text: string): string => {
-  // Tìm nội dung bắt đầu bằng { hoặc [ và kết thúc bằng } hoặc ]
   const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   if (match) {
     return match[0];
@@ -69,7 +66,6 @@ export const getAICoachResponse = async (
     .map(k => k.content)
     .join("\n");
 
-  // Nếu không có kiến thức liên quan và tin nhắn quá ngắn, không cần AI can thiệp
   if (!relevantKnowledge && latestUserMessage.length < 10) return null;
 
   const systemPrompt = `Bạn là một Huấn Luyện Viên AI (AI Coach) đóng vai trò cố vấn tại Lucky Hub.
