@@ -51,8 +51,14 @@ export const getAICoachResponse = async (
   rules: AIRule[],
   latestUserMessage: string
 ): Promise<string | null> => {
+  const log = (msg: string, type: string = 'info') => {
+    if (window.debugLog) window.debugLog(`[GeminiService] ${msg}`, type);
+  };
+
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
+  log("Bắt đầu chuẩn bị dữ liệu gửi tới Gemini...", "system");
+
   // Lọc kiến thức liên quan
   const contextKnowledge = knowledge
     .filter(k => 
@@ -62,8 +68,12 @@ export const getAICoachResponse = async (
     .map(k => `- ${k.keyword}: ${k.content}`)
     .join("\n");
 
+  if (contextKnowledge) log(`Đã tìm thấy ${contextKnowledge.split('\n').length} kiến thức liên quan.`, "success");
+  else log("Không tìm thấy kiến thức đặc thù, sử dụng kiến thức chung.", "info");
+
   // Tổng hợp quy tắc
   const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
+  log(`Áp dụng ${rules.length} tiêu chuẩn giao tiếp.`, "info");
 
   const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe thông minh tại Lucky Hub.
   
@@ -81,6 +91,7 @@ export const getAICoachResponse = async (
   - Không tự ý đưa ra phác đồ điều trị y tế thay thế bác sĩ.`;
 
   try {
+    log("Đang gọi API gemini-3-pro-preview...", "system");
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: [
@@ -94,9 +105,18 @@ export const getAICoachResponse = async (
       }
     });
 
-    return response.text || "Lucky AI đang bận một chút, HLV của bạn sẽ phản hồi sớm nhé!";
-  } catch (e) {
+    const result = response.text;
+    if (result) {
+      log("Nhận phản hồi từ AI thành công.", "success");
+      return result;
+    } else {
+      log("AI trả về phản hồi rỗng.", "error");
+      return "Lucky AI đang bận một chút, HLV của bạn sẽ phản hồi sớm nhé!";
+    }
+  } catch (e: any) {
+    const errorMsg = e.message || "Lỗi không xác định";
+    log(`Lỗi Gemini API: ${errorMsg}`, "error");
     console.error("Gemini AI Error:", e);
-    return null;
+    return `[LỖI HỆ THỐNG]: ${errorMsg}. Vui lòng kiểm tra API Key và kết nối mạng.`;
   }
 };
