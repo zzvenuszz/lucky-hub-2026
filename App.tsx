@@ -31,6 +31,19 @@ const App: React.FC = () => {
     healthGoal: HealthGoal.BODY_RECOMP
   });
 
+  // Khôi phục trạng thái đăng nhập từ localStorage khi app khởi chạy
+  useEffect(() => {
+    const savedUser = localStorage.getItem('lucky_hub_user');
+    if (savedUser) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setCurrentUser(parsedUser);
+      } catch (e) {
+        localStorage.removeItem('lucky_hub_user');
+      }
+    }
+  }, []);
+
   const fetchData = async () => {
     try {
       const [u, k] = await Promise.all([Database.getUsers(), Database.getKnowledge()]);
@@ -41,7 +54,11 @@ const App: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { 
+    if (currentUser) {
+      fetchData(); 
+    }
+  }, [currentUser]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,15 +66,17 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     try {
-      // Sử dụng Database service thay vì fetch trực tiếp để hưởng lợi từ Mock Fallback
-      const user = await fetch('/api/login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginData)
-      }).then(r => r.ok ? r.json() : null).catch(() => null);
+      });
 
-      if (user) {
+      if (response.ok) {
+        const user = await response.json();
         setCurrentUser(user);
+        // Lưu vào localStorage để không bị mất khi reload
+        localStorage.setItem('lucky_hub_user', JSON.stringify(user));
       } else {
         // Fallback cho preview nếu API thất bại
         if (loginData.username === 'admin' && loginData.password === 'admin') {
@@ -67,6 +86,7 @@ const App: React.FC = () => {
             healthGoal: HealthGoal.STRENGTHEN_HEALTH, phoneNumber: '000', birthDate: '', height: 170, weight: 70 
           };
           setCurrentUser(mockAdmin);
+          localStorage.setItem('lucky_hub_user', JSON.stringify(mockAdmin));
           alert('Chế độ Preview: Đăng nhập với quyền Admin mặc định.');
         } else {
           alert('Sai thông tin đăng nhập hoặc server không phản hồi.');
@@ -77,6 +97,12 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('lucky_hub_user');
+    setActiveTab('dashboard');
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -109,7 +135,8 @@ const App: React.FC = () => {
 
   const handleSaveMetric = async (metric: any) => {
     if (!currentUser) return;
-    await Database.saveMetric({ ...metric, userId: (currentUser as any).id || (currentUser as any)._id });
+    const uid = (currentUser as any).id || (currentUser as any)._id;
+    await Database.saveMetric({ ...metric, userId: uid });
     fetchData();
     setIsAddingMetric(false);
   };
@@ -196,13 +223,25 @@ const App: React.FC = () => {
   }
 
   return (
-    <Layout user={currentUser} onLogout={() => setCurrentUser(null)} activeTab={activeTab} setActiveTab={setActiveTab}>
+    <Layout user={currentUser} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
       {activeTab === 'dashboard' && <Dashboard user={currentUser} users={users} onAddMetric={() => setIsAddingMetric(true)} />}
       {activeTab === 'chat' && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} />}
-      {activeTab === 'profile' && <Profile user={currentUser} onUpdate={async (d) => { const u = await Database.updateUser((currentUser as any).id || (currentUser as any)._id, d); if(u) setCurrentUser(u); }} />}
+      {activeTab === 'profile' && <Profile user={currentUser} onUpdate={async (d) => { 
+        const uid = (currentUser as any).id || (currentUser as any)._id;
+        const u = await Database.updateUser(uid, d); 
+        if(u) {
+          setCurrentUser(u);
+          localStorage.setItem('lucky_hub_user', JSON.stringify(u));
+        }
+      }} />}
       {activeTab === 'admin' && (currentUser as any).role === 'ADMIN' && <AdminPanel users={users} knowledge={knowledge} onRefresh={fetchData} />}
       
-      {isAddingMetric && <MetricForm onSave={handleSaveMetric} onSaveBulk={async (list) => { await Database.saveMetricsBulk(list.map(m => ({...m, userId: (currentUser as any).id || (currentUser as any)._id}))); fetchData(); setIsAddingMetric(false); }} onClose={() => setIsAddingMetric(false)} />}
+      {isAddingMetric && <MetricForm onSave={handleSaveMetric} onSaveBulk={async (list) => { 
+        const uid = (currentUser as any).id || (currentUser as any)._id;
+        await Database.saveMetricsBulk(list.map(m => ({...m, userId: uid}))); 
+        fetchData(); 
+        setIsAddingMetric(false); 
+      }} onClose={() => setIsAddingMetric(false)} />}
     </Layout>
   );
 };
