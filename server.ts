@@ -9,11 +9,11 @@ import { UserRole, AccountStatus, HealthGoal } from './types';
 dotenv.config();
 
 const app = express();
+// Express 5 middleware casting
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '10mb' }) as any);
 
 // Cấu hình phục vụ file tĩnh từ thư mục gốc
-// Điều này cho phép trình duyệt tải index.html, index.tsx, v.v.
 app.use(express.static('.') as any);
 
 const PORT = process.env.PORT || 3000;
@@ -180,7 +180,9 @@ app.delete('/api/knowledge/:id', async (req, res) => {
 });
 
 // SPA Fallback: Trả về index.html cho bất kỳ route nào không phải API
-app.get('*', (req, res) => {
+// Lưu ý: Trong Express 5, ký tự '*' đơn lẻ không còn được hỗ trợ cho catch-all mà không có tên tham số.
+// Sử dụng '(.*)' để khớp với tất cả các đường dẫn.
+app.get('(.*)', (req, res) => {
   res.sendFile(path.resolve('index.html'));
 });
 
