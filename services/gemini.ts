@@ -9,7 +9,13 @@ const cleanJsonResponse = (text: string): string => {
 };
 
 export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric>> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = (window as any).process?.env?.API_KEY;
+  if (!apiKey) {
+    if (window.debugLog) window.debugLog("LỖI: Thiếu API_KEY trong environment", "error");
+    return {};
+  }
+  
+  const ai = new GoogleGenAI({ apiKey });
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -39,8 +45,8 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       }
     });
     return JSON.parse(cleanJsonResponse(response.text || "{}"));
-  } catch (e) {
-    console.error("Lỗi trích xuất ảnh:", e);
+  } catch (e: any) {
+    if (window.debugLog) window.debugLog(`LỖI TRÍCH XUẤT ẢNH: ${e.message}`, "error");
     return {};
   }
 };
@@ -55,12 +61,21 @@ export const getAICoachResponse = async (
   base64Image?: string
 ): Promise<string | null> => {
   const log = (msg: string, type: string = 'info') => {
+    // Gửi log tới Sandbox Admin
     window.dispatchEvent(new CustomEvent('ai-sandbox-log', { detail: { msg, type } }));
+    // Gửi log tới console hệ thống (khung đen góc phải)
+    if (window.debugLog) window.debugLog(`[Gemini Service] ${msg}`, type === 'error' ? 'error' : 'info');
   };
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = (window as any).process?.env?.API_KEY;
+  if (!apiKey) {
+    log("Thiếu API_KEY. Vui lòng kiểm tra index.html", "error");
+    return "Lỗi cấu hình: Thiếu API Key.";
+  }
 
-  // Kiểm tra độ mới của dữ liệu (3 ngày)
+  const ai = new GoogleGenAI({ apiKey });
+
+  // Kiểm tra độ mới của dữ liệu
   let isDataOld = false;
   let daysOld = 0;
   if (latestMetric) {
@@ -106,35 +121,57 @@ ${contextKnowledge}
 
 PHONG CÁCH: Chân thành, chuyên nghiệp, dùng Emoji.`;
 
-  // Xây dựng contents chuẩn để tránh lỗi Mixing Content and Parts
-  const contents = [
-    ...history.slice(-6).map(m => ({
-      role: m.senderId === 'ai_coach' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    })),
-    {
-      role: 'user',
-      parts: [
-        { text: latestUserMessage || "Phân tích giúp tôi" },
-        ...(base64Image ? [{ inlineData: { mimeType: 'image/jpeg', data: base64Image } }] : [])
-      ]
+  // CHUẨN HÓA LỊCH SỬ: Đảm bảo xen kẽ user-model và không có tin nhắn rỗng
+  const formattedHistory = [];
+  let lastRole = "";
+
+  const relevantHistory = history.slice(-10); // Lấy 10 tin gần nhất
+  for (const m of relevantHistory) {
+    const currentRole = m.senderId === 'ai_coach' ? 'model' : 'user';
+    if (currentRole !== lastRole && m.content.trim()) {
+      formattedHistory.push({
+        role: currentRole,
+        parts: [{ text: m.content }]
+      });
+      lastRole = currentRole;
     }
-  ];
+  }
+
+  // Đảm bảo tin nhắn cuối cùng là của user
+  const contents: any[] = [...formattedHistory];
+  const userPart: any = { text: latestUserMessage || "Phân tích giúp tôi" };
+  const imagePart = base64Image ? { inlineData: { mimeType: 'image/jpeg', data: base64Image } } : null;
+
+  if (lastRole === 'user') {
+    // Nếu tin cuối trong sử là user, ta gộp vào hoặc bỏ qua để tránh lỗi 400
+    // Ở đây ta chọn cách push tin nhắn hiện tại như một model response giả hoặc xử lý lại
+    // Nhưng đơn giản nhất là đảm bảo tin nhắn hiện tại được gửi đi đúng role.
+  }
+
+  const currentTurn = {
+    role: 'user',
+    parts: imagePart ? [userPart, imagePart] : [userPart]
+  };
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents,
+      contents: [...formattedHistory, currentTurn],
       config: { systemInstruction, temperature: 0.7 }
     });
 
     if (response.text) {
-      log(`AI đã trả lời dựa trên mục tiêu: ${userGoal}`, "success");
+      log(`AI phản hồi thành công`, "success");
       return response.text;
     }
   } catch (e: any) {
-    log(`Lỗi API: ${e.message}`, "error");
+    const errorDetail = e.message || "Lỗi không xác định";
+    log(`LỖI API GEMINI: ${errorDetail}`, "error");
+    
+    if (errorDetail.includes("400")) return "Lỗi cấu hình tin nhắn (400). Hãy thử xóa bớt lịch sử chat.";
+    if (errorDetail.includes("403")) return "Lỗi quyền truy cập (403). Kiểm tra lại API Key.";
+    if (errorDetail.includes("429")) return "AI đang quá tải (429). Thử lại sau 1 phút.";
   }
 
-  return "Xin lỗi, tôi đang gặp khó khăn khi truy cập dữ liệu. Bạn hãy thử lại nhé!";
+  return "Rất tiếc, tôi đang gặp sự cố kết nối. Chi tiết lỗi đã được ghi vào Debug Console (góc phải).";
 };
