@@ -11,15 +11,18 @@ interface MetricFormProps {
 }
 
 const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) => {
-  // Trình duyệt vẫn làm việc với YYYY-MM-DD nội bộ nhưng chúng ta hiển thị cho người dùng thân thiện hơn
   const [formData, setFormData] = useState<Omit<HealthMetric, 'id' | 'userId'>>({
     date: new Date().toISOString().split('T')[0],
-    weight: 0, bodyFat: 0, boneMinerals: 0, waterPercent: 0, muscleMass: 0, energy: 0, bioAge: 0, visceralFat: 0
+    weight: 0, bodyFat: 0, boneMinerals: 0, waterPercent: 0, muscleMass: 0, energy: 0, bioAge: 0, visceralFat: 0, balanceIndex: 0
   });
   const [loadingAI, setLoadingAI] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const log = (msg: string, type: string = 'ai') => {
+    if (window.debugLog) window.debugLog(`[MetricForm] ${msg}`, type);
+  };
 
   const handleAIUpload = async (e: React.ChangeEvent<HTMLInputElement>, isBulk: boolean) => {
     const file = e.target.files?.[0];
@@ -32,19 +35,51 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
       const base64 = (reader.result as string).split(',')[1];
       
       if (!isBulk) {
+        log("Đang phân tích ảnh đơn lẻ...");
         const extracted = await extractMetricsFromImage(base64);
         setFormData(prev => ({ ...prev, ...extracted }));
       } else {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64 } }, { text: "Trích xuất danh sách các chỉ số sức khỏe từ ảnh này. Trả về một mảng JSON các đối tượng: date (YYYY-MM-DD), weight, bodyFat, muscleMass, waterPercent, visceralFat, energy." }] },
-          config: { responseMimeType: "application/json" }
-        });
+        log("Đang phân tích ảnh danh sách (Bulk)...");
         try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64 } }, { text: "Trích xuất danh sách chỉ số từ ảnh. YÊU CẦU: Trích xuất đúng 'date' (Ngày tháng) tương ứng mỗi dòng. Nếu 'balanceIndex' không có, mặc định là 0. Trả về mảng JSON." }] },
+            config: { 
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING, description: "YYYY-MM-DD" },
+                    weight: { type: Type.NUMBER },
+                    bodyFat: { type: Type.NUMBER },
+                    muscleMass: { type: Type.NUMBER },
+                    waterPercent: { type: Type.NUMBER },
+                    visceralFat: { type: Type.NUMBER },
+                    energy: { type: Type.NUMBER },
+                    balanceIndex: { type: Type.NUMBER },
+                    bioAge: { type: Type.NUMBER },
+                    boneMinerals: { type: Type.NUMBER }
+                  },
+                  required: ["date", "weight", "bodyFat"]
+                }
+              }
+            }
+          });
           const data = JSON.parse(response.text || "[]");
-          setBulkPreview(Array.isArray(data) ? data : []);
-        } catch (err) { alert("Không thể phân tích dữ liệu hàng loạt"); }
+          const cleanedData = data.map((item: any) => ({
+            ...item,
+            balanceIndex: item.balanceIndex ?? 0,
+            date: item.date || new Date().toISOString().split('T')[0]
+          }));
+          setBulkPreview(cleanedData);
+          log(`Đã nhận diện ${cleanedData.length} bản ghi dữ liệu`, "success");
+        } catch (err) { 
+          log("Lỗi phân tích hàng loạt", "error");
+          alert("Không thể phân tích dữ liệu hàng loạt"); 
+        }
       }
       setLoadingAI(false);
     };
@@ -59,10 +94,10 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
     { key: 'visceralFat', label: 'Mỡ nội tạng (level)' },
     { key: 'energy', label: 'Năng lượng chuyển hóa (kcal)' },
     { key: 'boneMinerals', label: 'Khối lượng xương (kg)' },
+    { key: 'balanceIndex', label: 'Chỉ số cân đối (0-100)' },
     { key: 'bioAge', label: 'Tuổi sinh học (tuổi)' },
   ];
 
-  // Helper để hiển thị ngày dd/mm/yyyy từ yyyy-mm-dd
   const formatDisplayDate = (dateStr: string) => {
     if (!dateStr) return '';
     const [y, m, d] = dateStr.split('-');
@@ -80,15 +115,15 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
         <div className="p-8 overflow-y-auto space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="p-4 border-2 border-dashed border-emerald-200 rounded-2xl flex flex-col items-center hover:bg-emerald-50 transition-all group"
+              onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }}
+              className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-emerald-200 hover:bg-emerald-50'}`}
             >
               <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">📸</span>
               <span className="font-bold text-emerald-700 text-sm">Chụp ảnh kết quả đơn</span>
             </button>
             <button 
               onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }}
-              className="p-4 border-2 border-dashed border-amber-200 rounded-2xl flex flex-col items-center hover:bg-amber-50 transition-all group"
+              className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-amber-200 hover:bg-amber-50'}`}
             >
               <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">📋</span>
               <span className="font-bold text-amber-700 text-sm">Phân tích danh sách (AI)</span>
@@ -106,7 +141,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
             <div className="space-y-4">
               <h3 className="font-bold text-slate-700 flex items-center gap-2">
                 <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping"></span>
-                Dữ liệu trích xuất hàng loạt:
+                Dữ liệu trích xuất hàng loạt ({bulkPreview.length} ngày):
               </h3>
               <div className="overflow-x-auto rounded-xl border border-slate-100">
                 <table className="w-full text-[10px] text-left">
@@ -116,6 +151,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
                       <th className="p-3">Cân (kg)</th>
                       <th className="p-3">Mỡ (%)</th>
                       <th className="p-3">Cơ (kg)</th>
+                      <th className="p-3">Cân đối</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -125,6 +161,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
                         <td className="p-3">{item.weight}</td>
                         <td className="p-3">{item.bodyFat}</td>
                         <td className="p-3">{item.muscleMass}</td>
+                        <td className="p-3">{item.balanceIndex}</td>
                       </tr>
                     ))}
                   </tbody>

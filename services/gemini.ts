@@ -9,12 +9,17 @@ const cleanJsonResponse = (text: string): string => {
 };
 
 export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric>> => {
+  const log = (msg: string, type: string = 'ai') => {
+    if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
+  };
+
   const apiKey = (window as any).process?.env?.API_KEY;
   if (!apiKey) {
-    if (window.debugLog) window.debugLog("LỖI: Thiếu API_KEY trong environment", "error");
+    log("LỖI: Thiếu API_KEY", "error");
     return {};
   }
   
+  log("Bắt đầu gửi ảnh phân tích...");
   const ai = new GoogleGenAI({ apiKey });
   try {
     const response = await ai.models.generateContent({
@@ -22,7 +27,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       contents: [{
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: "Trích xuất các chỉ số sức khỏe từ ảnh chụp và trả về JSON chuẩn." }
+          { text: "Hãy trích xuất CHÍNH XÁC các chỉ số sức khỏe từ ảnh chụp InBody/Kết quả đo. Nếu chỉ số 'balanceIndex' (cân đối cơ thể) không có trong ảnh, BẮT BUỘC trả về giá trị là 0. Hãy trả về JSON chuẩn." }
         ]
       }],
       config: {
@@ -30,23 +35,27 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            date: { type: Type.STRING },
+            date: { type: Type.STRING, description: "Ngày đo (YYYY-MM-DD)" },
             weight: { type: Type.NUMBER },
             bodyFat: { type: Type.NUMBER },
             boneMinerals: { type: Type.NUMBER },
             waterPercent: { type: Type.NUMBER },
             muscleMass: { type: Type.NUMBER },
-            balanceIndex: { type: Type.NUMBER },
+            balanceIndex: { type: Type.NUMBER, description: "Nếu không thấy hãy để là 0" },
             energy: { type: Type.NUMBER },
             bioAge: { type: Type.NUMBER },
             visceralFat: { type: Type.NUMBER }
-          }
+          },
+          required: ["weight", "bodyFat", "muscleMass", "balanceIndex"]
         }
       }
     });
-    return JSON.parse(cleanJsonResponse(response.text || "{}"));
+
+    const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
+    log(`Đã trích xuất thành công: Cân nặng ${result.weight}kg, Mỡ ${result.bodyFat}%, Cân đối ${result.balanceIndex}`, "success");
+    return result;
   } catch (e: any) {
-    if (window.debugLog) window.debugLog(`LỖI TRÍCH XUẤT ẢNH: ${e.message}`, "error");
+    log(`LỖI TRÍCH XUẤT: ${e.message}`, "error");
     return {};
   }
 };
@@ -60,20 +69,19 @@ export const getAICoachResponse = async (
   latestMetric?: HealthMetric,
   base64Image?: string
 ): Promise<string | null> => {
-  const log = (msg: string, type: string = 'info') => {
-    // Gửi log tới Sandbox Admin
-    window.dispatchEvent(new CustomEvent('ai-sandbox-log', { detail: { msg, type } }));
-    // Gửi log tới console hệ thống (khung đen góc phải)
-    if (window.debugLog) window.debugLog(`[Gemini Service] ${msg}`, type === 'error' ? 'error' : 'info');
+  const log = (msg: string, type: string = 'ai') => {
+    if (window.debugLog) window.debugLog(`[Gemini Coach] ${msg}`, type);
   };
 
   const apiKey = (window as any).process?.env?.API_KEY;
   if (!apiKey) {
-    log("Thiếu API_KEY. Vui lòng kiểm tra index.html", "error");
+    log("Thiếu API_KEY", "error");
     return "Lỗi cấu hình: Thiếu API Key.";
   }
 
   const ai = new GoogleGenAI({ apiKey });
+
+  log("Đang xử lý hội thoại hội viên...");
 
   // Kiểm tra độ mới của dữ liệu
   let isDataOld = false;
@@ -101,6 +109,7 @@ DỮ LIỆU CƠ THỂ THỰC TẾ (Đo ngày ${latestMetric.date}):
 - Khối lượng cơ: ${latestMetric.muscleMass}kg
 - Mỡ nội tạng: Level ${latestMetric.visceralFat}
 - Tuổi sinh học: ${latestMetric.bioAge} tuổi
+- Chỉ số cân đối: ${latestMetric.balanceIndex}
 ${isDataOld ? `(⚠️ CẢNH BÁO: Dữ liệu này đã cũ - ${daysOld} ngày. Bạn phải nhắc hội viên cập nhật lại chỉ số)` : "(Dữ liệu còn mới, hãy tư vấn dựa trên thông số này)"}
   ` : "Hội viên này chưa có dữ liệu đo lường. Hãy yêu cầu họ đo InBody ngay.";
 
@@ -121,11 +130,10 @@ ${contextKnowledge}
 
 PHONG CÁCH: Chân thành, chuyên nghiệp, dùng Emoji.`;
 
-  // CHUẨN HÓA LỊCH SỬ: Đảm bảo xen kẽ user-model và không có tin nhắn rỗng
   const formattedHistory = [];
   let lastRole = "";
 
-  const relevantHistory = history.slice(-10); // Lấy 10 tin gần nhất
+  const relevantHistory = history.slice(-10);
   for (const m of relevantHistory) {
     const currentRole = m.senderId === 'ai_coach' ? 'model' : 'user';
     if (currentRole !== lastRole && m.content.trim()) {
@@ -137,16 +145,8 @@ PHONG CÁCH: Chân thành, chuyên nghiệp, dùng Emoji.`;
     }
   }
 
-  // Đảm bảo tin nhắn cuối cùng là của user
-  const contents: any[] = [...formattedHistory];
   const userPart: any = { text: latestUserMessage || "Phân tích giúp tôi" };
   const imagePart = base64Image ? { inlineData: { mimeType: 'image/jpeg', data: base64Image } } : null;
-
-  if (lastRole === 'user') {
-    // Nếu tin cuối trong sử là user, ta gộp vào hoặc bỏ qua để tránh lỗi 400
-    // Ở đây ta chọn cách push tin nhắn hiện tại như một model response giả hoặc xử lý lại
-    // Nhưng đơn giản nhất là đảm bảo tin nhắn hiện tại được gửi đi đúng role.
-  }
 
   const currentTurn = {
     role: 'user',
@@ -161,17 +161,13 @@ PHONG CÁCH: Chân thành, chuyên nghiệp, dùng Emoji.`;
     });
 
     if (response.text) {
-      log(`AI phản hồi thành công`, "success");
+      log(`Phản hồi thành công (${response.text.length} ký tự)`, "success");
       return response.text;
     }
   } catch (e: any) {
-    const errorDetail = e.message || "Lỗi không xác định";
-    log(`LỖI API GEMINI: ${errorDetail}`, "error");
-    
-    if (errorDetail.includes("400")) return "Lỗi cấu hình tin nhắn (400). Hãy thử xóa bớt lịch sử chat.";
-    if (errorDetail.includes("403")) return "Lỗi quyền truy cập (403). Kiểm tra lại API Key.";
-    if (errorDetail.includes("429")) return "AI đang quá tải (429). Thử lại sau 1 phút.";
+    log(`LỖI GEMINI: ${e.message}`, "error");
+    return "AI đang bận, vui lòng thử lại sau.";
   }
 
-  return "Rất tiếc, tôi đang gặp sự cố kết nối. Chi tiết lỗi đã được ghi vào Debug Console (góc phải).";
+  return "Không có phản hồi từ AI.";
 };

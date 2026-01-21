@@ -87,7 +87,7 @@ const metricSchema = new mongoose.Schema({
   boneMinerals: Number,
   waterPercent: Number,
   muscleMass: Number,
-  balanceIndex: Number,
+  balanceIndex: { type: Number, default: 0 },
   energy: Number,
   bioAge: Number,
   visceralFat: Number

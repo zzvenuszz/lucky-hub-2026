@@ -32,7 +32,7 @@ export interface HealthMetric {
   boneMinerals: number; // kg
   waterPercent: number; // %
   muscleMass: number; // kg
-  balanceIndex?: number;
+  balanceIndex: number; // Mặc định 0 nếu không có
   energy: number; // kcal
   bioAge: number;
   visceralFat: number;

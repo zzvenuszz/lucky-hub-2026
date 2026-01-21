@@ -10,26 +10,33 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         #debug-console {
-            position: fixed; bottom: 10px; right: 10px; width: 300px; max-height: 200px;
-            background: rgba(0,0,0,0.8); color: #00ff00; font-family: monospace; font-size: 10px;
-            padding: 10px; border-radius: 8px; overflow-y: auto; z-index: 9999;
-            pointer-events: none; border: 1px solid #333;
+            position: fixed; bottom: 10px; right: 10px; width: 320px; max-height: 250px;
+            background: rgba(15, 23, 42, 0.95); color: #10b981; font-family: monospace; font-size: 10px;
+            padding: 12px; border-radius: 12px; overflow-y: auto; z-index: 9999;
+            pointer-events: none; border: 1px solid #1e293b; display: none;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
         }
-        .error-log { color: #ff4444; }
+        .error-log { color: #f43f5e; font-weight: bold; }
+        .ai-log { color: #8b5cf6; }
+        .success-log { color: #10b981; }
+        .info-log { color: #3b82f6; }
     </style>
     <script>
       window.debugLog = function(msg, type = 'info') {
         const consoleEl = document.getElementById('debug-console');
         if (consoleEl) {
           const div = document.createElement('div');
-          div.className = type === 'error' ? 'error-log' : '';
+          div.className = type === 'error' ? 'error-log' : 
+                          type === 'ai' ? 'ai-log' :
+                          type === 'success' ? 'success-log' : 'info-log';
+          
           div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
           consoleEl.appendChild(div);
           consoleEl.scrollTop = consoleEl.scrollHeight;
         }
-        console.log(msg);
+        console.log(`[${type.toUpperCase()}] ${msg}`);
       };
-      window.onerror = (m, s, l) => debugLog(`ERROR: ${m} at ${s}:${l}`, 'error');
+      window.onerror = (m, s, l) => debugLog(`Hệ thống: ${m}`, 'error');
       window.process = { env: { API_KEY: "AIzaSyDfiNVIkl7THN5xbrMdW78ayJKkDboxR7s" } };
     </script>
     <script type="importmap">
@@ -63,7 +70,7 @@
             </div>
         </div>
     </div>
-    <div id="debug-console"><div>-- System Ready --</div></div>
+    <div id="debug-console"></div>
 
     <script type="module" src="./index.tsx"></script>
 </body>

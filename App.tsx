@@ -31,6 +31,17 @@ const App: React.FC = () => {
     gender: 'Nam' as 'Nam'|'Nữ', healthGoal: HealthGoal.BODY_RECOMP
   });
 
+  // Kiểm soát hiển thị Debug Console
+  useEffect(() => {
+    const consoleEl = document.getElementById('debug-console');
+    if (consoleEl) {
+      consoleEl.style.display = (currentUser?.role === UserRole.ADMIN) ? 'block' : 'none';
+      if (currentUser?.role === UserRole.ADMIN && window.debugLog) {
+        window.debugLog(`Chào Admin ${currentUser.fullName}. Hệ thống logs đã sẵn sàng.`, 'success');
+      }
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     const savedUser = localStorage.getItem('lucky_hub_user');
     if (savedUser) {
