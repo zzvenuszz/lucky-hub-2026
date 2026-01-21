@@ -30,12 +30,11 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
           <nav className="hidden md:flex items-center space-x-1 bg-slate-50 p-1 rounded-2xl">
             {[
               { id: 'dashboard', label: 'Dashboard' },
-              { id: 'chat', label: 'Trò chuyện' },
-              { id: 'profile', label: 'Cá nhân' }
+              { id: 'profile', label: 'Hồ sơ' }
             ].map(tab => (
               <button 
                 key={tab.id} onClick={() => setActiveTab(tab.id)} 
-                className={`px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 {tab.label}
               </button>
@@ -63,7 +62,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
         </div>
       </header>
 
-      <main className="flex-grow container mx-auto px-4 py-8">
+      <main className="flex-grow container mx-auto px-4 py-8 relative">
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
