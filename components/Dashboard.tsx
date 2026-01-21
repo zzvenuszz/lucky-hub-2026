@@ -11,6 +11,7 @@ interface DashboardProps {
   user: User;
   users: User[];
   onAddMetric: () => void;
+  refreshTrigger?: number; // Thêm trigger để làm mới dữ liệu
 }
 
 const AVAILABLE_METRICS = [
@@ -35,7 +36,7 @@ const TIME_RANGES = [
   { key: '5y', label: '5 năm' },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
@@ -44,13 +45,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
 
   const selectedUser = useMemo(() => users.find(u => ((u as any).id || (u as any)._id) === selectedUserId) || user, [users, selectedUserId, user]);
 
+  // Làm mới khi ID người dùng đổi HOẶC khi có tín hiệu refreshTrigger từ App
   useEffect(() => {
     const load = async () => {
       const data = await Database.getMetrics(selectedUserId);
       setMetrics(data || []);
+      if (window.debugLog) window.debugLog(`Dashboard đã cập nhật dữ liệu mới nhất cho: ${selectedUser.fullName}`, 'success');
     };
     load();
-  }, [selectedUserId]);
+  }, [selectedUserId, refreshTrigger]);
 
   const latestMetric = useMemo(() => {
     if (metrics.length === 0) return null;

@@ -23,6 +23,7 @@ const App: React.FC = () => {
   const [isAddingMetric, setIsAddingMetric] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Tín hiệu làm mới dữ liệu
   
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [regData, setRegData] = useState({
@@ -139,8 +140,19 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const uid = (currentUser as any).id || (currentUser as any)._id;
     await Database.saveMetric({ ...metric, userId: uid });
+    setRefreshTrigger(prev => prev + 1); // Kích hoạt nạp lại
     fetchData();
     setIsAddingMetric(false);
+  };
+
+  const handleSaveBulk = async (list: any[]) => {
+    if (!currentUser) return;
+    const uid = (currentUser as any).id || (currentUser as any)._id;
+    await Database.saveMetricsBulk(list.map(m => ({...m, userId: uid})));
+    setRefreshTrigger(prev => prev + 1); // Kích hoạt nạp lại
+    fetchData();
+    setIsAddingMetric(false);
+    if (window.debugLog) window.debugLog(`Đã lưu thành công ${list.length} chỉ số hàng loạt.`, 'success');
   };
 
   if (!currentUser) {
@@ -192,7 +204,14 @@ const App: React.FC = () => {
 
   return (
     <Layout user={currentUser} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
-      {activeTab === 'dashboard' && <Dashboard user={currentUser} users={users} onAddMetric={() => setIsAddingMetric(true)} />}
+      {activeTab === 'dashboard' && (
+        <Dashboard 
+          user={currentUser} 
+          users={users} 
+          onAddMetric={() => setIsAddingMetric(true)} 
+          refreshTrigger={refreshTrigger} 
+        />
+      )}
       {activeTab === 'profile' && (
         <Profile 
           user={currentUser} onNavigateToAdmin={() => setActiveTab('admin')}
@@ -218,10 +237,13 @@ const App: React.FC = () => {
         </button>
       )}
 
-      {isAddingMetric && <MetricForm onSave={handleSaveMetric} onSaveBulk={async (list) => { 
-        const uid = (currentUser as any).id || (currentUser as any)._id;
-        await Database.saveMetricsBulk(list.map(m => ({...m, userId: uid}))); fetchData(); setIsAddingMetric(false); 
-      }} onClose={() => setIsAddingMetric(false)} />}
+      {isAddingMetric && (
+        <MetricForm 
+          onSave={handleSaveMetric} 
+          onSaveBulk={handleSaveBulk} 
+          onClose={() => setIsAddingMetric(false)} 
+        />
+      )}
     </Layout>
   );
 };

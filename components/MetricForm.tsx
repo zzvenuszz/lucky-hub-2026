@@ -44,7 +44,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64 } }, { text: "Trích xuất danh sách chỉ số từ ảnh. YÊU CẦU: Trích xuất đúng 'date' (Ngày tháng) tương ứng mỗi dòng. Nếu 'balanceIndex' không có, mặc định là 0. Trả về mảng JSON." }] },
+            contents: { 
+              parts: [
+                { inlineData: { mimeType: 'image/jpeg', data: base64 } }, 
+                { text: "Trích xuất danh sách chỉ số từ ảnh. YÊU CẦU: Trích xuất ĐẦY ĐỦ 10 chỉ số cho mỗi dòng: date (YYYY-MM-DD), weight, bodyFat, muscleMass, waterPercent, visceralFat, energy, balanceIndex, bioAge, boneMinerals. Nếu 'balanceIndex' không có, mặc định là 0. Trả về mảng JSON." }
+              ] 
+            },
             config: { 
               responseMimeType: "application/json",
               responseSchema: {
@@ -72,7 +77,15 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
           const cleanedData = data.map((item: any) => ({
             ...item,
             balanceIndex: item.balanceIndex ?? 0,
-            date: item.date || new Date().toISOString().split('T')[0]
+            date: item.date || new Date().toISOString().split('T')[0],
+            weight: item.weight || 0,
+            bodyFat: item.bodyFat || 0,
+            muscleMass: item.muscleMass || 0,
+            waterPercent: item.waterPercent || 0,
+            visceralFat: item.visceralFat || 0,
+            energy: item.energy || 0,
+            bioAge: item.bioAge || 0,
+            boneMinerals: item.boneMinerals || 0
           }));
           setBulkPreview(cleanedData);
           log(`Đã nhận diện ${cleanedData.length} bản ghi dữ liệu`, "success");
@@ -106,7 +119,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="p-6 bg-emerald-600 text-white flex justify-between items-center">
           <h2 className="text-xl font-bold">Cập nhật chỉ số cơ thể</h2>
           <button onClick={onClose} className="text-2xl hover:scale-110 transition-transform">&times;</button>
@@ -141,34 +154,44 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
             <div className="space-y-4">
               <h3 className="font-bold text-slate-700 flex items-center gap-2">
                 <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping"></span>
-                Dữ liệu trích xuất hàng loạt ({bulkPreview.length} ngày):
+                Dữ liệu trích xuất hàng loạt ({bulkPreview.length} bản ghi):
               </h3>
               <div className="overflow-x-auto rounded-xl border border-slate-100">
-                <table className="w-full text-[10px] text-left">
+                <table className="w-full text-[10px] text-left min-w-[800px]">
                   <thead>
                     <tr className="bg-slate-50 text-slate-400 font-black uppercase">
                       <th className="p-3">Ngày</th>
                       <th className="p-3">Cân (kg)</th>
                       <th className="p-3">Mỡ (%)</th>
                       <th className="p-3">Cơ (kg)</th>
+                      <th className="p-3">Xương (kg)</th>
+                      <th className="p-3">Nước (%)</th>
+                      <th className="p-3">Mỡ NT</th>
+                      <th className="p-3">BMR</th>
                       <th className="p-3">Cân đối</th>
+                      <th className="p-3">Tuổi SH</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {bulkPreview.map((item, idx) => (
                       <tr key={idx} className="hover:bg-slate-50/50">
                         <td className="p-3 font-bold text-slate-600">{formatDisplayDate(item.date)}</td>
-                        <td className="p-3">{item.weight}</td>
-                        <td className="p-3">{item.bodyFat}</td>
-                        <td className="p-3">{item.muscleMass}</td>
-                        <td className="p-3">{item.balanceIndex}</td>
+                        <td className="p-3 font-bold">{item.weight}</td>
+                        <td className="p-3">{item.bodyFat}%</td>
+                        <td className="p-3 text-blue-600">{item.muscleMass}</td>
+                        <td className="p-3">{item.boneMinerals}</td>
+                        <td className="p-3">{item.waterPercent}%</td>
+                        <td className="p-3">{item.visceralFat}</td>
+                        <td className="p-3">{item.energy}</td>
+                        <td className="p-3 font-black text-emerald-600">{item.balanceIndex}</td>
+                        <td className="p-3">{item.bioAge}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <button onClick={() => onSaveBulk(bulkPreview)} className="w-full bg-amber-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-amber-100 hover:bg-amber-600 transition-all">
-                Xác nhận lưu {bulkPreview.length} kết quả
+                Xác nhận lưu {bulkPreview.length} kết quả vào hệ thống
               </button>
             </div>
           ) : (
