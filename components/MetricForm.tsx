@@ -42,18 +42,18 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
       const apiKey = (window as any).process?.env?.API_KEY;
 
       if (!apiKey) {
-        log("LỖI: Không tìm thấy API KEY trong hệ thống", "error");
+        log("LỖI: Không tìm thấy API KEY", "error");
         setLoadingAI(false);
         return;
       }
       
       if (!isBulk) {
-        log("Đang phân tích ảnh đơn lẻ...");
+        log("Đang phân tích ảnh kết quả đơn...");
         const extracted = await extractMetricsFromImage(base64);
         setFormData(prev => ({ ...prev, ...extracted }));
         setLoadingAI(false);
       } else {
-        log("Đang phân tích ảnh danh sách (Bulk)...");
+        log("Đang phân tích bảng viết tay (Bulk)...");
         try {
           const ai = new GoogleGenAI({ apiKey });
           const response = await ai.models.generateContent({
@@ -61,7 +61,24 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
             contents: [{ 
               parts: [
                 { inlineData: { mimeType: 'image/jpeg', data: base64 } }, 
-                { text: "Bạn là chuyên gia OCR. Hãy trích xuất danh sách chỉ số InBody từ ảnh bảng dữ liệu. BẮT BUỘC trích xuất 10 chỉ số cho mỗi dòng. Nếu dòng nào thiếu 'date', hãy lấy ngày hôm nay. Nếu thiếu bất kỳ chỉ số nào khác, hãy để giá trị 0. Trả về mảng JSON." }
+                { text: `Bạn là chuyên gia OCR y tế chuyên đọc bảng viết tay. Hãy trích xuất dữ liệu từ ảnh bảng InBody.
+Ánh xạ các cột Tiếng Việt sang JSON như sau:
+- "Ngày kiểm tra" -> date (Nếu ghi "13/1" hãy chuyển thành "2026-01-13")
+- "Cân nặng (kg)" -> weight
+- "Mỡ cơ thể (%)" -> bodyFat
+- "Khoáng chất" -> boneMinerals
+- "Chỉ số Nước (%)" -> waterPercent
+- "Lượng cơ bắp" -> muscleMass
+- "Chỉ số cân đối" -> balanceIndex
+- "Năng lượng" -> energy
+- "Tuổi sinh học" -> bioAge
+- "Mỡ Nội Tạng" -> visceralFat
+
+LƯU Ý QUAN TRỌNG:
+1. Dấu phẩy (ví dụ 47,9) là dấu thập phân, hãy chuyển thành dấu chấm (47.9).
+2. Bỏ qua các hàng trống không có dữ liệu.
+3. Nếu thiếu cột nào, hãy để giá trị 0. 
+4. Năm mặc định là 2026.` }
               ] 
             }],
             config: { 
@@ -71,7 +88,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
                 items: {
                   type: Type.OBJECT,
                   properties: {
-                    date: { type: Type.STRING, description: "Định dạng YYYY-MM-DD" },
+                    date: { type: Type.STRING },
                     weight: { type: Type.NUMBER },
                     bodyFat: { type: Type.NUMBER },
                     muscleMass: { type: Type.NUMBER },
@@ -82,7 +99,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
                     bioAge: { type: Type.NUMBER },
                     boneMinerals: { type: Type.NUMBER }
                   },
-                  required: ["weight"] // Chỉ bắt buộc cân nặng để giảm thiểu lỗi dừng đột ngột
+                  required: ["weight"]
                 }
               }
             }
@@ -92,26 +109,26 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
           const cleanedText = cleanJsonResponse(rawText);
           const data = JSON.parse(cleanedText);
           
-          if (!Array.isArray(data)) throw new Error("Kết quả AI không phải là một danh sách.");
+          if (!Array.isArray(data)) throw new Error("Kết quả AI không đúng định dạng mảng.");
 
           const cleanedData = data.map((item: any) => ({
             date: item.date || new Date().toISOString().split('T')[0],
-            weight: Number(item.weight) || 0,
-            bodyFat: Number(item.bodyFat) || 0,
-            muscleMass: Number(item.muscleMass) || 0,
-            waterPercent: Number(item.waterPercent) || 0,
-            visceralFat: Number(item.visceralFat) || 0,
-            energy: Number(item.energy) || 0,
-            balanceIndex: Number(item.balanceIndex) || 0,
-            bioAge: Number(item.bioAge) || 0,
-            boneMinerals: Number(item.boneMinerals) || 0
-          }));
+            weight: parseFloat(String(item.weight).replace(',', '.')) || 0,
+            bodyFat: parseFloat(String(item.bodyFat).replace(',', '.')) || 0,
+            muscleMass: parseFloat(String(item.muscleMass).replace(',', '.')) || 0,
+            waterPercent: parseFloat(String(item.waterPercent).replace(',', '.')) || 0,
+            visceralFat: parseFloat(String(item.visceralFat).replace(',', '.')) || 0,
+            energy: parseFloat(String(item.energy).replace(',', '.')) || 0,
+            balanceIndex: parseFloat(String(item.balanceIndex).replace(',', '.')) || 0,
+            bioAge: parseFloat(String(item.bioAge).replace(',', '.')) || 0,
+            boneMinerals: parseFloat(String(item.boneMinerals).replace(',', '.')) || 0
+          })).filter(item => item.weight > 0); // Lọc bỏ các dòng lỗi không có cân nặng
 
           setBulkPreview(cleanedData);
-          log(`Đã trích xuất thành công ${cleanedData.length} dòng dữ liệu.`, "success");
+          log(`Đã đọc được ${cleanedData.length} ngày từ sổ tay.`, "success");
         } catch (err: any) { 
           log(`LỖI PHÂN TÍCH: ${err.message}`, "error");
-          alert("Không thể phân tích dữ liệu hàng loạt. Vui lòng kiểm tra chất lượng ảnh hoặc thử lại."); 
+          alert("Lỗi phân tích sổ tay. Hãy đảm bảo ảnh chụp đủ sáng và rõ nét."); 
         } finally {
           setLoadingAI(false);
         }
@@ -136,8 +153,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
     if (!dateStr) return '';
     try {
       const parts = dateStr.split('-');
-      if (parts.length !== 3) return dateStr;
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      return dateStr;
     } catch (e) { return dateStr; }
   };
 
@@ -157,24 +174,24 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
               className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-emerald-200 hover:bg-emerald-50 opacity-50'}`}
             >
               <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">📸</span>
-              <span className="font-bold text-emerald-700 text-sm">Chụp ảnh kết quả đơn</span>
+              <span className="font-bold text-emerald-700 text-sm uppercase tracking-tighter">Chụp kết quả đo InBody</span>
             </button>
             <button 
               disabled={loadingAI}
               onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }}
               className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-amber-200 hover:bg-amber-50 opacity-50'}`}
             >
-              <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">📋</span>
-              <span className="font-bold text-amber-700 text-sm">Phân tích danh sách (Bulk)</span>
+              <span className="text-2xl mb-1 group-hover:scale-110 transition-transform">📝</span>
+              <span className="font-bold text-amber-700 text-sm uppercase tracking-tighter">Quét bảng sổ tay (Bulk)</span>
             </button>
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkMode)} />
           </div>
 
           {loadingAI && (
-            <div className="flex flex-col items-center justify-center p-8 bg-emerald-50 rounded-2xl border border-emerald-100 animate-pulse">
-              <div className="w-10 h-10 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <span className="text-emerald-700 font-black text-xs uppercase tracking-widest">Lucky AI đang quét dữ liệu bảng...</span>
-              <p className="text-[10px] text-emerald-500 mt-2 italic font-medium">Vui lòng đợi trong giây lát</p>
+            <div className="flex flex-col items-center justify-center p-10 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
+              <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <span className="text-emerald-700 font-black text-sm uppercase tracking-widest text-center">Lucky AI đang giải mã chữ viết tay...</span>
+              <p className="text-xs text-emerald-500 mt-2 italic font-medium">Quá trình này có thể mất 5-10 giây tùy độ phức tạp của bảng</p>
             </div>
           )}
 
@@ -183,15 +200,15 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-slate-700 flex items-center gap-2">
                   <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping"></span>
-                  Dữ liệu trích xuất ({bulkPreview.length} bản ghi):
+                  Bảng dữ liệu đã đọc ({bulkPreview.length} ngày):
                 </h3>
-                <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Xóa hết</button>
+                <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Hủy kết quả</button>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-slate-100 shadow-inner bg-slate-50/50">
+              <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-inner bg-slate-50/50 max-h-80">
                 <table className="w-full text-[10px] text-left min-w-[900px]">
                   <thead>
-                    <tr className="bg-white/80 backdrop-blur-sm text-slate-400 font-black uppercase sticky top-0">
-                      <th className="p-3 border-b">Ngày đo</th>
+                    <tr className="bg-white/80 backdrop-blur-sm text-slate-400 font-black uppercase sticky top-0 z-10">
+                      <th className="p-3 border-b">Ngày</th>
                       <th className="p-3 border-b text-center">Cân (kg)</th>
                       <th className="p-3 border-b text-center">Mỡ (%)</th>
                       <th className="p-3 border-b text-center">Cơ (kg)</th>
@@ -208,8 +225,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
                       <tr key={idx} className="hover:bg-white transition-colors">
                         <td className="p-3 font-bold text-slate-700">{formatDisplayDate(item.date)}</td>
                         <td className="p-3 text-center font-black text-emerald-600 bg-emerald-50/20">{item.weight}</td>
-                        <td className="p-3 text-center font-medium">{item.bodyFat}%</td>
-                        <td className="p-3 text-center font-medium text-blue-600">{item.muscleMass}</td>
+                        <td className="p-3 text-center font-bold text-rose-500">{item.bodyFat}%</td>
+                        <td className="p-3 text-center font-bold text-blue-600">{item.muscleMass}</td>
                         <td className="p-3 text-center text-slate-500">{item.boneMinerals}</td>
                         <td className="p-3 text-center text-slate-500">{item.waterPercent}%</td>
                         <td className="p-3 text-center font-bold text-amber-600">{item.visceralFat}</td>
@@ -225,7 +242,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
                 onClick={() => onSaveBulk(bulkPreview)} 
                 className="w-full bg-amber-500 text-white font-black py-5 rounded-2xl shadow-xl shadow-amber-100 hover:bg-amber-600 hover:scale-[1.01] active:scale-[0.98] transition-all uppercase tracking-widest"
               >
-                Xác nhận lưu {bulkPreview.length} kết quả vào hệ thống
+                Xác nhận lưu {bulkPreview.length} ngày vào biểu đồ
               </button>
             </div>
           ) : !loadingAI && (
