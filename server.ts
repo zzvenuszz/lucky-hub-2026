@@ -93,6 +93,9 @@ const metricSchema = new mongoose.Schema({
   visceralFat: Number
 }, { timestamps: true });
 
+// Đảm bảo tính duy nhất: Một người dùng chỉ có 1 bản ghi mỗi ngày
+metricSchema.index({ userId: 1, date: 1 }, { unique: true });
+
 const Metric = mongoose.model('Metric', metricSchema);
 
 const chatSchema = new mongoose.Schema({
@@ -203,6 +206,14 @@ app.get('/api/metrics/:userId', async (req, res) => res.json(await Metric.find({
 app.get('/api/all-metrics', async (req, res) => res.json(await Metric.find().sort({ date: -1 })));
 app.post('/api/metrics', async (req, res) => res.json(await new Metric(req.body).save()));
 app.post('/api/metrics/bulk', async (req, res) => res.json(await Metric.insertMany(req.body)));
+
+// API xóa theo ngày để ghi đè
+app.post('/api/metrics/delete-dates', async (req, res) => {
+  const { userId, dates } = req.body;
+  if (!userId || !dates || !Array.isArray(dates)) return res.status(400).json({ message: 'Thiếu thông tin' });
+  await Metric.deleteMany({ userId, date: { $in: dates } });
+  res.json({ message: 'Đã xóa các ngày trùng lặp' });
+});
 
 // Knowledge & Rules
 app.get('/api/knowledge', async (req, res) => res.json(await Knowledge.find()));

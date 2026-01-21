@@ -7,6 +7,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 interface MetricFormProps {
   onSave: (metric: Omit<HealthMetric, 'id' | 'userId'>) => void;
   onSaveBulk: (metrics: Omit<HealthMetric, 'id' | 'userId'>[]) => void;
+  existingDates?: string[];
   onClose: () => void;
 }
 
@@ -16,7 +17,7 @@ const cleanJsonResponse = (text: string): string => {
   return text.trim();
 };
 
-const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) => {
+const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose }) => {
   const [formData, setFormData] = useState<Omit<HealthMetric, 'id' | 'userId'>>({
     date: new Date().toISOString().split('T')[0],
     weight: 0, bodyFat: 0, boneMinerals: 0, waterPercent: 0, muscleMass: 0, energy: 0, bioAge: 0, visceralFat: 0, balanceIndex: 0
@@ -174,6 +175,8 @@ LƯU Ý:
     } catch (e) { return dateStr; }
   };
 
+  const duplicatesInBulk = bulkPreview.filter(p => existingDates.includes(p.date));
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -222,7 +225,12 @@ LƯU Ý:
                   <span className="w-2 h-2 bg-amber-500 rounded-full animate-ping"></span>
                   Bảng dữ liệu đã đọc ({bulkPreview.length} ngày):
                 </h3>
-                <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Hủy kết quả</button>
+                <div className="flex gap-4">
+                  {duplicatesInBulk.length > 0 && (
+                    <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-lg animate-pulse uppercase">⚠️ Trùng {duplicatesInBulk.length} ngày</span>
+                  )}
+                  <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Hủy kết quả</button>
+                </div>
               </div>
               <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-inner bg-slate-50/50 max-h-80 scrollbar-hide">
                 <table className="w-full text-[10px] text-left min-w-[900px]">
@@ -241,20 +249,26 @@ LƯU Ý:
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {bulkPreview.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-white transition-colors">
-                        <td className="p-3 font-bold text-slate-700">{formatDisplayDate(item.date)}</td>
-                        <td className="p-3 text-center font-black text-emerald-600 bg-emerald-50/20">{item.weight}</td>
-                        <td className="p-3 text-center font-bold text-rose-500">{item.bodyFat}%</td>
-                        <td className="p-3 text-center font-bold text-blue-600">{item.muscleMass}</td>
-                        <td className="p-3 text-center text-slate-500">{item.boneMinerals}</td>
-                        <td className="p-3 text-center text-slate-500">{item.waterPercent}%</td>
-                        <td className="p-3 text-center font-bold text-amber-600">{item.visceralFat}</td>
-                        <td className="p-3 text-center text-slate-500">{item.energy}</td>
-                        <td className="p-3 text-center font-black text-indigo-500">{item.balanceIndex}</td>
-                        <td className="p-3 text-center text-slate-500">{item.bioAge}</td>
-                      </tr>
-                    ))}
+                    {bulkPreview.map((item, idx) => {
+                      const isDuplicate = existingDates.includes(item.date);
+                      return (
+                        <tr key={idx} className={`hover:bg-white transition-colors ${isDuplicate ? 'bg-amber-50/50' : ''}`}>
+                          <td className="p-3 font-bold text-slate-700 flex items-center gap-1.5">
+                            {formatDisplayDate(item.date)}
+                            {isDuplicate && <span className="text-[8px] bg-amber-500 text-white px-1 rounded-sm" title="Ngày này đã có dữ liệu">OVERWRITE</span>}
+                          </td>
+                          <td className="p-3 text-center font-black text-emerald-600 bg-emerald-50/20">{item.weight}</td>
+                          <td className="p-3 text-center font-bold text-rose-500">{item.bodyFat}%</td>
+                          <td className="p-3 text-center font-bold text-blue-600">{item.muscleMass}</td>
+                          <td className="p-3 text-center text-slate-500">{item.boneMinerals}</td>
+                          <td className="p-3 text-center text-slate-500">{item.waterPercent}%</td>
+                          <td className="p-3 text-center font-bold text-amber-600">{item.visceralFat}</td>
+                          <td className="p-3 text-center text-slate-500">{item.energy}</td>
+                          <td className="p-3 text-center font-black text-indigo-500">{item.balanceIndex}</td>
+                          <td className="p-3 text-center text-slate-500">{item.bioAge}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -262,7 +276,7 @@ LƯU Ý:
                 onClick={() => onSaveBulk(bulkPreview)} 
                 className="w-full bg-amber-500 text-white font-black py-5 rounded-2xl shadow-xl shadow-amber-100 hover:bg-amber-600 hover:scale-[1.01] active:scale-[0.98] transition-all uppercase tracking-widest"
               >
-                Xác nhận lưu {bulkPreview.length} ngày vào biểu đồ
+                {duplicatesInBulk.length > 0 ? `Xác nhận ghi đè ${duplicatesInBulk.length} & lưu mới ${bulkPreview.length - duplicatesInBulk.length} ngày` : `Xác nhận lưu ${bulkPreview.length} ngày vào biểu đồ`}
               </button>
             </div>
           ) : !loadingAI && (
@@ -275,10 +289,15 @@ LƯU Ý:
                       type="date" 
                       value={formData.date} 
                       onChange={e => setFormData({...formData, date: e.target.value})} 
-                      className="w-full px-4 py-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold" 
+                      className={`w-full px-4 py-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold ${existingDates.includes(formData.date) ? 'ring-2 ring-amber-400' : ''}`} 
                     />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-emerald-600 pointer-events-none bg-emerald-100/50 px-2 py-1 rounded-lg uppercase">
-                      Hôm nay: {formatDisplayDate(formData.date)}
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                       {existingDates.includes(formData.date) && (
+                         <span className="text-[9px] font-black text-amber-600 bg-amber-100 px-2 py-1 rounded-lg uppercase animate-pulse">Đã có dữ liệu - Sẽ ghi đè</span>
+                       )}
+                       <div className="text-[10px] font-black text-emerald-600 pointer-events-none bg-emerald-100/50 px-2 py-1 rounded-lg uppercase">
+                        Hôm nay: {formatDisplayDate(formData.date)}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -297,7 +316,7 @@ LƯU Ý:
                 ))}
                </div>
                <button type="submit" className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 active:scale-[0.98] transition-all mt-4 uppercase tracking-widest">
-                Lưu kết quả đo lường
+                {existingDates.includes(formData.date) ? 'Cập nhật & Ghi đè chỉ số' : 'Lưu kết quả đo lường'}
                </button>
             </form>
           )}

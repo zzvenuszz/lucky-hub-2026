@@ -6,7 +6,7 @@ import ChatSystem from './components/ChatSystem.tsx';
 import AdminPanel from './components/AdminPanel.tsx';
 import MetricForm from './components/MetricForm.tsx';
 import Profile from './components/Profile.tsx';
-import { User, HealthGoal, UserRole, AccountStatus, AIRule } from './types.ts';
+import { User, HealthGoal, UserRole, AccountStatus, AIRule, HealthMetric } from './types.ts';
 import { Database } from './services/database.ts';
 
 const App: React.FC = () => {
@@ -23,7 +23,8 @@ const App: React.FC = () => {
   const [isAddingMetric, setIsAddingMetric] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // Tín hiệu làm mới dữ liệu
+  const [refreshTrigger, setRefreshTrigger] = useState(0); 
+  const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
   
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [regData, setRegData] = useState({
@@ -32,7 +33,6 @@ const App: React.FC = () => {
     gender: 'Nam' as 'Nam'|'Nữ', healthGoal: HealthGoal.BODY_RECOMP
   });
 
-  // Kiểm soát hiển thị Debug Console
   useEffect(() => {
     const consoleEl = document.getElementById('debug-console');
     if (consoleEl) {
@@ -65,10 +65,16 @@ const App: React.FC = () => {
       setUsers(u || []);
       setKnowledge(k || []);
       setRules(r || []);
+
+      if (currentUser) {
+        const uid = (currentUser as any).id || (currentUser as any)._id;
+        const metrics = await Database.getMetrics(uid);
+        setExistingMetrics(metrics || []);
+      }
     } catch (err) { console.error("Fetch data error:", err); }
   };
 
-  useEffect(() => { if (currentUser) fetchData(); }, [currentUser]);
+  useEffect(() => { if (currentUser) fetchData(); }, [currentUser, refreshTrigger]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,20 +145,42 @@ const App: React.FC = () => {
   const handleSaveMetric = async (metric: any) => {
     if (!currentUser) return;
     const uid = (currentUser as any).id || (currentUser as any)._id;
+    
+    // Kiểm tra trùng ngày
+    const exists = existingMetrics.find(m => m.date === metric.date);
+    if (exists) {
+      if (!confirm(`Dữ liệu ngày ${metric.date} đã tồn tại. Bạn có thực sự muốn ghi đè chỉ số cũ không?`)) {
+        return;
+      }
+      // Xóa bản ghi cũ trước khi lưu mới để đảm bảo tính duy nhất
+      await Database.deleteMetricsByDates(uid, [metric.date]);
+    }
+
     await Database.saveMetric({ ...metric, userId: uid });
-    setRefreshTrigger(prev => prev + 1); // Kích hoạt nạp lại
-    fetchData();
+    setRefreshTrigger(prev => prev + 1); 
     setIsAddingMetric(false);
   };
 
   const handleSaveBulk = async (list: any[]) => {
     if (!currentUser) return;
     const uid = (currentUser as any).id || (currentUser as any)._id;
+    
+    // Kiểm tra các ngày bị trùng trong danh sách bulk
+    const newDates = list.map(m => m.date);
+    const duplicates = existingMetrics.filter(m => newDates.includes(m.date));
+    
+    if (duplicates.length > 0) {
+      if (!confirm(`Tìm thấy ${duplicates.length} ngày đã có dữ liệu trong hệ thống. Bạn có muốn GHI ĐÈ toàn bộ chúng bằng dữ liệu mới từ sổ tay không?`)) {
+        return;
+      }
+      // Xóa các ngày trùng lặp trước khi insert many
+      await Database.deleteMetricsByDates(uid, duplicates.map(m => m.date));
+    }
+
     await Database.saveMetricsBulk(list.map(m => ({...m, userId: uid})));
-    setRefreshTrigger(prev => prev + 1); // Kích hoạt nạp lại
-    fetchData();
+    setRefreshTrigger(prev => prev + 1); 
     setIsAddingMetric(false);
-    if (window.debugLog) window.debugLog(`Đã lưu thành công ${list.length} chỉ số hàng loạt.`, 'success');
+    if (window.debugLog) window.debugLog(`Đã lưu thành công ${list.length} chỉ số.`, 'success');
   };
 
   if (!currentUser) {
@@ -226,7 +254,6 @@ const App: React.FC = () => {
       
       {isChatOpen && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       
-      {/* Floating Chat Button */}
       {!isChatOpen && (
         <button 
           onClick={() => setIsChatOpen(true)}
@@ -241,6 +268,7 @@ const App: React.FC = () => {
         <MetricForm 
           onSave={handleSaveMetric} 
           onSaveBulk={handleSaveBulk} 
+          existingDates={existingMetrics.map(m => m.date)}
           onClose={() => setIsAddingMetric(false)} 
         />
       )}

@@ -40,6 +40,7 @@ export const Database = {
   getMetrics: (userId?: string) => userId ? request<HealthMetric[]>(`${API_BASE}/metrics/${userId}`) : request<HealthMetric[]>(`${API_BASE}/all-metrics`),
   saveMetric: (data: any) => request<HealthMetric>(`${API_BASE}/metrics`, 'POST', data),
   saveMetricsBulk: (data: any[]) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
+  deleteMetricsByDates: (userId: string, dates: string[]) => request(`${API_BASE}/metrics/delete-dates`, 'POST', { userId, dates }),
   
   getKnowledge: () => request<AIKnowledge[]>(`${API_BASE}/knowledge`),
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data),
