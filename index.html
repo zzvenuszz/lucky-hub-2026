@@ -20,6 +20,8 @@
         .ai-log { color: #8b5cf6; }
         .success-log { color: #10b981; }
         .info-log { color: #3b82f6; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
     <script>
       window.debugLog = function(msg, type = 'info') {
@@ -36,7 +38,16 @@
         }
         console.log(`[${type.toUpperCase()}] ${msg}`);
       };
-      window.onerror = (m, s, l) => debugLog(`Hệ thống: ${m}`, 'error');
+
+      // Lọc bỏ lỗi từ trình duyệt/extension để tránh làm rối bảng log
+      window.onerror = (m, s, l) => {
+        const msg = String(m);
+        if (msg.includes('__firefox__') || msg.includes('ethereum') || msg.includes('Script error.')) {
+          return true; // Bỏ qua lỗi ngoại lai
+        }
+        debugLog(`Hệ thống: ${m}`, 'error');
+      };
+      
       window.process = { env: { API_KEY: "AIzaSyDfiNVIkl7THN5xbrMdW78ayJKkDboxR7s" } };
     </script>
     <script type="importmap">
@@ -71,7 +82,6 @@
         </div>
     </div>
     <div id="debug-console"></div>
-
     <script type="module" src="./index.tsx"></script>
 </body>
 </html>
