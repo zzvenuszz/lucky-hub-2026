@@ -42,7 +42,13 @@
       // Lọc bỏ lỗi từ trình duyệt/extension để tránh làm rối bảng log
       window.onerror = (m, s, l) => {
         const msg = String(m);
-        if (msg.includes('__firefox__') || msg.includes('ethereum') || msg.includes('Script error.')) {
+        if (
+          msg.includes('__firefox__') || 
+          msg.includes('ethereum') || 
+          msg.includes('Script error.') || 
+          msg.includes('DarkReader') ||
+          msg.includes('playlistLongPressed')
+        ) {
           return true; // Bỏ qua lỗi ngoại lai
         }
         debugLog(`Hệ thống: ${m}`, 'error');
