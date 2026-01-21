@@ -38,11 +38,10 @@ const TIME_RANGES = [
 const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
-  const [timeRange, setTimeRange] = useState('7d'); // CẬP NHẬT: Mặc định 7 ngày
+  const [timeRange, setTimeRange] = useState('7d');
   const [activeIndex, setActiveIndex] = useState(-1);
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat']);
 
-  // Lấy thông tin người dùng đang được chọn để tính BMI (chiều cao)
   const selectedUser = useMemo(() => users.find(u => ((u as any).id || (u as any)._id) === selectedUserId) || user, [users, selectedUserId, user]);
 
   useEffect(() => {
@@ -131,6 +130,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
       .filter(m => new Date(m.date) >= cutoff)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
+
+  // Dữ liệu bảng (ngược lại với biểu đồ, bảng nên hiện từ mới đến cũ)
+  const tableData = useMemo(() => [...filteredMetrics].reverse(), [filteredMetrics]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -252,13 +254,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
         {/* LINE CHART - TRENDS */}
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col transition-all hover:shadow-md">
           <div className="flex flex-col space-y-8 mb-10">
-            {/* Tiêu đề nằm riêng */}
             <div>
               <h3 className="font-black text-slate-800 text-xl tracking-tight">Biểu đồ xu hướng sức khỏe</h3>
               <p className="text-xs text-slate-400 font-medium mt-1">Phân tích dữ liệu lịch sử đo lường qua thời gian</p>
             </div>
 
-            {/* Khoảng thời gian full width */}
             <div className="w-full">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Khoảng thời gian phân tích:</span>
@@ -275,7 +275,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
               </div>
             </div>
 
-            {/* Tùy chọn hiển thị chỉ số */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-5 bg-slate-50/50 rounded-[2rem] border border-slate-100 shadow-inner">
               <span className="text-[10px] font-black text-slate-400 uppercase col-span-full mb-1 tracking-widest text-center md:text-left">Chỉ số hiển thị:</span>
               {AVAILABLE_METRICS.map(metric => (
@@ -344,6 +343,95 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
             </ResponsiveContainer>
           </div>
         </div>
+      </div>
+
+      {/* DETAILED DATA TABLE SECTION */}
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h3 className="font-black text-slate-800 text-xl tracking-tight">Nhật ký chỉ số chi tiết</h3>
+            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">
+              Hiển thị {tableData.length} bản ghi trong khoảng {TIME_RANGES.find(r => r.key === timeRange)?.label}
+            </p>
+          </div>
+          <div className="flex gap-2">
+             <button className="px-4 py-2 bg-slate-50 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all">Xuất dữ liệu Excel</button>
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto no-scrollbar max-h-[500px]">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-slate-50/90 backdrop-blur-md text-slate-400">
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Ngày đo</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Cân nặng (kg)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Tỉ lệ mỡ (%)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Khối cơ (kg)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Lượng nước (%)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Mỡ nội tạng</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Năng lượng (kcal)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Tuổi SH</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {tableData.length > 0 ? tableData.map((row, idx) => (
+                <tr key={row.id} className="group hover:bg-emerald-50/30 transition-all duration-300">
+                  <td className="p-5">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-slate-800 text-sm">{new Date(row.date).toLocaleDateString('vi-VN')}</span>
+                      <span className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">ID: {row.id.slice(-6)}</span>
+                    </div>
+                  </td>
+                  <td className="p-5">
+                    <span className="font-black text-emerald-600 text-base">{row.weight}</span>
+                  </td>
+                  <td className="p-5">
+                    <span className={`font-bold text-sm ${row.bodyFat > 25 ? 'text-rose-500' : 'text-slate-600'}`}>{row.bodyFat}%</span>
+                  </td>
+                  <td className="p-5">
+                    <span className="font-bold text-sm text-blue-600">{row.muscleMass} kg</span>
+                  </td>
+                  <td className="p-5">
+                    <span className="font-bold text-sm text-sky-500">{row.waterPercent}%</span>
+                  </td>
+                  <td className="p-5">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${row.visceralFat > 9 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                        Lv {row.visceralFat}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="p-5">
+                    <span className="font-bold text-sm text-slate-600">{row.energy}</span>
+                  </td>
+                  <td className="p-5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-sm text-indigo-600">{row.bioAge}</span>
+                      <span className="text-[10px] text-slate-400">t</span>
+                    </div>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={8} className="p-20 text-center">
+                    <div className="flex flex-col items-center justify-center opacity-30">
+                      <span className="text-5xl mb-4">📋</span>
+                      <p className="font-black text-xs uppercase tracking-widest text-slate-500">Chưa có dữ liệu trong khoảng thời gian này</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        
+        {tableData.length > 0 && (
+          <div className="p-6 bg-slate-50/50 text-center">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
+              * Dữ liệu được sắp xếp theo thời gian mới nhất lên đầu
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
