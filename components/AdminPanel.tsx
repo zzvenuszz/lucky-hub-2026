@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, UserRole, AccountStatus, AIKnowledge, AIRule, Message } from '../types.ts';
+import { User, UserRole, AccountStatus, AIKnowledge, AIRule, Message, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
 import { getAICoachResponse } from '../services/gemini.ts';
 
@@ -56,7 +56,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
   }, [sandboxLogs]);
 
   const addSandboxLog = (msg: string, type: string = 'info') => {
-    setSandboxLogs(prev => [...prev.slice(-49), { // Chỉ giữ 50 logs gần nhất để mượt
+    setSandboxLogs(prev => [...prev.slice(-49), { 
       msg,
       type,
       time: new Date().toLocaleTimeString([], { hour12: false })
@@ -123,12 +123,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
   const handleTestChat = async () => {
     if (!testInput.trim()) return;
     
-    addSandboxLog(`[User] ${testInput}`, 'user');
+    addSandboxLog(`[Admin-Test] ${testInput}`, 'user');
     
     const userMsg: Message = {
       id: `test_${Date.now()}`,
       senderId: 'admin_test',
-      senderName: 'Admin',
+      senderName: 'Admin-Test',
       senderRole: UserRole.ADMIN,
       content: testInput,
       timestamp: new Date().toISOString()
@@ -139,7 +139,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
     setIsTestTyping(true);
     
     try {
-      const aiResponse = await getAICoachResponse([...testMessages, userMsg], knowledge, rules, testInput);
+      // Sử dụng mục tiêu mặc định là Tăng cường sức khỏe cho môi trường Sandbox
+      const aiResponse = await getAICoachResponse(
+        [...testMessages, userMsg], 
+        knowledge, 
+        rules, 
+        testInput,
+        HealthGoal.STRENGTHEN_HEALTH
+      );
       
       if (aiResponse) {
         setTestMessages(prev => [...prev, {
@@ -152,7 +159,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
         }]);
       }
     } catch (err: any) {
-      addSandboxLog(`Lỗi Sandbox nghiêm trọng: ${err.message}`, "error");
+      addSandboxLog(`Lỗi Sandbox: ${err.message}`, "error");
     } finally {
       setIsTestTyping(false);
     }
@@ -230,7 +237,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
           </>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Cột 1: Cấu hình Rules & Knowledge */}
             <div className="lg:col-span-4 space-y-6">
               <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                 <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -276,7 +282,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
               </div>
             </div>
 
-            {/* Cột 2: Tri thức hiện có */}
             <div className="lg:col-span-4 space-y-4">
               <h3 className="font-black text-slate-400 text-[9px] uppercase tracking-[0.2em] px-2 flex justify-between">
                 Thư viện tri thức <span>({knowledge.length})</span>
@@ -295,9 +300,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
               </div>
             </div>
 
-            {/* Cột 3: AI Sandbox & Debug Logs */}
             <div className="lg:col-span-4 flex flex-col gap-4 h-[630px]">
-              {/* AI Sandbox Chat */}
               <div className="flex flex-col h-[400px] bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border-4 border-slate-800">
                 <div className="p-4 bg-slate-800 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -350,7 +353,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ users, knowledge, rules, onRefr
                 </div>
               </div>
 
-              {/* Debug Logs Panel (TERMINAL) */}
               <div className="flex-grow bg-black rounded-[1.5rem] border border-slate-800 flex flex-col overflow-hidden shadow-xl">
                 <div className="bg-slate-900 px-4 py-2 flex items-center justify-between border-b border-slate-800">
                   <div className="flex items-center gap-2">

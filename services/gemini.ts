@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { HealthMetric, Message, AIKnowledge, AIRule } from "../types.ts";
+import { HealthMetric, Message, AIKnowledge, AIRule, HealthGoal } from "../types.ts";
 
 const cleanJsonResponse = (text: string): string => {
   const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
@@ -49,7 +49,9 @@ export const getAICoachResponse = async (
   history: Message[], 
   knowledge: AIKnowledge[], 
   rules: AIRule[],
-  latestUserMessage: string
+  latestUserMessage: string,
+  userGoal: HealthGoal,
+  base64Image?: string
 ): Promise<string | null> => {
   const log = (msg: string, type: string = 'info') => {
     if (window.debugLog) window.debugLog(`[GeminiService] ${msg}`, type);
@@ -57,91 +59,73 @@ export const getAICoachResponse = async (
   };
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
-  const modelsToTry = [
-    'gemini-3-flash-preview',
-    'gemini-flash-latest',
-    'gemini-flash-lite-latest',
-    'gemini-3-pro-preview'
-  ];
+  const modelsToTry = ['gemini-3-flash-preview', 'gemini-flash-latest', 'gemini-flash-lite-latest'];
 
-  // Lọc kiến thức dựa trên từ khóa xuất hiện trong câu hỏi
   const filteredKnowledge = knowledge.filter(k => 
     latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()) ||
     k.keyword.toLowerCase().split(' ').some(word => latestUserMessage.toLowerCase().includes(word))
   );
 
-  const contextKnowledge = filteredKnowledge
-    .map(k => `- ${k.keyword}: ${k.content}`)
-    .join("\n");
-
+  const contextKnowledge = filteredKnowledge.map(k => `- ${k.keyword}: ${k.content}`).join("\n");
   const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
 
-  // Báo cáo số lượng dữ liệu nạp vào cho Admin
-  log(`Dữ liệu nạp vào Prompt: ${filteredKnowledge.length} kiến thức phù hợp, ${rules.length} quy chuẩn giao tiếp.`, "info");
+  log(`Phân tích: Mục tiêu="${userGoal}", Tri thức khớp=${filteredKnowledge.length}, Quy tắc=${rules.length}${base64Image ? ", Có ảnh gửi kèm" : ""}`, "info");
 
-  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe tại Lucky Hub.
+  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia dinh dưỡng & sức khỏe cao cấp tại Lucky Hub.
 
-NHIỆM VỤ ĐỊNH DẠNG (BẮT BUỘC):
-- Sử dụng xuống dòng (\n) thường xuyên giữa các ý.
-- Sử dụng gạch đầu dòng (• hoặc -) cho các danh sách khuyên dùng.
-- Sử dụng in đậm (**văn bản**) cho các từ khóa quan trọng.
-- Trình bày có cấu trúc rõ ràng.
+THÔNG TIN QUAN TRỌNG VỀ HỘI VIÊN:
+- Mục tiêu sức khỏe hiện tại: ${userGoal} (Mọi lời khuyên phải bám sát mục tiêu này).
 
-NGUỒN KIẾN THỨC ĐƯỢC CUNG CẤP:
-${contextKnowledge || "Sử dụng kiến thức y khoa chuẩn quốc tế."}
+NHIỆM VỤ PHÂN TÍCH HÌNH ẢNH (NẾU CÓ):
+1. **Nhận diện**: Liệt kê các thành phần thực phẩm, món ăn hoặc dữ liệu sức khỏe trong ảnh.
+2. **Dinh dưỡng**: Ước tính Calo, Protein, Carb, Fat dựa trên khẩu phần nhìn thấy.
+3. **Đánh giá**: Bữa ăn này có giúp đạt được mục tiêu "${userGoal}" không? Tại sao?
+4. **Giải pháp**: Nếu chưa phù hợp, hãy gợi ý thay thế thực phẩm hoặc thay đổi cách chế biến.
 
-QUY TẮC GIAO TIẾP ĐƯỢC THIẾT LẬP:
-${systemRules || "- Thân thiện, chuyên nghiệp, tiếng Việt.\n- Không bịa đặt."}
+QUY TẮC PHẢN HỒI (BẮT BUỘC):
+- Sử dụng tiếng Việt thân thiện, chuyên nghiệp.
+- Định dạng rõ ràng bằng xuống dòng và gạch đầu dòng (•).
+- In đậm (**từ khóa**) quan trọng.
+- Tuyệt đối tuân thủ tri thức và quy tắc được nạp dưới đây.
 
-NGUYÊN TẮC PHẢN HỒI:
-- Trả lời đúng trọng tâm câu hỏi của người dùng.
-- Ngắn gọn nhưng đầy đủ ý.
-- Nếu tư vấn về bệnh lý, phải kèm lời khuyên tham khảo ý kiến bác sĩ chuyên khoa.`;
+TRI THỨC CHUYÊN MÔN:
+${contextKnowledge || "Kiến thức y khoa & dinh dưỡng chuẩn quốc tế."}
 
-  for (let i = 0; i < modelsToTry.length; i++) {
-    const currentModel = modelsToTry[i];
-    log(`Sử dụng động cơ: ${currentModel} (${i + 1}/${modelsToTry.length})`, "system");
+QUY CHUẨN GIAO TIẾP:
+${systemRules || "- Thân thiện, tận tâm.\n- Không đưa ra chẩn đoán y khoa thay thế bác sĩ."}`;
 
+  for (const currentModel of modelsToTry) {
     try {
+      const parts: any[] = [{ text: `Câu hỏi từ hội viên: ${latestUserMessage}` }];
+      if (base64Image) {
+        parts.push({ 
+          inlineData: { 
+            mimeType: 'image/jpeg', 
+            data: base64Image 
+          } 
+        });
+      }
+
       const response = await ai.models.generateContent({
         model: currentModel,
         contents: [
-          { text: `Lịch sử hội thoại:\n${history.slice(-5).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
-          { text: `Câu hỏi: ${latestUserMessage}` }
+          { text: `Lịch sử hội thoại gần đây:\n${history.slice(-3).map(m => `${m.senderName}: ${m.content}`).join("\n")}` },
+          { parts }
         ],
         config: { 
           systemInstruction,
-          temperature: 0.7,
-          topP: 0.9
+          temperature: 0.65,
+          topP: 0.95
         }
       });
 
-      const result = response.text;
-      if (result) {
-        log(`Model ${currentModel} phản hồi thành công.`, "success");
-        return result;
+      if (response.text) {
+        log(`Model ${currentModel} đã xử lý xong phản hồi.`, "success");
+        return response.text;
       }
     } catch (e: any) {
-      const errorMsg = e.message || "";
-      const isOverloaded = errorMsg.includes("503") || errorMsg.includes("overloaded");
-      const isQuotaExceeded = errorMsg.includes("429") || errorMsg.includes("quota");
-      const isNotFound = errorMsg.includes("404") || errorMsg.includes("not found");
-
-      if (isOverloaded) log(`Model ${currentModel} quá tải (503).`, "warning");
-      else if (isQuotaExceeded) log(`Model ${currentModel} hết hạn mức/quota (429).`, "warning");
-      else if (isNotFound) log(`Model ${currentModel} không tồn tại (404).`, "error");
-      else log(`Lỗi tại ${currentModel}: ${errorMsg}`, "error");
-
-      if (i < modelsToTry.length - 1) {
-        log(`Đang chuyển sang model dự phòng tiếp theo...`, "info");
-        continue;
-      }
-
-      log("Đã cạn kiệt tất cả model dự phòng.", "error");
-      return `[LỖI HỆ THỐNG]: AI đang bận xử lý dữ liệu khác. Vui lòng thử lại sau giây lát.`;
+      log(`Model ${currentModel} lỗi: ${e.message}`, "warning");
     }
   }
-
-  return "Lucky AI hiện đang bảo trì, HLV sẽ hỗ trợ bạn sớm!";
+  return "Tôi đang gặp chút gián đoạn khi phân tích dữ liệu. Bạn vui lòng gửi lại tin nhắn hoặc ảnh nhé!";
 };
