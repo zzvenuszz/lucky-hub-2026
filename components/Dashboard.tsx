@@ -131,7 +131,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
 
-  // Dữ liệu bảng (ngược lại với biểu đồ, bảng nên hiện từ mới đến cũ)
   const tableData = useMemo(() => [...filteredMetrics].reverse(), [filteredMetrics]);
 
   return (
@@ -181,7 +180,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* PIE CHART - 3D BODY STRUCTURE */}
         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
           <h3 className="font-bold text-slate-700 mb-2 w-full text-center">Cấu trúc cơ thể 3D</h3>
           {latestMetric ? (
@@ -251,7 +249,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
           ) : <div className="h-[320px] flex items-center justify-center text-slate-400 italic font-medium">Chưa có dữ liệu đo lường</div>}
         </div>
 
-        {/* LINE CHART - TRENDS */}
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col transition-all hover:shadow-md">
           <div className="flex flex-col space-y-8 mb-10">
             <div>
@@ -359,61 +356,68 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
           </div>
         </div>
         
-        <div className="overflow-x-auto no-scrollbar max-h-[500px]">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto scrollbar-hide no-scrollbar max-h-[600px]">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead className="sticky top-0 z-10">
               <tr className="bg-slate-50/90 backdrop-blur-md text-slate-400">
                 <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Ngày đo</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Cân nặng (kg)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Tỉ lệ mỡ (%)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Khối cơ (kg)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Lượng nước (%)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Mỡ nội tạng</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Năng lượng (kcal)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Tuổi SH</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Cân nặng (kg)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Tỉ lệ mỡ (%)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Khối cơ (kg)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Xương (kg)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Nước (%)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Mỡ nội tạng</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">BMR (kcal)</th>
+                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Tuổi SH</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {tableData.length > 0 ? tableData.map((row, idx) => (
-                <tr key={row.id} className="group hover:bg-emerald-50/30 transition-all duration-300">
-                  <td className="p-5">
-                    <div className="flex flex-col">
-                      <span className="font-bold text-slate-800 text-sm">{new Date(row.date).toLocaleDateString('vi-VN')}</span>
-                      <span className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">ID: {row.id.slice(-6)}</span>
-                    </div>
-                  </td>
-                  <td className="p-5">
-                    <span className="font-black text-emerald-600 text-base">{row.weight}</span>
-                  </td>
-                  <td className="p-5">
-                    <span className={`font-bold text-sm ${row.bodyFat > 25 ? 'text-rose-500' : 'text-slate-600'}`}>{row.bodyFat}%</span>
-                  </td>
-                  <td className="p-5">
-                    <span className="font-bold text-sm text-blue-600">{row.muscleMass} kg</span>
-                  </td>
-                  <td className="p-5">
-                    <span className="font-bold text-sm text-sky-500">{row.waterPercent}%</span>
-                  </td>
-                  <td className="p-5">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${row.visceralFat > 9 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                        Lv {row.visceralFat}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="p-5">
-                    <span className="font-bold text-sm text-slate-600">{row.energy}</span>
-                  </td>
-                  <td className="p-5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-indigo-600">{row.bioAge}</span>
-                      <span className="text-[10px] text-slate-400">t</span>
-                    </div>
-                  </td>
-                </tr>
-              )) : (
+              {tableData.length > 0 ? tableData.map((row) => {
+                const rowId = (row as any).id || (row as any)._id || 'N/A';
+                return (
+                  <tr key={rowId} className="group hover:bg-emerald-50/30 transition-all duration-300">
+                    <td className="p-5">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800 text-sm">{new Date(row.date).toLocaleDateString('vi-VN')}</span>
+                        <span className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">ID: {rowId !== 'N/A' ? rowId.toString().slice(-6) : 'N/A'}</span>
+                      </div>
+                    </td>
+                    <td className="p-5 text-center">
+                      <span className="font-black text-emerald-600 text-base">{row.weight}</span>
+                    </td>
+                    <td className="p-5 text-center">
+                      <span className={`font-bold text-sm ${row.bodyFat > 25 ? 'text-rose-500' : 'text-slate-600'}`}>{row.bodyFat}%</span>
+                    </td>
+                    <td className="p-5 text-center">
+                      <span className="font-bold text-sm text-blue-600">{row.muscleMass} kg</span>
+                    </td>
+                    <td className="p-5 text-center">
+                      <span className="font-bold text-sm text-amber-600">{row.boneMinerals} kg</span>
+                    </td>
+                    <td className="p-5 text-center">
+                      <span className="font-bold text-sm text-sky-500">{row.waterPercent}%</span>
+                    </td>
+                    <td className="p-5 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${row.visceralFat > 9 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                          Lv {row.visceralFat}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-5 text-center">
+                      <span className="font-bold text-sm text-slate-600">{row.energy}</span>
+                    </td>
+                    <td className="p-5 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span className="font-bold text-sm text-indigo-600">{row.bioAge}</span>
+                        <span className="text-[10px] text-slate-400">t</span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }) : (
                 <tr>
-                  <td colSpan={8} className="p-20 text-center">
+                  <td colSpan={9} className="p-20 text-center">
                     <div className="flex flex-col items-center justify-center opacity-30">
                       <span className="text-5xl mb-4">📋</span>
                       <p className="font-black text-xs uppercase tracking-widest text-slate-500">Chưa có dữ liệu trong khoảng thời gian này</p>
@@ -428,7 +432,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric }) => {
         {tableData.length > 0 && (
           <div className="p-6 bg-slate-50/50 text-center">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
-              * Dữ liệu được sắp xếp theo thời gian mới nhất lên đầu
+              * Dữ liệu được sắp xếp theo thời gian mới nhất lên đầu và đồng bộ với bộ lọc phía trên
             </p>
           </div>
         )}
