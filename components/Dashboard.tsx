@@ -4,14 +4,14 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Legend, PieChart, Pie, Cell, Sector 
 } from 'recharts';
-import { HealthMetric, User, UserRole } from '../types.ts';
+import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
 
 interface DashboardProps {
   user: User;
   users: User[];
   onAddMetric: () => void;
-  refreshTrigger?: number; // Thêm trigger để làm mới dữ liệu
+  refreshTrigger?: number;
 }
 
 const AVAILABLE_METRICS = [
@@ -27,13 +27,10 @@ const TIME_RANGES = [
   { key: '7d', label: '7 ngày' },
   { key: '14d', label: '2 tuần' },
   { key: '1m', label: '1 tháng' },
-  { key: '2m', label: '2 tháng' },
   { key: '3m', label: '3 tháng' },
   { key: '6m', label: '6 tháng' },
   { key: '1y', label: '1 năm' },
-  { key: '2y', label: '2 năm' },
-  { key: '3y', label: '3 năm' },
-  { key: '5y', label: '5 năm' },
+  { key: 'all', label: 'Tất cả' },
 ];
 
 const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
@@ -45,20 +42,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
 
   const selectedUser = useMemo(() => users.find(u => ((u as any).id || (u as any)._id) === selectedUserId) || user, [users, selectedUserId, user]);
 
-  // Làm mới khi ID người dùng đổi HOẶC khi có tín hiệu refreshTrigger từ App
   useEffect(() => {
     const load = async () => {
       const data = await Database.getMetrics(selectedUserId);
       setMetrics(data || []);
-      if (window.debugLog) window.debugLog(`Dashboard đã cập nhật dữ liệu mới nhất cho: ${selectedUser.fullName}`, 'success');
     };
     load();
   }, [selectedUserId, refreshTrigger]);
 
-  const latestMetric = useMemo(() => {
-    if (metrics.length === 0) return null;
-    return [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-  }, [metrics]);
+  const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
+  const latestMetric = sortedMetrics[0] || null;
+  const prevMetric = sortedMetrics[1] || null;
 
   const bmiInfo = useMemo(() => {
     if (!latestMetric || !selectedUser.height) return { value: 0, label: 'N/A', color: 'text-slate-400' };
@@ -71,34 +65,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     return { value: bmi.toFixed(1), label, color };
   }, [latestMetric, selectedUser]);
 
-  const onPieEnter = (_: any, index: number) => setActiveIndex(index);
-  const onPieLeave = () => setActiveIndex(-1);
+  // Logic hiển thị xu hướng
+  const renderTrend = (key: keyof HealthMetric, currentVal: number, compareVal?: number) => {
+    if (compareVal === undefined || compareVal === null || currentVal === compareVal) return null;
+    
+    const diff = currentVal - compareVal;
+    const isUp = diff > 0;
+    const absDiff = Math.abs(diff).toFixed(1);
+    
+    let isGood = false;
+    const goal = selectedUser.healthGoal;
 
-  const renderActiveShape = (props: any) => {
-    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    // Logic màu sắc theo mục tiêu và loại chỉ số
+    if (key === 'weight') {
+      if (goal === HealthGoal.LOSE_WEIGHT) isGood = !isUp;
+      else if (goal === HealthGoal.GAIN_WEIGHT) isGood = isUp;
+      else isGood = !isUp; // Mặc định giảm cân là tốt cho sức khỏe chung
+    } else if (key === 'bodyFat') {
+      isGood = !isUp; // Mỡ giảm luôn tốt
+    } else if (key === 'muscleMass') {
+      isGood = isUp; // Cơ tăng luôn tốt
+    } else if (key === 'waterPercent') {
+      isGood = isUp; // Nước tăng tốt
+    } else if (key === 'bioAge' || key === 'visceralFat') {
+      isGood = !isUp; // Tuổi SH và mỡ NT giảm tốt
+    }
+
+    const colorClass = isGood ? 'text-emerald-500' : 'text-rose-500';
+    const icon = isUp ? '↑' : '↓';
+    const sign = isUp ? '+' : '-';
+
     return (
-      <g>
-        <Sector
-          cx={cx} cy={cy}
-          innerRadius={innerRadius - 4}
-          outerRadius={outerRadius + 14}
-          startAngle={startAngle} endAngle={endAngle}
-          fill={fill}
-          filter="url(#activeShadow)"
-          style={{ 
-            cursor: 'pointer', 
-            outline: 'none',
-            transition: 'all 1.2s cubic-bezier(0.19, 1, 0.22, 1)', 
-            filter: 'brightness(1.08) contrast(1.05)',
-          }}
-        />
-      </g>
-    );
-  };
-
-  const toggleMetric = (key: string) => {
-    setSelectedMetricKeys(prev => 
-      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+      <span className={`inline-flex items-center ml-1.5 text-[10px] font-black ${colorClass} opacity-90`}>
+        {icon} {sign}{absDiff}
+      </span>
     );
   };
 
@@ -112,22 +112,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   }, [latestMetric]);
 
   const filteredMetrics = useMemo(() => {
+    if (timeRange === 'all') return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     const cutoff = new Date();
-    const now = new Date();
-    
-    switch (timeRange) {
-      case '7d': cutoff.setDate(now.getDate() - 7); break;
-      case '14d': cutoff.setDate(now.getDate() - 14); break;
-      case '1m': cutoff.setMonth(now.getMonth() - 1); break;
-      case '2m': cutoff.setMonth(now.getMonth() - 2); break;
-      case '3m': cutoff.setMonth(now.getMonth() - 3); break;
-      case '6m': cutoff.setMonth(now.getMonth() - 6); break;
-      case '1y': cutoff.setFullYear(now.getFullYear() - 1); break;
-      case '2y': cutoff.setFullYear(now.getFullYear() - 2); break;
-      case '3y': cutoff.setFullYear(now.getFullYear() - 3); break;
-      case '5y': cutoff.setFullYear(now.getFullYear() - 5); break;
-      default: cutoff.setMonth(now.getMonth() - 1);
-    }
+    const days = parseInt(timeRange) || 7;
+    if (timeRange.includes('m')) cutoff.setMonth(cutoff.getMonth() - parseInt(timeRange));
+    else if (timeRange.includes('y')) cutoff.setFullYear(cutoff.getFullYear() - parseInt(timeRange));
+    else cutoff.setDate(cutoff.getDate() - days);
 
     return metrics
       .filter(m => new Date(m.date) >= cutoff)
@@ -138,7 +128,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
 
   return (
     <div className="space-y-6 pb-12">
-      {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub Dashboard</h2>
@@ -162,182 +151,114 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       {/* QUICK STATS CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
-          { label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800', desc: 'Lần đo cuối' },
-          { label: 'Chỉ số BMI', value: bmiInfo.value || '--', unit: '', icon: '📊', color: bmiInfo.color, desc: bmiInfo.label },
-          { label: 'Tỉ lệ mỡ', value: latestMetric?.bodyFat || '--', unit: '%', icon: '🔥', color: 'text-rose-500', desc: 'Mỡ cơ thể' },
-          { label: 'Mỡ nội tạng', value: latestMetric?.visceralFat || '--', unit: 'Lv', icon: '⚠️', color: (latestMetric?.visceralFat || 0) > 9 ? 'text-red-500' : 'text-amber-500', desc: (latestMetric?.visceralFat || 0) > 9 ? 'Cần chú ý' : 'Bình thường' },
-          { label: 'Cơ bắp', value: latestMetric?.muscleMass || '--', unit: 'kg', icon: '💪', color: 'text-blue-600', desc: 'Khối lượng cơ' },
-          { label: 'Tuổi SH', value: latestMetric?.bioAge || '--', unit: 't', icon: '🧬', color: 'text-indigo-600', desc: `Chênh lệch: ${(latestMetric?.bioAge || 0) - (new Date().getFullYear() - new Date(selectedUser.birthDate).getFullYear())}t` },
+          { key: 'weight', label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800' },
+          { key: 'bmi', label: 'Chỉ số BMI', value: bmiInfo.value || '--', unit: '', icon: '📊', color: bmiInfo.color },
+          { key: 'bodyFat', label: 'Tỉ lệ mỡ', value: latestMetric?.bodyFat || '--', unit: '%', icon: '🔥', color: 'text-rose-500' },
+          { key: 'visceralFat', label: 'Mỡ nội tạng', value: latestMetric?.visceralFat || '--', unit: 'Lv', icon: '⚠️', color: (latestMetric?.visceralFat || 0) > 9 ? 'text-red-500' : 'text-amber-500' },
+          { key: 'muscleMass', label: 'Cơ bắp', value: latestMetric?.muscleMass || '--', unit: 'kg', icon: '💪', color: 'text-blue-600' },
+          { key: 'bioAge', label: 'Tuổi SH', value: latestMetric?.bioAge || '--', unit: 't', icon: '🧬', color: 'text-indigo-600' },
         ].map((stat, i) => (
           <div key={i} className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</span>
               <span className="text-lg group-hover:scale-125 transition-transform">{stat.icon}</span>
             </div>
-            <div className={`text-2xl font-black ${stat.color}`}>
-              {stat.value} <span className="text-xs font-bold text-slate-400">{stat.unit}</span>
+            <div className={`text-xl font-black flex items-baseline ${stat.color}`}>
+              {stat.value} 
+              <span className="text-[10px] font-bold text-slate-400 ml-0.5">{stat.unit}</span>
+              {stat.key !== 'bmi' && latestMetric && prevMetric && renderTrend(stat.key as any, (latestMetric as any)[stat.key], (prevMetric as any)[stat.key])}
             </div>
-            <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">{stat.desc}</div>
+            <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">
+               {stat.key === 'bmi' ? bmiInfo.label : stat.key === 'bioAge' ? `Thực tế: ${new Date().getFullYear() - new Date(selectedUser.birthDate).getFullYear()}t` : 'So với lần trước'}
+            </div>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
-          <h3 className="font-bold text-slate-700 mb-2 w-full text-center">Cấu trúc cơ thể 3D</h3>
+          <h3 className="font-bold text-slate-700 mb-2 w-full text-center text-sm">Cấu trúc cơ thể 3D</h3>
           {latestMetric ? (
-            <div className="w-full h-[320px] relative flex flex-col items-center">
+            <div className="w-full h-[300px] relative flex flex-col items-center">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart style={{ outline: 'none' }}>
-                  <defs>
-                    <filter id="shadow" height="150%">
-                      <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
-                      <feOffset dx="0" dy="4" result="offsetblur" />
-                      <feComponentTransfer><feFuncA type="linear" slope="0.1" /></feComponentTransfer>
-                      <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
-                    </filter>
-                    <filter id="activeShadow" height="150%">
-                      <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
-                      <feOffset dx="0" dy="15" result="offsetblur" />
-                      <feComponentTransfer><feFuncA type="linear" slope="0.3" /></feComponentTransfer>
-                      <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
-                    </filter>
-                  </defs>
+                <PieChart>
                   <Pie
                     activeIndex={activeIndex}
-                    activeShape={renderActiveShape}
+                    activeShape={(props: any) => {
+                      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+                      return (
+                        <g><Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 10} startAngle={startAngle} endAngle={endAngle} fill={fill} /></g>
+                      );
+                    }}
                     data={bodyCompData}
                     cx="50%" cy="50%"
-                    innerRadius={75} outerRadius={95}
-                    paddingAngle={6}
+                    innerRadius={65} outerRadius={85}
+                    paddingAngle={5}
                     dataKey="value"
                     stroke="none"
-                    filter="url(#shadow)"
-                    onMouseEnter={onPieEnter}
-                    onMouseLeave={onPieLeave}
-                    animationBegin={0}
-                    animationDuration={1500}
-                    animationEasing="ease-out"
-                    style={{ outline: 'none' }}
+                    onMouseEnter={(_, index) => setActiveIndex(index)}
+                    onMouseLeave={() => setActiveIndex(-1)}
                   >
-                    {bodyCompData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} style={{ outline: 'none', transition: 'all 0.8s ease' }} />
-                    ))}
+                    {bodyCompData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', padding: '12px' }}
-                    itemStyle={{ fontWeight: '800', fontSize: '12px' }}
-                    formatter={(value: number, name: string) => [`${value.toFixed(1)} kg`, name]}
-                  />
+                  <Tooltip formatter={(value: number) => `${value.toFixed(1)} kg`} />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="absolute top-[45%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                <div className={`font-black transition-all duration-1000 ${activeIndex !== -1 ? 'text-4xl scale-110 text-emerald-600' : 'text-3xl text-slate-800'}`}>
+              <div className="absolute top-[48%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                <div className={`font-black text-2xl ${activeIndex !== -1 ? 'text-emerald-600' : 'text-slate-800'}`}>
                   {activeIndex !== -1 ? bodyCompData[activeIndex].value.toFixed(1) : latestMetric.weight}
-                  <span className="text-xs ml-0.5">kg</span>
+                  <span className="text-[10px] ml-0.5">kg</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1 transition-all duration-1000">
+                <div className="text-[8px] text-slate-400 font-black uppercase tracking-widest">
                   {activeIndex !== -1 ? bodyCompData[activeIndex].name : 'Tổng cân'}
                 </div>
               </div>
-              <div className="flex flex-wrap justify-center gap-4 mt-2">
-                {bodyCompData.map((item, index) => (
-                  <div key={item.name} className={`flex items-center gap-1.5 transition-all duration-700 ${activeIndex === index ? 'scale-110 opacity-100' : 'opacity-60'}`}>
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
-                    <span className="text-[10px] font-black text-slate-500 uppercase">{item.name}</span>
-                  </div>
-                ))}
-              </div>
             </div>
-          ) : <div className="h-[320px] flex items-center justify-center text-slate-400 italic font-medium">Chưa có dữ liệu đo lường</div>}
+          ) : <div className="h-[300px] flex items-center justify-center text-slate-400 italic text-xs">Chưa có dữ liệu</div>}
         </div>
 
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col transition-all hover:shadow-md">
-          <div className="flex flex-col space-y-8 mb-10">
-            <div>
-              <h3 className="font-black text-slate-800 text-xl tracking-tight">Biểu đồ xu hướng sức khỏe</h3>
-              <p className="text-xs text-slate-400 font-medium mt-1">Phân tích dữ liệu lịch sử đo lường qua thời gian</p>
-            </div>
-
-            <div className="w-full">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Khoảng thời gian phân tích:</span>
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+          <div className="flex flex-col space-y-6 mb-8">
+            <div className="flex justify-between items-end">
+              <div>
+                <h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Lịch sử thay đổi chỉ số</p>
               </div>
-              <div className="flex overflow-x-auto gap-2 pb-4 scrollbar-hide no-scrollbar -mx-2 px-2">
+              <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-[200px] md:max-w-none">
                 {TIME_RANGES.map(range => (
                   <button 
                     key={range.key} onClick={() => setTimeRange(range.key)}
-                    className={`flex-1 min-w-[80px] px-4 py-3 text-[10px] font-black rounded-2xl transition-all border ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-xl shadow-emerald-100 scale-105' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50 hover:text-emerald-600'}`}
+                    className={`px-3 py-1.5 text-[9px] font-black rounded-xl transition-all border ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}
                   >
-                    {range.label.toUpperCase()}
+                    {range.label}
                   </button>
                 ))}
               </div>
             </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-5 bg-slate-50/50 rounded-[2rem] border border-slate-100 shadow-inner">
-              <span className="text-[10px] font-black text-slate-400 uppercase col-span-full mb-1 tracking-widest text-center md:text-left">Chỉ số hiển thị:</span>
-              {AVAILABLE_METRICS.map(metric => (
-                <label key={metric.key} className="flex items-center gap-3 cursor-pointer group select-none">
-                  <div className="relative flex items-center justify-center">
-                    <input 
-                      type="checkbox" 
-                      className="peer h-5 w-5 cursor-pointer appearance-none rounded-lg border-2 border-slate-200 checked:border-transparent transition-all"
-                      style={{ backgroundColor: selectedMetricKeys.includes(metric.key) ? metric.color : 'transparent' }}
-                      checked={selectedMetricKeys.includes(metric.key)}
-                      onChange={() => toggleMetric(metric.key)}
-                    />
-                    <svg className="absolute h-3.5 w-3.5 pointer-events-none hidden peer-checked:block text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <span className={`text-xs font-bold transition-all ${selectedMetricKeys.includes(metric.key) ? 'text-slate-800 translate-x-1' : 'text-slate-400 group-hover:text-slate-600'}`}>
-                    {metric.label}
-                  </span>
+            <div className="flex flex-wrap gap-3">
+              {AVAILABLE_METRICS.map(m => (
+                <label key={m.key} className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" className="hidden"
+                    checked={selectedMetricKeys.includes(m.key)}
+                    onChange={() => setSelectedMetricKeys(prev => prev.includes(m.key) ? prev.filter(k => k !== m.key) : [...prev, m.key])}
+                  />
+                  <div className={`w-3 h-3 rounded-full border-2 transition-all ${selectedMetricKeys.includes(m.key) ? 'scale-125' : 'opacity-30'}`} style={{ backgroundColor: m.color, borderColor: m.color }}></div>
+                  <span className={`text-[10px] font-bold uppercase tracking-tight ${selectedMetricKeys.includes(m.key) ? 'text-slate-800' : 'text-slate-300'}`}>{m.label.split(' ')[0]}</span>
                 </label>
               ))}
             </div>
           </div>
 
-          <div className="h-[380px] w-full mt-2">
+          <div className="h-[320px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={filteredMetrics} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="date" 
-                  fontSize={10} 
-                  tick={{ fill: '#94a3b8', fontWeight: 700 }} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tickFormatter={(val) => {
-                    const d = new Date(val);
-                    return `${d.getDate()}/${d.getMonth() + 1}`;
-                  }}
-                />
-                <YAxis fontSize={10} tick={{ fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
-                <Tooltip 
-                  labelFormatter={(val) => `Ngày đo: ${new Date(val).toLocaleDateString('vi-VN')}`}
-                  contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)', padding: '20px' }}
-                  itemStyle={{ fontWeight: '700' }}
-                />
-                <Legend 
-                  iconType="circle" 
-                  wrapperStyle={{ fontSize: '10px', fontWeight: '900', paddingTop: '40px', textTransform: 'uppercase', letterSpacing: '0.1em' }} 
-                />
-                
+                <XAxis dataKey="date" fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} tickFormatter={(v) => { const d = new Date(v); return `${d.getDate()}/${d.getMonth()+1}`; }} axisLine={false} tickLine={false} />
+                <YAxis fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontSize: '11px' }} />
                 {AVAILABLE_METRICS.filter(m => selectedMetricKeys.includes(m.key)).map(m => (
-                  <Line 
-                    key={m.key}
-                    type="monotone" 
-                    dataKey={m.key} 
-                    name={m.label} 
-                    stroke={m.color} 
-                    strokeWidth={4} 
-                    dot={{ r: 5, fill: m.color, strokeWidth: 3, stroke: '#fff' }} 
-                    activeDot={{ r: 9, strokeWidth: 0, shadow: '0 0 15px rgba(0,0,0,0.2)' }} 
-                    animationDuration={1500}
-                    connectNulls
-                  />
+                  <Line key={m.key} type="monotone" dataKey={m.key} name={m.label} stroke={m.color} strokeWidth={3} dot={{ r: 3 }} />
                 ))}
               </LineChart>
             </ResponsiveContainer>
@@ -345,100 +266,80 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         </div>
       </div>
 
-      {/* DETAILED DATA TABLE SECTION */}
+      {/* DETAILED DATA TABLE */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-8 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h3 className="font-black text-slate-800 text-xl tracking-tight">Nhật ký chỉ số chi tiết</h3>
-            <p className="text-xs text-slate-400 font-medium mt-1 uppercase tracking-widest">
-              Hiển thị {tableData.length} bản ghi trong khoảng {TIME_RANGES.find(r => r.key === timeRange)?.label}
-            </p>
-          </div>
-          <div className="flex gap-2">
-             <button className="px-4 py-2 bg-slate-50 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-50 hover:text-emerald-600 transition-all">Xuất dữ liệu Excel</button>
-          </div>
+        <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+          <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Nhật ký chi tiết</h3>
+          <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full">{tableData.length} bản ghi</span>
         </div>
         
-        <div className="overflow-x-auto scrollbar-hide no-scrollbar max-h-[600px]">
+        <div className="overflow-x-auto no-scrollbar">
           <table className="w-full text-left border-collapse min-w-[1000px]">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-slate-50/90 backdrop-blur-md text-slate-400">
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100">Ngày đo</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Cân nặng (kg)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Tỉ lệ mỡ (%)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Khối cơ (kg)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Xương (kg)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Nước (%)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Mỡ nội tạng</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">BMR (kcal)</th>
-                <th className="p-5 font-black uppercase text-[10px] tracking-widest border-b border-slate-100 text-center">Tuổi SH</th>
+            <thead>
+              <tr className="bg-slate-50/50 text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
+                <th className="p-4 border-b">Ngày</th>
+                <th className="p-4 border-b text-center">Cân nặng (kg)</th>
+                <th className="p-4 border-b text-center">Mỡ (%)</th>
+                <th className="p-4 border-b text-center">Cơ (kg)</th>
+                <th className="p-4 border-b text-center">Xương (kg)</th>
+                <th className="p-4 border-b text-center">Nước (%)</th>
+                <th className="p-4 border-b text-center">Mỡ NT</th>
+                <th className="p-4 border-b text-center">BMR</th>
+                <th className="p-4 border-b text-center">Tuổi SH</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {tableData.length > 0 ? tableData.map((row) => {
-                const rowId = (row as any).id || (row as any)._id || 'N/A';
+              {tableData.map((row, idx) => {
+                const nextRow = tableData[idx + 1]; // Vì tableData đang Desc, row tiếp theo là dữ liệu cũ hơn
                 return (
-                  <tr key={rowId} className="group hover:bg-emerald-50/30 transition-all duration-300">
-                    <td className="p-5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-800 text-sm">{new Date(row.date).toLocaleDateString('vi-VN')}</span>
-                        <span className="text-[9px] text-slate-400 font-black uppercase tracking-tighter">ID: {rowId !== 'N/A' ? rowId.toString().slice(-6) : 'N/A'}</span>
+                  <tr key={(row as any)._id || idx} className="hover:bg-emerald-50/20 transition-colors">
+                    <td className="p-4">
+                      <div className="text-xs font-bold text-slate-700">{new Date(row.date).toLocaleDateString('vi-VN')}</div>
+                    </td>
+                    <td className="p-4 text-center">
+                      <div className="text-sm font-black text-slate-800">
+                        {row.weight}
+                        {renderTrend('weight', row.weight, nextRow?.weight)}
                       </div>
                     </td>
-                    <td className="p-5 text-center">
-                      <span className="font-black text-emerald-600 text-base">{row.weight}</span>
-                    </td>
-                    <td className="p-5 text-center">
-                      <span className={`font-bold text-sm ${row.bodyFat > 25 ? 'text-rose-500' : 'text-slate-600'}`}>{row.bodyFat}%</span>
-                    </td>
-                    <td className="p-5 text-center">
-                      <span className="font-bold text-sm text-blue-600">{row.muscleMass} kg</span>
-                    </td>
-                    <td className="p-5 text-center">
-                      <span className="font-bold text-sm text-amber-600">{row.boneMinerals} kg</span>
-                    </td>
-                    <td className="p-5 text-center">
-                      <span className="font-bold text-sm text-sky-500">{row.waterPercent}%</span>
-                    </td>
-                    <td className="p-5 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${row.visceralFat > 9 ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                          Lv {row.visceralFat}
-                        </span>
+                    <td className="p-4 text-center">
+                      <div className="text-xs font-bold text-slate-600">
+                        {row.bodyFat}%
+                        {renderTrend('bodyFat', row.bodyFat, nextRow?.bodyFat)}
                       </div>
                     </td>
-                    <td className="p-5 text-center">
-                      <span className="font-bold text-sm text-slate-600">{row.energy}</span>
+                    <td className="p-4 text-center">
+                      <div className="text-xs font-bold text-slate-600">
+                        {row.muscleMass}
+                        {renderTrend('muscleMass', row.muscleMass, nextRow?.muscleMass)}
+                      </div>
                     </td>
-                    <td className="p-5 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <span className="font-bold text-sm text-indigo-600">{row.bioAge}</span>
-                        <span className="text-[10px] text-slate-400">t</span>
+                    <td className="p-4 text-center text-xs text-slate-500 font-medium">{row.boneMinerals}</td>
+                    <td className="p-4 text-center">
+                      <div className="text-xs font-bold text-slate-600">
+                        {row.waterPercent}%
+                        {renderTrend('waterPercent', row.waterPercent, nextRow?.waterPercent)}
+                      </div>
+                    </td>
+                    <td className="p-4 text-center">
+                      <div className="text-xs font-bold text-slate-600">
+                        {row.visceralFat}
+                        {renderTrend('visceralFat', row.visceralFat, nextRow?.visceralFat)}
+                      </div>
+                    </td>
+                    <td className="p-4 text-center text-xs text-slate-500">{row.energy}</td>
+                    <td className="p-4 text-center">
+                      <div className="text-xs font-bold text-slate-600">
+                        {row.bioAge}
+                        {renderTrend('bioAge', row.bioAge, nextRow?.bioAge)}
                       </div>
                     </td>
                   </tr>
                 );
-              }) : (
-                <tr>
-                  <td colSpan={9} className="p-20 text-center">
-                    <div className="flex flex-col items-center justify-center opacity-30">
-                      <span className="text-5xl mb-4">📋</span>
-                      <p className="font-black text-xs uppercase tracking-widest text-slate-500">Chưa có dữ liệu trong khoảng thời gian này</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
+              })}
             </tbody>
           </table>
         </div>
-        
-        {tableData.length > 0 && (
-          <div className="p-6 bg-slate-50/50 text-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
-              * Dữ liệu được sắp xếp theo thời gian mới nhất lên đầu và đồng bộ với bộ lọc phía trên
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
