@@ -22,6 +22,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
     weight: 0, bodyFat: 0, boneMinerals: 0, waterPercent: 0, muscleMass: 0, energy: 0, bioAge: 0, visceralFat: 0, balanceIndex: 0
   });
   const [loadingAI, setLoadingAI] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -35,6 +36,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
     if (!file) return;
     setLoadingAI(true);
     setBulkMode(isBulk);
+    setRetryCount(0);
 
     const reader = new FileReader();
     reader.onloadend = async () => {
@@ -50,20 +52,26 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
       if (!isBulk) {
         log("Đang phân tích ảnh kết quả đơn...");
         const extracted = await extractMetricsFromImage(base64);
-        setFormData(prev => ({ ...prev, ...extracted }));
+        if (Object.keys(extracted).length > 0) {
+          setFormData(prev => ({ ...prev, ...extracted }));
+        } else {
+          alert("Hệ thống đang bận. Vui lòng thử lại sau ít phút.");
+        }
         setLoadingAI(false);
       } else {
         log("Đang phân tích bảng viết tay (Bulk)...");
-        try {
-          const ai = new GoogleGenAI({ apiKey });
-          const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: [{ 
-              parts: [
-                { inlineData: { mimeType: 'image/jpeg', data: base64 } }, 
-                { text: `Bạn là chuyên gia OCR y tế chuyên đọc bảng viết tay. Hãy trích xuất dữ liệu từ ảnh bảng InBody.
+        
+        const executeBulkAI = async (retries = 2): Promise<void> => {
+          try {
+            const ai = new GoogleGenAI({ apiKey });
+            const response = await ai.models.generateContent({
+              model: 'gemini-3-flash-preview',
+              contents: [{ 
+                parts: [
+                  { inlineData: { mimeType: 'image/jpeg', data: base64 } }, 
+                  { text: `Bạn là chuyên gia OCR y tế chuyên đọc bảng viết tay. Hãy trích xuất dữ liệu từ ảnh bảng InBody.
 Ánh xạ các cột Tiếng Việt sang JSON như sau:
-- "Ngày kiểm tra" -> date (Nếu ghi "13/1" hãy chuyển thành "2026-01-13")
+- "Ngày kiểm tra" -> date (Ví dụ "13/1" chuyển thành "2026-01-13")
 - "Cân nặng (kg)" -> weight
 - "Mỡ cơ thể (%)" -> bodyFat
 - "Khoáng chất" -> boneMinerals
@@ -74,64 +82,72 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, onClose }) 
 - "Tuổi sinh học" -> bioAge
 - "Mỡ Nội Tạng" -> visceralFat
 
-LƯU Ý QUAN TRỌNG:
-1. Dấu phẩy (ví dụ 47,9) là dấu thập phân, hãy chuyển thành dấu chấm (47.9).
-2. Bỏ qua các hàng trống không có dữ liệu.
-3. Nếu thiếu cột nào, hãy để giá trị 0. 
-4. Năm mặc định là 2026.` }
-              ] 
-            }],
-            config: { 
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    date: { type: Type.STRING },
-                    weight: { type: Type.NUMBER },
-                    bodyFat: { type: Type.NUMBER },
-                    muscleMass: { type: Type.NUMBER },
-                    waterPercent: { type: Type.NUMBER },
-                    visceralFat: { type: Type.NUMBER },
-                    energy: { type: Type.NUMBER },
-                    balanceIndex: { type: Type.NUMBER },
-                    bioAge: { type: Type.NUMBER },
-                    boneMinerals: { type: Type.NUMBER }
-                  },
-                  required: ["weight"]
+LƯU Ý: 
+1. Chuyển dấu phẩy thành dấu chấm. 
+2. Năm 2026.
+3. Chỉ lấy các dòng có dữ liệu.` }
+                ] 
+              }],
+              config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      date: { type: Type.STRING },
+                      weight: { type: Type.NUMBER },
+                      bodyFat: { type: Type.NUMBER },
+                      muscleMass: { type: Type.NUMBER },
+                      waterPercent: { type: Type.NUMBER },
+                      visceralFat: { type: Type.NUMBER },
+                      energy: { type: Type.NUMBER },
+                      balanceIndex: { type: Type.NUMBER },
+                      bioAge: { type: Type.NUMBER },
+                      boneMinerals: { type: Type.NUMBER }
+                    },
+                    required: ["weight"]
+                  }
                 }
               }
+            });
+
+            const rawText = response.text || "[]";
+            const cleanedText = cleanJsonResponse(rawText);
+            const data = JSON.parse(cleanedText);
+            
+            if (!Array.isArray(data)) throw new Error("Kết quả AI không đúng định dạng mảng.");
+
+            const cleanedData = data.map((item: any) => ({
+              date: item.date || new Date().toISOString().split('T')[0],
+              weight: parseFloat(String(item.weight).replace(',', '.')) || 0,
+              bodyFat: parseFloat(String(item.bodyFat).replace(',', '.')) || 0,
+              muscleMass: parseFloat(String(item.muscleMass).replace(',', '.')) || 0,
+              waterPercent: parseFloat(String(item.waterPercent).replace(',', '.')) || 0,
+              visceralFat: parseFloat(String(item.visceralFat).replace(',', '.')) || 0,
+              energy: parseFloat(String(item.energy).replace(',', '.')) || 0,
+              balanceIndex: parseFloat(String(item.balanceIndex).replace(',', '.')) || 0,
+              bioAge: parseFloat(String(item.bioAge).replace(',', '.')) || 0,
+              boneMinerals: parseFloat(String(item.boneMinerals).replace(',', '.')) || 0
+            })).filter(item => item.weight > 0);
+
+            setBulkPreview(cleanedData);
+            log(`Đã đọc được ${cleanedData.length} ngày từ sổ tay.`, "success");
+            setLoadingAI(false);
+          } catch (err: any) { 
+            if (retries > 0 && (err.message?.includes('429') || err.message?.includes('limit'))) {
+              setRetryCount(prev => prev + 1);
+              log("Hạn mức API tạm thời hết. Tự động thử lại sau 3 giây...", "info");
+              setTimeout(() => executeBulkAI(retries - 1), 3000);
+            } else {
+              log(`LỖI PHÂN TÍCH: ${err.message}`, "error");
+              alert("Hệ thống AI đang quá tải yêu cầu (Quota limit). Vui lòng đợi 30 giây rồi thử lại."); 
+              setLoadingAI(false);
             }
-          });
+          }
+        };
 
-          const rawText = response.text || "[]";
-          const cleanedText = cleanJsonResponse(rawText);
-          const data = JSON.parse(cleanedText);
-          
-          if (!Array.isArray(data)) throw new Error("Kết quả AI không đúng định dạng mảng.");
-
-          const cleanedData = data.map((item: any) => ({
-            date: item.date || new Date().toISOString().split('T')[0],
-            weight: parseFloat(String(item.weight).replace(',', '.')) || 0,
-            bodyFat: parseFloat(String(item.bodyFat).replace(',', '.')) || 0,
-            muscleMass: parseFloat(String(item.muscleMass).replace(',', '.')) || 0,
-            waterPercent: parseFloat(String(item.waterPercent).replace(',', '.')) || 0,
-            visceralFat: parseFloat(String(item.visceralFat).replace(',', '.')) || 0,
-            energy: parseFloat(String(item.energy).replace(',', '.')) || 0,
-            balanceIndex: parseFloat(String(item.balanceIndex).replace(',', '.')) || 0,
-            bioAge: parseFloat(String(item.bioAge).replace(',', '.')) || 0,
-            boneMinerals: parseFloat(String(item.boneMinerals).replace(',', '.')) || 0
-          })).filter(item => item.weight > 0); // Lọc bỏ các dòng lỗi không có cân nặng
-
-          setBulkPreview(cleanedData);
-          log(`Đã đọc được ${cleanedData.length} ngày từ sổ tay.`, "success");
-        } catch (err: any) { 
-          log(`LỖI PHÂN TÍCH: ${err.message}`, "error");
-          alert("Lỗi phân tích sổ tay. Hãy đảm bảo ảnh chụp đủ sáng và rõ nét."); 
-        } finally {
-          setLoadingAI(false);
-        }
+        await executeBulkAI();
       }
     };
     reader.readAsDataURL(file);
@@ -161,12 +177,12 @@ LƯU Ý QUAN TRỌNG:
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-6 bg-emerald-600 text-white flex justify-between items-center">
+        <div className="p-6 bg-emerald-600 text-white flex justify-between items-center shrink-0">
           <h2 className="text-xl font-bold">Cập nhật chỉ số cơ thể</h2>
           <button onClick={onClose} className="text-2xl hover:scale-110 transition-transform">&times;</button>
         </div>
 
-        <div className="p-8 overflow-y-auto space-y-6">
+        <div className="p-8 overflow-y-auto space-y-6 no-scrollbar">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button 
               disabled={loadingAI}
@@ -190,8 +206,12 @@ LƯU Ý QUAN TRỌNG:
           {loadingAI && (
             <div className="flex flex-col items-center justify-center p-10 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
               <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <span className="text-emerald-700 font-black text-sm uppercase tracking-widest text-center">Lucky AI đang giải mã chữ viết tay...</span>
-              <p className="text-xs text-emerald-500 mt-2 italic font-medium">Quá trình này có thể mất 5-10 giây tùy độ phức tạp của bảng</p>
+              <span className="text-emerald-700 font-black text-sm uppercase tracking-widest text-center">
+                {retryCount > 0 ? `Đang thử lại lần ${retryCount}...` : 'Lucky AI đang giải mã dữ liệu...'}
+              </span>
+              <p className="text-xs text-emerald-500 mt-2 italic font-medium text-center">
+                {retryCount > 0 ? 'Yêu cầu đang được xếp hàng đợi do hạn mức API' : 'Vui lòng không đóng cửa sổ này'}
+              </p>
             </div>
           )}
 
@@ -204,7 +224,7 @@ LƯU Ý QUAN TRỌNG:
                 </h3>
                 <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Hủy kết quả</button>
               </div>
-              <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-inner bg-slate-50/50 max-h-80">
+              <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-inner bg-slate-50/50 max-h-80 scrollbar-hide">
                 <table className="w-full text-[10px] text-left min-w-[900px]">
                   <thead>
                     <tr className="bg-white/80 backdrop-blur-sm text-slate-400 font-black uppercase sticky top-0 z-10">

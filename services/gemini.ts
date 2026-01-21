@@ -8,6 +8,20 @@ const cleanJsonResponse = (text: string): string => {
   return text.trim();
 };
 
+// Hàm hỗ trợ thử lại khi gặp lỗi Quota (429)
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    if (retries > 0 && (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED'))) {
+      if (window.debugLog) window.debugLog(`Đang thử lại do nghẽn mạng (còn ${retries} lần)...`, "info");
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
+
 export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric>> => {
   const log = (msg: string, type: string = 'ai') => {
     if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
@@ -20,8 +34,9 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
   }
   
   log("Bắt đầu gửi ảnh phân tích...");
-  const ai = new GoogleGenAI({ apiKey });
-  try {
+  
+  return withRetry(async () => {
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{
@@ -52,12 +67,12 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     });
 
     const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
-    log(`Đã trích xuất thành công: Cân nặng ${result.weight}kg, Mỡ ${result.bodyFat}%, Cân đối ${result.balanceIndex}`, "success");
+    log(`Đã trích xuất thành công: Cân nặng ${result.weight}kg`, "success");
     return result;
-  } catch (e: any) {
+  }).catch(e => {
     log(`LỖI TRÍCH XUẤT: ${e.message}`, "error");
     return {};
-  }
+  });
 };
 
 export const getAICoachResponse = async (
@@ -74,35 +89,30 @@ export const getAICoachResponse = async (
   };
 
   const apiKey = (window as any).process?.env?.API_KEY;
-  if (!apiKey) {
-    log("Thiếu API_KEY", "error");
-    return "Lỗi cấu hình: Thiếu API Key.";
-  }
+  if (!apiKey) return "Lỗi cấu hình: Thiếu API Key.";
 
-  const ai = new GoogleGenAI({ apiKey });
+  return withRetry(async () => {
+    const ai = new GoogleGenAI({ apiKey });
+    
+    let isDataOld = false;
+    let daysOld = 0;
+    if (latestMetric) {
+      const lastDate = new Date(latestMetric.date);
+      const now = new Date();
+      lastDate.setHours(0, 0, 0, 0);
+      now.setHours(0, 0, 0, 0);
+      const diffTime = Math.abs(now.getTime() - lastDate.getTime());
+      daysOld = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      isDataOld = daysOld > 3;
+    }
 
-  log("Đang xử lý hội thoại hội viên...");
+    const contextKnowledge = knowledge
+      .filter(k => latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()))
+      .map(k => `- ${k.keyword}: ${k.content}`).join("\n");
 
-  // Kiểm tra độ mới của dữ liệu
-  let isDataOld = false;
-  let daysOld = 0;
-  if (latestMetric) {
-    const lastDate = new Date(latestMetric.date);
-    const now = new Date();
-    lastDate.setHours(0, 0, 0, 0);
-    now.setHours(0, 0, 0, 0);
-    const diffTime = Math.abs(now.getTime() - lastDate.getTime());
-    daysOld = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    isDataOld = daysOld > 3;
-  }
+    const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
 
-  const contextKnowledge = knowledge
-    .filter(k => latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()))
-    .map(k => `- ${k.keyword}: ${k.content}`).join("\n");
-
-  const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
-
-  const metricText = latestMetric ? `
+    const metricText = latestMetric ? `
 DỮ LIỆU CƠ THỂ THỰC TẾ (Đo ngày ${latestMetric.date}):
 - Cân nặng: ${latestMetric.weight}kg
 - Tỉ lệ mỡ: ${latestMetric.bodyFat}%
@@ -113,7 +123,7 @@ DỮ LIỆU CƠ THỂ THỰC TẾ (Đo ngày ${latestMetric.date}):
 ${isDataOld ? `(⚠️ CẢNH BÁO: Dữ liệu này đã cũ - ${daysOld} ngày. Bạn phải nhắc hội viên cập nhật lại chỉ số)` : "(Dữ liệu còn mới, hãy tư vấn dựa trên thông số này)"}
   ` : "Hội viên này chưa có dữ liệu đo lường. Hãy yêu cầu họ đo InBody ngay.";
 
-  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe tại Lucky Hub.
+    const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe tại Lucky Hub.
 
 THÔNG TIN HỘI VIÊN ĐANG CHAT:
 - Mục tiêu thực tế: ${userGoal}
@@ -130,44 +140,37 @@ ${contextKnowledge}
 
 PHONG CÁCH: Chân thành, chuyên nghiệp, dùng Emoji.`;
 
-  const formattedHistory = [];
-  let lastRole = "";
-
-  const relevantHistory = history.slice(-10);
-  for (const m of relevantHistory) {
-    const currentRole = m.senderId === 'ai_coach' ? 'model' : 'user';
-    if (currentRole !== lastRole && m.content.trim()) {
-      formattedHistory.push({
-        role: currentRole,
-        parts: [{ text: m.content }]
-      });
-      lastRole = currentRole;
+    const formattedHistory = [];
+    let lastRole = "";
+    const relevantHistory = history.slice(-10);
+    for (const m of relevantHistory) {
+      const currentRole = m.senderId === 'ai_coach' ? 'model' : 'user';
+      if (currentRole !== lastRole && m.content.trim()) {
+        formattedHistory.push({
+          role: currentRole,
+          parts: [{ text: m.content }]
+        });
+        lastRole = currentRole;
+      }
     }
-  }
 
-  const userPart: any = { text: latestUserMessage || "Phân tích giúp tôi" };
-  const imagePart = base64Image ? { inlineData: { mimeType: 'image/jpeg', data: base64Image } } : null;
+    const userPart: any = { text: latestUserMessage || "Phân tích giúp tôi" };
+    const imagePart = base64Image ? { inlineData: { mimeType: 'image/jpeg', data: base64Image } } : null;
 
-  const currentTurn = {
-    role: 'user',
-    parts: imagePart ? [userPart, imagePart] : [userPart]
-  };
+    const currentTurn = {
+      role: 'user',
+      parts: imagePart ? [userPart, imagePart] : [userPart]
+    };
 
-  try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [...formattedHistory, currentTurn],
       config: { systemInstruction, temperature: 0.7 }
     });
 
-    if (response.text) {
-      log(`Phản hồi thành công (${response.text.length} ký tự)`, "success");
-      return response.text;
-    }
-  } catch (e: any) {
+    return response.text || "Không có phản hồi từ AI.";
+  }).catch(e => {
     log(`LỖI GEMINI: ${e.message}`, "error");
-    return "AI đang bận, vui lòng thử lại sau.";
-  }
-
-  return "Không có phản hồi từ AI.";
+    return "AI đang bận do quá tải hạn mức. Vui lòng thử lại sau 30 giây.";
+  });
 };
