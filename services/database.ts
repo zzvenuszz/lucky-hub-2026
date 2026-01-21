@@ -27,7 +27,6 @@ async function request<T>(url: string, method = 'GET', body?: any): Promise<T | 
 
 function mockRequest<T>(url: string, method: string, body?: any): any {
   const getStorage = (key: string) => JSON.parse(localStorage.getItem(key) || '[]');
-  const setStorage = (key: string, data: any) => localStorage.setItem(key, JSON.stringify(data));
   if (url.includes('/chats')) return getStorage('mock_chats');
   return null;
 }
@@ -36,9 +35,13 @@ export const Database = {
   initialize: async () => {},
   getUsers: () => request<User[]>(`${API_BASE}/users`),
   updateUser: (id: string, data: Partial<User>) => request<User>(`${API_BASE}/users/${id}`, 'PUT', data),
+  deleteUser: (id: string) => request(`${API_BASE}/users/${id}`, 'DELETE'),
   resetPassword: (id: string) => request<{newPassword: string}>(`${API_BASE}/users/${id}/reset-password`, 'POST'),
+  
   getMetrics: (userId?: string) => userId ? request<HealthMetric[]>(`${API_BASE}/metrics/${userId}`) : request<HealthMetric[]>(`${API_BASE}/all-metrics`),
   saveMetric: (data: any) => request<HealthMetric>(`${API_BASE}/metrics`, 'POST', data),
+  updateMetric: (id: string, data: any) => request<HealthMetric>(`${API_BASE}/metrics/${id}`, 'PUT', data),
+  deleteMetric: (id: string) => request(`${API_BASE}/metrics/${id}`, 'DELETE'),
   saveMetricsBulk: (data: any[]) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
   deleteMetricsByDates: (userId: string, dates: string[]) => request(`${API_BASE}/metrics/delete-dates`, 'POST', { userId, dates }),
   

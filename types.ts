@@ -10,6 +10,13 @@ export enum AccountStatus {
   SUSPENDED = 'SUSPENDED'
 }
 
+export enum Permission {
+  MANAGE_USERS = 'MANAGE_USERS',
+  DELETE_USERS = 'DELETE_USERS',
+  MANAGE_METRICS = 'MANAGE_METRICS',
+  MANAGE_AI = 'MANAGE_AI'
+}
+
 export enum HealthGoal {
   LOSE_WEIGHT = 'Giảm cân',
   GAIN_WEIGHT = 'Tăng cân',
@@ -25,31 +32,35 @@ export enum HealthGoal {
 
 export interface HealthMetric {
   id: string;
+  _id?: string;
   userId: string;
+  userFullName?: string; // Dùng cho admin view
   date: string;
-  weight: number; // kg
-  bodyFat: number; // %
-  boneMinerals: number; // kg
-  waterPercent: number; // %
-  muscleMass: number; // kg
-  balanceIndex: number; // Mặc định 0 nếu không có
-  energy: number; // kcal
+  weight: number; 
+  bodyFat: number; 
+  boneMinerals: number; 
+  waterPercent: number; 
+  muscleMass: number; 
+  balanceIndex: number; 
+  energy: number; 
   bioAge: number;
   visceralFat: number;
 }
 
 export interface User {
   id: string;
+  _id?: string;
   username: string;
   fullName: string;
   birthDate: string;
   height: number;
-  weight: number; // kg - Cân nặng ban đầu
+  weight: number;
   phoneNumber: string;
   gender: 'Nam' | 'Nữ';
   healthGoal: HealthGoal;
   role: UserRole;
   status: AccountStatus;
+  permissions: Permission[];
   avatar?: string;
   isPasswordEncrypted?: boolean; 
 }
