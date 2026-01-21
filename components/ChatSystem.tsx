@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule } from '../types.ts';
+import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule, HealthMetric } from '../types.ts';
 import { getAICoachResponse } from '../services/gemini.ts';
 import { Database } from '../services/database.ts';
 
@@ -17,12 +17,22 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isTypingAI, setIsTypingAI] = useState(false);
+  const [latestMetric, setLatestMetric] = useState<HealthMetric | undefined>(undefined);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadAllChats = async () => {
+  const loadData = async () => {
     const allChats = await Database.getChats() || [];
     const coaches = users.filter(u => u.role === UserRole.COACH);
+
+    // Load Metrics cho người dùng hiện tại
+    const uid = (currentUser as any).id || (currentUser as any)._id;
+    const metrics = await Database.getMetrics(uid);
+    if (metrics && metrics.length > 0) {
+      const sorted = [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setLatestMetric(sorted[0]);
+    }
 
     if (currentUser.role === UserRole.MEMBER) {
       const memberChats = coaches.map(coach => {
@@ -45,8 +55,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   useEffect(() => {
-    loadAllChats();
-    const interval = setInterval(loadAllChats, 10000);
+    loadData();
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, [currentUser, users]);
 
@@ -61,7 +71,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       reader.onloadend = () => setSelectedImage(reader.result as string);
       reader.readAsDataURL(file);
     }
-    // Reset input value to allow selecting same file again
     e.target.value = '';
   };
 
@@ -97,6 +106,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
         rules, 
         sentText || "Hãy phân tích hình ảnh tôi vừa gửi",
         currentUser.healthGoal,
+        latestMetric,
         base64Data
       );
       
@@ -159,12 +169,19 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                 <div>
                   <div className="font-bold text-slate-800">{getOtherUser(selectedChat)?.fullName}</div>
                   <div className="text-[10px] text-emerald-500 font-black uppercase tracking-widest flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Cloud Sync Active
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Đồng bộ hóa Cloud
                   </div>
                 </div>
               </div>
-              <div className="text-[10px] bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full font-black uppercase tracking-widest">
-                Goal: {currentUser.healthGoal}
+              <div className="text-right">
+                <div className="text-[10px] bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full font-black uppercase tracking-widest">
+                  Mục tiêu: {currentUser.healthGoal}
+                </div>
+                {latestMetric && (
+                  <div className="text-[9px] text-slate-400 font-bold mt-1 uppercase">
+                    Đo gần nhất: {new Date(latestMetric.date).toLocaleDateString('vi-VN')}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -196,7 +213,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
               {isTypingAI && (
                 <div className="flex items-center gap-3 ml-2">
                   <div className="flex space-x-1"><div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce"></div><div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]"></div><div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.4s]"></div></div>
-                  <span className="text-[10px] text-amber-500 font-black uppercase tracking-widest">AI đang phân tích thực phẩm...</span>
+                  <span className="text-[10px] text-amber-500 font-black uppercase tracking-widest">AI đang thấu hiểu bạn...</span>
                 </div>
               )}
             </div>
@@ -236,7 +253,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
         ) : (
           <div className="flex-grow flex flex-col items-center justify-center text-slate-300 p-10">
             <div className="w-32 h-32 bg-slate-50 rounded-[3rem] flex items-center justify-center text-6xl mb-8 shadow-inner grayscale opacity-50">💬</div>
-            <p className="font-black text-xs uppercase tracking-[0.3em] animate-pulse">Chọn hội viên để bắt đầu tư vấn</p>
+            <p className="font-black text-xs uppercase tracking-[0.3em] animate-pulse">Chọn một hội thoại để bắt đầu</p>
           </div>
         )}
       </div>
