@@ -13,12 +13,12 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: {
+      contents: [{
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
           { text: "Trích xuất các chỉ số sức khỏe từ ảnh chụp và trả về JSON chuẩn." }
         ]
-      },
+      }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -68,8 +68,12 @@ export const getAICoachResponse = async (
   if (latestMetric) {
     const lastDate = new Date(latestMetric.date);
     const now = new Date();
+    // Đặt giờ về 0 để so sánh chính xác theo ngày
+    lastDate.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
+    
     const diffTime = Math.abs(now.getTime() - lastDate.getTime());
-    daysOld = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    daysOld = Math.floor(diffTime / (1000 * 60 * 60 * 24));
     isDataOld = daysOld > 3;
   }
 
@@ -82,57 +86,66 @@ export const getAICoachResponse = async (
   const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
 
   const metricContext = latestMetric ? `
-CHỈ SỐ CƠ THỂ MỚI NHẤT (Ngày ${latestMetric.date}):
+CHỈ SỐ CƠ THỂ MỚI NHẤT (Đo ngày ${latestMetric.date}):
 - Cân nặng: ${latestMetric.weight}kg
 - Tỉ lệ mỡ: ${latestMetric.bodyFat}%
 - Khối lượng cơ: ${latestMetric.muscleMass}kg
 - Mỡ nội tạng: Level ${latestMetric.visceralFat}
 - Tuổi sinh học: ${latestMetric.bioAge} tuổi
-${isDataOld ? `⚠️ LƯU Ý: Chỉ số này đã cũ (${daysOld} ngày trước). Hãy nhắc hội viên cập nhật chỉ số mới để tư vấn chính xác hơn.` : ""}
-  ` : "Hội viên chưa có dữ liệu đo lường gần đây. Hãy khuyên họ thực hiện phép đo đầu tiên.";
 
-  log(`Gửi yêu cầu AI: Goal="${userGoal}", MetricStatus=${isDataOld ? 'Cũ' : 'Mới'}${base64Image ? ", Có kèm ảnh" : ""}`, "info");
+TÌNH TRẠNG DỮ LIỆU: ${isDataOld ? `⚠️ Dữ liệu này đã cũ (${daysOld} ngày). BẮT BUỘC bạn phải nhắc hội viên cập nhật chỉ số mới để việc tư vấn bữa ăn/sức khỏe đạt hiệu quả cao nhất.` : "Dữ liệu mới cập nhật, hãy sử dụng để phân tích."}
+  ` : "Hội viên CHƯA CÓ dữ liệu đo lường. Hãy khuyên họ thực hiện đo để có tư vấn chính xác.";
 
-  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia dinh dưỡng & sức khỏe tận tâm tại Lucky Hub.
+  log(`Phân tích: Mục tiêu="${userGoal}", Dữ liệu=${isDataOld ? 'Quá hạn' : 'Đạt chuẩn'}${base64Image ? ", Có ảnh" : ""}`, "info");
 
-BỐI CẢNH HỘI VIÊN:
-- Mục tiêu chính: **${userGoal}**
+  const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia dinh dưỡng cao cấp.
+
+THÔNG TIN HỘI VIÊN:
+- Mục tiêu: ${userGoal}
 ${metricContext}
 
-NHIỆM VỤ CỦA BẠN:
-1. **Nếu có ảnh bữa ăn**: Phân tích món ăn, ước tính calo/dinh dưỡng. Đánh giá bữa ăn này CÓ PHÙ HỢP với mục tiêu "${userGoal}" và các chỉ số hiện tại (như mỡ nội tạng, cơ bắp) của họ không.
-2. **Nếu dữ liệu chỉ số cũ > 3 ngày**: Hãy khéo léo lồng ghép lời nhắc hội viên cập nhật chỉ số vào cuối câu trả lời một cách chân thành.
-3. **Tư vấn**: Luôn dựa trên Tri thức & Quy tắc của Lucky Hub.
+NHIỆM VỤ:
+1. **Phân tích ảnh (nếu có)**: Nhận diện thực phẩm, calo và đối chiếu với mục tiêu "${userGoal}".
+2. **Đối chiếu chỉ số**: Nếu hội viên đang thừa mỡ nội tạng hoặc thiếu cơ, hãy nhắc nhở trong bữa ăn.
+3. **Nhắc nhở cập nhật**: Nếu dữ liệu đã quá 3 ngày, hãy lồng ghép lời nhắc cập nhật chỉ số vào cuối câu trả lời một cách tinh tế và quan tâm.
 
-ĐỊNH DẠNG:
-- Tiếng Việt chuyên nghiệp, dùng Emoji phù hợp.
-- Chia đoạn rõ ràng bằng \n.
-- In đậm các thông tin quan trọng.
+QUY TẮC:
+${systemRules}
+${contextKnowledge}`;
 
-TRI THỨC & QUY TẮC:
-${contextKnowledge}
-${systemRules}`;
+  const historyParts = history.slice(-5).map(m => ({
+    text: `${m.senderName} (${m.senderRole}): ${m.content}`
+  }));
+
+  const currentUserParts: any[] = [{ text: `Câu hỏi/Hành động: ${latestUserMessage}` }];
+  if (base64Image) {
+    currentUserParts.push({
+      inlineData: { mimeType: 'image/jpeg', data: base64Image }
+    });
+  }
 
   for (const currentModel of modelsToTry) {
     try {
-      const parts: any[] = [{ text: `Tin nhắn người dùng: ${latestUserMessage}` }];
-      if (base64Image) {
-        parts.push({ inlineData: { mimeType: 'image/jpeg', data: base64Image } });
-      }
-
       const response = await ai.models.generateContent({
         model: currentModel,
         contents: [
-          { text: `Lịch sử chat: ${history.slice(-3).map(m => m.content).join(" | ")}` },
-          { parts }
+          { parts: historyParts.length > 0 ? historyParts : [{ text: "Bắt đầu hội thoại." }] },
+          { parts: currentUserParts }
         ],
-        config: { systemInstruction, temperature: 0.7 }
+        config: { 
+          systemInstruction, 
+          temperature: 0.75,
+          topP: 0.95
+        }
       });
 
-      if (response.text) return response.text;
+      if (response.text) {
+        log(`Phản hồi thành công từ model ${currentModel}`, "success");
+        return response.text;
+      }
     } catch (e: any) {
-      log(`Lỗi Model ${currentModel}: ${e.message}`, "warning");
+      log(`Lỗi Model ${currentModel}: ${e.message}`, "error");
     }
   }
-  return "AI đang bận một chút, bạn hãy thử lại sau giây lát nhé!";
+  return "Tôi đã nhận được thông tin nhưng đang gặp chút trục trặc khi kết nối bộ não AI. Bạn vui lòng thử lại sau giây lát nhé!";
 };
