@@ -65,15 +65,20 @@ export const getAICoachResponse = async (
     'gemini-3-pro-preview'
   ];
 
-  const contextKnowledge = knowledge
-    .filter(k => 
-      latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()) ||
-      k.keyword.toLowerCase().split(' ').some(word => latestUserMessage.toLowerCase().includes(word))
-    )
+  // Lọc kiến thức dựa trên từ khóa xuất hiện trong câu hỏi
+  const filteredKnowledge = knowledge.filter(k => 
+    latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()) ||
+    k.keyword.toLowerCase().split(' ').some(word => latestUserMessage.toLowerCase().includes(word))
+  );
+
+  const contextKnowledge = filteredKnowledge
     .map(k => `- ${k.keyword}: ${k.content}`)
     .join("\n");
 
   const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
+
+  // Báo cáo số lượng dữ liệu nạp vào cho Admin
+  log(`Dữ liệu nạp vào Prompt: ${filteredKnowledge.length} kiến thức phù hợp, ${rules.length} quy chuẩn giao tiếp.`, "info");
 
   const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe tại Lucky Hub.
 
@@ -81,20 +86,17 @@ NHIỆM VỤ ĐỊNH DẠNG (BẮT BUỘC):
 - Sử dụng xuống dòng (\n) thường xuyên giữa các ý.
 - Sử dụng gạch đầu dòng (• hoặc -) cho các danh sách khuyên dùng.
 - Sử dụng in đậm (**văn bản**) cho các từ khóa quan trọng.
-- Trình bày có cấu trúc: 
-  1. Lời chào ngắn.
-  2. Nội dung giải thích chính (chia thành các đoạn nhỏ).
-  3. Lời khuyên cụ thể (dùng gạch đầu dòng).
-  4. Lời chúc/Kết bài.
+- Trình bày có cấu trúc rõ ràng.
 
-NGUỒN KIẾN THỨC:
+NGUỒN KIẾN THỨC ĐƯỢC CUNG CẤP:
 ${contextKnowledge || "Sử dụng kiến thức y khoa chuẩn quốc tế."}
 
-QUY TẮC GIAO TIẾP:
+QUY TẮC GIAO TIẾP ĐƯỢC THIẾT LẬP:
 ${systemRules || "- Thân thiện, chuyên nghiệp, tiếng Việt.\n- Không bịa đặt."}
 
 NGUYÊN TẮC PHẢN HỒI:
-- Ngắn gọn nhưng đầy đủ ý, không viết thành một khối văn bản dài dằng dặc.
+- Trả lời đúng trọng tâm câu hỏi của người dùng.
+- Ngắn gọn nhưng đầy đủ ý.
 - Nếu tư vấn về bệnh lý, phải kèm lời khuyên tham khảo ý kiến bác sĩ chuyên khoa.`;
 
   for (let i = 0; i < modelsToTry.length; i++) {
