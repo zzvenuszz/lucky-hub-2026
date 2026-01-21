@@ -24,6 +24,19 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Khóa cuộn trang chính khi Popup mở (đặc biệt quan trọng trên Mobile)
+  useEffect(() => {
+    const originalStyle = window.getComputedStyle(document.body).overflow;
+    // Trên di động, chúng ta khóa hẳn cuộn body để tập trung vào chat
+    if (window.innerWidth < 768) {
+      document.body.style.overflow = 'hidden';
+    }
+    
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
+  }, []);
+
   const loadData = async () => {
     const uid = (currentUser as any).id || (currentUser as any)._id;
     const metrics = await Database.getMetrics(uid);
@@ -141,7 +154,10 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   return (
-    <div className="fixed bottom-24 left-6 w-[400px] max-w-[95vw] h-[600px] max-h-[85vh] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden z-[999] animate-in slide-in-from-bottom-6 fade-in duration-300">
+    <div 
+      className="fixed bottom-24 left-6 w-[400px] max-w-[95vw] h-[600px] max-h-[85vh] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden z-[999] animate-in slide-in-from-bottom-6 duration-300"
+      onWheel={(e) => e.stopPropagation()} // Chống lan tỏa sự kiện cuộn
+    >
       {/* Header */}
       <div className="p-5 bg-emerald-600 text-white flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
@@ -162,7 +178,10 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
       <div className="flex-grow flex flex-col min-h-0 bg-slate-50/30">
         {showContacts ? (
-          <div className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar">
+          <div 
+            className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar"
+            style={{ overscrollBehavior: 'contain' }} // NGĂN CHẶN SCROLL CHÍNH KHI ĐÃ CUỘN HẾT
+          >
             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">Hội thoại của bạn</div>
             {chats.map(chat => {
               const other = getOtherUser(chat);
@@ -187,7 +206,11 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
           </div>
         ) : selectedChat ? (
           <>
-            <div ref={scrollRef} className="flex-grow p-4 overflow-y-auto space-y-4 no-scrollbar">
+            <div 
+              ref={scrollRef} 
+              className="flex-grow p-4 overflow-y-auto space-y-4 no-scrollbar"
+              style={{ overscrollBehavior: 'contain' }} // NGĂN CHẶN SCROLL CHÍNH KHI ĐANG NHẮN TIN
+            >
               {selectedChat.messages.map(msg => (
                 <div key={msg.id} className={`flex flex-col ${msg.senderId === ((currentUser as any).id || (currentUser as any)._id) ? 'items-end' : 'items-start'}`}>
                   <div className={`max-w-[85%] p-3 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
