@@ -180,15 +180,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             <div className="w-full h-[300px] relative flex flex-col items-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  {/* @ts-ignore: Property 'activeIndex' does not exist on type 'PieProps' in some Recharts versions */}
+                  {/* Fix: Sử dụng casting as any để giải quyết lỗi types cho Pie activeIndex/activeShape trong một số phiên bản Recharts */}
                   <Pie
-                    activeIndex={activeIndex}
-                    activeShape={(props: any) => {
+                    activeIndex={activeIndex as any}
+                    activeShape={((props: any) => {
                       const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
                       return (
                         <g><Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 10} startAngle={startAngle} endAngle={endAngle} fill={fill} /></g>
                       );
-                    }}
+                    }) as any}
                     data={bodyCompData}
                     cx="50%" cy="50%"
                     innerRadius={65} outerRadius={85}

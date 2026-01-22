@@ -27,24 +27,20 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
   };
 
-  const apiKey = (window as any).process?.env?.API_KEY;
-  if (!apiKey) {
-    log("LỖI: Thiếu API_KEY", "error");
-    return {};
-  }
-  
+  // Fix: Sử dụng trực tiếp process.env.API_KEY theo hướng dẫn
   log("Bắt đầu gửi ảnh phân tích...");
   
   return withRetry(async () => {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: [{
+      // Fix: Chuyển cấu trúc contents về dạng Content object
+      contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
           { text: "Hãy trích xuất CHÍNH XÁC các chỉ số sức khỏe từ ảnh chụp InBody/Kết quả đo. Nếu chỉ số 'balanceIndex' (cân đối cơ thể) không có trong ảnh, BẮT BUỘC trả về giá trị là 0. Hãy trả về JSON chuẩn." }
         ]
-      }],
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -88,11 +84,9 @@ export const getAICoachResponse = async (
     if (window.debugLog) window.debugLog(`[Gemini Coach] ${msg}`, type);
   };
 
-  const apiKey = (window as any).process?.env?.API_KEY;
-  if (!apiKey) return "Lỗi cấu hình: Thiếu API Key.";
-
+  // Fix: Khởi tạo GoogleGenAI trực tiếp với process.env.API_KEY
   return withRetry(async () => {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     let isDataOld = false;
     let daysOld = 0;

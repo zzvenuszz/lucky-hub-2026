@@ -42,13 +42,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     const reader = new FileReader();
     reader.onloadend = async () => {
       const base64 = (reader.result as string).split(',')[1];
-      const apiKey = (window as any).process?.env?.API_KEY;
-
-      if (!apiKey) {
-        log("LỖI: Không tìm thấy API KEY", "error");
-        setLoadingAI(false);
-        return;
-      }
       
       if (!isBulk) {
         log("Đang phân tích ảnh kết quả đơn...");
@@ -64,10 +57,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         
         const executeBulkAI = async (retries = 2): Promise<void> => {
           try {
-            const ai = new GoogleGenAI({ apiKey });
+            // Fix: Sử dụng trực tiếp process.env.API_KEY theo hướng dẫn
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
               model: 'gemini-3-flash-preview',
-              contents: [{ 
+              // Fix: Điều chỉnh cấu trúc contents theo mẫu chuẩn
+              contents: { 
                 parts: [
                   { inlineData: { mimeType: 'image/jpeg', data: base64 } }, 
                   { text: `Bạn là chuyên gia OCR y tế chuyên đọc bảng viết tay. Hãy trích xuất dữ liệu từ ảnh bảng InBody.
@@ -88,7 +83,7 @@ LƯU Ý:
 2. Năm 2026.
 3. Chỉ lấy các dòng có dữ liệu.` }
                 ] 
-              }],
+              },
               config: { 
                 responseMimeType: "application/json",
                 responseSchema: {

@@ -51,6 +51,8 @@ export interface User {
   id: string;
   _id?: string;
   username: string;
+  // Fix: Thêm thuộc tính password để đồng bộ với Database.updateUser
+  password?: string;
   fullName: string;
   birthDate: string;
   height: number;

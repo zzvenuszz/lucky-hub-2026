@@ -15,7 +15,11 @@ interface AdminPanelProps {
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, rules, onRefresh }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai'>('users');
   const [searchTerm, setSearchTerm] = useState('');
-  const [allMetrics, setAllMetrics] = useState<HealthMetric[]>([]);
+  
+  // States cho tab Quản lý Chỉ số
+  const [metricUserSearch, setMetricUserSearch] = useState('');
+  const [selectedMetricUser, setSelectedMetricUser] = useState<User | null>(null);
+  const [userMetrics, setUserMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
 
   // AI Sandbox States
@@ -23,16 +27,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   const [testInput, setTestInput] = useState('');
   const [testImage, setTestImage] = useState<string | null>(null);
   const [isTestTyping, setIsTestTyping] = useState(false);
-  const [sandboxLogs, setSandboxLogs] = useState<{msg: string, type: string, time: string}[]>([]);
   
   const [newK, setNewK] = useState({ keyword: '', content: '' });
   const [newRule, setNewRule] = useState('');
 
+  // Tải chỉ số khi chọn người dùng
   useEffect(() => {
-    if (activeTab === 'metrics') {
-      Database.getMetrics().then(m => setAllMetrics(m || []));
+    if (selectedMetricUser) {
+      const uid = (selectedMetricUser as any).id || (selectedMetricUser as any)._id;
+      Database.getMetrics(uid).then(m => setUserMetrics(m || []));
+    } else {
+      setUserMetrics([]);
     }
-  }, [activeTab]);
+  }, [selectedMetricUser]);
 
   const handleTestChat = async () => {
     if (!testInput.trim() && !testImage) return;
@@ -77,24 +84,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   };
 
   const handleToggleStatus = async (user: User) => {
+    const id = (user as any).id || (user as any)._id;
     const nextStatus = user.status === AccountStatus.ACTIVE ? AccountStatus.SUSPENDED : AccountStatus.ACTIVE;
-    await Database.updateUser(user.id, { status: nextStatus });
+    await Database.updateUser(id, { status: nextStatus });
     onRefresh();
   };
 
   const handlePermissionToggle = async (user: User, perm: Permission) => {
+    const id = (user as any).id || (user as any)._id;
     const perms = user.permissions || [];
     const nextPerms = perms.includes(perm) ? perms.filter(p => p !== perm) : [...perms, perm];
-    await Database.updateUser(user.id, { permissions: nextPerms });
+    await Database.updateUser(id, { permissions: nextPerms });
     onRefresh();
   };
 
   const handleDeleteMetric = async (id: string) => {
     if (confirm('Xóa chỉ số này?')) {
       await Database.deleteMetric(id);
-      Database.getMetrics().then(m => setAllMetrics(m || []));
+      if (selectedMetricUser) {
+        const uid = (selectedMetricUser as any).id || (selectedMetricUser as any)._id;
+        Database.getMetrics(uid).then(m => setUserMetrics(m || []));
+      }
     }
   };
+
+  const filteredUsersForMetrics = users.filter(u => 
+    u.fullName.toLowerCase().includes(metricUserSearch.toLowerCase()) || 
+    u.phoneNumber?.includes(metricUserSearch)
+  );
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden min-h-[70vh]">
@@ -108,7 +125,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         {activeTab === 'users' ? (
           <>
             <div className="mb-6 flex gap-4">
-              <input placeholder="Tìm hội viên..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="flex-grow px-5 py-3 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm shadow-inner" />
+              <input placeholder="Tìm hội viên..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="flex-grow px-5 py-3 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm shadow-inner font-medium" />
             </div>
             <div className="overflow-x-auto no-scrollbar">
               <table className="w-full text-sm">
@@ -121,7 +138,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {users.filter(u => u.fullName.toLowerCase().includes(searchTerm.toLowerCase())).map(u => (
-                    <tr key={u.id} className="group hover:bg-slate-50/20">
+                    <tr key={(u as any).id || (u as any)._id} className="group hover:bg-slate-50/20">
                       <td className="py-5">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">{u.fullName.charAt(0)}</div>
@@ -139,7 +156,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                       </td>
                       <td className="text-right space-x-3">
                         <button onClick={() => handleToggleStatus(u)} className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase ${u.status === AccountStatus.ACTIVE ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{u.status === AccountStatus.ACTIVE ? 'Đang hoạt động' : 'Đã khóa'}</button>
-                        <button onClick={() => handleDeleteUser(u.id, u.fullName)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition-colors uppercase">Xóa</button>
+                        <button onClick={() => handleDeleteUser(((u as any).id || (u as any)._id)!, u.fullName)} className="text-[10px] font-bold text-red-400 hover:text-red-600 transition-colors uppercase">Xóa</button>
                       </td>
                     </tr>
                   ))}
@@ -149,33 +166,87 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
           </>
         ) : activeTab === 'metrics' ? (
           <div className="space-y-6">
-            <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Nhật ký chỉ số hệ thống</h3>
-            <div className="overflow-x-auto rounded-3xl border border-slate-100 max-h-[550px] no-scrollbar">
-              <table className="w-full text-[11px] text-left">
-                <thead className="bg-slate-50 text-slate-400 font-black uppercase sticky top-0 z-10">
-                  <tr>
-                    <th className="p-4">Hội viên</th>
-                    <th className="p-4 text-center">Ngày</th>
-                    <th className="p-4 text-center">Cân (kg)</th>
-                    <th className="p-4 text-center">Mỡ (%)</th>
-                    <th className="p-4 text-right">Hành động</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {allMetrics.map(m => (
-                    <tr key={m.id || m._id} className="hover:bg-slate-50/50">
-                      <td className="p-4 font-bold text-slate-800">{m.userFullName}</td>
-                      <td className="p-4 text-center text-slate-500">{m.date}</td>
-                      <td className="p-4 text-center font-black text-emerald-600">{m.weight}</td>
-                      <td className="p-4 text-center text-rose-500 font-bold">{m.bodyFat}%</td>
-                      <td className="p-4 text-right space-x-3">
-                        <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black hover:underline uppercase text-[10px]">Sửa</button>
-                        <button onClick={() => handleDeleteMetric((m.id || m._id)!)} className="text-red-400 font-black hover:underline uppercase text-[10px]">Xóa</button>
-                      </td>
-                    </tr>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Cột trái: Tìm kiếm hội viên */}
+              <div className="bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest">🔍 Tìm kiếm hội viên</h3>
+                  {selectedMetricUser && (
+                    <button onClick={() => setSelectedMetricUser(null)} className="text-[9px] font-black text-rose-500 uppercase">Hủy chọn</button>
+                  )}
+                </div>
+                <input 
+                  placeholder="Nhập tên hoặc số điện thoại..." 
+                  value={metricUserSearch} 
+                  onChange={e => setMetricUserSearch(e.target.value)} 
+                  className="w-full px-5 py-3 bg-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm shadow-sm font-medium" 
+                />
+                <div className="max-h-[300px] overflow-y-auto no-scrollbar space-y-2">
+                  {filteredUsersForMetrics.map(u => (
+                    <div 
+                      key={(u as any).id || (u as any)._id} 
+                      onClick={() => setSelectedMetricUser(u)}
+                      className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${((selectedMetricUser as any)?.id || (selectedMetricUser as any)?._id) === ((u as any).id || (u as any)._id) ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 'bg-white border-slate-100 hover:border-emerald-200 text-slate-600'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-[10px] ${((selectedMetricUser as any)?.id || (selectedMetricUser as any)?._id) === ((u as any).id || (u as any)._id) ? 'bg-white/20 text-white' : 'bg-emerald-50 text-emerald-600'}`}>{u.fullName.charAt(0)}</div>
+                        <div>
+                          <div className="font-bold text-[11px] leading-none">{u.fullName}</div>
+                          <div className={`text-[9px] mt-1 font-medium ${((selectedMetricUser as any)?.id || (selectedMetricUser as any)?._id) === ((u as any).id || (u as any)._id) ? 'text-white/70' : 'text-slate-400'}`}>{u.phoneNumber || 'Không có SĐT'}</div>
+                        </div>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase tracking-widest ${((selectedMetricUser as any)?.id || (selectedMetricUser as any)?._id) === ((u as any).id || (u as any)._id) ? 'text-white' : 'text-slate-300'}`}>Chọn →</span>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                  {filteredUsersForMetrics.length === 0 && <div className="text-center py-8 text-slate-400 text-xs italic">Không tìm thấy hội viên phù hợp</div>}
+                </div>
+              </div>
+
+              {/* Cột phải: Lịch sử chỉ số */}
+              <div className="bg-white p-6 rounded-[2rem] border border-slate-100 space-y-4 h-full flex flex-col min-h-[440px]">
+                <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                  <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest">📈 Lịch sử đo lường</h3>
+                  <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
+                    {selectedMetricUser ? selectedMetricUser.fullName : 'Chưa chọn hội viên'}
+                  </span>
+                </div>
+                
+                {!selectedMetricUser ? (
+                  <div className="flex-grow flex flex-col items-center justify-center text-slate-300 space-y-4">
+                    <div className="text-4xl">📊</div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-center">Hãy chọn một hội viên bên trái<br/>để xem và quản lý chỉ số</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto no-scrollbar flex-grow">
+                    <table className="w-full text-[11px] text-left">
+                      <thead className="bg-slate-50 text-slate-400 font-black uppercase sticky top-0 z-10">
+                        <tr>
+                          <th className="p-3">Ngày đo</th>
+                          <th className="p-3 text-center">Cân (kg)</th>
+                          <th className="p-3 text-center">Mỡ (%)</th>
+                          <th className="p-3 text-right">Hành động</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {userMetrics.map(m => (
+                          <tr key={(m as any).id || (m as any)._id} className="hover:bg-slate-50/50">
+                            <td className="p-3 font-bold text-slate-700">{m.date}</td>
+                            <td className="p-3 text-center font-black text-emerald-600">{m.weight}</td>
+                            <td className="p-3 text-center text-rose-500 font-bold">{m.bodyFat}%</td>
+                            <td className="p-3 text-right space-x-3">
+                              <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black hover:underline uppercase text-[9px]">Sửa</button>
+                              <button onClick={() => handleDeleteMetric(((m as any).id || (m as any)._id)!)} className="text-red-400 font-black hover:underline uppercase text-[9px]">Xóa</button>
+                            </td>
+                          </tr>
+                        ))}
+                        {userMetrics.length === 0 && (
+                          <tr><td colSpan={4} className="p-8 text-center text-slate-400 italic">Hội viên này chưa có dữ liệu đo</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : (
@@ -185,12 +256,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
               <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex flex-col h-[600px] shadow-sm">
                 <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest mb-4 shrink-0">⚖️ Quy chuẩn AI</h3>
                 <form onSubmit={e => { e.preventDefault(); Database.addRule({content: newRule}).then(() => {setNewRule(''); onRefresh();}); }} className="flex gap-2 mb-4 shrink-0">
-                  <input placeholder="Thêm quy tắc mới..." value={newRule} onChange={e => setNewRule(e.target.value)} className="flex-grow px-4 py-2.5 bg-white rounded-xl text-xs outline-none shadow-sm" />
+                  <input placeholder="Thêm quy tắc mới..." value={newRule} onChange={e => setNewRule(e.target.value)} className="flex-grow px-4 py-2.5 bg-white rounded-xl text-xs outline-none shadow-sm font-medium" />
                   <button type="submit" className="bg-emerald-600 text-white w-10 h-10 rounded-xl font-bold flex items-center justify-center transition-transform active:scale-90">+</button>
                 </form>
                 <div className="space-y-2 overflow-y-auto no-scrollbar flex-grow pr-1">
                   {rules.map(r => (
-                    <div key={r.id || (r as any)._id} className="flex items-start justify-between p-4 bg-white rounded-2xl text-[10px] border border-slate-100 group shadow-sm">
+                    <div key={(r as any).id || (r as any)._id} className="flex items-start justify-between p-4 bg-white rounded-2xl text-[10px] border border-slate-100 group shadow-sm">
                       <span className="leading-relaxed text-slate-700 font-medium">"{r.content}"</span>
                       <button onClick={() => handleDeleteRule(r)} className="text-slate-300 hover:text-red-500 ml-2 transition-colors p-1">×</button>
                     </div>
@@ -202,13 +273,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
               <div className="bg-emerald-50/20 p-6 rounded-[2rem] border border-emerald-100 flex flex-col h-[600px] shadow-sm">
                 <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest mb-4 shrink-0">🧠 Nạp tri thức</h3>
                 <form onSubmit={e => { e.preventDefault(); Database.addKnowledge(newK).then(() => {setNewK({keyword:'', content:''}); onRefresh();}); }} className="space-y-3 mb-6 shrink-0">
-                  <input required placeholder="Từ khóa liên quan..." value={newK.keyword} onChange={e => setNewK({...newK, keyword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-white text-xs outline-none shadow-sm border border-emerald-50" />
-                  <textarea required placeholder="Nội dung tri thức cho AI..." rows={2} value={newK.content} onChange={e => setNewK({...newK, content: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-white text-xs outline-none shadow-sm border border-emerald-50" />
+                  <input required placeholder="Từ khóa liên quan..." value={newK.keyword} onChange={e => setNewK({...newK, keyword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-white text-xs outline-none shadow-sm border border-emerald-50 font-medium" />
+                  <textarea required placeholder="Nội dung tri thức cho AI..." rows={2} value={newK.content} onChange={e => setNewK({...newK, content: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-white text-xs outline-none shadow-sm border border-emerald-50 font-medium" />
                   <button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-xl font-black text-[10px] uppercase shadow-lg shadow-emerald-100 transition-all active:scale-95">Nạp tri thức</button>
                 </form>
                 <div className="space-y-3 overflow-y-auto no-scrollbar flex-grow pr-1">
                   {knowledge.map(k => (
-                    <div key={k.id || (k as any)._id} className="p-4 bg-white rounded-2xl border border-emerald-100/50 shadow-sm relative group">
+                    <div key={(k as any).id || (k as any)._id} className="p-4 bg-white rounded-2xl border border-emerald-100/50 shadow-sm relative group">
                       <div className="flex justify-between items-start mb-2">
                         <span className="text-[9px] font-black text-emerald-600 uppercase tracking-tighter bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100">KEY: {k.keyword}</span>
                         <button onClick={() => handleDeleteKnowledge(k)} className="text-slate-300 hover:text-red-500 transition-colors p-1 text-base leading-none">×</button>
@@ -222,7 +293,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
 
             {/* AI Sandbox & Logs */}
             <div className="lg:col-span-4 flex flex-col gap-6 h-[600px]">
-              <div className="flex flex-col h-[400px] bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-800">
+              <div className="flex flex-col h-[600px] bg-slate-900 rounded-[2.5rem] overflow-hidden shadow-2xl border border-slate-800">
                 <div className="p-4 bg-slate-800/80 flex items-center justify-between shrink-0 backdrop-blur-md">
                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">AI Advisor Sandbox</span>
                   <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
@@ -247,19 +318,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                   </div>
                 </div>
               </div>
-              <div className="flex-grow bg-slate-950 rounded-[2rem] p-5 overflow-y-auto font-mono text-[9px] no-scrollbar shadow-xl border border-slate-900">
-                <div className="text-emerald-500 font-black mb-3 uppercase border-b border-emerald-900/50 pb-2 flex justify-between tracking-widest">
-                  <span>System Output</span>
-                  <span className="text-slate-700 opacity-50">v2.1</span>
-                </div>
-                {sandboxLogs.length === 0 && <div className="text-slate-800 italic">Waiting for telemetry...</div>}
-                {sandboxLogs.map((log, i) => (
-                  <div key={i} className="flex gap-2 mb-2 text-slate-500 border-l border-slate-900 pl-2">
-                    <span className="text-slate-800 shrink-0">[{log.time}]</span>
-                    <span className={log.type === 'error' ? 'text-rose-500' : log.type === 'success' ? 'text-emerald-400' : 'text-slate-400'}>{log.msg}</span>
-                  </div>
-                ))}
-              </div>
             </div>
           </div>
         )}
@@ -267,28 +325,54 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
 
       {editingMetric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
-          <form onSubmit={async (e) => { e.preventDefault(); await Database.updateMetric(editingMetric.id || (editingMetric as any)._id, editingMetric); setEditingMetric(null); onRefresh(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            <h4 className="font-black text-slate-800 uppercase tracking-widest text-center border-b border-slate-50 pb-4">Cập nhật chỉ số cơ thể</h4>
-            <div className="grid grid-cols-2 gap-5">
+          <form 
+            onSubmit={async (e) => { 
+              e.preventDefault(); 
+              const mid = (editingMetric as any).id || (editingMetric as any)._id;
+              await Database.updateMetric(mid, editingMetric); 
+              setEditingMetric(null); 
+              if (selectedMetricUser) {
+                const uid = (selectedMetricUser as any).id || (selectedMetricUser as any)._id;
+                Database.getMetrics(uid).then(m => setUserMetrics(m || []));
+              }
+            }} 
+            className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 space-y-6 shadow-2xl animate-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center justify-between border-b border-slate-50 pb-4">
+              <h4 className="font-black text-slate-800 uppercase tracking-widest">Cập nhật chỉ số toàn diện</h4>
+              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase">Hội viên: {selectedMetricUser?.fullName}</span>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
-                <input type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-slate-100 focus:border-emerald-500 font-bold" />
+                <input type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-slate-100 focus:border-emerald-500 font-bold text-xs" />
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
-                <input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-slate-100 focus:border-emerald-500 font-bold" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tỉ lệ mỡ (%)</label>
-                <input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-slate-100 focus:border-emerald-500 font-bold" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Khối cơ (kg)</label>
-                <input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-slate-100 focus:border-emerald-500 font-bold" />
-              </div>
+              {[
+                { key: 'weight', label: 'Cân nặng (kg)' },
+                { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)' },
+                { key: 'muscleMass', label: 'Khối cơ (kg)' },
+                { key: 'boneMinerals', label: 'Khối xương (kg)' },
+                { key: 'waterPercent', label: 'Lượng nước (%)' },
+                { key: 'visceralFat', label: 'Mỡ nội tạng (Lv)' },
+                { key: 'energy', label: 'BMR (kcal)' },
+                { key: 'balanceIndex', label: 'Chỉ số cân đối' },
+                { key: 'bioAge', label: 'Tuổi sinh học' },
+              ].map(field => (
+                <div key={field.key} className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{field.label}</label>
+                  <input 
+                    type="number" step="0.1" 
+                    value={(editingMetric as any)[field.key]} 
+                    onChange={e => setEditingMetric({...editingMetric, [field.key]: Number(e.target.value)})} 
+                    className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none border border-slate-100 focus:border-emerald-500 font-bold text-xs" 
+                  />
+                </div>
+              ))}
             </div>
+
             <div className="flex gap-4 pt-4">
-              <button type="button" onClick={() => setEditingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 font-black uppercase text-[11px] tracking-widest hover:bg-slate-200 transition-colors">Đóng</button>
+              <button type="button" onClick={() => setEditingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 font-black uppercase text-[11px] tracking-widest hover:bg-slate-200 transition-colors">Hủy bỏ</button>
               <button type="submit" className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] tracking-widest shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">Lưu thay đổi</button>
             </div>
           </form>
