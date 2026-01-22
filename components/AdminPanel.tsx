@@ -61,19 +61,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
     setTestInput('');
     setIsTestTyping(true);
     const response = await getAICoachResponse([...testMessages, userMsg], knowledge, rules, userMsg.content, HealthGoal.BODY_RECOMP);
-    setIsTestTyping(true); // Gemini AI typing
     setIsTestTyping(false);
     if (response) {
       setTestMessages(prev => [...prev, { id: Date.now().toString(), senderId: 'ai', senderName: 'Lucky AI', senderRole: 'AI' as any, content: response, timestamp: new Date().toISOString() }]);
     }
   };
 
+  // CHUẨN HÓA XỬ LÝ ID CHO MONGODB
   const handleDeleteMetric = async (metric: HealthMetric) => {
     const mid = metric.id || (metric as any)._id;
-    if (confirm('Bạn có chắc chắn muốn xóa bản ghi chỉ số ngày ' + metric.date + '?')) {
-      const success = await Database.deleteMetric(mid);
-      loadUserMetrics();
-      onRefresh(); // Cập nhật dashboard nếu cần
+    if (!mid) return alert("Không tìm thấy ID bản ghi");
+    
+    if (confirm(`Bạn có chắc muốn xóa chỉ số ngày ${new Date(metric.date).toLocaleDateString('vi-VN')}?`)) {
+      try {
+        await Database.deleteMetric(mid);
+        loadUserMetrics();
+        onRefresh();
+        alert("Đã xóa thành công!");
+      } catch (err) {
+        alert("Lỗi khi xóa bản ghi.");
+      }
     }
   };
 
@@ -81,10 +88,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
     e.preventDefault();
     if (!editingMetric) return;
     const mid = editingMetric.id || (editingMetric as any)._id;
-    await Database.updateMetric(mid, editingMetric);
-    setEditingMetric(null);
-    loadUserMetrics();
-    onRefresh();
+    if (!mid) return alert("Không tìm thấy ID bản ghi");
+
+    try {
+      await Database.updateMetric(mid, editingMetric);
+      setEditingMetric(null);
+      loadUserMetrics();
+      onRefresh();
+      alert("Cập nhật chỉ số thành công!");
+    } catch (err) {
+      alert("Lỗi khi cập nhật bản ghi.");
+    }
   };
 
   return (
@@ -131,7 +145,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                       <td><span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${u.status === AccountStatus.ACTIVE ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{u.status}</span></td>
                       <td className="text-right space-x-3">
                         <button onClick={() => setEditingUser(u)} className="text-emerald-600 font-black text-[9px] hover:underline">Sửa</button>
-                        <button onClick={() => Database.deleteUser(((u as any).id || (u as any)._id)!).then(onRefresh)} className="text-rose-400 font-black text-[9px] hover:underline">Xóa</button>
+                        <button onClick={() => { if(confirm("Xóa hội viên này?")) Database.deleteUser(((u as any).id || (u as any)._id)!).then(onRefresh); }} className="text-rose-400 font-black text-[9px] hover:underline">Xóa</button>
                       </td>
                     </tr>
                   ))}
@@ -263,12 +277,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <div className="flex items-center justify-between border-b border-slate-50 pb-4">
               <div>
                 <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa chỉ số</h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Ngày đo: {editingMetric.date}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Ngày đo: {new Date(editingMetric.date).toLocaleDateString('vi-VN')}</p>
               </div>
               <button type="button" onClick={() => setEditingMetric(null)} className="text-2xl text-slate-400 hover:text-slate-600">&times;</button>
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
+                <input type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
+              </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
                 <input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />

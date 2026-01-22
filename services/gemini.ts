@@ -26,7 +26,8 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
   };
 
-  log("Bắt đầu trích xuất chỉ số (Mobile-Optimized)...");
+  const currentYear = new Date().getFullYear();
+  log("Bắt đầu trích xuất chỉ số (Thông minh)...");
   
   return withRetry(async () => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -35,7 +36,12 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: "Hãy phân tích hình ảnh kết quả đo InBody này (ảnh có thể bị xoay hoặc lóa). TRÍCH XUẤT tất cả các chỉ số sau: Cân nặng (Weight), Tỉ lệ mỡ (PBF/Body Fat %), Khối cơ (SMM/Muscle Mass), Mỡ nội tạng (VFL/Visceral Fat), Tuổi cơ thể (Body Age), Lượng nước (TBW/Water %), Xương (Mineral/Bone). Nếu một chỉ số không rõ, hãy để trống hoặc dùng giá trị mặc định 0. Trả về JSON chuẩn duy nhất." }
+          { text: `Phân tích ảnh InBody. TRÍCH XUẤT: Cân nặng, % Mỡ, Khối cơ, Mỡ nội tạng, Tuổi cơ thể, % Nước, Xương, BMR. 
+          QUAN TRỌNG VỀ NGÀY THÁNG: 
+          1. Tìm ngày đo trên phiếu (thường ở góc trên hoặc dưới). 
+          2. Nếu ngày ghi dạng DD/MM (VD: 15/03 hoặc 15-03), hãy tự động hiểu là năm ${currentYear} (VD: 15/03/${currentYear}).
+          3. TRẢ VỀ kết quả trường 'date' theo định dạng chuỗi YYYY-MM-DD. 
+          Nếu hoàn toàn không thấy ngày, hãy để trống trường date.` }
         ]
       },
       config: {
@@ -43,7 +49,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            date: { type: Type.STRING },
+            date: { type: Type.STRING, description: "Format: YYYY-MM-DD" },
             weight: { type: Type.NUMBER },
             bodyFat: { type: Type.NUMBER },
             boneMinerals: { type: Type.NUMBER },
@@ -59,13 +65,34 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       }
     });
 
-    const text = response.text;
-    const result = JSON.parse(cleanJsonResponse(text || "{}"));
-    log(`Kết quả: ${result.weight}kg / ${result.bodyFat}% mỡ`, "success");
+    const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
+    
+    // Hậu xử lý ngày tháng nâng cao
+    if (result.date) {
+      const parts = result.date.split(/[-/]/);
+      if (parts.length === 2) {
+        // Trường hợp AI trả về DD-MM hoặc MM-DD
+        // Giả định định dạng phổ biến là DD-MM
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        result.date = `${currentYear}-${month}-${day}`;
+      } else if (parts.length === 3) {
+        // Đảm bảo định dạng YYYY-MM-DD
+        let y = parts[0], m = parts[1], d = parts[2];
+        if (y.length < 4) { // Nếu trả về DD-MM-YYYY
+            y = parts[2]; d = parts[0];
+        }
+        result.date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      }
+    } else {
+      result.date = new Date().toISOString().split('T')[0];
+    }
+
+    log(`Kết quả AI: ${result.weight}kg - Ngày nhận diện: ${result.date}`, "success");
     return result;
   }).catch(e => {
     log(`LỖI PHÂN TÍCH: ${e.message}`, "error");
-    return {};
+    return { date: new Date().toISOString().split('T')[0] };
   });
 };
 
