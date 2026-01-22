@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, PieChart, Pie, Cell, Legend
+  ResponsiveContainer, PieChart, Pie, Cell, Legend, Sector
 } from 'recharts';
 import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
@@ -42,11 +42,37 @@ const formatDateVN = (dateStr: string) => {
   }
 };
 
+// Hàm vẽ phần được chọn (Active Sector)
+const renderActiveShape = (props: any) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, value } = props;
+
+  return (
+    <g>
+      <text x={cx} y={cy - 10} dy={8} textAnchor="middle" fill="#1e293b" className="font-black text-[12px] uppercase">
+        {payload.name}
+      </text>
+      <text x={cx} y={cy + 15} dy={8} textAnchor="middle" fill={fill} className="font-black text-lg">
+        {`${value}kg`}
+      </text>
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius}
+        outerRadius={outerRadius + 8}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+      />
+    </g>
+  );
+};
+
 const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'muscleMass']);
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
     const load = async () => {
@@ -59,21 +85,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
 
-  // Dữ liệu cho biểu đồ tròn (Pie Chart) - Phân tích cấu trúc cơ thể
   const pieData = useMemo(() => {
     if (!latestMetric) return [];
     
     const fatMass = Number((latestMetric.weight * (latestMetric.bodyFat / 100)).toFixed(1));
     const muscle = latestMetric.muscleMass || 0;
     const bone = latestMetric.boneMinerals || 0;
-    // Thành phần khác = Tổng cân nặng - (Mỡ + Cơ + Xương)
     const others = Math.max(0, Number((latestMetric.weight - fatMass - muscle - bone).toFixed(1)));
 
     return [
       { name: 'Mỡ cơ thể', value: fatMass, color: '#ef4444' },
-      { name: 'Khối lượng cơ', value: muscle, color: '#3b82f6' },
-      { name: 'Khối lượng xương', value: bone, color: '#f59e0b' },
-      { name: 'Thành phần khác', value: others, color: '#94a3b8' },
+      { name: 'Khối cơ', value: muscle, color: '#3b82f6' },
+      { name: 'Xương', value: bone, color: '#f59e0b' },
+      { name: 'Khác', value: others, color: '#94a3b8' },
     ];
   }, [latestMetric]);
 
@@ -88,6 +112,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       .filter(m => new Date(m.date) >= cutoff)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
+
+  const onPieEnter = (_: any, index: number) => {
+    setActiveIndex(index);
+  };
 
   const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
     if (prev === undefined || current === prev) return null;
@@ -138,50 +166,44 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Biểu đồ Tròn Cấu trúc Thành phần (KHÔI PHỤC) */}
-        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[400px]">
+        {/* Biểu đồ Tròn Cấu trúc Thành phần (NÂNG CẤP) */}
+        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[420px]">
           <div className="mb-2">
             <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân bổ khối lượng (kg)</p>
           </div>
-          <div className="flex-grow flex items-center justify-center">
+          <div className="flex-grow flex items-center justify-center relative">
             {latestMetric ? (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={320}>
                 <PieChart>
                   <Pie
+                    activeIndex={activeIndex}
+                    activeShape={renderActiveShape}
                     data={pieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
+                    innerRadius={70}
+                    outerRadius={95}
                     paddingAngle={5}
                     dataKey="value"
+                    onMouseEnter={onPieEnter}
+                    stroke="none"
                   >
                     {pieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
-                    formatter={(value: number) => [`${value} kg`, 'Khối lượng']}
-                  />
-                  <Legend verticalAlign="bottom" height={36}/>
+                  <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase' }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
               <div className="text-slate-300 italic text-sm">Chưa có dữ liệu phân tích</div>
             )}
           </div>
-          {latestMetric && (
-            <div className="mt-4 pt-4 border-t border-slate-50 text-center">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tổng trọng lượng: </span>
-              <span className="text-sm font-black text-slate-800">{latestMetric.weight} kg</span>
-            </div>
-          )}
         </div>
 
         {/* Biểu đồ Xu hướng */}
-        <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[400px]">
+        <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[420px]">
           <div className="flex justify-between items-start mb-8">
             <div>
               <h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3>
