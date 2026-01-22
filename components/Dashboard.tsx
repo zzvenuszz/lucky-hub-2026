@@ -113,7 +113,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             <p className="text-slate-500 font-medium">Chào {user.fullName}! Mục tiêu: <span className="text-emerald-600 font-bold">{user.healthGoal}</span></p>
           )}
         </div>
-        <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg font-bold hover:bg-emerald-700 transition-all">+ Cập nhật chỉ số</button>
+        <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -139,17 +139,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-        <div className="flex flex-col space-y-4 mb-8 items-center text-center">
+        <div className="flex flex-col space-y-6 mb-8 items-center text-center">
           <div className="w-full">
-            {/* Căn giữa tuyệt đối tiêu đề, đảm bảo không xuống dòng */}
+            {/* Căn giữa tiêu đề, mở rộng ngang, ngăn xuống dòng */}
             <h3 className="font-black text-slate-800 text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-center mx-auto max-w-full">
               Biểu đồ xu hướng sức khỏe hội viên Lucky Hub
             </h3>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Hành trình thay đổi các chỉ số đo lường thực tế</p>
           </div>
-          <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full px-2">
             {TIME_RANGES.map(range => (
-              <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1.5 text-[9px] font-black rounded-xl border shrink-0 ${timeRange === range.key ? 'bg-emerald-600 text-white' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}>{range.label}</button>
+              <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1.5 text-[9px] font-black rounded-xl border shrink-0 transition-all ${timeRange === range.key ? 'bg-emerald-600 text-white shadow-md border-emerald-600' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}>{range.label}</button>
             ))}
           </div>
         </div>

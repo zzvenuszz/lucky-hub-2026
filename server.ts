@@ -136,8 +136,9 @@ app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin' });
   
-  const user = await User.findOne({ username: username.toLowerCase(), status: AccountStatus.ACTIVE });
-  if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại hoặc đã bị khóa' });
+  const user = await User.findOne({ username: username.toLowerCase().trim() });
+  if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại' });
+  if (user.status !== AccountStatus.ACTIVE) return res.status(403).json({ message: 'Tài khoản đã bị khóa' });
 
   if (user.isPasswordEncrypted) {
     if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Mật khẩu không chính xác' });
@@ -151,13 +152,12 @@ app.post('/api/login', async (req, res) => {
 // API AUTH - REGISTER
 app.post('/api/register', async (req, res) => {
   const { username, password, fullName, phoneNumber, healthGoal, height, weight, gender, birthDate } = req.body;
-  
   try {
-    const existing = await User.findOne({ username: username.toLowerCase() });
+    const existing = await User.findOne({ username: username.toLowerCase().trim() });
     if (existing) return res.status(400).json({ message: 'Tên đăng nhập đã tồn tại' });
 
     const newUser = new User({
-      username: username.toLowerCase(),
+      username: username.toLowerCase().trim(),
       password: hashPassword(password),
       fullName,
       phoneNumber,
@@ -175,7 +175,7 @@ app.post('/api/register', async (req, res) => {
     await newUser.save();
     res.json({ message: 'Đăng ký thành công', user: { fullName: newUser.fullName } });
   } catch (err: any) {
-    res.status(500).json({ message: 'Lỗi hệ thống khi đăng ký: ' + err.message });
+    res.status(500).json({ message: 'Lỗi đăng ký: ' + err.message });
   }
 });
 
@@ -183,7 +183,7 @@ app.post('/api/register', async (req, res) => {
 app.get('/api/users', async (req, res) => res.json(await User.find().select('-password')));
 app.put('/api/users/:id', async (req, res) => {
   const data = { ...req.body };
-  if (data.username) data.username = data.username.toLowerCase();
+  if (data.username) data.username = data.username.toLowerCase().trim();
   if (data.password && data.isPasswordEncrypted) data.password = hashPassword(data.password);
   res.json(await User.findByIdAndUpdate(req.params.id, data, { new: true }).select('-password'));
 });
