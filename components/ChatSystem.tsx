@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule, HealthMetric } from '../types.ts';
 import { getAICoachResponse } from '../services/gemini.ts';
 import { Database } from '../services/database.ts';
@@ -11,6 +11,8 @@ interface ChatSystemProps {
   rules: AIRule[];
   onClose: () => void;
 }
+
+const AI_PROMPT_TEXT = "Trợ lý Lucky AI có thông tin về vấn đề bạn đang đề cập, bạn có muốn tham khảo không?";
 
 const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, rules, onClose }) => {
   const [chats, setChats] = useState<ChatSession[]>([]);
@@ -28,6 +30,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const currentUid = (currentUser as any).id || (currentUser as any)._id;
 
   useEffect(() => {
     const originalStyle = window.getComputedStyle(document.body).overflow;
@@ -52,7 +56,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     setIsProcessingQueue(true);
     const textToDisplay = pendingQueue[0];
     
-    // Giả lập thời gian soạn tin tương ứng độ dài (tối thiểu 800ms, tối đa 2500ms)
     const delay = Math.min(Math.max(textToDisplay.length * 20, 800), 2500);
     await new Promise(resolve => setTimeout(resolve, delay));
 
@@ -65,25 +68,20 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       timestamp: new Date().toISOString()
     };
 
-    // Cập nhật giao diện và lưu vào Database
-    setSelectedChat(prev => {
-      if (!prev) return null;
-      const updated = { ...prev, messages: [...prev.messages, aiMessage] };
-      Database.saveChat(updated);
-      return updated;
-    });
+    const updatedChat = { ...selectedChat, messages: [...selectedChat.messages, aiMessage] };
+    await Database.saveChat(updatedChat);
+    setSelectedChat(updatedChat);
 
     setPendingQueue(prev => prev.slice(1));
     setIsProcessingQueue(false);
     
-    // Nếu hàng đợi đã hết, tắt trạng thái typing
     if (pendingQueue.length <= 1) {
       setIsTypingAI(false);
     }
   };
 
   const loadData = async () => {
-    const uid = (currentUser as any).id || (currentUser as any)._id;
+    const uid = currentUid;
     const metrics = await Database.getMetrics(uid);
     if (metrics && metrics.length > 0) {
       const sorted = [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -149,7 +147,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     
     const newMessage: Message = {
       id: `msg_${Date.now()}`, 
-      senderId: (currentUser as any).id || (currentUser as any)._id, 
+      senderId: currentUid, 
       senderName: currentUser.fullName, 
       senderRole: currentUser.role,
       content: inputText || (selectedImage ? "[Đã gửi một hình ảnh]" : ""), 
@@ -157,17 +155,37 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       timestamp: new Date().toISOString()
     };
 
-    const updatedChat = { ...selectedChat, messages: [...selectedChat.messages, newMessage] };
+    let updatedMessages = [...selectedChat.messages, newMessage];
+    
+    // NÂNG CẤP: Kiểm tra từ khóa trong chat 1-on-1 (Không phải AI chat)
+    if (!isTargetAI) {
+      const lowerText = inputText.toLowerCase();
+      const matchedKnowledge = knowledge.find(k => lowerText.includes(k.keyword.toLowerCase()));
+      
+      if (matchedKnowledge) {
+        const aiPrompt: Message = {
+          id: `msg_prompt_${Date.now()}`,
+          senderId: 'ai_coach',
+          senderName: 'Lucky AI',
+          senderRole: 'AI' as any,
+          content: AI_PROMPT_TEXT,
+          timestamp: new Date().toISOString()
+        };
+        updatedMessages.push(aiPrompt);
+      }
+    }
+
+    const updatedChat = { ...selectedChat, messages: updatedMessages };
     setSelectedChat(updatedChat);
-    if (!isTargetAI) await Database.saveChat(updatedChat);
+    await Database.saveChat(updatedChat);
     
     const sentText = inputText;
     setInputText('');
     setSelectedImage(null);
 
+    // Xử lý AI chat riêng tư
     if (isTargetAI) {
       setIsTypingAI(true);
-      // Gửi yêu cầu lên AI ngay lập tức dù AI đang bận "gõ"
       try {
         const aiResponse = await getAICoachResponse(
           updatedChat.messages, knowledge, rules, 
@@ -176,13 +194,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
         );
         
         if (aiResponse) {
-          // Chia nhỏ phản hồi theo đoạn văn (\n\n) hoặc câu dài
-          const chunks = aiResponse
-            .split(/\n\n+/)
-            .map(c => c.trim())
-            .filter(c => c.length > 0);
-          
-          // Xếp thông tin nhận được vào cuối hàng đợi (stack)
+          const chunks = aiResponse.split(/\n\n+/).map(c => c.trim()).filter(c => c.length > 0);
           setPendingQueue(prev => [...prev, ...chunks]);
         }
       } catch (e) {
@@ -191,9 +203,48 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     }
   };
 
+  // NÂNG CẤP: Xử lý lựa chọn Tham khảo/Bỏ qua trong chat 1-on-1
+  const handleAiChoice = async (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => {
+    const choiceMessage: Message = {
+      id: `msg_choice_${Date.now()}`,
+      senderId: currentUid,
+      senderName: currentUser.fullName,
+      senderRole: currentUser.role,
+      content: `${currentUser.fullName} lựa chọn ${choice}.`,
+      timestamp: new Date().toISOString()
+    };
+
+    let updatedMessages = [...chat.messages, choiceMessage];
+    let updatedChat = { ...chat, messages: updatedMessages };
+    
+    setSelectedChat(updatedChat);
+    await Database.saveChat(updatedChat);
+
+    if (choice === 'tham khảo') {
+      setIsTypingAI(true);
+      // Tìm lại từ khóa gần nhất để AI phản hồi đúng chủ đề
+      const lastUserMsg = [...chat.messages].reverse().find(m => m.senderId !== 'ai_coach' && m.content.length > 1 && !m.content.includes('lựa chọn'));
+      const triggerText = lastUserMsg ? lastUserMsg.content : "Vui lòng cung cấp thông tin liên quan.";
+
+      try {
+        const aiResponse = await getAICoachResponse(
+          updatedMessages, knowledge, rules, 
+          `Hội viên vừa yêu cầu tôi hỗ trợ về nội dung này: "${triggerText}". Hãy cung cấp kiến thức liên quan từ kho dữ liệu.`,
+          currentUser.healthGoal, latestMetric
+        );
+        
+        if (aiResponse) {
+          const chunks = aiResponse.split(/\n\n+/).map(c => c.trim()).filter(c => c.length > 0);
+          setPendingQueue(prev => [...prev, ...chunks]);
+        }
+      } catch (e) {
+        setPendingQueue(prev => [...prev, "Tôi xin lỗi, có lỗi khi lấy dữ liệu kiến thức."]);
+      }
+    }
+  };
+
   const getOtherUser = (chat: ChatSession) => {
     if (chat.coachId === 'ai_coach') return { fullName: 'Lucky AI Advisor', role: 'AI', id: 'ai_coach' };
-    const currentUid = (currentUser as any).id || (currentUser as any)._id;
     const otherId = currentUid === chat.memberId ? chat.coachId : chat.memberId;
     return users.find(u => ((u as any).id || (u as any)._id) === otherId);
   };
@@ -245,26 +296,50 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
         ) : selectedChat ? (
           <>
             <div ref={scrollRef} className="flex-grow p-4 overflow-y-auto space-y-4 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
-              {selectedChat.messages.map(msg => (
-                <div key={msg.id} className={`flex flex-col ${msg.senderId === ((currentUser as any).id || (currentUser as any)._id) ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
-                    msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none' : 
-                    msg.senderId === ((currentUser as any).id || (currentUser as any)._id) ? 'bg-emerald-600 text-white rounded-tr-none' : 
-                    'bg-white text-slate-800 rounded-tl-none border border-slate-100'
-                  }`}>
-                    {msg.imageUrl && <img src={msg.imageUrl} className="rounded-xl mb-2 max-h-40 w-auto shadow-sm" alt="Attach" />}
-                    {msg.content}
+              {selectedChat.messages.map((msg, idx) => {
+                const isMyMessage = msg.senderId === currentUid;
+                const isAiPrompt = msg.content === AI_PROMPT_TEXT;
+
+                return (
+                  <div key={msg.id} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
+                    <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
+                      isAiPrompt ? 'bg-emerald-50 border-2 border-emerald-500 text-slate-800 rounded-xl animate-bounce-short shadow-emerald-100' :
+                      msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none' : 
+                      isMyMessage ? 'bg-emerald-600 text-white rounded-tr-none' : 
+                      'bg-white text-slate-800 rounded-tl-none border border-slate-100'
+                    }`}>
+                      {msg.imageUrl && <img src={msg.imageUrl} className="rounded-xl mb-2 max-h-40 w-auto shadow-sm" alt="Attach" />}
+                      {msg.content}
+
+                      {/* Nâng cấp: Hiển thị nút lựa chọn nếu là tin nhắn prompt của AI */}
+                      {isAiPrompt && (
+                        <div className="mt-4 flex gap-2">
+                          <button 
+                            onClick={() => handleAiChoice(selectedChat, 'tham khảo')}
+                            className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md active:scale-95"
+                          >
+                            Tham khảo
+                          </button>
+                          <button 
+                            onClick={() => handleAiChoice(selectedChat, 'bỏ qua')}
+                            className="flex-1 bg-white text-slate-400 border border-slate-200 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95"
+                          >
+                            Bỏ qua
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[8px] text-slate-400 mt-1 px-1 font-bold uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                   </div>
-                  <span className="text-[8px] text-slate-400 mt-1 px-1 font-bold uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                </div>
-              ))}
+                );
+              })}
               {isTypingAI && (
                 <div className="flex flex-col items-start px-2">
                   <div className="bg-amber-50 border border-amber-100 text-amber-600 p-2 rounded-xl rounded-tl-none flex items-center gap-2">
-                    <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce"></span>
-                    <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                    <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
-                    <span className="text-[10px] font-black uppercase tracking-widest ml-1">AI Advisor đang soạn phản hồi...</span>
+                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce"></span>
+                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                    <span className="text-[9px] font-black uppercase tracking-widest ml-1">AI Advisor đang soạn phản hồi...</span>
                   </div>
                 </div>
               )}
@@ -283,7 +358,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                   const f = e.target.files?.[0];
                   if(f){ const r = new FileReader(); r.onload = () => setSelectedImage(r.result as string); r.readAsDataURL(f); }
                 }} />
-                <input placeholder="Gửi câu hỏi cho AI..." value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} className="flex-grow px-4 bg-slate-50 rounded-xl border-none outline-none focus:ring-1 focus:ring-emerald-500 text-[12px] font-medium" />
+                <input placeholder="Gửi tin nhắn..." value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} className="flex-grow px-4 bg-slate-50 rounded-xl border-none outline-none focus:ring-1 focus:ring-emerald-500 text-[12px] font-medium" />
                 <button onClick={handleSendMessage} className="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all">🚀</button>
               </div>
             </div>
