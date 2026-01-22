@@ -42,28 +42,24 @@ const formatDateVN = (dateStr: string) => {
   }
 };
 
-// Hàm vẽ phần được chọn (Active Sector)
+// Hàm vẽ phần được chọn với hiệu ứng chuyển động mượt mà
 const renderActiveShape = (props: any) => {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, value } = props;
-
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
   return (
-    <g>
-      <text x={cx} y={cy - 10} dy={8} textAnchor="middle" fill="#1e293b" className="font-black text-[12px] uppercase">
-        {payload.name}
-      </text>
-      <text x={cx} y={cy + 15} dy={8} textAnchor="middle" fill={fill} className="font-black text-lg">
-        {`${value}kg`}
-      </text>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 8}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-      />
-    </g>
+    <Sector
+      cx={cx}
+      cy={cy}
+      innerRadius={innerRadius}
+      outerRadius={outerRadius + 10}
+      startAngle={startAngle}
+      endAngle={endAngle}
+      fill={fill}
+      style={{ 
+        filter: `drop-shadow(0 8px 12px ${fill}44)`,
+        transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+        cursor: 'pointer'
+      }}
+    />
   );
 };
 
@@ -72,7 +68,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'muscleMass']);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -85,19 +81,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
 
+  // Tính toán dữ liệu biểu đồ với màu sắc yêu cầu
   const pieData = useMemo(() => {
     if (!latestMetric) return [];
     
+    // Tính khối lượng dựa trên % và cân nặng tổng
     const fatMass = Number((latestMetric.weight * (latestMetric.bodyFat / 100)).toFixed(1));
+    const waterMass = Number((latestMetric.weight * (latestMetric.waterPercent / 100)).toFixed(1));
     const muscle = latestMetric.muscleMass || 0;
-    const bone = latestMetric.boneMinerals || 0;
-    const others = Math.max(0, Number((latestMetric.weight - fatMass - muscle - bone).toFixed(1)));
+    
+    // Các phần này có thể chồng lấp nhau về mặt sinh học nhưng chúng ta biểu diễn các trụ cột chính
+    // Để Pie Chart hợp lý, chúng ta tính toán phần còn lại (Khác)
+    const others = Math.max(0, Number((latestMetric.weight - fatMass - muscle).toFixed(1)));
 
     return [
-      { name: 'Mỡ cơ thể', value: fatMass, color: '#ef4444' },
-      { name: 'Khối cơ', value: muscle, color: '#3b82f6' },
-      { name: 'Xương', value: bone, color: '#f59e0b' },
-      { name: 'Khác', value: others, color: '#94a3b8' },
+      { name: 'Cơ bắp', value: muscle, color: '#ef4444' },        // Đỏ
+      { name: 'Nước', value: waterMass, color: '#0ea5e9' },      // Xanh da trời
+      { name: 'Mỡ cơ thể', value: fatMass, color: '#fde047' },    // Vàng nhạt
+      { name: 'Khác', value: others, color: '#f1f5f9' },         // Xám nhạt cho phần còn lại
     ];
   }, [latestMetric]);
 
@@ -107,15 +108,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     else if (timeRange === '14d') cutoff.setDate(cutoff.getDate() - 14);
     else if (timeRange === '1m') cutoff.setMonth(cutoff.getMonth() - 1);
     else return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    return metrics
-      .filter(m => new Date(m.date) >= cutoff)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    return metrics.filter(m => new Date(m.date) >= cutoff).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
-
-  const onPieEnter = (_: any, index: number) => {
-    setActiveIndex(index);
-  };
 
   const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
     if (prev === undefined || current === prev) return null;
@@ -143,7 +137,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { key: 'weight', label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800' },
@@ -166,44 +159,68 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Biểu đồ Tròn Cấu trúc Thành phần (NÂNG CẤP) */}
-        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[420px]">
+        {/* Biểu đồ Tròn Cấu trúc Thành phần (NÂNG CẤP HIỆU ỨNG) */}
+        <div 
+          className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative transition-all"
+          onClick={() => setActiveIndex(null)}
+        >
           <div className="mb-2">
             <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân bổ khối lượng (kg)</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân tích khối lượng (1.5s Animation)</p>
           </div>
+          
           <div className="flex-grow flex items-center justify-center relative">
             {latestMetric ? (
-              <ResponsiveContainer width="100%" height={320}>
-                <PieChart>
-                  <Pie
-                    activeIndex={activeIndex}
-                    activeShape={renderActiveShape}
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={95}
-                    paddingAngle={5}
-                    dataKey="value"
-                    onMouseEnter={onPieEnter}
-                    stroke="none"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase' }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="relative w-full h-full flex items-center justify-center">
+                {/* Thông tin ở tâm biểu đồ - Chuyển động mượt mà */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all duration-500">
+                    {activeIndex !== null ? pieData[activeIndex].name : 'Cân nặng tổng'}
+                  </span>
+                  <span className="text-3xl font-black text-slate-800 tabular-nums transition-all duration-500 scale-110">
+                    {activeIndex !== null ? `${pieData[activeIndex].value}kg` : `${latestMetric.weight}kg`}
+                  </span>
+                </div>
+                
+                <ResponsiveContainer width="100%" height={340}>
+                  <PieChart>
+                    <Pie
+                      activeIndex={activeIndex === null ? undefined : activeIndex}
+                      activeShape={renderActiveShape}
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={80}
+                      outerRadius={105}
+                      paddingAngle={5}
+                      dataKey="value"
+                      onMouseEnter={(_, index) => setActiveIndex(index)}
+                      onMouseLeave={() => setActiveIndex(null)}
+                      onClick={(e, index) => { e.stopPropagation(); setActiveIndex(index); }}
+                      stroke="none"
+                      animationBegin={0}
+                      animationDuration={1500} // Hiệu ứng phóng ra trong 1.5 giây
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Legend 
+                      verticalAlign="bottom" 
+                      height={36} 
+                      wrapperStyle={{ fontSize: '9px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} 
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             ) : (
-              <div className="text-slate-300 italic text-sm">Chưa có dữ liệu phân tích</div>
+              <div className="text-slate-300 italic text-sm font-medium">Đang đợi dữ liệu phân tích...</div>
             )}
           </div>
         </div>
 
         {/* Biểu đồ Xu hướng */}
-        <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[420px]">
+        <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px]">
           <div className="flex justify-between items-start mb-8">
             <div>
               <h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3>
@@ -215,7 +232,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               ))}
             </div>
           </div>
-
           <div className="flex-grow w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
@@ -232,7 +248,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         </div>
       </div>
 
-      {/* Lịch sử chi tiết */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
           <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Lịch sử chỉ số chi tiết (DD/MM/YYYY)</h3>
