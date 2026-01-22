@@ -55,7 +55,7 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
 
 const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
+  username: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
   fullName: { type: String, required: true },
   phoneNumber: { type: String, default: '' },
@@ -131,17 +131,51 @@ async function initDB() {
 }
 initDB();
 
-// API AUTH
+// API AUTH - LOGIN
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
-  const user = await User.findOne({ username, status: AccountStatus.ACTIVE });
-  if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại hoặc bị khóa' });
+  if (!username || !password) return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin' });
+  
+  const user = await User.findOne({ username: username.toLowerCase(), status: AccountStatus.ACTIVE });
+  if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại hoặc đã bị khóa' });
+
   if (user.isPasswordEncrypted) {
-    if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Sai mật khẩu' });
+    if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Mật khẩu không chính xác' });
     res.json(user);
   } else {
-    if (user.password !== password) return res.status(401).json({ message: 'Sai mật khẩu' });
-    res.status(426).json({ message: 'Cần nâng cấp mật khẩu', userId: user._id, fullName: user.fullName });
+    if (user.password !== password) return res.status(401).json({ message: 'Mật khẩu không chính xác' });
+    res.status(426).json({ message: 'Yêu cầu nâng cấp mật khẩu bảo mật', userId: user._id, fullName: user.fullName });
+  }
+});
+
+// API AUTH - REGISTER
+app.post('/api/register', async (req, res) => {
+  const { username, password, fullName, phoneNumber, healthGoal, height, weight, gender, birthDate } = req.body;
+  
+  try {
+    const existing = await User.findOne({ username: username.toLowerCase() });
+    if (existing) return res.status(400).json({ message: 'Tên đăng nhập đã tồn tại' });
+
+    const newUser = new User({
+      username: username.toLowerCase(),
+      password: hashPassword(password),
+      fullName,
+      phoneNumber,
+      healthGoal,
+      height,
+      weight,
+      gender,
+      birthDate,
+      role: UserRole.MEMBER,
+      status: AccountStatus.ACTIVE,
+      isPasswordEncrypted: true,
+      permissions: []
+    });
+
+    await newUser.save();
+    res.json({ message: 'Đăng ký thành công', user: { fullName: newUser.fullName } });
+  } catch (err: any) {
+    res.status(500).json({ message: 'Lỗi hệ thống khi đăng ký: ' + err.message });
   }
 });
 
@@ -149,7 +183,8 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/users', async (req, res) => res.json(await User.find().select('-password')));
 app.put('/api/users/:id', async (req, res) => {
   const data = { ...req.body };
-  if (data.password) data.password = hashPassword(data.password);
+  if (data.username) data.username = data.username.toLowerCase();
+  if (data.password && data.isPasswordEncrypted) data.password = hashPassword(data.password);
   res.json(await User.findByIdAndUpdate(req.params.id, data, { new: true }).select('-password'));
 });
 app.delete('/api/users/:id', async (req, res) => {

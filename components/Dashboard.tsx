@@ -59,7 +59,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     const bmi = latestMetric.weight / Math.pow(selectedUser.height / 100, 2);
     let label = 'Bình thường';
     let color = 'text-emerald-600';
-    if (bmi < 18.5) { label = 'Cân nặng thấp'; color = 'text-amber-500'; }
+    if (bmi < 18.5) { label = 'Thấp'; color = 'text-amber-500'; }
     else if (bmi >= 25 && bmi < 30) { label = 'Thừa cân'; color = 'text-orange-500'; }
     else if (bmi >= 30) { label = 'Béo phì'; color = 'text-red-500'; }
     return { value: bmi.toFixed(1), label, color };
@@ -69,22 +69,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     if (compareVal === undefined || compareVal === null || currentVal === compareVal) return null;
     const diff = currentVal - compareVal;
     const isUp = diff > 0;
-    const absDiff = Math.abs(diff).toFixed(1);
-    
-    let isGood = false;
-    const goal = selectedUser.healthGoal;
-    if (key === 'weight') {
-      if (goal === HealthGoal.LOSE_WEIGHT) isGood = !isUp;
-      else if (goal === HealthGoal.GAIN_WEIGHT) isGood = isUp;
-      else isGood = !isUp;
-    } else if (key === 'bodyFat') isGood = !isUp;
-    else if (key === 'muscleMass') isGood = isUp;
-    else if (key === 'waterPercent') isGood = isUp;
-    else if (key === 'bioAge' || key === 'visceralFat') isGood = !isUp;
-
+    const isGood = (key === 'weight' && selectedUser.healthGoal === HealthGoal.LOSE_WEIGHT) ? !isUp : isUp;
     return (
-      <span className={`inline-flex items-center ml-1.5 text-[10px] font-black ${isGood ? 'text-emerald-500' : 'text-rose-500'} opacity-90`}>
-        {isUp ? '↑' : '↓'} {isUp ? '+' : '-'}{absDiff}
+      <span className={`inline-flex items-center ml-1.5 text-[10px] font-black ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
+        {isUp ? '↑' : '↓'} {Math.abs(diff).toFixed(1)}
       </span>
     );
   };
@@ -99,18 +87,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   }, [latestMetric]);
 
   const filteredMetrics = useMemo(() => {
-    if (timeRange === 'all') return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     const cutoff = new Date();
     if (timeRange.includes('m')) cutoff.setMonth(cutoff.getMonth() - parseInt(timeRange));
     else if (timeRange.includes('y')) cutoff.setFullYear(cutoff.getFullYear() - parseInt(timeRange));
-    else cutoff.setDate(cutoff.getDate() - (parseInt(timeRange) || 7));
+    else cutoff.setDate(cutoff.getDate() - (parseInt(timeRange) || 3650));
 
     return metrics
-      .filter(m => new Date(m.date) >= cutoff)
+      .filter(m => timeRange === 'all' || new Date(m.date) >= cutoff)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
-
-  const tableData = useMemo(() => [...filteredMetrics].reverse(), [filteredMetrics]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -119,11 +104,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub Dashboard</h2>
           {user.role !== UserRole.MEMBER ? (
             <div className="mt-2 flex items-center space-x-2">
-              <span className="text-sm text-slate-500 font-medium">Đang theo dõi:</span>
-              <select 
-                value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}
-                className="bg-emerald-50 text-emerald-700 font-bold px-3 py-1.5 rounded-xl border-none text-sm outline-none ring-1 ring-emerald-100 focus:ring-2 focus:ring-emerald-400 transition-all"
-              >
+              <span className="text-sm text-slate-500 font-medium">Hội viên:</span>
+              <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} className="bg-emerald-50 text-emerald-700 font-bold px-3 py-1.5 rounded-xl border-none text-sm outline-none ring-1 ring-emerald-100">
                 {users.map(u => <option key={(u as any).id || (u as any)._id} value={(u as any).id || (u as any)._id}>{u.fullName}</option>)}
               </select>
             </div>
@@ -131,7 +113,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             <p className="text-slate-500 font-medium">Chào {user.fullName}! Mục tiêu: <span className="text-emerald-600 font-bold">{user.healthGoal}</span></p>
           )}
         </div>
-        <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
+        <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg font-bold hover:bg-emerald-700 transition-all">+ Cập nhật chỉ số</button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -149,178 +131,41 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               <span className="text-lg group-hover:scale-125 transition-transform">{stat.icon}</span>
             </div>
             <div className={`text-xl font-black flex items-baseline ${stat.color}`}>
-              {stat.value} 
-              <span className="text-[10px] font-bold text-slate-400 ml-0.5">{stat.unit}</span>
+              {stat.value} <span className="text-[10px] font-bold text-slate-400 ml-0.5">{stat.unit}</span>
               {stat.key !== 'bmi' && latestMetric && prevMetric && renderTrend(stat.key as any, (latestMetric as any)[stat.key], (prevMetric as any)[stat.key])}
-            </div>
-            <div className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">
-               {stat.key === 'bmi' ? bmiInfo.label : stat.key === 'bioAge' ? `Thực tế: ${new Date().getFullYear() - new Date(selectedUser.birthDate).getFullYear()}t` : 'So với lần trước'}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col items-center">
-          <h3 className="font-bold text-slate-700 mb-2 w-full text-center text-sm uppercase tracking-widest">Cấu trúc cơ thể 3D</h3>
-          {latestMetric ? (
-            <div className="w-full h-[300px] relative flex flex-col items-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  {/* FIX: Use property spreading with any cast to avoid TypeScript error on activeIndex and activeShape which might be missing in some recharts type definitions. */}
-                  <Pie
-                    {...({
-                      activeIndex: activeIndex,
-                      activeShape: (props: any) => {
-                        const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-                        return (
-                          <g><Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 10} startAngle={startAngle} endAngle={endAngle} fill={fill} /></g>
-                        );
-                      },
-                      data: bodyCompData,
-                      cx: "50%", cy: "50%",
-                      innerRadius: 65, outerRadius: 85,
-                      paddingAngle: 5,
-                      dataKey: "value",
-                      stroke: "none",
-                      onMouseEnter: (_: any, index: number) => setActiveIndex(index),
-                      onMouseLeave: () => setActiveIndex(-1)
-                    } as any)}
-                  >
-                    {bodyCompData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute top-[48%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                <div className={`font-black text-2xl ${activeIndex !== -1 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                  {activeIndex !== -1 ? bodyCompData[activeIndex].value.toFixed(1) : latestMetric.weight}
-                  <span className="text-[10px] ml-0.5">kg</span>
-                </div>
-                <div className="text-[8px] text-slate-400 font-black uppercase tracking-widest">
-                  {activeIndex !== -1 ? bodyCompData[activeIndex].name : 'Tổng cân'}
-                </div>
-              </div>
-            </div>
-          ) : <div className="h-[300px] flex items-center justify-center text-slate-400 italic text-xs uppercase tracking-widest">Chưa có dữ liệu</div>}
-        </div>
-
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-          <div className="flex flex-col space-y-6 mb-8 items-center text-center">
-            <div className="w-full">
-              {/* Căn giữa tiêu đề, mở rộng ngang, ngăn xuống dòng */}
-              <h3 className="font-black text-slate-800 text-lg tracking-tight whitespace-nowrap overflow-hidden text-center max-w-full">
-                Biểu đồ xu hướng sức khỏe hội viên Lucky Hub
-              </h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 text-center">Hành trình thay đổi các chỉ số đo lường thực tế</p>
-            </div>
-            <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full px-2">
-              {TIME_RANGES.map(range => (
-                <button 
-                  key={range.key} onClick={() => setTimeRange(range.key)}
-                  className={`px-3 py-1.5 text-[9px] font-black rounded-xl transition-all border shrink-0 ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}
-                >
-                  {range.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex flex-wrap justify-center gap-2 md:gap-3 p-1">
-              {AVAILABLE_METRICS.map(m => (
-                <label key={m.key} className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-xl border transition-all ${selectedMetricKeys.includes(m.key) ? 'bg-white border-slate-200 shadow-sm ring-1 ring-slate-100' : 'bg-slate-50 border-transparent opacity-60 grayscale hover:grayscale-0 hover:opacity-100'}`}>
-                  <input type="checkbox" className="hidden" checked={selectedMetricKeys.includes(m.key)} onChange={() => setSelectedMetricKeys(prev => prev.includes(m.key) ? prev.filter(k => k !== m.key) : [...prev, m.key])} />
-                  <div className={`w-3 h-3 rounded-full transition-transform ${selectedMetricKeys.includes(m.key) ? 'scale-110' : 'scale-100'}`} style={{ backgroundColor: m.color }}></div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest ${selectedMetricKeys.includes(m.key) ? 'text-slate-800' : 'text-slate-400'}`}>{m.short}</span>
-                </label>
-              ))}
-            </div>
+      <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+        <div className="flex flex-col space-y-4 mb-8 items-center text-center">
+          <div className="w-full">
+            {/* Căn giữa tuyệt đối tiêu đề, đảm bảo không xuống dòng */}
+            <h3 className="font-black text-slate-800 text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-center mx-auto max-w-full">
+              Biểu đồ xu hướng sức khỏe hội viên Lucky Hub
+            </h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Hành trình thay đổi các chỉ số đo lường thực tế</p>
           </div>
-
-          <div className="h-[320px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} tickFormatter={(v) => { const d = new Date(v); return `${d.getDate()}/${d.getMonth()+1}`; }} axisLine={false} tickLine={false} />
-                <YAxis fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontSize: '11px' }} />
-                {AVAILABLE_METRICS.filter(m => selectedMetricKeys.includes(m.key)).map(m => (
-                  <Line key={m.key} type="monotone" dataKey={m.key} name={m.label} stroke={m.color} strokeWidth={3} dot={{ r: 3 }} />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full">
+            {TIME_RANGES.map(range => (
+              <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1.5 text-[9px] font-black rounded-xl border shrink-0 ${timeRange === range.key ? 'bg-emerald-600 text-white' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}>{range.label}</button>
+            ))}
           </div>
         </div>
-      </div>
 
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-50 flex items-center justify-between">
-          <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Nhật ký chi tiết</h3>
-          <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full">{tableData.length} bản ghi</span>
-        </div>
-        <div className="overflow-x-auto no-scrollbar">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
-            <thead>
-              <tr className="bg-slate-50/50 text-[9px] font-black uppercase text-slate-400 tracking-[0.15em]">
-                <th className="p-4 border-b">Ngày</th>
-                <th className="p-4 border-b text-center">Cân nặng (kg)</th>
-                <th className="p-4 border-b text-center">Mỡ (%)</th>
-                <th className="p-4 border-b text-center">Cơ (kg)</th>
-                <th className="p-4 border-b text-center">Xương (kg)</th>
-                <th className="p-4 border-b text-center">Nước (%)</th>
-                <th className="p-4 border-b text-center">Mỡ NT</th>
-                <th className="p-4 border-b text-center">BMR</th>
-                <th className="p-4 border-b text-center">Tuổi SH</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {tableData.map((row, idx) => {
-                const nextRow = tableData[idx + 1];
-                return (
-                  <tr key={(row as any)._id || idx} className="hover:bg-emerald-50/20 transition-colors">
-                    <td className="p-4">
-                      <div className="text-xs font-bold text-slate-700">{new Date(row.date).toLocaleDateString('vi-VN')}</div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="text-sm font-black text-slate-800">
-                        {row.weight}
-                        {renderTrend('weight', row.weight, nextRow?.weight)}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="text-xs font-bold text-slate-600">
-                        {row.bodyFat}%
-                        {renderTrend('bodyFat', row.bodyFat, nextRow?.bodyFat)}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="text-xs font-bold text-slate-600">
-                        {row.muscleMass}
-                        {renderTrend('muscleMass', row.muscleMass, nextRow?.muscleMass)}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center text-xs text-slate-500 font-medium">{row.boneMinerals}</td>
-                    <td className="p-4 text-center">
-                      <div className="text-xs font-bold text-slate-600">
-                        {row.waterPercent}%
-                        {renderTrend('waterPercent', row.waterPercent, nextRow?.waterPercent)}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="text-xs font-bold text-slate-600">
-                        {row.visceralFat}
-                        {renderTrend('visceralFat', row.visceralFat, nextRow?.visceralFat)}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center text-xs text-slate-500">{row.energy}</td>
-                    <td className="p-4 text-center">
-                      <div className="text-xs font-bold text-slate-600">
-                        {row.bioAge}
-                        {renderTrend('bioAge', row.bioAge, nextRow?.bioAge)}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="h-[350px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="date" fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} tickFormatter={(v) => { const d = new Date(v); return `${d.getDate()}/${d.getMonth()+1}`; }} axisLine={false} tickLine={false} />
+              <YAxis fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
+              {AVAILABLE_METRICS.filter(m => selectedMetricKeys.includes(m.key)).map(m => (
+                <Line key={m.key} type="monotone" dataKey={m.key} name={m.label} stroke={m.color} strokeWidth={3} dot={{ r: 3 }} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>
