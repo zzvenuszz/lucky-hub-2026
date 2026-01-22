@@ -17,6 +17,17 @@ const cleanJsonResponse = (text: string): string => {
   return text.trim();
 };
 
+const formatDateVN = (dateStr: string) => {
+  if (!dateStr) return '--/--/----';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+};
+
 const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose }) => {
   const [formData, setFormData] = useState<Omit<HealthMetric, 'id' | 'userId'>>({
     date: new Date().toISOString().split('T')[0],
@@ -27,10 +38,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const log = (msg: string, type: string = 'ai') => {
-    if (window.debugLog) window.debugLog(`[MetricForm] ${msg}`, type);
-  };
-
   const handleAIUpload = async (e: React.ChangeEvent<HTMLInputElement>, isBulk: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -39,7 +46,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
     const reader = new FileReader();
     reader.onloadend = async () => {
-      // Tối ưu ảnh trước khi gửi (giảm dung lượng)
       const img = new Image();
       img.src = reader.result as string;
       img.onload = async () => {
@@ -53,28 +59,14 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 
         if (!isBulk) {
-          log("Đang phân tích ảnh InBody...");
           try {
             const extracted = await extractMetricsFromImage(compressedBase64);
             if (extracted && (extracted.weight || extracted.bodyFat)) {
-              // Cập nhật form với dữ liệu AI đọc được (bao gồm ngày tháng thông minh)
-              setFormData(prev => ({ 
-                ...prev, 
-                ...extracted,
-                date: extracted.date || prev.date 
-              }));
-              log(`Thành công! Ngày nhận diện: ${extracted.date}`, "success");
-              alert(`✅ Lucky AI đã trích xuất xong!\n\n📅 Ngày đo: ${extracted.date}\n⚖️ Cân nặng: ${extracted.weight}kg\n🔥 Mỡ: ${extracted.bodyFat}%\n\nBạn vui lòng kiểm tra lại trước khi Lưu nhé!`);
-            } else {
-              alert("🤔 AI không tìm thấy các chỉ số rõ ràng. Hãy thử chụp ảnh gần và rõ nét hơn!");
+              setFormData(prev => ({ ...prev, ...extracted, balanceIndex: extracted.balanceIndex ?? 0, date: extracted.date || prev.date }));
+              alert(`✅ Lucky AI đã trích xuất xong!\n\n📅 Ngày đo: ${formatDateVN(extracted.date || '')}\n⚖️ Cân nặng: ${extracted.weight}kg\n🔥 Mỡ: ${extracted.bodyFat}%\n💎 Cân đối: ${extracted.balanceIndex ?? 0}`);
             }
-          } catch (err) {
-            log("Lỗi xử lý AI: " + err, "error");
-          } finally {
-            setLoadingAI(false);
-          }
+          } finally { setLoadingAI(false); }
         } else {
-          log("Đang quét bảng hàng loạt...");
           const currentYear = new Date().getFullYear();
           try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -83,8 +75,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               contents: { 
                 parts: [
                   { inlineData: { mimeType: 'image/jpeg', data: compressedBase64 } }, 
-                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON các đối tượng. 
-                  Nếu thấy ngày dạng DD/MM, hãy tự động hiểu là năm ${currentYear} và trả về date format YYYY-MM-DD.` }
+                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ: date (YYYY-MM-DD), weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. NẾU KHÔNG THẤY CHỈ SỐ CÂN ĐỐI (balanceIndex) THÌ TRẢ VỀ 0. Nếu thấy ngày dạng DD/MM, hãy tự hiểu là năm ${currentYear}.` }
                 ] 
               },
               config: { 
@@ -97,22 +88,22 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       date: { type: Type.STRING },
                       weight: { type: Type.NUMBER },
                       bodyFat: { type: Type.NUMBER },
-                      muscleMass: { type: Type.NUMBER }
+                      muscleMass: { type: Type.NUMBER },
+                      visceralFat: { type: Type.NUMBER },
+                      boneMinerals: { type: Type.NUMBER },
+                      waterPercent: { type: Type.NUMBER },
+                      energy: { type: Type.NUMBER },
+                      bioAge: { type: Type.NUMBER },
+                      balanceIndex: { type: Type.NUMBER }
                     },
                     required: ["weight"]
                   }
                 }
               }
             });
-
             const data = JSON.parse(cleanJsonResponse(response.text || "[]"));
-            setBulkPreview(data.map((item: any) => ({...formData, ...item})));
-            log(`Đã đọc ${data.length} dòng dữ liệu.`, "success");
-          } catch (err) {
-            alert("Không thể đọc được bảng dữ liệu.");
-          } finally {
-            setLoadingAI(false);
-          }
+            setBulkPreview(data.map((item: any) => ({...formData, balanceIndex: 0, ...item})));
+          } finally { setLoadingAI(false); }
         }
       };
     };
@@ -123,40 +114,32 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     { key: 'weight', label: 'Cân nặng (kg)' },
     { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)' },
     { key: 'muscleMass', label: 'Cơ bắp (kg)' },
+    { key: 'balanceIndex', label: 'Chỉ số cân đối' },
     { key: 'visceralFat', label: 'Mỡ nội tạng' },
+    { key: 'boneMinerals', label: 'Xương (kg)' },
+    { key: 'waterPercent', label: 'Nước (%)' },
     { key: 'energy', label: 'BMR (kcal)' },
     { key: 'bioAge', label: 'Tuổi sinh học' },
   ];
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95">
-        <div className="p-6 bg-emerald-600 text-white flex justify-between items-center shrink-0 shadow-lg">
+      <div className="bg-white w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95">
+        <div className="p-6 bg-emerald-600 text-white flex justify-between items-center shrink-0">
           <h2 className="text-xl font-bold">Cập nhật chỉ số cơ thể</h2>
-          <button onClick={onClose} className="text-2xl hover:scale-110 transition-transform">&times;</button>
+          <button onClick={onClose} className="text-2xl hover:scale-110">&times;</button>
         </div>
 
         <div className="p-8 overflow-y-auto space-y-6 no-scrollbar">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button 
-              disabled={loadingAI}
-              onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }}
-              className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50 shadow-inner' : 'border-slate-200'}`}
-            >
+            <button disabled={loadingAI} onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📸</span>
-              <span className="font-black text-emerald-800 text-[10px] uppercase tracking-widest text-center">Tải ảnh/Chụp InBody</span>
-              <span className="text-[9px] text-slate-400 mt-1 uppercase font-bold text-center">AI nhận diện Ngày & Chỉ số</span>
+              <span className="font-black text-emerald-800 text-[10px] uppercase tracking-widest">Tải ảnh/Chụp InBody</span>
             </button>
-            <button 
-              disabled={loadingAI}
-              onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }}
-              className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50 shadow-inner' : 'border-slate-200'}`}
-            >
+            <button disabled={loadingAI} onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📝</span>
-              <span className="font-black text-amber-800 text-[10px] uppercase tracking-widest text-center">Quét sổ tay hàng loạt</span>
-              <span className="text-[9px] text-slate-400 mt-1 uppercase font-bold">Nhập nhiều ngày cùng lúc</span>
+              <span className="font-black text-amber-800 text-[10px] uppercase tracking-widest">Quét sổ tay hàng loạt</span>
             </button>
-            {/* KHÔNG DÙNG capture="environment" ĐỂ NGƯỜI DÙNG TỰ CHỌN NGUỒN */}
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkMode)} />
           </div>
 
@@ -173,36 +156,48 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 <h3 className="font-bold text-slate-700">Dữ liệu quét được ({bulkPreview.length} ngày):</h3>
                 <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Hủy bỏ</button>
               </div>
-              <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-slate-50/50 max-h-80 no-scrollbar">
-                <table className="w-full text-[10px] text-left min-w-[500px]">
-                  <thead className="sticky top-0 bg-white/80 backdrop-blur-md">
+              <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-slate-50/50 max-h-[450px] no-scrollbar">
+                <table className="w-full text-[10px] text-left min-w-[1000px]">
+                  <thead className="sticky top-0 bg-white/90 backdrop-blur-sm shadow-sm">
                     <tr className="text-slate-400 font-black uppercase border-b border-slate-100">
-                      <th className="p-3">Ngày (YYYY-MM-DD)</th>
-                      <th className="p-3 text-center">Cân (kg)</th>
-                      <th className="p-3 text-center">Mỡ (%)</th>
-                      <th className="p-3 text-center">Cơ (kg)</th>
+                      <th className="p-4">Ngày (DD/MM/YYYY)</th>
+                      <th className="p-4 text-center">Cân (kg)</th>
+                      <th className="p-4 text-center">Mỡ (%)</th>
+                      <th className="p-4 text-center">Cơ (kg)</th>
+                      <th className="p-4 text-center">Cân đối</th>
+                      <th className="p-4 text-center">Nội tạng</th>
+                      <th className="p-4 text-center">Xương (kg)</th>
+                      <th className="p-4 text-center">Nước (%)</th>
+                      <th className="p-4 text-center">BMR</th>
+                      <th className="p-4 text-center">Tuổi SH</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {bulkPreview.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-white">
-                        <td className="p-3 font-bold text-slate-700">{item.date}</td>
-                        <td className="p-3 text-center font-black text-emerald-600">{item.weight}</td>
-                        <td className="p-3 text-center font-bold text-rose-500">{item.bodyFat}%</td>
-                        <td className="p-3 text-center font-bold text-blue-600">{item.muscleMass}</td>
+                      <tr key={idx} className="hover:bg-white transition-colors">
+                        <td className="p-4 font-bold text-slate-700">{formatDateVN(item.date)}</td>
+                        <td className="p-4 text-center font-black text-emerald-600">{item.weight}</td>
+                        <td className="p-4 text-center font-bold text-rose-500">{item.bodyFat}%</td>
+                        <td className="p-4 text-center font-bold text-blue-600">{item.muscleMass}</td>
+                        <td className="p-4 text-center font-bold text-indigo-600">{item.balanceIndex ?? 0}</td>
+                        <td className="p-4 text-center font-bold text-amber-600">{item.visceralFat}</td>
+                        <td className="p-4 text-center text-slate-500">{item.boneMinerals}</td>
+                        <td className="p-4 text-center text-sky-600">{item.waterPercent}%</td>
+                        <td className="p-4 text-center text-slate-500">{item.energy}</td>
+                        <td className="p-4 text-center font-bold text-slate-700">{item.bioAge}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <button onClick={() => onSaveBulk(bulkPreview)} className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-emerald-700 transition-all">Xác nhận lưu {bulkPreview.length} ngày</button>
+              <button onClick={() => onSaveBulk(bulkPreview)} className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-emerald-700 transition-all">Xác nhận lưu {bulkPreview.length} bản ghi</button>
             </div>
           ) : !loadingAI && (
             <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }} className="space-y-6">
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2 space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (AI tự điền nếu có ảnh)</label>
-                  <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-3 bg-emerald-50/50 text-emerald-800 rounded-xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-black" />
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="md:col-span-2 lg:col-span-3 space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (DD/MM/YYYY)</label>
+                  <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-3 bg-emerald-50/50 text-emerald-800 rounded-xl border-none outline-none font-black" />
                 </div>
                 {metricFields.map(field => (
                   <div key={field.key} className="space-y-1">
@@ -211,7 +206,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                   </div>
                 ))}
                </div>
-               <button type="submit" className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95">Lưu kết quả ngay</button>
+               <button type="submit" className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest">Lưu kết quả ngay</button>
             </form>
           )}
         </div>

@@ -27,7 +27,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
   };
 
   const currentYear = new Date().getFullYear();
-  log("Bắt đầu trích xuất chỉ số (Thông minh)...");
+  log("Bắt đầu trích xuất chỉ số (9 chỉ số)...");
   
   return withRetry(async () => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -36,12 +36,18 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: `Phân tích ảnh InBody. TRÍCH XUẤT: Cân nặng, % Mỡ, Khối cơ, Mỡ nội tạng, Tuổi cơ thể, % Nước, Xương, BMR. 
-          QUAN TRỌNG VỀ NGÀY THÁNG: 
-          1. Tìm ngày đo trên phiếu (thường ở góc trên hoặc dưới). 
-          2. Nếu ngày ghi dạng DD/MM (VD: 15/03 hoặc 15-03), hãy tự động hiểu là năm ${currentYear} (VD: 15/03/${currentYear}).
-          3. TRẢ VỀ kết quả trường 'date' theo định dạng chuỗi YYYY-MM-DD. 
-          Nếu hoàn toàn không thấy ngày, hãy để trống trường date.` }
+          { text: `Phân tích ảnh InBody. TRÍCH XUẤT 9 CHỈ SỐ: 
+          1. weight (Cân nặng)
+          2. bodyFat (% Mỡ)
+          3. muscleMass (Khối cơ)
+          4. visceralFat (Mỡ nội tạng)
+          5. boneMinerals (Khối lượng xương)
+          6. waterPercent (% Nước)
+          7. energy (BMR/Kcal)
+          8. bioAge (Tuổi cơ thể)
+          9. balanceIndex (Chỉ số cân đối - Thường ghi là Balance/Body Balance. NẾU KHÔNG CÓ TRẢ VỀ 0).
+          
+          VỀ NGÀY THÁNG: Nếu thấy DD/MM hoặc DD-MM, hãy tự hiểu là năm ${currentYear} và trả về YYYY-MM-DD.` }
         ]
       },
       config: {
@@ -49,7 +55,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            date: { type: Type.STRING, description: "Format: YYYY-MM-DD" },
+            date: { type: Type.STRING },
             weight: { type: Type.NUMBER },
             bodyFat: { type: Type.NUMBER },
             boneMinerals: { type: Type.NUMBER },
@@ -67,32 +73,28 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 
     const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
     
-    // Hậu xử lý ngày tháng nâng cao
+    // Đảm bảo balanceIndex luôn có giá trị
+    result.balanceIndex = result.balanceIndex || 0;
+
+    // Hậu xử lý ngày tháng
     if (result.date) {
       const parts = result.date.split(/[-/]/);
       if (parts.length === 2) {
-        // Trường hợp AI trả về DD-MM hoặc MM-DD
-        // Giả định định dạng phổ biến là DD-MM
-        const day = parts[0].padStart(2, '0');
-        const month = parts[1].padStart(2, '0');
-        result.date = `${currentYear}-${month}-${day}`;
+        result.date = `${currentYear}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
       } else if (parts.length === 3) {
-        // Đảm bảo định dạng YYYY-MM-DD
         let y = parts[0], m = parts[1], d = parts[2];
-        if (y.length < 4) { // Nếu trả về DD-MM-YYYY
-            y = parts[2]; d = parts[0];
-        }
+        if (y.length < 4) { y = parts[2]; d = parts[0]; }
         result.date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
       }
     } else {
       result.date = new Date().toISOString().split('T')[0];
     }
 
-    log(`Kết quả AI: ${result.weight}kg - Ngày nhận diện: ${result.date}`, "success");
+    log(`Kết quả: ${result.weight}kg - Cân đối: ${result.balanceIndex} - Ngày: ${result.date}`, "success");
     return result;
   }).catch(e => {
-    log(`LỖI PHÂN TÍCH: ${e.message}`, "error");
-    return { date: new Date().toISOString().split('T')[0] };
+    log(`LỖI: ${e.message}`, "error");
+    return { balanceIndex: 0, date: new Date().toISOString().split('T')[0] };
   });
 };
 
@@ -111,63 +113,31 @@ export const getAICoachResponse = async (
 
   return withRetry(async () => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    let isDataOld = false;
-    let daysOld = 0;
-    if (latestMetric) {
-      const lastDate = new Date(latestMetric.date);
-      const now = new Date();
-      lastDate.setHours(0, 0, 0, 0);
-      now.setHours(0, 0, 0, 0);
-      const diffTime = Math.abs(now.getTime() - lastDate.getTime());
-      daysOld = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      isDataOld = daysOld > 3;
-    }
-
+    const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
     const contextKnowledge = knowledge
       .filter(k => latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()))
       .map(k => `- ${k.keyword}: ${k.content}`).join("\n");
 
-    const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
+    const systemInstruction = `Bạn là "Lucky AI Advisor". Mục tiêu hội viên: ${userGoal}.
+Chỉ số mới nhất: ${latestMetric ? `Cân ${latestMetric.weight}kg, Mỡ ${latestMetric.bodyFat}%, Cơ ${latestMetric.muscleMass}kg, Cân đối: ${latestMetric.balanceIndex}` : "Chưa có dữ liệu"}.
 
-    const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe Lucky Hub. 
-Mục tiêu hội viên: ${userGoal}
-Chỉ số mới nhất: ${latestMetric ? `Cân ${latestMetric.weight}kg, Mỡ ${latestMetric.bodyFat}%, Cơ ${latestMetric.muscleMass}kg` : "Chưa có dữ liệu"}.
-${isDataOld ? `⚠️ Dữ liệu này đã ${daysOld} ngày, hãy nhắc hội viên cập nhật chỉ số mới.` : ""}
-
-QUY TẮC CỐ ĐỊNH:
+QUY TẮC:
 ${systemRules}
 
-KIẾN THỨC BỔ TRỢ:
-${contextKnowledge}
+KIẾN THỨC:
+${contextKnowledge}`;
 
-PHONG CÁCH: Chân thành, chuyên môn cao nhưng dễ hiểu, dùng Emoji tinh tế.`;
-
-    const formattedHistory = [];
-    let lastRole = "";
-    const relevantHistory = history.slice(-6);
-    for (const m of relevantHistory) {
-      const currentRole = m.senderId === 'ai_coach' ? 'model' : 'user';
-      if (currentRole !== lastRole && m.content.trim()) {
-        formattedHistory.push({ role: currentRole, parts: [{ text: m.content }] });
-        lastRole = currentRole;
-      }
-    }
-
-    const currentTurn = {
-      role: 'user',
-      parts: base64Image ? [{ text: latestUserMessage || "Phân tích ảnh này" }, { inlineData: { mimeType: 'image/jpeg', data: base64Image } }] : [{ text: latestUserMessage }]
-    };
+    const formattedHistory = history.slice(-6).map(m => ({
+      role: m.senderId === 'ai_coach' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    }));
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: [...formattedHistory, currentTurn],
+      contents: [...formattedHistory, { role: 'user', parts: base64Image ? [{ text: latestUserMessage || "Phân tích ảnh" }, { inlineData: { mimeType: 'image/jpeg', data: base64Image } }] : [{ text: latestUserMessage }] }],
       config: { systemInstruction, temperature: 0.7 }
     });
 
-    return response.text || "Xin lỗi, tôi đang bận một chút. Bạn thử lại nhé!";
-  }).catch(e => {
-    log(`LỖI AI: ${e.message}`, "error");
-    return "Hệ thống AI đang bảo trì, vui lòng quay lại sau ít phút.";
-  });
+    return response.text;
+  }).catch(() => "Xin lỗi, tôi đang bận một chút.");
 };
