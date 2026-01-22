@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer 
+  ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
@@ -34,8 +34,9 @@ const TIME_RANGES = [
 const formatDateVN = (dateStr: string) => {
   if (!dateStr) return '--/--/----';
   try {
-    const [y, m, d] = dateStr.split('-');
-    return `${d}/${m}/${y}`;
+    const parts = dateStr.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateStr;
   } catch {
     return dateStr;
   }
@@ -57,6 +58,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
 
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
+
+  // Dữ liệu cho biểu đồ tròn (Pie Chart) - Phân tích cấu trúc
+  const pieData = useMemo(() => {
+    if (!latestMetric) return [];
+    
+    const fatMass = Number((latestMetric.weight * (latestMetric.bodyFat / 100)).toFixed(1));
+    const muscle = latestMetric.muscleMass || 0;
+    const bone = latestMetric.boneMinerals || 0;
+    // Phần còn lại (Nước và các mô khác không nằm trong cơ/xương)
+    const others = Math.max(0, Number((latestMetric.weight - fatMass - muscle - bone).toFixed(1)));
+
+    return [
+      { name: 'Mỡ cơ thể', value: fatMass, color: '#ef4444' },
+      { name: 'Khối lượng cơ', value: muscle, color: '#3b82f6' },
+      { name: 'Khối lượng xương', value: bone, color: '#f59e0b' },
+      { name: 'Thành phần khác', value: others, color: '#94a3b8' },
+    ];
+  }, [latestMetric]);
 
   const filteredMetrics = useMemo(() => {
     const cutoff = new Date();
@@ -96,6 +115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
       </div>
 
+      {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { key: 'weight', label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800' },
@@ -117,37 +137,84 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         ))}
       </div>
 
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-        <div className="flex flex-col space-y-6 mb-8 items-center text-center">
-          <div className="w-full">
-            <h3 className="font-black text-slate-800 text-lg md:text-xl tracking-tight whitespace-nowrap text-center">Biểu đồ xu hướng sức khỏe</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Hành trình thay đổi các chỉ số</p>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Biểu đồ Tròn Cấu trúc (KHÔI PHỤC) */}
+        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[400px]">
+          <div className="mb-2">
+            <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân bổ khối lượng (kg)</p>
           </div>
-          <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full px-2">
-            {TIME_RANGES.map(range => (
-              <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1.5 text-[9px] font-black rounded-xl border shrink-0 transition-all ${timeRange === range.key ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}>{range.label}</button>
-            ))}
+          <div className="flex-grow flex items-center justify-center">
+            {latestMetric ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+                    formatter={(value: number) => [`${value} kg`, 'Khối lượng']}
+                  />
+                  <Legend verticalAlign="bottom" height={36}/>
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-slate-300 italic text-sm">Chưa có dữ liệu</div>
+            )}
           </div>
+          {latestMetric && (
+            <div className="mt-4 pt-4 border-t border-slate-50 text-center">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tổng trọng lượng: </span>
+              <span className="text-sm font-black text-slate-800">{latestMetric.weight} kg</span>
+            </div>
+          )}
         </div>
 
-        <div className="h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="date" fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} tickFormatter={(v) => { const parts = v.split('-'); return `${parts[2]}/${parts[1]}`; }} axisLine={false} tickLine={false} />
-              <YAxis fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
-              <Tooltip labelFormatter={(v) => formatDateVN(v)} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
-              {AVAILABLE_METRICS.filter(m => selectedMetricKeys.includes(m.key)).map(m => (
-                <Line key={m.key} type="monotone" dataKey={m.key} name={m.label} stroke={m.color} strokeWidth={3} dot={{ r: 3 }} />
+        {/* Biểu đồ Xu hướng */}
+        <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[400px]">
+          <div className="flex justify-between items-start mb-8">
+            <div>
+              <h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sự thay đổi theo thời gian</p>
+            </div>
+            <div className="flex gap-1 overflow-x-auto no-scrollbar">
+              {TIME_RANGES.map(range => (
+                <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1 text-[9px] font-black rounded-xl border transition-all ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-slate-50 text-slate-400 border-transparent'}`}>{range.label}</button>
               ))}
-            </LineChart>
-          </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="flex-grow w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} tickFormatter={(v) => { const parts = v.split('-'); return `${parts[2]}/${parts[1]}`; }} axisLine={false} tickLine={false} />
+                <YAxis fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                <Tooltip labelFormatter={(v) => formatDateVN(v)} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
+                {AVAILABLE_METRICS.filter(m => selectedMetricKeys.includes(m.key)).map(m => (
+                  <Line key={m.key} type="monotone" dataKey={m.key} name={m.label} stroke={m.color} strokeWidth={3} dot={{ r: 3 }} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 
+      {/* Lịch sử chi tiết */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-50 bg-slate-50/30">
-          <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest text-center">Lịch sử chỉ số chi tiết (DD/MM/YYYY)</h3>
+        <div className="p-6 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
+          <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Lịch sử chỉ số chi tiết (DD/MM/YYYY)</h3>
+          {latestMetric && <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase">Lần đo mới nhất: {formatDateVN(latestMetric.date)}</span>}
         </div>
         <div className="overflow-x-auto no-scrollbar">
           <table className="w-full text-left text-[11px] min-w-[1000px]">
