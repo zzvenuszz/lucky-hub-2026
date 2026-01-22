@@ -42,24 +42,25 @@ const formatDateVN = (dateStr: string) => {
   }
 };
 
-// Hàm vẽ phần được chọn với hiệu ứng chuyển động mượt mà
+/**
+ * PHÂN TÍCH LỖI: Hiệu ứng bị giật thường do xung đột giữa CSS transition và SVG animation của Recharts.
+ * GIẢI PHÁP: Loại bỏ transition thủ công, để Recharts tự xử lý việc nội suy giá trị bán kính.
+ */
 const renderActiveShape = (props: any) => {
   const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
   return (
-    <Sector
-      cx={cx}
-      cy={cy}
-      innerRadius={innerRadius}
-      outerRadius={outerRadius + 10}
-      startAngle={startAngle}
-      endAngle={endAngle}
-      fill={fill}
-      style={{ 
-        filter: `drop-shadow(0 8px 12px ${fill}44)`,
-        transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-        cursor: 'pointer'
-      }}
-    />
+    <g>
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius}
+        outerRadius={outerRadius + 8} // Phóng to nhẹ nhàng
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        style={{ cursor: 'pointer' }}
+      />
+    </g>
   );
 };
 
@@ -81,24 +82,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
 
-  // Tính toán dữ liệu biểu đồ với màu sắc yêu cầu
+  /**
+   * CẬP NHẬT: Loại bỏ thành phần 'Khác'. 
+   * Màu sắc: Cơ (Đỏ), Nước (Xanh), Mỡ (Vàng nhạt).
+   */
   const pieData = useMemo(() => {
     if (!latestMetric) return [];
     
-    // Tính khối lượng dựa trên % và cân nặng tổng
     const fatMass = Number((latestMetric.weight * (latestMetric.bodyFat / 100)).toFixed(1));
     const waterMass = Number((latestMetric.weight * (latestMetric.waterPercent / 100)).toFixed(1));
     const muscle = latestMetric.muscleMass || 0;
-    
-    // Các phần này có thể chồng lấp nhau về mặt sinh học nhưng chúng ta biểu diễn các trụ cột chính
-    // Để Pie Chart hợp lý, chúng ta tính toán phần còn lại (Khác)
-    const others = Math.max(0, Number((latestMetric.weight - fatMass - muscle).toFixed(1)));
 
     return [
-      { name: 'Cơ bắp', value: muscle, color: '#ef4444' },        // Đỏ
-      { name: 'Nước', value: waterMass, color: '#0ea5e9' },      // Xanh da trời
+      { name: 'Khối cơ', value: muscle, color: '#ef4444' },     // Đỏ
+      { name: 'Lượng nước', value: waterMass, color: '#0ea5e9' }, // Xanh da trời
       { name: 'Mỡ cơ thể', value: fatMass, color: '#fde047' },    // Vàng nhạt
-      { name: 'Khác', value: others, color: '#f1f5f9' },         // Xám nhạt cho phần còn lại
     ];
   }, [latestMetric]);
 
@@ -159,25 +157,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Biểu đồ Tròn Cấu trúc Thành phần (NÂNG CẤP HIỆU ỨNG) */}
+        {/* Biểu đồ Tròn Cấu trúc Thành phần (ĐÃ SỬA LỖI GIẬT) */}
         <div 
-          className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative transition-all"
+          className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative"
           onClick={() => setActiveIndex(null)}
         >
           <div className="mb-2">
             <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân tích khối lượng (1.5s Animation)</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân bổ chỉ số quan trọng (1.5s Animation)</p>
           </div>
           
           <div className="flex-grow flex items-center justify-center relative">
             {latestMetric ? (
               <div className="relative w-full h-full flex items-center justify-center">
-                {/* Thông tin ở tâm biểu đồ - Chuyển động mượt mà */}
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest transition-all duration-500">
-                    {activeIndex !== null ? pieData[activeIndex].name : 'Cân nặng tổng'}
+                {/* Tâm biểu đồ - Logic hiển thị mượt mà */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 select-none">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">
+                    {activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân nặng'}
                   </span>
-                  <span className="text-3xl font-black text-slate-800 tabular-nums transition-all duration-500 scale-110">
+                  <span className="text-3xl font-black text-slate-800 tabular-nums">
                     {activeIndex !== null ? `${pieData[activeIndex].value}kg` : `${latestMetric.weight}kg`}
                   </span>
                 </div>
@@ -191,7 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                       cx="50%"
                       cy="50%"
                       innerRadius={80}
-                      outerRadius={105}
+                      outerRadius={100}
                       paddingAngle={5}
                       dataKey="value"
                       onMouseEnter={(_, index) => setActiveIndex(index)}
@@ -199,7 +197,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                       onClick={(e, index) => { e.stopPropagation(); setActiveIndex(index); }}
                       stroke="none"
                       animationBegin={0}
-                      animationDuration={1500} // Hiệu ứng phóng ra trong 1.5 giây
+                      animationDuration={1500} // Hiệu ứng 1.5 giây
+                      animationEasing="ease-out"
                     >
                       {pieData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
@@ -214,7 +213,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="text-slate-300 italic text-sm font-medium">Đang đợi dữ liệu phân tích...</div>
+              <div className="text-slate-300 italic text-sm font-medium">Đang đợi dữ liệu...</div>
             )}
           </div>
         </div>
