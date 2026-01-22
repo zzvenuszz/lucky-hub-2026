@@ -10,48 +10,51 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         #debug-console {
-            position: fixed; bottom: 10px; right: 10px; width: 320px; max-height: 250px;
-            background: rgba(15, 23, 42, 0.95); color: #10b981; font-family: monospace; font-size: 10px;
-            padding: 12px; border-radius: 12px; overflow-y: auto; z-index: 9999;
-            pointer-events: none; border: 1px solid #1e293b; display: none;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            position: fixed; bottom: 85px; left: 24px; width: 350px; max-height: 300px;
+            background: rgba(15, 23, 42, 0.98); color: #10b981; font-family: 'Fira Code', monospace; font-size: 10px;
+            padding: 15px; border-radius: 20px; overflow-y: auto; z-index: 9998;
+            pointer-events: auto; border: 1px solid rgba(255,255,255,0.1);
+            display: none; flex-direction: column; gap: 4px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
         }
-        .error-log { color: #f43f5e; font-weight: bold; }
-        .ai-log { color: #8b5cf6; }
-        .success-log { color: #10b981; }
-        .info-log { color: #3b82f6; }
+        .error-log { color: #fb7185; }
+        .ai-log { color: #a78bfa; }
+        .success-log { color: #34d399; }
+        .info-log { color: #60a5fa; }
+        .system-log { color: #94a3b8; font-style: italic; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
     <script>
+      window.logFilters = { system: true, ai: true };
+      
       window.debugLog = function(msg, type = 'info') {
         const consoleEl = document.getElementById('debug-console');
-        if (consoleEl) {
-          const div = document.createElement('div');
-          div.className = type === 'error' ? 'error-log' : 
-                          type === 'ai' ? 'ai-log' :
-                          type === 'success' ? 'success-log' : 'info-log';
-          
-          div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-          consoleEl.appendChild(div);
-          consoleEl.scrollTop = consoleEl.scrollHeight;
-        }
-        console.log(`[${type.toUpperCase()}] ${msg}`);
+        if (!consoleEl) return;
+
+        // Kiểm tra filter
+        const isAI = type === 'ai' || msg.includes('Gemini') || msg.includes('AI');
+        if (isAI && !window.logFilters.ai) return;
+        if (!isAI && !window.logFilters.system) return;
+
+        const div = document.createElement('div');
+        div.className = type === 'error' ? 'error-log' : 
+                        type === 'ai' ? 'ai-log' :
+                        type === 'success' ? 'success-log' : 
+                        type === 'system' ? 'system-log' : 'info-log';
+        
+        div.innerHTML = `<span style="opacity:0.4">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+        consoleEl.appendChild(div);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+        
+        // Giới hạn số lượng log để tránh lag
+        if (consoleEl.children.length > 100) consoleEl.removeChild(consoleEl.firstChild);
       };
 
-      // Lọc bỏ lỗi từ trình duyệt/extension để tránh làm rối bảng log
       window.onerror = (m, s, l) => {
-        const msg = String(m);
-        if (
-          msg.includes('__firefox__') || 
-          msg.includes('ethereum') || 
-          msg.includes('Script error.') || 
-          msg.includes('DarkReader') ||
-          msg.includes('playlistLongPressed')
-        ) {
-          return true; // Bỏ qua lỗi ngoại lai
-        }
-        debugLog(`Hệ thống: ${m}`, 'error');
+        if (String(m).includes('DarkReader') || String(m).includes('ethereum')) return true;
+        debugLog(`Lỗi hệ thống: ${m}`, 'error');
       };
       
       window.process = { env: { API_KEY: "AIzaSyDfiNVIkl7THN5xbrMdW78ayJKkDboxR7s" } };
@@ -79,15 +82,13 @@
 </script>
 </head>
 <body class="bg-slate-50 text-slate-900">
-    <div id="root">
-        <div class="flex items-center justify-center min-h-screen">
-            <div class="text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto"></div>
-                <p class="mt-4 text-slate-500 font-medium">Đang khởi tạo Lucky Hub...</p>
-            </div>
+    <div id="root"></div>
+    <div id="debug-console" class="no-scrollbar">
+        <div style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-bottom: 5px; font-weight: bold; display: flex; justify-content: space-between;">
+            <span>TERMINAL LOGS</span>
+            <button onclick="this.parentElement.parentElement.style.display='none'" style="color: #fb7185">HIDE</button>
         </div>
     </div>
-    <div id="debug-console"></div>
     <script type="module" src="./index.tsx"></script>
 </body>
 </html>
