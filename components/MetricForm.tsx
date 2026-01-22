@@ -46,13 +46,13 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
       if (!isBulk) {
         log("Đang phân tích ảnh kết quả đơn...");
         const extracted = await extractMetricsFromImage(base64);
-        // Kiểm tra tính hợp lệ: Ít nhất phải có cân nặng hoặc tỷ lệ mỡ
-        if (extracted && (extracted.weight || extracted.bodyFat)) {
+        // Kiểm tra xem AI có trích xuất được chỉ số cốt lõi không
+        if (extracted && (extracted.weight || extracted.bodyFat || extracted.muscleMass)) {
           setFormData(prev => ({ ...prev, ...extracted }));
-          log("Đã trích xuất thành công chỉ số cơ bản.", "success");
+          log("Trích xuất chỉ số thành công.", "success");
         } else {
-          alert("Chào bạn, hình ảnh vừa rồi có vẻ hơi mờ hoặc không chứa các chỉ số InBody cần thiết. Bạn vui lòng chọn ảnh khác rõ nét hơn hoặc chụp gần hơn để Lucky AI hỗ trợ nhé! 😊");
-          log("AI không tìm thấy chỉ số cơ bản trong ảnh.", "error");
+          alert("Chào bạn, Lucky AI chưa thể nhận diện được các chỉ số từ hình ảnh này. Bạn vui lòng chụp ảnh rõ nét hơn, đủ ánh sáng và bao quát bảng kết quả đo để hệ thống xử lý tốt nhất nhé! 😊✨");
+          log("AI không tìm thấy dữ liệu hợp lệ trong ảnh.", "error");
         }
         setLoadingAI(false);
       } else {
@@ -66,7 +66,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               contents: { 
                 parts: [
                   { inlineData: { mimeType: 'image/jpeg', data: base64 } }, 
-                  { text: `Bạn là chuyên gia OCR y tế chuyên đọc bảng viết tay. Hãy trích xuất dữ liệu từ ảnh bảng InBody. Trả về mảng JSON.` }
+                  { text: `Bạn là chuyên gia OCR y tế chuyên đọc bảng viết tay InBody. Hãy trích xuất dữ liệu và trả về mảng JSON chuẩn.` }
                 ] 
               },
               config: { 
@@ -80,12 +80,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       weight: { type: Type.NUMBER },
                       bodyFat: { type: Type.NUMBER },
                       muscleMass: { type: Type.NUMBER },
-                      waterPercent: { type: Type.NUMBER },
                       visceralFat: { type: Type.NUMBER },
                       energy: { type: Type.NUMBER },
-                      balanceIndex: { type: Type.NUMBER },
-                      bioAge: { type: Type.NUMBER },
-                      boneMinerals: { type: Type.NUMBER }
+                      bioAge: { type: Type.NUMBER }
                     },
                     required: ["weight"]
                   }
@@ -101,22 +98,17 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 weight: parseFloat(String(item.weight).replace(',', '.')) || 0,
                 bodyFat: parseFloat(String(item.bodyFat).replace(',', '.')) || 0,
                 muscleMass: parseFloat(String(item.muscleMass).replace(',', '.')) || 0,
-                waterPercent: parseFloat(String(item.waterPercent).replace(',', '.')) || 0,
-                visceralFat: parseFloat(String(item.visceralFat).replace(',', '.')) || 0,
-                energy: parseFloat(String(item.energy).replace(',', '.')) || 0,
-                balanceIndex: parseFloat(String(item.balanceIndex).replace(',', '.')) || 0,
-                bioAge: parseFloat(String(item.bioAge).replace(',', '.')) || 0,
-                boneMinerals: parseFloat(String(item.boneMinerals).replace(',', '.')) || 0
+                waterPercent: 0, visceralFat: item.visceralFat || 0, energy: item.energy || 0, balanceIndex: 0, bioAge: item.bioAge || 0, boneMinerals: 0
               })).filter(item => item.weight > 0);
 
               if (cleanedData.length > 0) {
                 setBulkPreview(cleanedData);
-                log(`Đã đọc được ${cleanedData.length} ngày từ sổ tay.`, "success");
+                log(`Đã đọc thành công ${cleanedData.length} bản ghi.`, "success");
               } else {
-                throw new Error("EMPTY_DATA");
+                throw new Error("NO_VALID_DATA");
               }
             } else {
-              throw new Error("EMPTY_DATA");
+              throw new Error("NO_VALID_DATA");
             }
             setLoadingAI(false);
           } catch (err: any) { 
@@ -124,7 +116,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               setRetryCount(prev => prev + 1);
               setTimeout(() => executeBulkAI(retries - 1), 3000);
             } else {
-              alert("Chào bạn, Lucky AI chưa thể nhận diện được các dòng chỉ số trong bảng viết tay này. Bạn hãy thử chụp ảnh thẳng góc hơn, đủ ánh sáng và rõ nét các con số để hệ thống xử lý chính xác nhất nhé! 📝✨");
+              alert("Chào bạn, Lucky AI gặp khó khăn khi đọc bảng viết tay này. Bạn vui lòng chụp ảnh thẳng góc, đủ ánh sáng và đảm bảo các con số viết tay rõ ràng để hệ thống hỗ trợ bạn nhập liệu hàng loạt nhé! 📝💪");
+              log("Phân tích Bulk thất bại hoặc không có dữ liệu.", "error");
               setLoadingAI(false);
             }
           }
@@ -160,40 +153,40 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             <button 
               disabled={loadingAI}
               onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }}
-              className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-emerald-200'}`}
+              className={`p-5 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-emerald-200'}`}
             >
-              <span className="text-2xl mb-1">📸</span>
-              <span className="font-bold text-emerald-700 text-sm uppercase tracking-tighter">Chụp kết quả InBody</span>
+              <span className="text-3xl mb-1">📸</span>
+              <span className="font-bold text-emerald-700 text-sm uppercase tracking-tighter">Chụp InBody đơn lẻ</span>
             </button>
             <button 
               disabled={loadingAI}
               onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }}
-              className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-amber-200'}`}
+              className={`p-5 border-2 border-dashed rounded-2xl flex flex-col items-center transition-all group ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-amber-200'}`}
             >
-              <span className="text-2xl mb-1">📝</span>
-              <span className="font-bold text-amber-700 text-sm uppercase tracking-tighter">Quét bảng sổ tay (Bulk)</span>
+              <span className="text-3xl mb-1">📝</span>
+              <span className="font-bold text-amber-700 text-sm uppercase tracking-tighter">Quét Sổ tay hàng loạt</span>
             </button>
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkMode)} />
           </div>
 
           {loadingAI && (
-            <div className="flex flex-col items-center justify-center p-10 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
+            <div className="flex flex-col items-center justify-center p-12 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
               <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <span className="text-emerald-700 font-black text-sm uppercase tracking-widest">Lucky AI đang phân tích dữ liệu...</span>
+              <span className="text-emerald-700 font-black text-sm uppercase tracking-widest">Lucky AI đang phân tích hình ảnh...</span>
             </div>
           )}
 
           {!loadingAI && bulkMode && bulkPreview.length > 0 ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-bold text-slate-700">Dữ liệu đã đọc ({bulkPreview.length} ngày):</h3>
-                <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Hủy kết quả</button>
+                <h3 className="font-bold text-slate-700">Dữ liệu quét được ({bulkPreview.length} ngày):</h3>
+                <button onClick={() => setBulkPreview([])} className="text-[10px] font-black text-rose-500 uppercase">Hủy bỏ</button>
               </div>
               <div className="overflow-x-auto rounded-2xl border border-slate-100 shadow-inner bg-slate-50/50 max-h-80 scrollbar-hide">
-                <table className="w-full text-[10px] text-left min-w-[900px]">
+                <table className="w-full text-[10px] text-left min-w-[800px]">
                   <thead>
                     <tr className="bg-white/80 backdrop-blur-sm text-slate-400 font-black uppercase sticky top-0 z-10">
-                      <th className="p-3 border-b">Ngày</th>
+                      <th className="p-3 border-b">Ngày đo</th>
                       <th className="p-3 border-b text-center">Cân (kg)</th>
                       <th className="p-3 border-b text-center">Mỡ (%)</th>
                       <th className="p-3 border-b text-center">Cơ (kg)</th>
@@ -219,9 +212,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               </div>
               <button 
                 onClick={() => onSaveBulk(bulkPreview)} 
-                className="w-full bg-amber-500 text-white font-black py-5 rounded-2xl shadow-xl shadow-amber-100 uppercase tracking-widest"
+                className="w-full bg-amber-500 text-white font-black py-5 rounded-2xl shadow-xl shadow-amber-100 uppercase tracking-widest hover:bg-amber-600 transition-all"
               >
-                Xác nhận lưu {bulkPreview.length} ngày vào biểu đồ
+                Xác nhận lưu {bulkPreview.length} ngày vào hệ thống
               </button>
             </div>
           ) : !loadingAI && (

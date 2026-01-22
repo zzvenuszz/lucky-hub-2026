@@ -167,24 +167,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             <div className="w-full h-[300px] relative flex flex-col items-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  {/* FIX: Use @ts-ignore on Pie because activeIndex and activeShape are valid props but sometimes missing from recharts type definitions */}
-                  {/* @ts-ignore */}
+                  {/* FIX: Use property spreading with any cast to avoid TypeScript error on activeIndex and activeShape which might be missing in some recharts type definitions. */}
                   <Pie
-                    activeIndex={activeIndex}
-                    activeShape={((props: any) => {
-                      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-                      return (
-                        <g><Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 10} startAngle={startAngle} endAngle={endAngle} fill={fill} /></g>
-                      );
-                    }) as any}
-                    data={bodyCompData}
-                    cx="50%" cy="50%"
-                    innerRadius={65} outerRadius={85}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                    onMouseEnter={(_, index) => setActiveIndex(index)}
-                    onMouseLeave={() => setActiveIndex(-1)}
+                    {...({
+                      activeIndex: activeIndex,
+                      activeShape: (props: any) => {
+                        const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+                        return (
+                          <g><Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 10} startAngle={startAngle} endAngle={endAngle} fill={fill} /></g>
+                        );
+                      },
+                      data: bodyCompData,
+                      cx: "50%", cy: "50%",
+                      innerRadius: 65, outerRadius: 85,
+                      paddingAngle: 5,
+                      dataKey: "value",
+                      stroke: "none",
+                      onMouseEnter: (_: any, index: number) => setActiveIndex(index),
+                      onMouseLeave: () => setActiveIndex(-1)
+                    } as any)}
                   >
                     {bodyCompData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
@@ -206,8 +207,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
           <div className="flex flex-col space-y-6 mb-8 items-center text-center">
             <div className="w-full">
-              <h3 className="font-black text-slate-800 text-lg tracking-tight whitespace-nowrap overflow-hidden">Biểu đồ xu hướng sức khỏe hội viên</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Hành trình thay đổi các chỉ số đo lường</p>
+              {/* Căn giữa tiêu đề, mở rộng ngang, ngăn xuống dòng */}
+              <h3 className="font-black text-slate-800 text-lg tracking-tight whitespace-nowrap overflow-hidden text-center max-w-full">
+                Biểu đồ xu hướng sức khỏe hội viên Lucky Hub
+              </h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 text-center">Hành trình thay đổi các chỉ số đo lường thực tế</p>
             </div>
             <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full px-2">
               {TIME_RANGES.map(range => (
