@@ -180,6 +180,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             <div className="w-full h-[300px] relative flex flex-col items-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
+                  {/* @ts-ignore: Property 'activeIndex' does not exist on type 'PieProps' in some Recharts versions */}
                   <Pie
                     activeIndex={activeIndex}
                     activeShape={(props: any) => {

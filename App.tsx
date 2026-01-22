@@ -33,12 +33,16 @@ const App: React.FC = () => {
     gender: 'Nam' as 'Nam'|'Nữ', healthGoal: HealthGoal.BODY_RECOMP
   });
 
+  const logApp = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
+    if (window.debugLog) window.debugLog(`[Ứng dụng] ${msg}`, type);
+  };
+
   useEffect(() => {
     const consoleEl = document.getElementById('debug-console');
     if (consoleEl) {
       consoleEl.style.display = (currentUser?.role === UserRole.ADMIN) ? 'block' : 'none';
       if (currentUser?.role === UserRole.ADMIN && window.debugLog) {
-        window.debugLog(`Chào Admin ${currentUser.fullName}. Hệ thống logs đã sẵn sàng.`, 'success');
+        logApp(`Quản trị viên ${currentUser.fullName} đã đăng nhập.`, 'success');
       }
     }
   }, [currentUser]);
@@ -49,6 +53,7 @@ const App: React.FC = () => {
       try {
         const parsedUser = JSON.parse(savedUser);
         setCurrentUser(parsedUser);
+        logApp(`Khôi phục phiên làm việc cho: ${parsedUser.fullName}`);
       } catch (e) {
         localStorage.removeItem('lucky_hub_user');
       }
@@ -57,6 +62,7 @@ const App: React.FC = () => {
 
   const fetchData = async () => {
     try {
+      logApp("Đang tải dữ liệu hệ thống...");
       const [u, k, r] = await Promise.all([
         Database.getUsers(), 
         Database.getKnowledge(),
@@ -71,7 +77,8 @@ const App: React.FC = () => {
         const metrics = await Database.getMetrics(uid);
         setExistingMetrics(metrics || []);
       }
-    } catch (err) { console.error("Fetch data error:", err); }
+      logApp("Dữ liệu đã được cập nhật.", "success");
+    } catch (err) { logApp("Lỗi tải dữ liệu cơ sở.", "error"); }
   };
 
   useEffect(() => { if (currentUser) fetchData(); }, [currentUser, refreshTrigger]);
@@ -80,6 +87,7 @@ const App: React.FC = () => {
     e.preventDefault();
     if (isLoading) return;
     setIsLoading(true);
+    logApp(`Đang xác thực người dùng: ${loginData.username}...`);
     try {
       const response = await fetch('/api/login', {
         method: 'POST',
@@ -90,37 +98,61 @@ const App: React.FC = () => {
         const user = await response.json();
         setCurrentUser(user);
         localStorage.setItem('lucky_hub_user', JSON.stringify(user));
+        logApp(`Đăng nhập thành công: ${user.fullName}`, "success");
       } else if (response.status === 426) {
         const data = await response.json();
         setTempUpgradeData({ userId: data.userId, fullName: data.fullName });
         setUpgradePasswords({ ...upgradePasswords, oldPassword: loginData.password });
         setNeedsUpgrade(true);
+        logApp("Yêu cầu nâng cấp bảo mật mật khẩu.", "info");
       } else {
         const error = await response.json();
         alert(error.message || 'Sai thông tin đăng nhập.');
+        logApp(`Đăng nhập thất bại cho ${loginData.username}: ${error.message}`, "error");
       }
-    } catch (error) { alert('Lỗi kết nối.'); } finally { setIsLoading(false); }
+    } catch (error) { 
+      alert('Lỗi kết nối.'); 
+      logApp("Lỗi kết nối Server khi đăng nhập.", "error");
+    } finally { setIsLoading(false); }
   };
 
+  /**
+   * PHÂN TÍCH: Hàm này xử lý việc nâng cấp mật khẩu từ plain-text sang dạng băm (SHA256).
+   * Được gọi khi hệ thống yêu cầu nâng cấp bảo mật (mã lỗi 426 khi đăng nhập).
+   */
   const handleUpgradePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (upgradePasswords.newPassword !== upgradePasswords.confirmPassword) { alert('Mật khẩu không khớp!'); return; }
+    if (upgradePasswords.newPassword !== upgradePasswords.confirmPassword) {
+      alert('Mật khẩu xác nhận không khớp.');
+      return;
+    }
+    if (!tempUpgradeData) return;
+    
     setIsLoading(true);
+    logApp(`Đang nâng cấp bảo mật cho ${tempUpgradeData.fullName}...`);
     try {
-      const res = await fetch('/api/users/upgrade-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: tempUpgradeData?.userId, oldPassword: upgradePasswords.oldPassword, newPassword: upgradePasswords.newPassword })
+      // Sử dụng Database service để cập nhật thông tin người dùng
+      const user = await Database.updateUser(tempUpgradeData.userId, {
+        password: upgradePasswords.newPassword,
+        isPasswordEncrypted: true
       });
-      if (res.ok) {
-        alert('Cập nhật bảo mật thành công! Vui lòng đăng nhập lại.');
+      
+      if (user) {
+        alert('Nâng cấp mật khẩu thành công! Hãy đăng nhập lại bằng mật khẩu mới.');
         setNeedsUpgrade(false);
-        setTempUpgradeData(null);
-      } else { alert('Lỗi cập nhật.'); }
-    } catch (e) { alert('Lỗi hệ thống.'); } finally { setIsLoading(false); }
+        setLoginData({ ...loginData, password: '' });
+        logApp("Nâng cấp mật khẩu thành công.", "success");
+      }
+    } catch (error) {
+      alert('Lỗi kết nối hệ thống.');
+      logApp("Lỗi hệ thống khi nâng cấp mật khẩu.", "error");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleLogout = () => {
+    logApp(`Người dùng ${currentUser?.fullName} đã đăng xuất.`);
     setCurrentUser(null);
     localStorage.removeItem('lucky_hub_user');
     setActiveTab('dashboard');
@@ -131,56 +163,67 @@ const App: React.FC = () => {
     e.preventDefault();
     if (isLoading) return;
     setIsLoading(true);
+    logApp(`Đang đăng ký tài khoản mới: ${regData.username}...`);
     try {
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(regData)
       });
-      if (res.ok) { alert('Thành công! Hãy đăng nhập.'); setIsRegistering(false); }
-      else { const err = await res.json(); alert(err.message || 'Lỗi đăng ký.'); }
-    } catch (error) { alert('Lỗi kết nối.'); } finally { setIsLoading(false); }
+      if (res.ok) { 
+        alert('Thành công! Hãy đăng nhập.'); 
+        setIsRegistering(false); 
+        logApp("Đăng ký thành viên mới thành công.", "success");
+      }
+      else { 
+        const err = await res.json(); 
+        alert(err.message || 'Lỗi đăng ký.'); 
+        logApp(`Đăng ký thất bại: ${err.message}`, "error");
+      }
+    } catch (error) { logApp("Lỗi hệ thống khi đăng ký.", "error"); } finally { setIsLoading(false); }
   };
 
   const handleSaveMetric = async (metric: any) => {
     if (!currentUser) return;
     const uid = (currentUser as any).id || (currentUser as any)._id;
+    logApp(`Đang lưu chỉ số mới cho ngày ${metric.date}...`);
     
-    // Kiểm tra trùng ngày
     const exists = existingMetrics.find(m => m.date === metric.date);
     if (exists) {
       if (!confirm(`Dữ liệu ngày ${metric.date} đã tồn tại. Bạn có thực sự muốn ghi đè chỉ số cũ không?`)) {
+        logApp("Hủy lưu do trùng ngày đo.");
         return;
       }
-      // Xóa bản ghi cũ trước khi lưu mới để đảm bảo tính duy nhất
       await Database.deleteMetricsByDates(uid, [metric.date]);
+      logApp("Đã xóa dữ liệu cũ để ghi đè.");
     }
 
     await Database.saveMetric({ ...metric, userId: uid });
     setRefreshTrigger(prev => prev + 1); 
     setIsAddingMetric(false);
+    logApp(`Lưu chỉ số ngày ${metric.date} thành công.`, "success");
   };
 
   const handleSaveBulk = async (list: any[]) => {
     if (!currentUser) return;
     const uid = (currentUser as any).id || (currentUser as any)._id;
+    logApp(`Đang lưu hàng loạt ${list.length} chỉ số...`);
     
-    // Kiểm tra các ngày bị trùng trong danh sách bulk
     const newDates = list.map(m => m.date);
     const duplicates = existingMetrics.filter(m => newDates.includes(m.date));
     
     if (duplicates.length > 0) {
-      if (!confirm(`Tìm thấy ${duplicates.length} ngày đã có dữ liệu trong hệ thống. Bạn có muốn GHI ĐÈ toàn bộ chúng bằng dữ liệu mới từ sổ tay không?`)) {
+      if (!confirm(`Tìm thấy ${duplicates.length} ngày đã có dữ liệu. Bạn có muốn GHI ĐÈ không?`)) {
+        logApp("Hủy lưu hàng loạt do có ngày trùng.");
         return;
       }
-      // Xóa các ngày trùng lặp trước khi insert many
       await Database.deleteMetricsByDates(uid, duplicates.map(m => m.date));
     }
 
     await Database.saveMetricsBulk(list.map(m => ({...m, userId: uid})));
     setRefreshTrigger(prev => prev + 1); 
     setIsAddingMetric(false);
-    if (window.debugLog) window.debugLog(`Đã lưu thành công ${list.length} chỉ số.`, 'success');
+    logApp(`Đã lưu thành công ${list.length} chỉ số từ sổ tay.`, 'success');
   };
 
   if (!currentUser) {

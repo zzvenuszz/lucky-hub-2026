@@ -17,25 +17,70 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  
+  // States cho cơ chế phản hồi AI chia nhỏ
   const [isTypingAI, setIsTypingAI] = useState(false);
+  const [pendingQueue, setPendingQueue] = useState<string[]>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+
   const [latestMetric, setLatestMetric] = useState<HealthMetric | undefined>(undefined);
   const [showContacts, setShowContacts] = useState(true);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Khóa cuộn trang chính khi Popup mở (đặc biệt quan trọng trên Mobile)
   useEffect(() => {
     const originalStyle = window.getComputedStyle(document.body).overflow;
-    // Trên di động, chúng ta khóa hẳn cuộn body để tập trung vào chat
     if (window.innerWidth < 768) {
       document.body.style.overflow = 'hidden';
     }
-    
     return () => {
       document.body.style.overflow = originalStyle;
     };
   }, []);
+
+  // Xử lý Hàng đợi tin nhắn (Message Stack)
+  useEffect(() => {
+    if (pendingQueue.length > 0 && !isProcessingQueue && selectedChat) {
+      processNextInQueue();
+    }
+  }, [pendingQueue, isProcessingQueue, selectedChat?.id]);
+
+  const processNextInQueue = async () => {
+    if (pendingQueue.length === 0 || !selectedChat) return;
+    
+    setIsProcessingQueue(true);
+    const textToDisplay = pendingQueue[0];
+    
+    // Giả lập thời gian soạn tin tương ứng độ dài (tối thiểu 800ms, tối đa 2500ms)
+    const delay = Math.min(Math.max(textToDisplay.length * 20, 800), 2500);
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    const aiMessage: Message = {
+      id: `msg_ai_${Date.now()}_${Math.random()}`, 
+      senderId: 'ai_coach', 
+      senderName: 'Lucky AI', 
+      senderRole: 'AI' as any, 
+      content: textToDisplay, 
+      timestamp: new Date().toISOString()
+    };
+
+    // Cập nhật giao diện và lưu vào Database
+    setSelectedChat(prev => {
+      if (!prev) return null;
+      const updated = { ...prev, messages: [...prev.messages, aiMessage] };
+      Database.saveChat(updated);
+      return updated;
+    });
+
+    setPendingQueue(prev => prev.slice(1));
+    setIsProcessingQueue(false);
+    
+    // Nếu hàng đợi đã hết, tắt trạng thái typing
+    if (pendingQueue.length <= 1) {
+      setIsTypingAI(false);
+    }
+  };
 
   const loadData = async () => {
     const uid = (currentUser as any).id || (currentUser as any)._id;
@@ -73,33 +118,28 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       aiChat = { id: aiChatId, memberId: uid, coachId: 'ai_coach', messages: [] };
     }
     
-    const finalChats = [aiChat, ...activeChats].sort((a, b) => {
-      if (a.coachId === 'ai_coach') return -1;
-      if (b.coachId === 'ai_coach') return 1;
-      const lastA = a.messages.length > 0 ? new Date(a.messages[a.messages.length-1].timestamp).getTime() : 0;
-      const lastB = b.messages.length > 0 ? new Date(b.messages[b.messages.length-1].timestamp).getTime() : 0;
-      return lastB - lastA;
-    });
-
+    const finalChats = [aiChat, ...activeChats];
     setChats(finalChats);
     
-    if (selectedChat) {
+    if (selectedChat && !isProcessingQueue) {
       const updated = finalChats.find(c => c.id === selectedChat.id);
-      if (updated && JSON.stringify(updated.messages) !== JSON.stringify(selectedChat.messages)) {
-        setSelectedChat(updated);
+      if (updated && updated.messages.length > selectedChat.messages.length) {
+         setSelectedChat(updated);
       }
     }
   };
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 5000);
+    const interval = setInterval(() => {
+      if (!isTypingAI) loadData();
+    }, 5000);
     return () => clearInterval(interval);
-  }, [currentUser, users, selectedChat?.id]);
+  }, [currentUser, users, selectedChat?.id, isTypingAI]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [selectedChat?.messages, isTypingAI]);
+  }, [selectedChat?.messages, isTypingAI, isProcessingQueue]);
 
   const handleSendMessage = async () => {
     if ((!inputText.trim() && !selectedImage) || !selectedChat) return;
@@ -119,7 +159,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
     const updatedChat = { ...selectedChat, messages: [...selectedChat.messages, newMessage] };
     setSelectedChat(updatedChat);
-    await Database.saveChat(updatedChat);
+    if (!isTargetAI) await Database.saveChat(updatedChat);
     
     const sentText = inputText;
     setInputText('');
@@ -127,22 +167,27 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
     if (isTargetAI) {
       setIsTypingAI(true);
+      // Gửi yêu cầu lên AI ngay lập tức dù AI đang bận "gõ"
       try {
         const aiResponse = await getAICoachResponse(
           updatedChat.messages, knowledge, rules, 
           sentText || "Phân tích hình ảnh này cho tôi",
           currentUser.healthGoal, latestMetric, base64Data
         );
+        
         if (aiResponse) {
-          const aiMessage: Message = {
-            id: `msg_ai_${Date.now()}`, senderId: 'ai_coach', senderName: 'Lucky AI', 
-            senderRole: 'AI' as any, content: aiResponse, timestamp: new Date().toISOString()
-          };
-          const finalChat = { ...updatedChat, messages: [...updatedChat.messages, aiMessage] };
-          await Database.saveChat(finalChat);
-          setSelectedChat(finalChat);
+          // Chia nhỏ phản hồi theo đoạn văn (\n\n) hoặc câu dài
+          const chunks = aiResponse
+            .split(/\n\n+/)
+            .map(c => c.trim())
+            .filter(c => c.length > 0);
+          
+          // Xếp thông tin nhận được vào cuối hàng đợi (stack)
+          setPendingQueue(prev => [...prev, ...chunks]);
         }
-      } finally { setIsTypingAI(false); }
+      } catch (e) {
+        setPendingQueue(prev => [...prev, "Hệ thống AI đang quá tải, tôi sẽ phản hồi lại sau ít phút."]);
+      }
     }
   };
 
@@ -156,9 +201,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   return (
     <div 
       className="fixed bottom-24 left-6 w-[400px] max-w-[95vw] h-[600px] max-h-[85vh] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden z-[999] animate-in slide-in-from-bottom-6 duration-300"
-      onWheel={(e) => e.stopPropagation()} // Chống lan tỏa sự kiện cuộn
+      onWheel={(e) => e.stopPropagation()}
     >
-      {/* Header */}
       <div className="p-5 bg-emerald-600 text-white flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           {!showContacts && (
@@ -178,10 +222,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
       <div className="flex-grow flex flex-col min-h-0 bg-slate-50/30">
         {showContacts ? (
-          <div 
-            className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar"
-            style={{ overscrollBehavior: 'contain' }} // NGĂN CHẶN SCROLL CHÍNH KHI ĐÃ CUỘN HẾT
-          >
+          <div className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">Hội thoại của bạn</div>
             {chats.map(chat => {
               const other = getOtherUser(chat);
@@ -196,9 +237,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                       <div className="font-bold text-xs truncate group-hover:text-emerald-600 transition-colors">{other.fullName}</div>
                       <span className="text-[8px] font-black uppercase text-slate-400">{other.role}</span>
                     </div>
-                    <div className="text-[10px] truncate mt-0.5 text-slate-400">
-                      {chat.messages.length > 0 ? chat.messages[chat.messages.length-1].content : 'Bắt đầu ngay...'}
-                    </div>
                   </div>
                 </div>
               );
@@ -206,14 +244,10 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
           </div>
         ) : selectedChat ? (
           <>
-            <div 
-              ref={scrollRef} 
-              className="flex-grow p-4 overflow-y-auto space-y-4 no-scrollbar"
-              style={{ overscrollBehavior: 'contain' }} // NGĂN CHẶN SCROLL CHÍNH KHI ĐANG NHẮN TIN
-            >
+            <div ref={scrollRef} className="flex-grow p-4 overflow-y-auto space-y-4 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
               {selectedChat.messages.map(msg => (
                 <div key={msg.id} className={`flex flex-col ${msg.senderId === ((currentUser as any).id || (currentUser as any)._id) ? 'items-end' : 'items-start'}`}>
-                  <div className={`max-w-[85%] p-3 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
+                  <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
                     msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none' : 
                     msg.senderId === ((currentUser as any).id || (currentUser as any)._id) ? 'bg-emerald-600 text-white rounded-tr-none' : 
                     'bg-white text-slate-800 rounded-tl-none border border-slate-100'
@@ -224,7 +258,16 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                   <span className="text-[8px] text-slate-400 mt-1 px-1 font-bold uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                 </div>
               ))}
-              {isTypingAI && <div className="text-[10px] text-amber-500 animate-pulse font-black uppercase tracking-widest px-2">AI đang đọc dữ liệu cơ thể...</div>}
+              {isTypingAI && (
+                <div className="flex flex-col items-start px-2">
+                  <div className="bg-amber-50 border border-amber-100 text-amber-600 p-2 rounded-xl rounded-tl-none flex items-center gap-2">
+                    <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce"></span>
+                    <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                    <span className="w-1 h-1 bg-amber-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                    <span className="text-[10px] font-black uppercase tracking-widest ml-1">AI Advisor đang soạn phản hồi...</span>
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="p-4 bg-white border-t border-slate-50 shrink-0">
@@ -240,7 +283,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                   const f = e.target.files?.[0];
                   if(f){ const r = new FileReader(); r.onload = () => setSelectedImage(r.result as string); r.readAsDataURL(f); }
                 }} />
-                <input placeholder="Gửi tin nhắn..." value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} className="flex-grow px-4 bg-slate-50 rounded-xl border-none outline-none focus:ring-1 focus:ring-emerald-500 text-[12px] font-medium" />
+                <input placeholder="Gửi câu hỏi cho AI..." value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} className="flex-grow px-4 bg-slate-50 rounded-xl border-none outline-none focus:ring-1 focus:ring-emerald-500 text-[12px] font-medium" />
                 <button onClick={handleSendMessage} className="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all">🚀</button>
               </div>
             </div>

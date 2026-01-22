@@ -4,11 +4,19 @@ import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, C
 const API_BASE = '/api';
 let isOfflineMode = false;
 
+const logSystem = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
+  if (window.debugLog) window.debugLog(`[Hệ thống] ${msg}`, type);
+};
+
 async function request<T>(url: string, method = 'GET', body?: any): Promise<T | null> {
   if (isOfflineMode) return mockRequest<T>(url, method, body);
+  
+  const endpoint = url.replace(API_BASE, '');
+  logSystem(`Yêu cầu ${method}: ${endpoint}...`);
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // Tăng timeout lên 10s
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
@@ -16,10 +24,17 @@ async function request<T>(url: string, method = 'GET', body?: any): Promise<T | 
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-    if (!res.ok) return null;
-    return await res.json();
+
+    if (!res.ok) {
+      logSystem(`LỖI ${res.status} tại ${endpoint}`, 'error');
+      return null;
+    }
+
+    const data = await res.json();
+    logSystem(`Thành công: ${method} ${endpoint}`, 'success');
+    return data;
   } catch (e) {
-    console.warn("Switching to offline mode.");
+    logSystem(`Lỗi kết nối nghiêm trọng: ${endpoint}`, 'error');
     isOfflineMode = true;
     return mockRequest<T>(url, method, body);
   }
