@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, PieChart, Pie, Cell, Legend, Sector
+  ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
@@ -42,25 +42,6 @@ const formatDateVN = (dateStr: string) => {
   }
 };
 
-// Hàm vẽ phần được chọn: Đã loại bỏ transition CSS để tránh bị giật
-const renderActiveShape = (props: any) => {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-  return (
-    <g>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 10}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        style={{ cursor: 'pointer' }}
-      />
-    </g>
-  );
-};
-
 const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
@@ -79,7 +60,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
 
-  // Cấu trúc dữ liệu Pie: Chỉ giữ lại Cơ, Nước, Mỡ với màu sắc chuẩn
+  // Cập nhật dữ liệu: Chỉ Cơ, Nước, Mỡ. Loại bỏ hoàn toàn "Khác".
   const pieData = useMemo(() => {
     if (!latestMetric) return [];
     
@@ -88,9 +69,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     const muscle = latestMetric.muscleMass || 0;
 
     return [
-      { name: 'Cơ', value: muscle, color: '#ef4444' },         // Đỏ
-      { name: 'Nước', value: waterMass, color: '#0ea5e9' },    // Xanh da trời
-      { name: 'Mỡ', value: fatMass, color: '#fde047' },       // Vàng nhạt
+      { name: 'Khối cơ', value: muscle, color: '#ef4444' },     // Đỏ
+      { name: 'Lượng nước', value: waterMass, color: '#0ea5e9' }, // Xanh
+      { name: 'Mỡ cơ thể', value: fatMass, color: '#fde047' },    // Vàng
     ];
   }, [latestMetric]);
 
@@ -112,6 +93,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Khối CSS để xử lý hiệu ứng mượt mà (Pure CSS Transition) */}
+      <style>{`
+        .recharts-pie-sector path {
+          transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+          outline: none;
+        }
+      `}</style>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub Dashboard</h2>
@@ -151,23 +140,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Biểu đồ Tròn Cấu trúc Thành phần (ĐÃ FIX LỖI GIẬT VÀ MÀU SẮC) */}
+        {/* Biểu đồ Tròn (SỬ DỤNG CSS TRANSITION) */}
         <div 
           className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative"
           onClick={() => setActiveIndex(null)}
         >
           <div className="mb-2">
             <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Cơ (Đỏ), Nước (Xanh), Mỡ (Vàng)</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sử dụng Hardware Acceleration (CSS)</p>
           </div>
           
           <div className="flex-grow flex items-center justify-center relative">
             {latestMetric ? (
               <div className="relative w-full h-full flex items-center justify-center">
-                {/* Tâm biểu đồ */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 select-none">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">
-                    {activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân nặng'}
                   </span>
                   <span className="text-3xl font-black text-slate-800 tabular-nums">
                     {activeIndex !== null ? `${pieData[activeIndex].value}kg` : `${latestMetric.weight}kg`}
@@ -178,7 +166,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                   <PieChart>
                     <Pie
                       activeIndex={activeIndex === null ? undefined : activeIndex}
-                      activeShape={renderActiveShape}
                       data={pieData}
                       cx="50%"
                       cy="50%"
@@ -190,12 +177,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                       onMouseLeave={() => setActiveIndex(null)}
                       onClick={(e, index) => { e.stopPropagation(); setActiveIndex(index); }}
                       stroke="none"
+                      // Thay đổi quan trọng: Sử dụng built-in offset để CSS bắt được chuyển động
+                      activeOuterRadiusOffset={12} 
                       animationBegin={0}
-                      animationDuration={1500} // Hiệu ứng phóng ra trong 1.5 giây
+                      animationDuration={1500}
                       animationEasing="ease-out"
                     >
                       {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.color} 
+                          style={{ outline: 'none' }}
+                        />
                       ))}
                     </Pie>
                     <Legend 
@@ -207,7 +200,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="text-slate-300 italic text-sm font-medium uppercase tracking-widest font-black">Chưa có dữ liệu</div>
+              <div className="text-slate-300 italic text-sm font-black uppercase tracking-widest">Đang tải dữ liệu...</div>
             )}
           </div>
         </div>
