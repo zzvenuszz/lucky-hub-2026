@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, Legend, PieChart, Pie, Cell, Sector 
+  ResponsiveContainer, PieChart, Pie, Cell, Sector 
 } from 'recharts';
 import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
@@ -38,7 +38,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
   const [activeIndex, setActiveIndex] = useState(-1);
-  // Thiết lập các chỉ số mặc định: Cân nặng, Mỡ, Nước, Cơ bắp
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'waterPercent', 'muscleMass']);
 
   const selectedUser = useMemo(() => users.find(u => ((u as any).id || (u as any)._id) === selectedUserId) || user, [users, selectedUserId, user]);
@@ -68,35 +67,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
 
   const renderTrend = (key: keyof HealthMetric, currentVal: number, compareVal?: number) => {
     if (compareVal === undefined || compareVal === null || currentVal === compareVal) return null;
-    
     const diff = currentVal - compareVal;
     const isUp = diff > 0;
     const absDiff = Math.abs(diff).toFixed(1);
     
     let isGood = false;
     const goal = selectedUser.healthGoal;
-
     if (key === 'weight') {
       if (goal === HealthGoal.LOSE_WEIGHT) isGood = !isUp;
       else if (goal === HealthGoal.GAIN_WEIGHT) isGood = isUp;
       else isGood = !isUp;
-    } else if (key === 'bodyFat') {
-      isGood = !isUp;
-    } else if (key === 'muscleMass') {
-      isGood = isUp;
-    } else if (key === 'waterPercent') {
-      isGood = isUp;
-    } else if (key === 'bioAge' || key === 'visceralFat') {
-      isGood = !isUp;
-    }
-
-    const colorClass = isGood ? 'text-emerald-500' : 'text-rose-500';
-    const icon = isUp ? '↑' : '↓';
-    const sign = isUp ? '+' : '-';
+    } else if (key === 'bodyFat') isGood = !isUp;
+    else if (key === 'muscleMass') isGood = isUp;
+    else if (key === 'waterPercent') isGood = isUp;
+    else if (key === 'bioAge' || key === 'visceralFat') isGood = !isUp;
 
     return (
-      <span className={`inline-flex items-center ml-1.5 text-[10px] font-black ${colorClass} opacity-90`}>
-        {icon} {sign}{absDiff}
+      <span className={`inline-flex items-center ml-1.5 text-[10px] font-black ${isGood ? 'text-emerald-500' : 'text-rose-500'} opacity-90`}>
+        {isUp ? '↑' : '↓'} {isUp ? '+' : '-'}{absDiff}
       </span>
     );
   };
@@ -111,12 +99,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   }, [latestMetric]);
 
   const filteredMetrics = useMemo(() => {
-    if (timeRange === 'all') return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    if (timeRange === 'all') return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     const cutoff = new Date();
-    const days = parseInt(timeRange) || 7;
     if (timeRange.includes('m')) cutoff.setMonth(cutoff.getMonth() - parseInt(timeRange));
     else if (timeRange.includes('y')) cutoff.setFullYear(cutoff.getFullYear() - parseInt(timeRange));
-    else cutoff.setDate(cutoff.getDate() - days);
+    else cutoff.setDate(cutoff.getDate() - (parseInt(timeRange) || 7));
 
     return metrics
       .filter(m => new Date(m.date) >= cutoff)
@@ -150,9 +137,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { key: 'weight', label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800' },
-          { key: 'bmi', label: 'Chỉ số BMI', value: bmiInfo.value || '--', unit: '', icon: '📊', color: bmiInfo.color },
+          { key: 'bmi', label: 'BMI', value: bmiInfo.value || '--', unit: '', icon: '📊', color: bmiInfo.color },
           { key: 'bodyFat', label: 'Tỉ lệ mỡ', value: latestMetric?.bodyFat || '--', unit: '%', icon: '🔥', color: 'text-rose-500' },
-          { key: 'visceralFat', label: 'Mỡ nội tạng', value: latestMetric?.visceralFat || '--', unit: 'Lv', icon: '⚠️', color: (latestMetric?.visceralFat || 0) > 9 ? 'text-red-500' : 'text-amber-500' },
+          { key: 'visceralFat', label: 'Mỡ nội tạng', value: latestMetric?.visceralFat || '--', unit: 'Lv', icon: '⚠️', color: 'text-amber-500' },
           { key: 'muscleMass', label: 'Cơ bắp', value: latestMetric?.muscleMass || '--', unit: 'kg', icon: '💪', color: 'text-blue-600' },
           { key: 'bioAge', label: 'Tuổi SH', value: latestMetric?.bioAge || '--', unit: 't', icon: '🧬', color: 'text-indigo-600' },
         ].map((stat, i) => (
@@ -180,9 +167,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             <div className="w-full h-[300px] relative flex flex-col items-center">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  {/* Fix: Sử dụng casting as any để giải quyết lỗi types cho Pie activeIndex/activeShape trong một số phiên bản Recharts */}
+                  {/* FIX: Use @ts-ignore on Pie because activeIndex and activeShape are valid props but sometimes missing from recharts type definitions */}
+                  {/* @ts-ignore */}
                   <Pie
-                    activeIndex={activeIndex as any}
+                    activeIndex={activeIndex}
                     activeShape={((props: any) => {
                       const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
                       return (
@@ -200,7 +188,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                   >
                     {bodyCompData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
-                  <Tooltip formatter={(value: number) => `${value.toFixed(1)} kg`} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute top-[48%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
@@ -217,32 +204,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         </div>
 
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
-          <div className="flex flex-col space-y-6 mb-8">
-            <div className="flex justify-between items-end gap-2">
-              <div>
-                <h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Lịch sử thay đổi chỉ số</p>
-              </div>
-              <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full">
-                {TIME_RANGES.map(range => (
-                  <button 
-                    key={range.key} onClick={() => setTimeRange(range.key)}
-                    className={`px-3 py-1.5 text-[9px] font-black rounded-xl transition-all border shrink-0 ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}
-                  >
-                    {range.label}
-                  </button>
-                ))}
-              </div>
+          <div className="flex flex-col space-y-6 mb-8 items-center text-center">
+            <div className="w-full">
+              <h3 className="font-black text-slate-800 text-lg tracking-tight whitespace-nowrap overflow-hidden">Biểu đồ xu hướng sức khỏe hội viên</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Hành trình thay đổi các chỉ số đo lường</p>
             </div>
-            {/* Cải thiện hiển thị các nút chọn chỉ số */}
-            <div className="flex flex-wrap gap-2 md:gap-3 p-1">
+            <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full px-2">
+              {TIME_RANGES.map(range => (
+                <button 
+                  key={range.key} onClick={() => setTimeRange(range.key)}
+                  className={`px-3 py-1.5 text-[9px] font-black rounded-xl transition-all border shrink-0 ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 md:gap-3 p-1">
               {AVAILABLE_METRICS.map(m => (
                 <label key={m.key} className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-xl border transition-all ${selectedMetricKeys.includes(m.key) ? 'bg-white border-slate-200 shadow-sm ring-1 ring-slate-100' : 'bg-slate-50 border-transparent opacity-60 grayscale hover:grayscale-0 hover:opacity-100'}`}>
-                  <input 
-                    type="checkbox" className="hidden"
-                    checked={selectedMetricKeys.includes(m.key)}
-                    onChange={() => setSelectedMetricKeys(prev => prev.includes(m.key) ? prev.filter(k => k !== m.key) : [...prev, m.key])}
-                  />
+                  <input type="checkbox" className="hidden" checked={selectedMetricKeys.includes(m.key)} onChange={() => setSelectedMetricKeys(prev => prev.includes(m.key) ? prev.filter(k => k !== m.key) : [...prev, m.key])} />
                   <div className={`w-3 h-3 rounded-full transition-transform ${selectedMetricKeys.includes(m.key) ? 'scale-110' : 'scale-100'}`} style={{ backgroundColor: m.color }}></div>
                   <span className={`text-[10px] font-black uppercase tracking-widest ${selectedMetricKeys.includes(m.key) ? 'text-slate-800' : 'text-slate-400'}`}>{m.short}</span>
                 </label>
@@ -271,7 +251,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
           <h3 className="font-black text-slate-800 text-sm uppercase tracking-widest">Nhật ký chi tiết</h3>
           <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-3 py-1 rounded-full">{tableData.length} bản ghi</span>
         </div>
-        
         <div className="overflow-x-auto no-scrollbar">
           <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
