@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, BarChart, Bar, Cell, LabelList
+  ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
@@ -59,14 +59,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
 
-  // Dữ liệu cho biểu đồ cấu trúc (Bar Chart - Khôi phục theo yêu cầu)
-  const compositionData = useMemo(() => {
+  // Dữ liệu cho biểu đồ tròn (Pie Chart) - Phân tích cấu trúc cơ thể
+  const pieData = useMemo(() => {
     if (!latestMetric) return [];
+    
     const fatMass = Number((latestMetric.weight * (latestMetric.bodyFat / 100)).toFixed(1));
+    const muscle = latestMetric.muscleMass || 0;
+    const bone = latestMetric.boneMinerals || 0;
+    // Thành phần khác = Tổng cân nặng - (Mỡ + Cơ + Xương)
+    const others = Math.max(0, Number((latestMetric.weight - fatMass - muscle - bone).toFixed(1)));
+
     return [
-      { name: 'Cân nặng', value: latestMetric.weight, color: '#64748b' },
-      { name: 'Cơ bắp', value: latestMetric.muscleMass, color: '#3b82f6' },
       { name: 'Mỡ cơ thể', value: fatMass, color: '#ef4444' },
+      { name: 'Khối lượng cơ', value: muscle, color: '#3b82f6' },
+      { name: 'Khối lượng xương', value: bone, color: '#f59e0b' },
+      { name: 'Thành phần khác', value: others, color: '#94a3b8' },
     ];
   }, [latestMetric]);
 
@@ -131,36 +138,44 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Biểu đồ Cấu trúc Thành phần (Khôi phục dạng BarChart đẹp hơn) */}
+        {/* Biểu đồ Tròn Cấu trúc Thành phần (KHÔI PHỤC) */}
         <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[400px]">
-          <div className="mb-6">
-            <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc thành phần</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân tích (Cân nặng - Cơ - Mỡ)</p>
+          <div className="mb-2">
+            <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Phân bổ khối lượng (kg)</p>
           </div>
-          <div className="flex-grow">
+          <div className="flex-grow flex items-center justify-center">
             {latestMetric ? (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart layout="vertical" data={compositionData} margin={{ top: 5, right: 40, left: 40, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" fontSize={11} tick={{ fill: '#64748b', fontWeight: 800 }} axisLine={false} tickLine={false} />
-                  <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                  <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={35}>
-                    {compositionData.map((entry, index) => (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {pieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
-                    <LabelList dataKey="value" position="right" style={{ fill: '#64748b', fontSize: 11, fontWeight: 900 }} formatter={(v: any) => `${v}kg`} />
-                  </Bar>
-                </BarChart>
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+                    formatter={(value: number) => [`${value} kg`, 'Khối lượng']}
+                  />
+                  <Legend verticalAlign="bottom" height={36}/>
+                </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-slate-300 italic text-sm">Chưa có dữ liệu phân tích</div>
+              <div className="text-slate-300 italic text-sm">Chưa có dữ liệu phân tích</div>
             )}
           </div>
           {latestMetric && (
             <div className="mt-4 pt-4 border-t border-slate-50 text-center">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Dữ liệu ngày: </span>
-              <span className="text-sm font-black text-emerald-600">{formatDateVN(latestMetric.date)}</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tổng trọng lượng: </span>
+              <span className="text-sm font-black text-slate-800">{latestMetric.weight} kg</span>
             </div>
           )}
         </div>
