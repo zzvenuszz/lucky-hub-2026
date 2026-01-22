@@ -26,7 +26,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
   };
 
-  log("Bắt đầu trích xuất chỉ số từ ảnh (Tối ưu cho Di động)...");
+  log("Bắt đầu trích xuất chỉ số (Mobile-Optimized)...");
   
   return withRetry(async () => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -35,7 +35,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: "Hãy đọc ảnh kết quả InBody/Đo lường này. TRÍCH XUẤT CHÍNH XÁC các con số sau đây: Cân nặng (Weight), Tỉ lệ mỡ (Body Fat %), Khối lượng cơ (Skeletal Muscle Mass), Mỡ nội tạng (Visceral Fat), Tuổi sinh học (Fitness Age/Body Age), Nước (Total Body Water), Xương (Bone Mineral), BMR (Energy/Kcal). Nếu không thấy một chỉ số, hãy đoán dựa trên các chỉ số khác hoặc trả về giá trị trung bình hợp lý thay vì bỏ trống. Trả về JSON chuẩn." }
+          { text: "Hãy phân tích hình ảnh kết quả đo InBody này (ảnh có thể bị xoay hoặc lóa). TRÍCH XUẤT tất cả các chỉ số sau: Cân nặng (Weight), Tỉ lệ mỡ (PBF/Body Fat %), Khối cơ (SMM/Muscle Mass), Mỡ nội tạng (VFL/Visceral Fat), Tuổi cơ thể (Body Age), Lượng nước (TBW/Water %), Xương (Mineral/Bone). Nếu một chỉ số không rõ, hãy để trống hoặc dùng giá trị mặc định 0. Trả về JSON chuẩn duy nhất." }
         ]
       },
       config: {
@@ -43,7 +43,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            date: { type: Type.STRING, description: "Ngày đo định dạng YYYY-MM-DD" },
+            date: { type: Type.STRING },
             weight: { type: Type.NUMBER },
             bodyFat: { type: Type.NUMBER },
             boneMinerals: { type: Type.NUMBER },
@@ -54,16 +54,17 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
             bioAge: { type: Type.NUMBER },
             visceralFat: { type: Type.NUMBER }
           },
-          required: ["weight", "bodyFat", "muscleMass"]
+          required: ["weight", "bodyFat"]
         }
       }
     });
 
-    const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
-    log(`Trích xuất thành công chỉ số chính: ${result.weight}kg / ${result.bodyFat}% mỡ`, "success");
+    const text = response.text;
+    const result = JSON.parse(cleanJsonResponse(text || "{}"));
+    log(`Kết quả: ${result.weight}kg / ${result.bodyFat}% mỡ`, "success");
     return result;
   }).catch(e => {
-    log(`LỖI OCR: ${e.message}`, "error");
+    log(`LỖI PHÂN TÍCH: ${e.message}`, "error");
     return {};
   });
 };
@@ -102,20 +103,22 @@ export const getAICoachResponse = async (
 
     const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
 
-    const systemInstruction = `Bạn là "Lucky AI Advisor" tại Lucky Hub. 
+    const systemInstruction = `Bạn là "Lucky AI Advisor" - chuyên gia tư vấn sức khỏe Lucky Hub. 
 Mục tiêu hội viên: ${userGoal}
-${latestMetric ? `Chỉ số mới nhất (${latestMetric.date}): Cân ${latestMetric.weight}kg, Mỡ ${latestMetric.bodyFat}%, Cơ ${latestMetric.muscleMass}kg.` : "Hội viên chưa có chỉ số."}
-${isDataOld ? `⚠️ Dữ liệu đã cũ (${daysOld} ngày). Hãy nhắc hội viên đo lại.` : ""}
+Chỉ số mới nhất: ${latestMetric ? `Cân ${latestMetric.weight}kg, Mỡ ${latestMetric.bodyFat}%, Cơ ${latestMetric.muscleMass}kg` : "Chưa có dữ liệu"}.
+${isDataOld ? `⚠️ Dữ liệu này đã ${daysOld} ngày, hãy nhắc hội viên cập nhật chỉ số mới.` : ""}
 
-QUY TẮC:
+QUY TẮC CỐ ĐỊNH:
 ${systemRules}
+
+KIẾN THỨC BỔ TRỢ:
 ${contextKnowledge}
 
-PHONG CÁCH: Thân thiện, chuyên nghiệp, dùng Emoji.`;
+PHONG CÁCH: Chân thành, chuyên môn cao nhưng dễ hiểu, dùng Emoji tinh tế.`;
 
     const formattedHistory = [];
     let lastRole = "";
-    const relevantHistory = history.slice(-8);
+    const relevantHistory = history.slice(-6);
     for (const m of relevantHistory) {
       const currentRole = m.senderId === 'ai_coach' ? 'model' : 'user';
       if (currentRole !== lastRole && m.content.trim()) {
@@ -135,9 +138,9 @@ PHONG CÁCH: Thân thiện, chuyên nghiệp, dùng Emoji.`;
       config: { systemInstruction, temperature: 0.7 }
     });
 
-    return response.text || "AI không phản hồi.";
+    return response.text || "Xin lỗi, tôi đang bận một chút. Bạn thử lại nhé!";
   }).catch(e => {
     log(`LỖI AI: ${e.message}`, "error");
-    return "AI đang bận, vui lòng thử lại sau 30 giây.";
+    return "Hệ thống AI đang bảo trì, vui lòng quay lại sau ít phút.";
   });
 };

@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, PieChart, Pie, Cell, Sector 
+  ResponsiveContainer 
 } from 'recharts';
 import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
@@ -15,21 +15,18 @@ interface DashboardProps {
 }
 
 const AVAILABLE_METRICS = [
-  { key: 'weight', label: 'Cân nặng (kg)', short: 'Cân nặng', color: '#059669' },
-  { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)', short: 'Lượng mỡ', color: '#ef4444' },
-  { key: 'waterPercent', label: 'Lượng nước (%)', short: 'Lượng nước', color: '#0ea5e9' },
-  { key: 'muscleMass', label: 'Cơ bắp (kg)', short: 'Cơ bắp', color: '#3b82f6' },
-  { key: 'bioAge', label: 'Tuổi sinh học', short: 'Tuổi SH', color: '#ec4899' },
-  { key: 'visceralFat', label: 'Mỡ nội tạng', short: 'Mỡ NT', color: '#f59e0b' },
+  { key: 'weight', label: 'Cân nặng (kg)', color: '#059669' },
+  { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)', color: '#ef4444' },
+  { key: 'waterPercent', label: 'Lượng nước (%)', color: '#0ea5e9' },
+  { key: 'muscleMass', label: 'Cơ bắp (kg)', color: '#3b82f6' },
+  { key: 'bioAge', label: 'Tuổi sinh học', color: '#ec4899' },
+  { key: 'visceralFat', label: 'Mỡ nội tạng', color: '#f59e0b' },
 ];
 
 const TIME_RANGES = [
   { key: '7d', label: '7 ngày' },
   { key: '14d', label: '2 tuần' },
   { key: '1m', label: '1 tháng' },
-  { key: '3m', label: '3 tháng' },
-  { key: '6m', label: '6 tháng' },
-  { key: '1y', label: '1 năm' },
   { key: 'all', label: 'Tất cả' },
 ];
 
@@ -37,10 +34,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
-  const [activeIndex, setActiveIndex] = useState(-1);
-  const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'waterPercent', 'muscleMass']);
+  const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'muscleMass']);
 
-  const selectedUser = useMemo(() => users.find(u => ((u as any).id || (u as any)._id) === selectedUserId) || user, [users, selectedUserId, user]);
+  // PHÂN TÍCH: TypeScript báo lỗi do selectedUser chưa được định nghĩa.
+  // CÁCH GIẢI QUYẾT: Dùng useMemo để tìm thông tin hội viên hiện tại dựa trên selectedUserId.
+  const selectedUser = useMemo(() => 
+    users.find(u => ((u as any).id || (u as any)._id) === selectedUserId) || user, 
+    [users, selectedUserId, user]
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -54,48 +55,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const latestMetric = sortedMetrics[0] || null;
   const prevMetric = sortedMetrics[1] || null;
 
-  const bmiInfo = useMemo(() => {
-    if (!latestMetric || !selectedUser.height) return { value: 0, label: 'N/A', color: 'text-slate-400' };
-    const bmi = latestMetric.weight / Math.pow(selectedUser.height / 100, 2);
-    let label = 'Bình thường';
-    let color = 'text-emerald-600';
-    if (bmi < 18.5) { label = 'Thấp'; color = 'text-amber-500'; }
-    else if (bmi >= 25 && bmi < 30) { label = 'Thừa cân'; color = 'text-orange-500'; }
-    else if (bmi >= 30) { label = 'Béo phì'; color = 'text-red-500'; }
-    return { value: bmi.toFixed(1), label, color };
-  }, [latestMetric, selectedUser]);
-
-  const renderTrend = (key: keyof HealthMetric, currentVal: number, compareVal?: number) => {
-    if (compareVal === undefined || compareVal === null || currentVal === compareVal) return null;
-    const diff = currentVal - compareVal;
-    const isUp = diff > 0;
-    const isGood = (key === 'weight' && selectedUser.healthGoal === HealthGoal.LOSE_WEIGHT) ? !isUp : isUp;
-    return (
-      <span className={`inline-flex items-center ml-1.5 text-[10px] font-black ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
-        {isUp ? '↑' : '↓'} {Math.abs(diff).toFixed(1)}
-      </span>
-    );
-  };
-
-  const bodyCompData = useMemo(() => {
-    if (!latestMetric) return [];
-    return [
-      { name: 'Cơ bắp', value: latestMetric.muscleMass || 0, color: '#3b82f6' },
-      { name: 'Mỡ cơ thể', value: (latestMetric.weight * (latestMetric.bodyFat / 100)) || 0, color: '#f43f5e' },
-      { name: 'Nước', value: (latestMetric.weight * (latestMetric.waterPercent / 100)) || 0, color: '#0ea5e9' },
-    ];
-  }, [latestMetric]);
-
   const filteredMetrics = useMemo(() => {
     const cutoff = new Date();
-    if (timeRange.includes('m')) cutoff.setMonth(cutoff.getMonth() - parseInt(timeRange));
-    else if (timeRange.includes('y')) cutoff.setFullYear(cutoff.getFullYear() - parseInt(timeRange));
-    else cutoff.setDate(cutoff.getDate() - (parseInt(timeRange) || 3650));
+    if (timeRange === '7d') cutoff.setDate(cutoff.getDate() - 7);
+    else if (timeRange === '14d') cutoff.setDate(cutoff.getDate() - 14);
+    else if (timeRange === '1m') cutoff.setMonth(cutoff.getMonth() - 1);
+    else return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     return metrics
-      .filter(m => timeRange === 'all' || new Date(m.date) >= cutoff)
+      .filter(m => new Date(m.date) >= cutoff)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
+
+  const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
+    if (prev === undefined || current === prev) return null;
+    const isUp = current > prev;
+    const isGood = inverse ? !isUp : isUp;
+    return <span className={isGood ? 'text-emerald-500' : 'text-rose-500'}>{isUp ? '↑' : '↓'}</span>;
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -119,42 +96,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { key: 'weight', label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800' },
-          { key: 'bmi', label: 'BMI', value: bmiInfo.value || '--', unit: '', icon: '📊', color: bmiInfo.color },
           { key: 'bodyFat', label: 'Tỉ lệ mỡ', value: latestMetric?.bodyFat || '--', unit: '%', icon: '🔥', color: 'text-rose-500' },
           { key: 'visceralFat', label: 'Mỡ nội tạng', value: latestMetric?.visceralFat || '--', unit: 'Lv', icon: '⚠️', color: 'text-amber-500' },
           { key: 'muscleMass', label: 'Cơ bắp', value: latestMetric?.muscleMass || '--', unit: 'kg', icon: '💪', color: 'text-blue-600' },
+          { key: 'waterPercent', label: 'Lượng nước', value: latestMetric?.waterPercent || '--', unit: '%', icon: '💧', color: 'text-sky-500' },
           { key: 'bioAge', label: 'Tuổi SH', value: latestMetric?.bioAge || '--', unit: 't', icon: '🧬', color: 'text-indigo-600' },
         ].map((stat, i) => (
-          <div key={i} className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+          <div key={i} className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm group">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</span>
               <span className="text-lg group-hover:scale-125 transition-transform">{stat.icon}</span>
             </div>
             <div className={`text-xl font-black flex items-baseline ${stat.color}`}>
               {stat.value} <span className="text-[10px] font-bold text-slate-400 ml-0.5">{stat.unit}</span>
-              {stat.key !== 'bmi' && latestMetric && prevMetric && renderTrend(stat.key as any, (latestMetric as any)[stat.key], (prevMetric as any)[stat.key])}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
         <div className="flex flex-col space-y-6 mb-8 items-center text-center">
           <div className="w-full">
-            {/* Căn giữa tiêu đề, mở rộng ngang, ngăn xuống dòng */}
             <h3 className="font-black text-slate-800 text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-center mx-auto max-w-full">
-              Biểu đồ xu hướng sức khỏe hội viên Lucky Hub
+              Biểu đồ xu hướng sức khỏe
             </h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Hành trình thay đổi các chỉ số đo lường thực tế</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Hành trình thay đổi các chỉ số</p>
           </div>
           <div className="flex gap-1 overflow-x-auto no-scrollbar max-w-full px-2">
             {TIME_RANGES.map(range => (
-              <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1.5 text-[9px] font-black rounded-xl border shrink-0 transition-all ${timeRange === range.key ? 'bg-emerald-600 text-white shadow-md border-emerald-600' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}>{range.label}</button>
+              <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1.5 text-[9px] font-black rounded-xl border shrink-0 transition-all ${timeRange === range.key ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-50 text-slate-400 border-transparent hover:bg-emerald-50'}`}>{range.label}</button>
             ))}
           </div>
         </div>
 
-        <div className="h-[350px] w-full">
+        <div className="h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -166,6 +141,58 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               ))}
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Bảng lịch sử chỉ số đầy đủ - KHÔI PHỤC THEO YÊU CẦU */}
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-6 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
+          <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Lịch sử chỉ số chi tiết</h3>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Hội viên: {selectedUser.fullName}</span>
+        </div>
+        <div className="overflow-x-auto no-scrollbar">
+          <table className="w-full text-left text-[11px] min-w-[900px]">
+            <thead className="bg-white border-b border-slate-50">
+              <tr className="text-slate-400 font-black uppercase tracking-widest">
+                <th className="p-4">Ngày đo</th>
+                <th className="p-4">Cân (kg)</th>
+                <th className="p-4">Mỡ (%)</th>
+                <th className="p-4">Cơ (kg)</th>
+                <th className="p-4">Xương (kg)</th>
+                <th className="p-4">Nước (%)</th>
+                <th className="p-4">Mỡ nội tạng</th>
+                <th className="p-4">Tuổi SH</th>
+                <th className="p-4">BMR (kcal)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {sortedMetrics.map((m, idx) => {
+                const prev = sortedMetrics[idx + 1];
+                return (
+                  <tr key={m.id || (m as any)._id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-4 font-bold text-slate-700">{new Date(m.date).toLocaleDateString('vi-VN')}</td>
+                    <td className="p-4 font-black text-emerald-600">
+                      {m.weight} {renderTrendIcon(m.weight, prev?.weight, selectedUser.healthGoal === HealthGoal.LOSE_WEIGHT)}
+                    </td>
+                    <td className="p-4 font-bold text-rose-500">
+                      {m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}
+                    </td>
+                    <td className="p-4 font-bold text-blue-600">
+                      {m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass)}
+                    </td>
+                    <td className="p-4 font-medium text-slate-600">{m.boneMinerals || '--'}</td>
+                    <td className="p-4 font-medium text-sky-600">{m.waterPercent}%</td>
+                    <td className="p-4 font-bold text-amber-600">{m.visceralFat || '--'}</td>
+                    <td className="p-4 font-bold text-indigo-600">{m.bioAge || '--'}</td>
+                    <td className="p-4 font-medium text-slate-500">{m.energy || '--'}</td>
+                  </tr>
+                );
+              })}
+              {sortedMetrics.length === 0 && (
+                <tr><td colSpan={9} className="p-10 text-center text-slate-400 font-medium">Chưa có dữ liệu lịch sử đo lường</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
