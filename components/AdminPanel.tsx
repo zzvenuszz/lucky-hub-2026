@@ -12,6 +12,17 @@ interface AdminPanelProps {
   onRefresh: () => void;
 }
 
+const formatDateVN = (dateStr: string) => {
+  if (!dateStr) return '';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+};
+
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, rules, onRefresh }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai'>('users');
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,7 +82,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
     const mid = metric.id || (metric as any)._id;
     if (!mid) return alert("Không tìm thấy ID bản ghi");
     
-    if (confirm(`Bạn có chắc muốn xóa chỉ số ngày ${new Date(metric.date).toLocaleDateString('vi-VN')}?`)) {
+    if (confirm(`Bạn có chắc muốn xóa chỉ số ngày ${formatDateVN(metric.date)}?`)) {
       try {
         await Database.deleteMetric(mid);
         loadUserMetrics();
@@ -172,7 +183,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                     <tbody className="divide-y divide-slate-50">
                       {userMetrics.map(m => (
                         <tr key={(m as any).id || (m as any)._id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-3 font-bold">{new Date(m.date).toLocaleDateString('vi-VN')}</td>
+                          <td className="p-3 font-bold">{formatDateVN(m.date)}</td>
                           <td className="p-3 font-black text-emerald-600">{m.weight}</td>
                           <td className="p-3 font-bold text-rose-500">{m.bodyFat}%</td>
                           <td className="p-3 font-bold text-blue-600">{m.muscleMass}</td>
@@ -273,13 +284,27 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <div className="flex items-center justify-between border-b border-slate-50 pb-4">
               <div>
                 <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa chỉ số</h4>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Ngày đo: {new Date(editingMetric.date).toLocaleDateString('vi-VN')}</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Đang chỉnh sửa bản ghi</p>
               </div>
               <button type="button" onClick={() => setEditingMetric(null)} className="text-2xl text-slate-400 hover:text-slate-600">&times;</button>
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label><input type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="md:col-span-3 space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
+                <div className="relative group">
+                  <input 
+                    type="date" 
+                    value={editingMetric.date} 
+                    onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} 
+                    className="absolute inset-0 opacity-0 cursor-pointer z-20 w-full h-full" 
+                  />
+                  <div className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent group-hover:border-emerald-200 transition-all flex items-center justify-between z-10">
+                    <span className="font-bold text-xs">{formatDateVN(editingMetric.date)}</span>
+                    <span className="text-sm">📅</span>
+                  </div>
+                </div>
+              </div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label><input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mỡ cơ thể (%)</label><input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Lượng cơ (kg)</label><input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>

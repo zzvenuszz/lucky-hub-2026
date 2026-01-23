@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { HealthMetric } from '../types';
 import { extractMetricsFromImage } from '../services/gemini';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -18,7 +18,7 @@ const cleanJsonResponse = (text: string): string => {
 };
 
 const formatDateVN = (dateStr: string) => {
-  if (!dateStr) return '--/--/----';
+  if (!dateStr) return '';
   try {
     const parts = dateStr.split('-');
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
@@ -29,10 +29,14 @@ const formatDateVN = (dateStr: string) => {
 };
 
 const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose }) => {
+  // Lấy ngày hiện tại chuẩn ISO YYYY-MM-DD
+  const today = new Date().toLocaleDateString('sv-SE'); // Định dạng YYYY-MM-DD
+
   const [formData, setFormData] = useState<Omit<HealthMetric, 'id' | 'userId'>>({
-    date: new Date().toISOString().split('T')[0],
+    date: today,
     weight: 0, bodyFat: 0, boneMinerals: 0, waterPercent: 0, muscleMass: 0, energy: 0, bioAge: 0, visceralFat: 0, balanceIndex: 0
   });
+  
   const [loadingAI, setLoadingAI] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
@@ -62,7 +66,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           try {
             const extracted = await extractMetricsFromImage(compressedBase64);
             if (extracted && (extracted.weight || extracted.bodyFat)) {
-              setFormData(prev => ({ ...prev, ...extracted, balanceIndex: extracted.balanceIndex ?? 0, date: extracted.date || prev.date }));
+              setFormData(prev => ({ 
+                ...prev, 
+                ...extracted, 
+                balanceIndex: extracted.balanceIndex ?? 0, 
+                date: extracted.date || prev.date 
+              }));
               alert(`✅ Lucky AI đã trích xuất xong!\n\n📅 Ngày đo: ${formatDateVN(extracted.date || '')}\n⚖️ Cân nặng: ${extracted.weight}kg\n🔥 Mỡ cơ thể: ${extracted.bodyFat}%\n💎 Cân đối: ${extracted.balanceIndex ?? 0}`);
             }
           } finally { setLoadingAI(false); }
@@ -197,9 +206,28 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
-                  <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-3 bg-emerald-50/50 text-emerald-800 rounded-xl border-none outline-none font-black" />
-                  <p className="text-[9px] text-slate-400 italic ml-1">* Định dạng hiển thị chuẩn: Ngày/Tháng/Năm (VD: 31/12/2026)</p>
+                  
+                  {/* Hybrid Date Picker Logic */}
+                  <div className="relative group">
+                    {/* Native Date Input: Trong suốt và phủ lên trên */}
+                    <input 
+                      type="date" 
+                      value={formData.date} 
+                      onChange={e => setFormData({...formData, date: e.target.value})}
+                      className="absolute inset-0 opacity-0 cursor-pointer z-20 w-full h-full"
+                    />
+                    
+                    {/* Display UI: Hiển thị định dạng VN đẹp đẽ bên dưới */}
+                    <div className="w-full px-5 py-4 bg-emerald-50 text-emerald-800 rounded-2xl border-2 border-transparent group-hover:border-emerald-200 transition-all flex items-center justify-between z-10">
+                      <span className="text-2xl font-black tracking-tight">
+                        {formatDateVN(formData.date)}
+                      </span>
+                      <span className="text-xl">📅</span>
+                    </div>
+                  </div>
+                  <p className="text-[9px] text-slate-400 italic ml-1">* Nhấn vào ô trên để mở lịch chọn ngày. Mặc định là ngày hiện tại.</p>
                 </div>
+
                 {metricFields.map(field => (
                   <div key={field.key} className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{field.label}</label>
