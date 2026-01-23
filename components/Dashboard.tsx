@@ -16,12 +16,14 @@ interface DashboardProps {
 
 const AVAILABLE_METRICS = [
   { key: 'weight', label: 'Cân nặng (kg)', color: '#059669', inverse: true },
-  { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)', color: '#ef4444', inverse: true },
-  { key: 'waterPercent', label: 'Lượng nước (%)', color: '#0ea5e9', inverse: false },
-  { key: 'muscleMass', label: 'Cơ bắp (kg)', color: '#3b82f6', inverse: false },
+  { key: 'bodyFat', label: 'Mỡ cơ thể (%)', color: '#ef4444', inverse: true },
+  { key: 'waterPercent', label: 'Nước (%)', color: '#0ea5e9', inverse: false },
+  { key: 'muscleMass', label: 'Lượng cơ (kg)', color: '#3b82f6', inverse: false },
   { key: 'balanceIndex', label: 'Cân đối', color: '#8b5cf6', inverse: false },
   { key: 'bioAge', label: 'Tuổi sinh học', color: '#ec4899', inverse: true },
   { key: 'visceralFat', label: 'Mỡ nội tạng', color: '#f59e0b', inverse: true },
+  { key: 'boneMinerals', label: 'Khoáng chất (kg)', color: '#64748b', inverse: false },
+  { key: 'energy', label: 'Năng Lượng (kcal)', color: '#f97316', inverse: false },
 ];
 
 const TIME_RANGES = [

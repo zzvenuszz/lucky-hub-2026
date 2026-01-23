@@ -38,14 +38,14 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
           { text: `Phân tích ảnh InBody. TRÍCH XUẤT 9 CHỈ SỐ: 
           1. weight (Cân nặng)
-          2. bodyFat (% Mỡ)
-          3. muscleMass (Khối cơ)
+          2. bodyFat (Mỡ cơ thể - %)
+          3. muscleMass (Lượng cơ - kg)
           4. visceralFat (Mỡ nội tạng)
-          5. boneMinerals (Khối lượng xương)
-          6. waterPercent (% Nước)
-          7. energy (BMR/Kcal)
+          5. boneMinerals (Khoáng chất - kg)
+          6. waterPercent (Nước - %)
+          7. energy (Năng Lượng - Kcal)
           8. bioAge (Tuổi cơ thể)
-          9. balanceIndex (Chỉ số cân đối - Thường ghi là Balance/Body Balance. NẾU KHÔNG CÓ TRẢ VỀ 0).
+          9. balanceIndex (Cân đối - Thường ghi là Balance/Body Balance. NẾU KHÔNG CÓ TRẢ VỀ 0).
           
           VỀ NGÀY THÁNG: Nếu thấy DD/MM hoặc DD-MM, hãy tự hiểu là năm ${currentYear} và trả về YYYY-MM-DD.` }
         ]
@@ -119,7 +119,7 @@ export const getAICoachResponse = async (
       .map(k => `- ${k.keyword}: ${k.content}`).join("\n");
 
     const systemInstruction = `Bạn là "🍀Trợ lý Lucky". Mục tiêu hội viên: ${userGoal}.
-Chỉ số mới nhất: ${latestMetric ? `Cân ${latestMetric.weight}kg, Mỡ ${latestMetric.bodyFat}%, Cơ ${latestMetric.muscleMass}kg, Cân đối: ${latestMetric.balanceIndex}` : "Chưa có dữ liệu"}.
+Chỉ số mới nhất: ${latestMetric ? `Cân nặng ${latestMetric.weight}kg, Mỡ cơ thể ${latestMetric.bodyFat}%, Lượng cơ ${latestMetric.muscleMass}kg, Cân đối: ${latestMetric.balanceIndex}` : "Chưa có dữ liệu"}.
 
 QUY TẮC:
 ${systemRules}

@@ -63,7 +63,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             const extracted = await extractMetricsFromImage(compressedBase64);
             if (extracted && (extracted.weight || extracted.bodyFat)) {
               setFormData(prev => ({ ...prev, ...extracted, balanceIndex: extracted.balanceIndex ?? 0, date: extracted.date || prev.date }));
-              alert(`✅ Lucky AI đã trích xuất xong!\n\n📅 Ngày đo: ${formatDateVN(extracted.date || '')}\n⚖️ Cân nặng: ${extracted.weight}kg\n🔥 Mỡ: ${extracted.bodyFat}%\n💎 Cân đối: ${extracted.balanceIndex ?? 0}`);
+              alert(`✅ Lucky AI đã trích xuất xong!\n\n📅 Ngày đo: ${formatDateVN(extracted.date || '')}\n⚖️ Cân nặng: ${extracted.weight}kg\n🔥 Mỡ cơ thể: ${extracted.bodyFat}%\n💎 Cân đối: ${extracted.balanceIndex ?? 0}`);
             }
           } finally { setLoadingAI(false); }
         } else {
@@ -112,13 +112,13 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
   const metricFields = [
     { key: 'weight', label: 'Cân nặng (kg)' },
-    { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)' },
-    { key: 'muscleMass', label: 'Cơ bắp (kg)' },
-    { key: 'balanceIndex', label: 'Chỉ số cân đối' },
+    { key: 'bodyFat', label: 'Mỡ cơ thể (%)' },
+    { key: 'muscleMass', label: 'Lượng cơ (kg)' },
+    { key: 'balanceIndex', label: 'Cân đối' },
     { key: 'visceralFat', label: 'Mỡ nội tạng' },
-    { key: 'boneMinerals', label: 'Xương (kg)' },
+    { key: 'boneMinerals', label: 'Khoáng chất (kg)' },
     { key: 'waterPercent', label: 'Nước (%)' },
-    { key: 'energy', label: 'BMR (kcal)' },
+    { key: 'energy', label: 'Năng Lượng (kcal)' },
     { key: 'bioAge', label: 'Tuổi sinh học' },
   ];
 
@@ -161,14 +161,14 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                   <thead className="sticky top-0 bg-white/90 backdrop-blur-sm shadow-sm">
                     <tr className="text-slate-400 font-black uppercase border-b border-slate-100">
                       <th className="p-4">Ngày (DD/MM/YYYY)</th>
-                      <th className="p-4 text-center">Cân (kg)</th>
-                      <th className="p-4 text-center">Mỡ (%)</th>
-                      <th className="p-4 text-center">Cơ (kg)</th>
+                      <th className="p-4 text-center">Cân nặng (kg)</th>
+                      <th className="p-4 text-center">Mỡ cơ thể (%)</th>
+                      <th className="p-4 text-center">Lượng cơ (kg)</th>
                       <th className="p-4 text-center">Cân đối</th>
-                      <th className="p-4 text-center">Nội tạng</th>
-                      <th className="p-4 text-center">Xương (kg)</th>
+                      <th className="p-4 text-center">Mỡ nội tạng</th>
+                      <th className="p-4 text-center">Khoáng chất (kg)</th>
                       <th className="p-4 text-center">Nước (%)</th>
-                      <th className="p-4 text-center">BMR</th>
+                      <th className="p-4 text-center">Năng Lượng</th>
                       <th className="p-4 text-center">Tuổi SH</th>
                     </tr>
                   </thead>
@@ -196,8 +196,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }} className="space-y-6">
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (DD/MM/YYYY)</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
                   <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full px-4 py-3 bg-emerald-50/50 text-emerald-800 rounded-xl border-none outline-none font-black" />
+                  <p className="text-[9px] text-slate-400 italic ml-1">* Định dạng hiển thị chuẩn: Ngày/Tháng/Năm (VD: 31/12/2026)</p>
                 </div>
                 {metricFields.map(field => (
                   <div key={field.key} className="space-y-1">

@@ -70,14 +70,14 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr className="text-slate-400 font-black uppercase tracking-widest">
                 <th className="p-5">Ngày đo</th>
-                <th className="p-5">Cân (kg)</th>
-                <th className="p-5">Mỡ (%)</th>
-                <th className="p-5">Cơ (kg)</th>
+                <th className="p-5">Cân nặng (kg)</th>
+                <th className="p-5">Mỡ cơ thể (%)</th>
+                <th className="p-5">Lượng cơ (kg)</th>
                 <th className="p-5">Cân đối</th>
-                <th className="p-5">Xương (kg)</th>
+                <th className="p-5">Khoáng chất (kg)</th>
                 <th className="p-5">Nước (%)</th>
                 <th className="p-5">Mỡ nội tạng</th>
-                <th className="p-5">BMR (kcal)</th>
+                <th className="p-5">Năng Lượng (kcal)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
