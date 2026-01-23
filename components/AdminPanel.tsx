@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole, AccountStatus, AIKnowledge, AIRule, Message, HealthMetric, Permission, HealthGoal } from '../types.ts';
 import { Database } from '../services/database.ts';
 import { getAICoachResponse } from '../services/gemini.ts';
@@ -43,6 +43,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   const [selectedMetricUser, setSelectedMetricUser] = useState<User | null>(null);
   const [userMetrics, setUserMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
+  
+  const adminDateInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const consoleEl = document.getElementById('debug-console');
@@ -64,6 +66,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   useEffect(() => {
     loadUserMetrics();
   }, [selectedMetricUser]);
+
+  const triggerAdminDatePicker = () => {
+    if (adminDateInputRef.current) {
+      try {
+        if ('showPicker' in HTMLInputElement.prototype) {
+          (adminDateInputRef.current as any).showPicker();
+        } else {
+          adminDateInputRef.current.focus();
+          adminDateInputRef.current.click();
+        }
+      } catch (e) {
+        adminDateInputRef.current.focus();
+        adminDateInputRef.current.click();
+      }
+    }
+  };
 
   const handleTestAI = async () => {
     if (!testInput.trim()) return;
@@ -176,9 +194,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <div className="lg:col-span-9 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px]">
               {selectedMetricUser ? (
                 <div className="overflow-x-auto no-scrollbar">
-                  <table className="w-full text-[11px] text-left min-w-[600px]">
+                  <table className="w-full text-[11px] text-left min-w-[1200px]">
                     <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50">
-                      <tr><th className="p-3">Ngày</th><th className="p-3">Cân nặng (kg)</th><th className="p-3">Mỡ %</th><th className="p-3">Lượng cơ (kg)</th><th className="p-3 text-right">Thao tác</th></tr>
+                      <tr>
+                        <th className="p-3">Ngày</th>
+                        <th className="p-3">Cân nặng (kg)</th>
+                        <th className="p-3">Mỡ %</th>
+                        <th className="p-3">Cơ (kg)</th>
+                        <th className="p-3">Cân đối</th>
+                        <th className="p-3">Nội tạng</th>
+                        <th className="p-3">Khoáng (kg)</th>
+                        <th className="p-3">Nước %</th>
+                        <th className="p-3">Năng lượng</th>
+                        <th className="p-3 text-right">Thao tác</th>
+                      </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {userMetrics.map(m => (
@@ -187,6 +216,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                           <td className="p-3 font-black text-emerald-600">{m.weight}</td>
                           <td className="p-3 font-bold text-rose-500">{m.bodyFat}%</td>
                           <td className="p-3 font-bold text-blue-600">{m.muscleMass}</td>
+                          <td className="p-3 font-black text-indigo-600">{m.balanceIndex ?? 0}</td>
+                          <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? '--'}</td>
+                          <td className="p-3 text-slate-500">{m.boneMinerals ?? '--'}</td>
+                          <td className="p-3 text-sky-600">{m.waterPercent ?? '--'}%</td>
+                          <td className="p-3 text-slate-500">{m.energy ?? '--'}</td>
                           <td className="p-3 text-right space-x-4">
                             <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black text-[9px] hover:underline uppercase">Sửa</button>
                             <button onClick={() => handleDeleteMetric(m)} className="text-red-400 font-black text-[9px] hover:underline uppercase">Xóa</button>
@@ -194,7 +228,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                         </tr>
                       ))}
                       {userMetrics.length === 0 && (
-                        <tr><td colSpan={5} className="p-10 text-center text-slate-400 italic">Chưa có dữ liệu đo lường</td></tr>
+                        <tr><td colSpan={10} className="p-10 text-center text-slate-400 italic">Chưa có dữ liệu đo lường</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -292,15 +326,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="md:col-span-3 space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
-                <div className="relative group">
+                <div 
+                  className="relative cursor-pointer group"
+                  onClick={triggerAdminDatePicker}
+                >
                   <input 
+                    ref={adminDateInputRef}
                     type="date" 
                     value={editingMetric.date} 
                     onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} 
-                    className="absolute inset-0 opacity-0 cursor-pointer z-20 w-full h-full" 
+                    className="absolute opacity-0 pointer-events-none" 
                   />
-                  <div className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent group-hover:border-emerald-200 transition-all flex items-center justify-between z-10">
-                    <span className="font-bold text-xs">{formatDateVN(editingMetric.date)}</span>
+                  <div className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-100 group-hover:border-emerald-200 group-hover:bg-slate-100 transition-all flex items-center justify-between z-10">
+                    <span className="font-bold text-xs select-none">{formatDateVN(editingMetric.date)}</span>
                     <span className="text-sm">📅</span>
                   </div>
                 </div>
@@ -308,6 +346,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label><input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mỡ cơ thể (%)</label><input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Lượng cơ (kg)</label><input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cân đối</label><input type="number" step="0.1" value={editingMetric.balanceIndex} onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Khoáng chất (kg)</label><input type="number" step="0.1" value={editingMetric.boneMinerals} onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Nước (%)</label><input type="number" step="0.1" value={editingMetric.waterPercent} onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label><input type="number" value={editingMetric.visceralFat} onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
