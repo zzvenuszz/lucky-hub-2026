@@ -8,8 +8,9 @@ import MetricForm from './components/MetricForm.tsx';
 import Profile from './components/Profile.tsx';
 import MetricsManagement from './components/MetricsManagement.tsx';
 import NewsFeed from './components/NewsFeed.tsx';
-import { User, HealthGoal, UserRole, AccountStatus, AIRule, HealthMetric } from './types.ts';
-import { Database } from './services/database.ts';
+import BadgeCongratulation from './components/BadgeCongratulation.tsx';
+import { User, HealthGoal, UserRole, AccountStatus, AIRule, HealthMetric, Badge } from './types.ts';
+import { Database, BADGES_DB } from './services/database.ts';
 
 const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
 
@@ -36,6 +37,9 @@ const App: React.FC = () => {
   
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [rememberMe, setRememberMe] = useState(false);
+  
+  // State cho thông báo danh hiệu mới
+  const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
 
   const [regData, setRegData] = useState({
     username: '', password: '', fullName: '', phoneNumber: '',
@@ -145,11 +149,33 @@ const App: React.FC = () => {
         const metrics = await Database.getMetrics(uid);
         setExistingMetrics(metrics || []);
 
-        // Cập nhật danh hiệu nếu cần
+        // Logic phát hiện danh hiệu mới
         const updatedBadges = checkBadges(metrics || [], currentUser);
-        if (JSON.stringify(updatedBadges) !== JSON.stringify(currentUser.badges)) {
+        const oldBadges = currentUser.badges || [];
+        
+        // Tìm các danh hiệu có trong updated nhưng chưa có trong old
+        const newlyEarnedIds = updatedBadges.filter(id => !oldBadges.includes(id));
+
+        if (newlyEarnedIds.length > 0) {
+           // Lấy thông tin chi tiết danh hiệu đầu tiên vừa đạt được để chúc mừng
+           const badgeInfo = BADGES_DB.find(b => b.id === newlyEarnedIds[0]);
+           if (badgeInfo) {
+             setNewEarnedBadge(badgeInfo);
+           }
+           
+           // Lưu vào DB ngay lập tức
            const u = await Database.updateUser(uid, { badges: updatedBadges });
-           if(u) { setCurrentUser(u); localStorage.setItem('lucky_hub_user', JSON.stringify(u)); }
+           if(u) { 
+             setCurrentUser(u); 
+             localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
+           }
+        } else if (JSON.stringify(updatedBadges) !== JSON.stringify(currentUser.badges)) {
+           // Trường hợp cập nhật khác (ví dụ admin xóa badge)
+           const u = await Database.updateUser(uid, { badges: updatedBadges });
+           if(u) { 
+             setCurrentUser(u); 
+             localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
+           }
         }
       }
     } catch (err) {}
@@ -228,6 +254,14 @@ const App: React.FC = () => {
         <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 left-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>
       )}
       {isAddingMetric && <MetricForm onSave={async (m) => { const uid = (currentUser as any).id || (currentUser as any)._id; await Database.saveMetric({ ...m, userId: uid }); setRefreshTrigger(t => t+1); setIsAddingMetric(false); }} onSaveBulk={async (l) => { const uid = (currentUser as any).id || (currentUser as any)._id; await Database.saveMetricsBulk(l.map(m => ({...m, userId: uid}))); setRefreshTrigger(t => t+1); setIsAddingMetric(false); }} existingDates={existingMetrics.map(m => m.date)} onClose={() => setIsAddingMetric(false)} />}
+      
+      {/* Modal Chúc mừng danh hiệu */}
+      {newEarnedBadge && (
+        <BadgeCongratulation 
+          badge={newEarnedBadge} 
+          onClose={() => setNewEarnedBadge(null)} 
+        />
+      )}
     </Layout>
   );
 };

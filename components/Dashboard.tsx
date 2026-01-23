@@ -178,12 +178,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             {latestMetric ? (
               <div className="relative w-full h-full flex items-center justify-center">
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 select-none">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">{activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}</span>
-                  <span className="text-3xl font-black text-slate-800 tabular-nums">{activeIndex !== null ? `${pieData[activeIndex].value}kg` : `${latestMetric.weight}kg`}</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">
+                    {activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}
+                  </span>
+                  <span className="text-3xl font-black text-slate-800 tabular-nums">
+                    {activeIndex !== null 
+                      ? `${((pieData[activeIndex].value / latestMetric.weight) * 100).toFixed(1)}%` 
+                      : `${latestMetric.weight}kg`
+                    }
+                  </span>
                 </div>
                 <ResponsiveContainer width="100%" height={340}>
                   <PieChart>
-                    <Pie activeIndex={activeIndex === null ? undefined : activeIndex} activeShape={renderActiveShape} data={pieData} cx="50%" cy="50%" innerRadius={80} outerRadius={100} paddingAngle={5} dataKey="value" onMouseEnter={onPieEnter} onMouseLeave={onPieLeave} stroke="none" animationBegin={0} animationDuration={1500}>
+                    <Pie 
+                      activeIndex={activeIndex === null ? undefined : activeIndex} 
+                      activeShape={renderActiveShape} 
+                      data={pieData} 
+                      cx="50%" 
+                      cy="50%" 
+                      innerRadius={80} 
+                      outerRadius={100} 
+                      paddingAngle={5} 
+                      dataKey="value" 
+                      onMouseEnter={onPieEnter} 
+                      onMouseLeave={onPieLeave} 
+                      stroke="none" 
+                      animationBegin={0} 
+                      animationDuration={1500}
+                    >
                       {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                     </Pie>
                     <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} />
