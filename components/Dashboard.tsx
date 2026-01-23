@@ -96,14 +96,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   };
 
   const pieData = useMemo(() => {
-    if (!latestMetric) return [];
-    const fatMass = Number((latestMetric.weight * (latestMetric.bodyFat / 100)).toFixed(1));
-    const waterMass = Number((latestMetric.weight * (latestMetric.waterPercent / 100)).toFixed(1));
-    const muscle = latestMetric.muscleMass || 0;
+    if (!latestMetric || !latestMetric.weight) return [];
+    
+    // Logic chuẩn InBody: Thành phần không chồng lấn
+    // Tổng Weight = Fat Mass + Water Mass + Minerals + Protein
+    const weight = latestMetric.weight;
+    const fatMass = Number((weight * (latestMetric.bodyFat / 100)).toFixed(1));
+    const waterMass = Number((weight * (latestMetric.waterPercent / 100)).toFixed(1));
+    const minerals = latestMetric.boneMinerals || 0;
+    
+    // Đạm (Protein) là phần còn lại của khối lượng nạc sau khi trừ nước và khoáng
+    const protein = Math.max(0, Number((weight - fatMass - waterMass - minerals).toFixed(1)));
+
     return [
-      { name: 'Cơ', value: muscle, color: '#ef4444' },
+      { name: 'Đạm (Cơ)', value: protein, color: '#ef4444' },
       { name: 'Nước', value: waterMass, color: '#0ea5e9' },
       { name: 'Mỡ', value: fatMass, color: '#fde047' },
+      { name: 'Khoáng', value: minerals, color: '#94a3b8' },
     ];
   }, [latestMetric]);
 
@@ -174,7 +183,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative">
           <div className="mb-2">
             <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">🍀Trợ lý Lucky phân tích: Cơ, Nước, Mỡ</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">🍀Trợ lý Lucky phân tích: Cơ, Nước, Mỡ, Khoáng</p>
           </div>
           <div className="flex-grow flex items-center justify-center relative">
             {latestMetric ? (

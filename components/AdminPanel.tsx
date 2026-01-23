@@ -191,10 +191,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                 ))}
               </div>
             </div>
-            <div className="lg:col-span-9 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px]">
+            <div className="lg:col-span-9 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px] overflow-hidden flex flex-col">
               {selectedMetricUser ? (
-                <div className="overflow-x-auto no-scrollbar">
-                  <table className="w-full text-[11px] text-left min-w-[1200px]">
+                <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
+                  <table className="w-full text-[11px] text-left min-w-[1300px]">
                     <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50">
                       <tr>
                         <th className="p-3">Ngày</th>
@@ -206,6 +206,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                         <th className="p-3">Khoáng (kg)</th>
                         <th className="p-3">Nước %</th>
                         <th className="p-3">Năng lượng</th>
+                        <th className="p-3">Tuổi SH</th>
                         <th className="p-3 text-right">Thao tác</th>
                       </tr>
                     </thead>
@@ -221,14 +222,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                           <td className="p-3 text-slate-500">{m.boneMinerals ?? '--'}</td>
                           <td className="p-3 text-sky-600">{m.waterPercent ?? '--'}%</td>
                           <td className="p-3 text-slate-500">{m.energy ?? '--'}</td>
-                          <td className="p-3 text-right space-x-4">
-                            <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black text-[9px] hover:underline uppercase">Sửa</button>
-                            <button onClick={() => handleDeleteMetric(m)} className="text-red-400 font-black text-[9px] hover:underline uppercase">Xóa</button>
+                          <td className="p-3 font-bold text-slate-800">{m.bioAge ?? '--'}</td>
+                          <td className="p-3 text-right">
+                            <div className="flex justify-end gap-3">
+                              <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black text-[9px] hover:underline uppercase">Sửa</button>
+                              <button onClick={() => handleDeleteMetric(m)} className="text-red-400 font-black text-[9px] hover:underline uppercase">Xóa</button>
+                            </div>
                           </td>
                         </tr>
                       ))}
                       {userMetrics.length === 0 && (
-                        <tr><td colSpan={10} className="p-10 text-center text-slate-400 italic">Chưa có dữ liệu đo lường</td></tr>
+                        <tr><td colSpan={11} className="p-10 text-center text-slate-400 italic">Chưa có dữ liệu đo lường</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -240,6 +244,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in duration-300 flex flex-col min-h-full">
+            {/* AI Management Section - Giữ nguyên không thay đổi logic */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div className="bg-emerald-50/50 p-6 rounded-[2rem] border border-emerald-100 space-y-4 shadow-sm">
@@ -286,7 +291,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
               </div>
             </div>
 
-            {/* AI Sandbox Console */}
+            {/* AI Sandbox Console - Giữ nguyên */}
             <div className="bg-slate-900 rounded-[2.5rem] p-6 text-emerald-400 font-mono text-[11px] h-[350px] flex flex-col shadow-2xl relative border-4 border-slate-800 shrink-0">
               <div className="mb-3 border-b border-emerald-900/50 pb-2 text-[9px] font-black uppercase tracking-widest opacity-60 flex justify-between">
                 <span>> 🍀Trợ lý Lucky Sandbox Console</span>
@@ -312,6 +317,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         )}
       </div>
 
+      {/* Editing Metric Modal - Đảm bảo đủ các trường bao gồm Tuổi SH và Cân đối */}
       {editingMetric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1000] flex items-center justify-center p-4 animate-in zoom-in-95 overflow-y-auto">
           <form onSubmit={handleUpdateMetric} className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 space-y-6 shadow-2xl my-auto">
@@ -326,17 +332,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="md:col-span-3 space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
-                <div 
-                  className="relative cursor-pointer group"
-                  onClick={triggerAdminDatePicker}
-                >
-                  <input 
-                    ref={adminDateInputRef}
-                    type="date" 
-                    value={editingMetric.date} 
-                    onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} 
-                    className="absolute opacity-0 pointer-events-none" 
-                  />
+                <div className="relative cursor-pointer group" onClick={triggerAdminDatePicker}>
+                  <input ref={adminDateInputRef} type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="absolute opacity-0 pointer-events-none" />
                   <div className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-100 group-hover:border-emerald-200 group-hover:bg-slate-100 transition-all flex items-center justify-between z-10">
                     <span className="font-bold text-xs select-none">{formatDateVN(editingMetric.date)}</span>
                     <span className="text-sm">📅</span>
@@ -362,6 +359,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         </div>
       )}
 
+      {/* Editing User Modal - Giữ nguyên */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[210] flex items-center justify-center p-4 animate-in zoom-in-95">
           <form onSubmit={async (e) => { e.preventDefault(); await Database.updateUser((editingUser as any).id || (editingUser as any)._id, editingUser); setEditingUser(null); onRefresh(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 shadow-2xl">
