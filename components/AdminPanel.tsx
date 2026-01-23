@@ -113,6 +113,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
     }
   };
 
+  const handleDeleteKnowledge = async (id: string, keyword: string) => {
+    if (confirm(`Bạn có chắc chắn muốn xóa kiến thức về "${keyword}"?`)) {
+      await Database.deleteKnowledge(id);
+      onRefresh();
+    }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    if (confirm("Bạn có chắc chắn muốn xóa quy tắc này?")) {
+      await Database.deleteRule(id);
+      onRefresh();
+    }
+  };
+
   return (
     <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden min-h-[75vh] flex flex-col">
       <div className="flex flex-col md:flex-row bg-slate-50/50 p-4 m-6 rounded-3xl border border-slate-100 gap-4 shrink-0">
@@ -167,7 +181,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in fade-in duration-300">
              <div className="lg:col-span-3 bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
               <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest">Hội viên</h3>
-              <div className="max-h-[500px] overflow-y-auto no-scrollbar space-y-2">
+              <div className="max-h-[500px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 space-y-2">
                 {users.map(u => (
                   <div key={(u as any).id || (u as any)._id} onClick={() => setSelectedMetricUser(u)} className={`p-4 rounded-2xl border cursor-pointer transition-all ${((selectedMetricUser as any)?.id || (selectedMetricUser as any)?._id) === ((u as any).id || (u as any)._id) ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : 'bg-white border-slate-100 hover:border-emerald-200 text-slate-600'}`}>
                     <div className="font-bold text-[12px]">{u.fullName}</div>
@@ -248,25 +262,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
               <div className="grid grid-cols-1 gap-6 min-h-0">
                 <div className="bg-white border border-slate-100 rounded-[2rem] p-6 h-[250px] flex flex-col shadow-sm">
                   <h4 className="font-black text-slate-400 uppercase tracking-widest text-[10px] mb-4">Danh sách Kiến thức</h4>
-                  <div className="overflow-y-auto space-y-2 no-scrollbar flex-grow pr-1">
+                  <div className="overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 space-y-2 flex-grow pr-1">
                     {knowledge.map(k => (
-                      <div key={k.id} className="p-3 bg-slate-50 rounded-2xl flex justify-between items-center group border border-transparent hover:border-emerald-200 transition-all">
+                      <div key={(k as any).id || (k as any)._id} className="p-3 bg-slate-50 rounded-2xl flex justify-between items-center group border border-transparent hover:border-emerald-200 transition-all">
                         <div className="min-w-0 pr-4">
                           <div className="font-black text-[9px] text-emerald-600 uppercase truncate">{k.keyword}</div>
                           <div className="text-[10px] text-slate-500 line-clamp-1">{k.content}</div>
                         </div>
-                        <button onClick={() => Database.deleteKnowledge(k.id).then(onRefresh)} className="text-rose-400 hover:text-rose-600 font-black text-lg p-2">×</button>
+                        <button onClick={() => handleDeleteKnowledge(((k as any).id || (k as any)._id)!, k.keyword)} className="text-rose-400 hover:text-rose-600 font-black text-lg p-2">×</button>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="bg-white border border-slate-100 rounded-[2rem] p-6 h-[250px] flex flex-col shadow-sm">
                   <h4 className="font-black text-slate-400 uppercase tracking-widest text-[10px] mb-4">Danh sách Quy tắc</h4>
-                  <div className="overflow-y-auto space-y-2 no-scrollbar flex-grow pr-1">
+                  <div className="overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 space-y-2 flex-grow pr-1">
                     {rules.map(r => (
-                      <div key={r.id} className="p-3 bg-slate-50 rounded-2xl flex justify-between items-center group border border-transparent hover:border-emerald-200 transition-all">
+                      <div key={(r as any).id || (r as any)._id} className="p-3 bg-slate-50 rounded-2xl flex justify-between items-center group border border-transparent hover:border-emerald-200 transition-all">
                         <div className="text-[10px] font-bold text-slate-600 flex-1 pr-4">{r.content}</div>
-                        <button onClick={() => Database.deleteRule(r.id).then(onRefresh)} className="text-rose-400 hover:text-rose-600 font-black text-lg p-2">×</button>
+                        <button onClick={() => handleDeleteRule(((r as any).id || (r as any)._id)!)} className="text-rose-400 hover:text-rose-600 font-black text-lg p-2">×</button>
                       </div>
                     ))}
                   </div>
@@ -279,7 +293,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                 <span>> 🍀Trợ lý Lucky Sandbox Console</span>
                 <button onClick={() => setTestMessages([])} className="text-emerald-700 hover:text-emerald-400 transition-colors">CLEAN</button>
               </div>
-              <div className="flex-grow overflow-y-auto space-y-2 no-scrollbar mb-4">
+              <div className="flex-grow overflow-y-auto scrollbar-thin scrollbar-thumb-emerald-900 space-y-2 mb-4">
                 {testMessages.length === 0 && <div className="text-emerald-900/30 italic opacity-40">// Nhập câu hỏi để thử nghiệm phản hồi của AI...</div>}
                 {testMessages.map((m, i) => (
                   <div key={i} className={`flex gap-2 ${m.senderId === 'tester' ? 'text-emerald-200/50' : 'text-emerald-400'}`}>

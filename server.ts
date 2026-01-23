@@ -188,8 +188,10 @@ app.get('/api/all-metrics', async (req, res) => res.json(await Metric.find().pop
 app.post('/api/metrics', async (req, res) => res.json(await new Metric(req.body).save()));
 app.get('/api/knowledge', async (req, res) => res.json(await Knowledge.find()));
 app.post('/api/knowledge', async (req, res) => res.json(await new Knowledge(req.body).save()));
+app.delete('/api/knowledge/:id', async (req, res) => { await Knowledge.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
 app.get('/api/rules', async (req, res) => res.json(await Rule.find()));
 app.post('/api/rules', async (req, res) => res.json(await new Rule(req.body).save()));
+app.delete('/api/rules/:id', async (req, res) => { await Rule.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
 app.post('/api/chats', async (req, res) => res.json(await Chat.findOneAndUpdate({ id: req.body.id }, req.body, { upsert: true, new: true })));
 
