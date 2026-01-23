@@ -15,13 +15,13 @@ interface DashboardProps {
 }
 
 const AVAILABLE_METRICS = [
-  { key: 'weight', label: 'Cân nặng (kg)', color: '#059669' },
-  { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)', color: '#ef4444' },
-  { key: 'waterPercent', label: 'Lượng nước (%)', color: '#0ea5e9' },
-  { key: 'muscleMass', label: 'Cơ bắp (kg)', color: '#3b82f6' },
-  { key: 'balanceIndex', label: 'Cân đối', color: '#8b5cf6' },
-  { key: 'bioAge', label: 'Tuổi sinh học', color: '#ec4899' },
-  { key: 'visceralFat', label: 'Mỡ nội tạng', color: '#f59e0b' },
+  { key: 'weight', label: 'Cân nặng (kg)', color: '#059669', inverse: true },
+  { key: 'bodyFat', label: 'Tỉ lệ mỡ (%)', color: '#ef4444', inverse: true },
+  { key: 'waterPercent', label: 'Lượng nước (%)', color: '#0ea5e9', inverse: false },
+  { key: 'muscleMass', label: 'Cơ bắp (kg)', color: '#3b82f6', inverse: false },
+  { key: 'balanceIndex', label: 'Cân đối', color: '#8b5cf6', inverse: false },
+  { key: 'bioAge', label: 'Tuổi sinh học', color: '#ec4899', inverse: true },
+  { key: 'visceralFat', label: 'Mỡ nội tạng', color: '#f59e0b', inverse: true },
 ];
 
 const TIME_RANGES = [
@@ -77,6 +77,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
 
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
+  const prevMetric = sortedMetrics[1] || null;
 
   const toggleMetric = (key: string) => {
     setSelectedMetricKeys(prev => 
@@ -84,13 +85,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     );
   };
 
+  const getDiff = (key: keyof HealthMetric) => {
+    if (!latestMetric || !prevMetric) return null;
+    const current = latestMetric[key] as number;
+    const previous = prevMetric[key] as number;
+    if (typeof current !== 'number' || typeof previous !== 'number') return null;
+    return current - previous;
+  };
+
   const pieData = useMemo(() => {
     if (!latestMetric) return [];
-    
     const fatMass = Number((latestMetric.weight * (latestMetric.bodyFat / 100)).toFixed(1));
     const waterMass = Number((latestMetric.weight * (latestMetric.waterPercent / 100)).toFixed(1));
     const muscle = latestMetric.muscleMass || 0;
-
     return [
       { name: 'Cơ', value: muscle, color: '#ef4444' },
       { name: 'Nước', value: waterMass, color: '#0ea5e9' },
@@ -135,33 +142,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {[
-          { key: 'weight', label: 'Cân nặng', value: latestMetric?.weight || '--', unit: 'kg', icon: '⚖️', color: 'text-slate-800' },
-          { key: 'bodyFat', label: 'Tỉ lệ mỡ', value: latestMetric?.bodyFat || '--', unit: '%', icon: '🔥', color: 'text-rose-500' },
-          { key: 'balanceIndex', label: 'Cân đối', value: latestMetric?.balanceIndex ?? '--', unit: 'pt', icon: '💎', color: 'text-indigo-600' },
-          { key: 'muscleMass', label: 'Cơ bắp', value: latestMetric?.muscleMass || '--', unit: 'kg', icon: '💪', color: 'text-blue-600' },
-          { key: 'visceralFat', label: 'Mỡ nội tạng', value: latestMetric?.visceralFat || '--', unit: 'Lv', icon: '⚠️', color: 'text-amber-500' },
-          { key: 'bioAge', label: 'Tuổi SH', value: latestMetric?.bioAge || '--', unit: 't', icon: '🧬', color: 'text-indigo-600' },
-        ].map((stat, i) => (
-          <div key={i} className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm group">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</span>
-              <span className="text-lg group-hover:scale-125 transition-transform">{stat.icon}</span>
+        {AVAILABLE_METRICS.slice(0, 6).map((metricInfo, i) => {
+          const diff = getDiff(metricInfo.key as keyof HealthMetric);
+          const isGood = diff !== null ? (metricInfo.inverse ? diff < 0 : diff > 0) : null;
+          
+          return (
+            <div key={i} className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm group">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{metricInfo.label.split(' ')[0]}</span>
+                <span className="text-lg group-hover:scale-125 transition-transform">
+                  {metricInfo.key === 'weight' ? '⚖️' : metricInfo.key === 'bodyFat' ? '🔥' : metricInfo.key === 'balanceIndex' ? '💎' : metricInfo.key === 'muscleMass' ? '💪' : metricInfo.key === 'visceralFat' ? '⚠️' : '🧬'}
+                </span>
+              </div>
+              <div className="text-xl font-black flex items-baseline text-slate-800">
+                {latestMetric ? latestMetric[metricInfo.key as keyof HealthMetric] : '--'} 
+                <span className="text-[10px] font-bold text-slate-400 ml-0.5">{metricInfo.label.includes('(') ? metricInfo.label.split('(')[1].replace(')', '') : ''}</span>
+              </div>
+              {diff !== null && diff !== 0 && (
+                <div className={`text-[9px] font-black uppercase flex items-center gap-0.5 mt-1 ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {diff > 0 ? '↑' : '↓'} {Math.abs(diff).toFixed(1)}
+                </div>
+              )}
             </div>
-            <div className={`text-xl font-black flex items-baseline ${stat.color}`}>
-              {stat.value} <span className="text-[10px] font-bold text-slate-400 ml-0.5">{stat.unit}</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative" onClick={() => setActiveIndex(null)}>
+        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative">
           <div className="mb-2">
             <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">🍀Trợ lý Lucky phân tích: Cơ, Nước, Mỡ</p>
           </div>
-          
           <div className="flex-grow flex items-center justify-center relative">
             {latestMetric ? (
               <div className="relative w-full h-full flex items-center justify-center">
@@ -169,10 +181,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">{activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}</span>
                   <span className="text-3xl font-black text-slate-800 tabular-nums">{activeIndex !== null ? `${pieData[activeIndex].value}kg` : `${latestMetric.weight}kg`}</span>
                 </div>
-                
                 <ResponsiveContainer width="100%" height={340}>
                   <PieChart>
-                    <Pie activeIndex={activeIndex === null ? undefined : activeIndex} activeShape={renderActiveShape} data={pieData} cx="50%" cy="50%" innerRadius={80} outerRadius={100} paddingAngle={5} dataKey="value" onMouseEnter={onPieEnter} onMouseLeave={onPieLeave} onClick={(e, index) => { e.stopPropagation(); setActiveIndex(index); }} stroke="none" animationBegin={0} animationDuration={1500}>
+                    <Pie activeIndex={activeIndex === null ? undefined : activeIndex} activeShape={renderActiveShape} data={pieData} cx="50%" cy="50%" innerRadius={80} outerRadius={100} paddingAngle={5} dataKey="value" onMouseEnter={onPieEnter} onMouseLeave={onPieLeave} stroke="none" animationBegin={0} animationDuration={1500}>
                       {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                     </Pie>
                     <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} />
@@ -197,8 +208,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               ))}
             </div>
           </div>
-
-          {/* Metric Selector Pills - Đã khôi phục */}
           <div className="flex flex-wrap gap-2 mb-6">
             {AVAILABLE_METRICS.map(m => (
               <button
@@ -215,7 +224,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               </button>
             ))}
           </div>
-
           <div className="flex-grow w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>

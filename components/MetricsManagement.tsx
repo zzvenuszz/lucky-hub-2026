@@ -23,9 +23,14 @@ const formatDateVN = (dateStr: string) => {
 
 const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
   if (prev === undefined || current === prev) return null;
-  const isUp = current > prev;
+  const diff = current - prev;
+  const isUp = diff > 0;
   const isGood = inverse ? !isUp : isUp;
-  return <span className={isGood ? 'text-emerald-500' : 'text-rose-500'}>{isUp ? '↑' : '↓'}</span>;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[9px] font-black ml-1 ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
+      {isUp ? '↑' : '↓'}{Math.abs(diff).toFixed(1)}
+    </span>
+  );
 };
 
 const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
@@ -81,13 +86,23 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                 return (
                   <tr key={m.id || (m as any)._id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="p-5 font-bold text-slate-700">{formatDateVN(m.date)}</td>
-                    <td className="p-5 font-black text-emerald-600">{m.weight} {renderTrendIcon(m.weight, prev?.weight)}</td>
-                    <td className="p-5 font-bold text-rose-500">{m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}</td>
-                    <td className="p-5 font-bold text-blue-600">{m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass)}</td>
-                    <td className="p-5 font-black text-indigo-600">{m.balanceIndex ?? 0}</td>
+                    <td className="p-5 font-black text-emerald-600">
+                      {m.weight} {renderTrendIcon(m.weight, prev?.weight, true)}
+                    </td>
+                    <td className="p-5 font-bold text-rose-500">
+                      {m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}
+                    </td>
+                    <td className="p-5 font-bold text-blue-600">
+                      {m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass, false)}
+                    </td>
+                    <td className="p-5 font-black text-indigo-600">
+                      {m.balanceIndex ?? 0} {renderTrendIcon(m.balanceIndex ?? 0, prev?.balanceIndex, false)}
+                    </td>
                     <td className="p-5 text-slate-600">{m.boneMinerals || '--'}</td>
                     <td className="p-5 text-sky-600">{m.waterPercent}%</td>
-                    <td className="p-5 font-bold text-amber-600">{m.visceralFat || '--'}</td>
+                    <td className="p-5 font-bold text-amber-600">
+                      {m.visceralFat || '--'} {renderTrendIcon(m.visceralFat || 0, prev?.visceralFat, true)}
+                    </td>
                     <td className="p-5 text-slate-500">{m.energy || '--'}</td>
                   </tr>
                 );
