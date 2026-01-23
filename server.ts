@@ -135,6 +135,40 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// API REGISTER
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, password, fullName, phoneNumber, birthDate, height, weight, gender, healthGoal } = req.body;
+    
+    // Kiểm tra tài khoản tồn tại
+    const existingUser = await User.findOne({ username: username.toLowerCase().trim() });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Tên đăng nhập đã được sử dụng' });
+    }
+
+    const newUser = new User({
+      username: username.toLowerCase().trim(),
+      password: hashPassword(password),
+      fullName,
+      phoneNumber,
+      birthDate,
+      height,
+      weight,
+      gender,
+      healthGoal,
+      role: UserRole.MEMBER,
+      status: AccountStatus.ACTIVE,
+      isPasswordEncrypted: true
+    });
+
+    await newUser.save();
+    res.status(201).json({ message: 'Đăng ký thành công' });
+  } catch (err) {
+    console.error('Lỗi đăng ký:', err);
+    res.status(500).json({ message: 'Lỗi server khi đăng ký' });
+  }
+});
+
 // API POSTS (NEWS FEED)
 app.get('/api/posts', async (req, res) => res.json(await Post.find().sort({ createdAt: -1 })));
 app.post('/api/posts', async (req, res) => res.json(await new Post(req.body).save()));

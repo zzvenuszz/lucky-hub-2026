@@ -209,34 +209,132 @@ const App: React.FC = () => {
     } catch (error) { alert('Lỗi kết nối'); } finally { setIsLoading(false); }
   };
 
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          ...regData, 
+          username: regData.username.toLowerCase().trim() 
+        })
+      });
+      const result = await response.json();
+      if (response.ok) {
+        alert('Đăng ký thành công! Vui lòng đăng nhập.');
+        setIsRegistering(false);
+        setLoginData({ username: regData.username, password: regData.password });
+      } else {
+        alert(result.message || 'Lỗi đăng ký');
+      }
+    } catch (error) {
+      alert('Lỗi kết nối server');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-emerald-600 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-md animate-in zoom-in-95">
+        <div className={`bg-white p-8 rounded-[2.5rem] shadow-2xl w-full ${isRegistering ? 'max-w-2xl' : 'max-w-md'} animate-in zoom-in-95 transition-all duration-300`}>
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-emerald-50 text-white text-3xl flex items-center justify-center rounded-2xl mx-auto mb-4 shadow-xl animate-bounce-short">🍀</div>
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub</h1>
-            <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-black">Chuyên gia sức khỏe 2026</p>
+            <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-black">
+              {isRegistering ? 'Gia nhập cộng đồng Lucky Hub' : 'Chuyên gia sức khỏe 2026'}
+            </p>
           </div>
           
-          <form className="space-y-4" onSubmit={handleLogin}>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tên đăng nhập</label>
-              <input required placeholder="Nhập tên đăng nhập..." value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu</label>
-              <div className="relative">
-                <input required type={showLoginPass ? "text" : "password"} placeholder="Nhập mật khẩu..." value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium pr-12" />
-                <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100">{showLoginPass ? '👁️' : '🙈'}</button>
+          {isRegistering ? (
+            <form className="space-y-4" onSubmit={handleRegister}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label>
+                  <input required placeholder="Họ và tên của bạn..." value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Số điện thoại</label>
+                  <input required placeholder="Số điện thoại..." value={regData.phoneNumber} onChange={e => setRegData({...regData, phoneNumber: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tên đăng nhập</label>
+                  <input required placeholder="Username..." value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu</label>
+                  <div className="relative">
+                    <input required type={showRegPass ? "text" : "password"} placeholder="Mật khẩu..." value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm pr-12" />
+                    <button type="button" onClick={() => setShowRegPass(!showRegPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100">{showRegPass ? '👁️' : '🙈'}</button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Giới tính</label>
+                  <select value={regData.gender} onChange={e => setRegData({...regData, gender: e.target.value as any})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm">
+                    <option value="Nam">Nam</option>
+                    <option value="Nữ">Nữ</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ngày sinh</label>
+                  <input type="date" value={regData.birthDate} onChange={e => setRegData({...regData, birthDate: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Chiều cao (cm)</label>
+                  <input type="number" value={regData.height} onChange={e => setRegData({...regData, height: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cân nặng (kg)</label>
+                  <input type="number" value={regData.weight} onChange={e => setRegData({...regData, weight: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
+                </div>
+                <div className="md:col-span-2 space-y-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mục tiêu sức khỏe</label>
+                  <select value={regData.healthGoal} onChange={e => setRegData({...regData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm">
+                    {Object.values(HealthGoal).map(goal => <option key={goal} value={goal}>{goal}</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2 py-1">
-              <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-              <span className="text-xs font-bold text-slate-500">Ghi nhớ đăng nhập</span>
-            </div>
-            <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95">{isLoading ? '...' : 'Đăng nhập'}</button>
-          </form>
+              
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95 mt-4">
+                {isLoading ? 'Đang khởi tạo...' : 'Đăng ký hội viên'}
+              </button>
+              
+              <div className="text-center mt-4">
+                <button type="button" onClick={() => setIsRegistering(false)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">
+                  Đã có tài khoản? <span className="text-emerald-600 underline">Đăng nhập ngay</span>
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form className="space-y-4" onSubmit={handleLogin}>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tên đăng nhập</label>
+                <input required placeholder="Nhập tên đăng nhập..." value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu</label>
+                <div className="relative">
+                  <input required type={showLoginPass ? "text" : "password"} placeholder="Nhập mật khẩu..." value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium pr-12" />
+                  <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100">{showLoginPass ? '👁️' : '🙈'}</button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 py-1">
+                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
+                <span className="text-xs font-bold text-slate-500">Ghi nhớ đăng nhập</span>
+              </div>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95">
+                {isLoading ? '...' : 'Đăng nhập'}
+              </button>
+              
+              <div className="text-center mt-6">
+                <button type="button" onClick={() => setIsRegistering(true)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">
+                  Chưa có tài khoản? <span className="text-emerald-600 underline">Đăng ký hội viên mới</span>
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     );
