@@ -15,15 +15,15 @@ interface DashboardProps {
 }
 
 const AVAILABLE_METRICS = [
-  { key: 'weight', label: 'Cân nặng (kg)', color: '#059669', inverse: true },
-  { key: 'bodyFat', label: 'Mỡ cơ thể (%)', color: '#ef4444', inverse: true },
-  { key: 'waterPercent', label: 'Nước (%)', color: '#0ea5e9', inverse: false },
-  { key: 'muscleMass', label: 'Lượng cơ (kg)', color: '#3b82f6', inverse: false },
-  { key: 'balanceIndex', label: 'Cân đối', color: '#8b5cf6', inverse: false },
-  { key: 'bioAge', label: 'Tuổi sinh học', color: '#ec4899', inverse: true },
-  { key: 'visceralFat', label: 'Mỡ nội tạng', color: '#f59e0b', inverse: true },
-  { key: 'boneMinerals', label: 'Khoáng chất (kg)', color: '#64748b', inverse: false },
-  { key: 'energy', label: 'Năng Lượng (kcal)', color: '#f97316', inverse: false },
+  { key: 'weight', label: 'Cân nặng (kg)', color: '#059669', inverse: true, icon: '⚖️' },
+  { key: 'bodyFat', label: 'Mỡ cơ thể (%)', color: '#ef4444', inverse: true, icon: '🔥' },
+  { key: 'waterPercent', label: 'Nước (%)', color: '#0ea5e9', inverse: false, icon: '💧' },
+  { key: 'muscleMass', label: 'Lượng cơ (kg)', color: '#3b82f6', inverse: false, icon: '💪' },
+  { key: 'balanceIndex', label: 'Cân đối', color: '#8b5cf6', inverse: false, icon: '💎' },
+  { key: 'bioAge', label: 'Tuổi sinh học', color: '#ec4899', inverse: true, icon: '⏳' },
+  { key: 'visceralFat', label: 'Mỡ nội tạng', color: '#f59e0b', inverse: true, icon: '⚠️' },
+  { key: 'boneMinerals', label: 'Khoáng chất (kg)', color: '#64748b', inverse: false, icon: '🦴' },
+  { key: 'energy', label: 'Năng Lượng (kcal)', color: '#f97316', inverse: false, icon: '⚡' },
 ];
 
 const TIME_RANGES = [
@@ -98,14 +98,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const pieData = useMemo(() => {
     if (!latestMetric || !latestMetric.weight) return [];
     
-    // Logic chuẩn InBody: Thành phần không chồng lấn
-    // Tổng Weight = Fat Mass + Water Mass + Minerals + Protein
     const weight = latestMetric.weight;
     const fatMass = Number((weight * (latestMetric.bodyFat / 100)).toFixed(1));
     const waterMass = Number((weight * (latestMetric.waterPercent / 100)).toFixed(1));
     const minerals = latestMetric.boneMinerals || 0;
     
-    // Đạm (Protein) là phần còn lại của khối lượng nạc sau khi trừ nước và khoáng
     const protein = Math.max(0, Number((weight - fatMass - waterMass - minerals).toFixed(1)));
 
     return [
@@ -129,7 +126,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     if (timeRange === '7d') cutoff.setDate(cutoff.getDate() - 7);
     else if (timeRange === '14d') cutoff.setDate(cutoff.getDate() - 14);
     else if (timeRange === '1m') cutoff.setMonth(cutoff.getMonth() - 1);
-    else return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    else return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     return metrics.filter(m => new Date(m.date) >= cutoff).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
 
@@ -152,26 +149,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {AVAILABLE_METRICS.slice(0, 6).map((metricInfo, i) => {
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {AVAILABLE_METRICS.map((metricInfo, i) => {
           const diff = getDiff(metricInfo.key as keyof HealthMetric);
           const isGood = diff !== null ? (metricInfo.inverse ? diff < 0 : diff > 0) : null;
           
           return (
-            <div key={i} className="bg-white p-4 rounded-[2rem] border border-slate-100 shadow-sm group">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{metricInfo.label.split(' ')[0]}</span>
-                <span className="text-lg group-hover:scale-125 transition-transform">
-                  {metricInfo.key === 'weight' ? '⚖️' : metricInfo.key === 'bodyFat' ? '🔥' : metricInfo.key === 'balanceIndex' ? '💎' : metricInfo.key === 'muscleMass' ? '💪' : metricInfo.key === 'visceralFat' ? '⚠️' : '🧬'}
+            <div key={i} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm group hover:border-emerald-200 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{metricInfo.label}</span>
+                <span className="text-xl group-hover:scale-125 transition-transform">
+                  {metricInfo.icon}
                 </span>
               </div>
-              <div className="text-xl font-black flex items-baseline text-slate-800">
+              <div className="text-2xl font-black flex items-baseline text-slate-800">
                 {latestMetric ? latestMetric[metricInfo.key as keyof HealthMetric] : '--'} 
-                <span className="text-[10px] font-bold text-slate-400 ml-0.5">{metricInfo.label.includes('(') ? metricInfo.label.split('(')[1].replace(')', '') : ''}</span>
+                <span className="text-[10px] font-bold text-slate-400 ml-1">
+                  {metricInfo.key === 'energy' ? 'kcal' : 
+                   metricInfo.key === 'weight' || metricInfo.key === 'muscleMass' || metricInfo.key === 'boneMinerals' ? 'kg' :
+                   metricInfo.key === 'bodyFat' || metricInfo.key === 'waterPercent' ? '%' : ''}
+                </span>
               </div>
               {diff !== null && diff !== 0 && (
-                <div className={`text-[9px] font-black uppercase flex items-center gap-0.5 mt-1 ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
+                <div className={`text-[10px] font-black uppercase flex items-center gap-0.5 mt-2 ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
                   {diff > 0 ? '↑' : '↓'} {Math.abs(diff).toFixed(1)}
+                  <span className="ml-1 opacity-60">so với lần trước</span>
                 </div>
               )}
             </div>

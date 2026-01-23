@@ -46,8 +46,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   const [userMetrics, setUserMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
   
-  const editDateRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     const consoleEl = document.getElementById('debug-console');
     if (consoleEl) consoleEl.style.display = showConsole ? 'flex' : 'none';
@@ -56,22 +54,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   useEffect(() => {
     (window as any).logFilters = logFilters;
   }, [logFilters]);
-
-  const openEditDatePicker = () => {
-    if (editDateRef.current) {
-      try {
-        if ('showPicker' in HTMLInputElement.prototype) {
-          (editDateRef.current as any).showPicker();
-        } else {
-          editDateRef.current.focus();
-          editDateRef.current.click();
-        }
-      } catch (e) {
-        editDateRef.current.focus();
-        editDateRef.current.click();
-      }
-    }
-  };
 
   const loadUserMetrics = async () => {
     if (selectedMetricUser) {
@@ -331,17 +313,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="md:col-span-3 space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
-                <div className="relative group overflow-hidden cursor-pointer" onClick={openEditDatePicker}>
+                <div className="relative group overflow-hidden">
                   <div className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-100 group-hover:border-emerald-200 group-hover:bg-slate-100 transition-all flex items-center justify-between">
                     <span className="font-bold text-xs select-none">{formatDateVN(editingMetric.date)}</span>
                     <span className="text-sm">📅</span>
                   </div>
                   <input 
-                    ref={editDateRef}
                     type="date" 
                     value={editingMetric.date} 
                     onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} 
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                   />
                 </div>
               </div>
