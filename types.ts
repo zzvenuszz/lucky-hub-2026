@@ -30,11 +30,31 @@ export enum HealthGoal {
   OTHER = 'Khác'
 }
 
+export interface Badge {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  color: string;
+}
+
+export interface Post {
+  id: string;
+  _id?: string;
+  userId: string;
+  userFullName: string;
+  userAvatar?: string;
+  userBadges: string[]; // Lưu ID của các danh hiệu
+  content: string;
+  imageUrl?: string;
+  timestamp: string;
+}
+
 export interface HealthMetric {
   id: string;
   _id?: string;
   userId: string;
-  userFullName?: string; // Dùng cho admin view
+  userFullName?: string; 
   date: string;
   weight: number; 
   bodyFat: number; 
@@ -51,7 +71,6 @@ export interface User {
   id: string;
   _id?: string;
   username: string;
-  // Fix: Thêm thuộc tính password để đồng bộ với Database.updateUser
   password?: string;
   fullName: string;
   birthDate: string;
@@ -65,6 +84,7 @@ export interface User {
   permissions: Permission[];
   avatar?: string;
   isPasswordEncrypted?: boolean; 
+  badges: string[]; // Danh sách ID danh hiệu đang sở hữu
 }
 
 export interface Message {

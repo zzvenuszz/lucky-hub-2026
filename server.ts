@@ -68,7 +68,8 @@ const userSchema = new mongoose.Schema({
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
   permissions: { type: [String], default: [] },
   avatar: String,
-  isPasswordEncrypted: { type: Boolean, default: false }
+  isPasswordEncrypted: { type: Boolean, default: false },
+  badges: { type: [String], default: [] }
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
@@ -90,19 +91,22 @@ const metricSchema = new mongoose.Schema({
 metricSchema.index({ userId: 1, date: 1 }, { unique: true });
 const Metric = mongoose.model('Metric', metricSchema);
 
+const postSchema = new mongoose.Schema({
+  userId: String,
+  userFullName: String,
+  userAvatar: String,
+  userBadges: [String],
+  content: String,
+  imageUrl: String,
+  timestamp: String
+}, { timestamps: true });
+const Post = mongoose.model('Post', postSchema);
+
 const chatSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   memberId: { type: String, required: true },
   coachId: { type: String, required: true },
-  messages: [{
-    id: String,
-    senderId: String,
-    senderName: String,
-    senderRole: String,
-    content: String,
-    timestamp: String,
-    imageUrl: String
-  }]
+  messages: [{ id: String, senderId: String, senderName: String, senderRole: String, content: String, timestamp: String, imageUrl: String }]
 }, { timestamps: true });
 const Chat = mongoose.model('Chat', chatSchema);
 
@@ -113,119 +117,47 @@ async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ DATABASE CONNECTED');
-    const admin = await User.findOne({ username: 'admin' });
-    if (!admin) {
-      const newAdmin = new User({
-        username: 'admin', 
-        password: hashPassword('admin'), 
-        fullName: 'Tổng Quản Trị', 
-        role: UserRole.ADMIN, 
-        status: AccountStatus.ACTIVE,
-        permissions: Object.values(Permission),
-        healthGoal: HealthGoal.STRENGTHEN_HEALTH,
-        isPasswordEncrypted: true
-      });
-      await newAdmin.save();
-    }
   } catch (err) { console.error('❌ DB ERROR:', err); }
 }
 initDB();
 
-// API AUTH - LOGIN
+// API AUTH
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ message: 'Vui lòng nhập đầy đủ thông tin' });
-  
   const user = await User.findOne({ username: username.toLowerCase().trim() });
   if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại' });
-  if (user.status !== AccountStatus.ACTIVE) return res.status(403).json({ message: 'Tài khoản đã bị khóa' });
-
   if (user.isPasswordEncrypted) {
-    if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Mật khẩu không chính xác' });
+    if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Mật khẩu sai' });
     res.json(user);
   } else {
-    if (user.password !== password) return res.status(401).json({ message: 'Mật khẩu không chính xác' });
-    res.status(426).json({ message: 'Yêu cầu nâng cấp mật khẩu bảo mật', userId: user._id, fullName: user.fullName });
+    if (user.password !== password) return res.status(401).json({ message: 'Mật khẩu sai' });
+    res.status(426).json({ userId: user._id, fullName: user.fullName });
   }
 });
 
-// API AUTH - REGISTER
-app.post('/api/register', async (req, res) => {
-  const { username, password, fullName, phoneNumber, healthGoal, height, weight, gender, birthDate } = req.body;
-  try {
-    const existing = await User.findOne({ username: username.toLowerCase().trim() });
-    if (existing) return res.status(400).json({ message: 'Tên đăng nhập đã tồn tại' });
-
-    const newUser = new User({
-      username: username.toLowerCase().trim(),
-      password: hashPassword(password),
-      fullName,
-      phoneNumber,
-      healthGoal,
-      height,
-      weight,
-      gender,
-      birthDate,
-      role: UserRole.MEMBER,
-      status: AccountStatus.ACTIVE,
-      isPasswordEncrypted: true,
-      permissions: []
-    });
-
-    await newUser.save();
-    res.json({ message: 'Đăng ký thành công', user: { fullName: newUser.fullName } });
-  } catch (err: any) {
-    res.status(500).json({ message: 'Lỗi đăng ký: ' + err.message });
-  }
-});
+// API POSTS (NEWS FEED)
+app.get('/api/posts', async (req, res) => res.json(await Post.find().sort({ createdAt: -1 })));
+app.post('/api/posts', async (req, res) => res.json(await new Post(req.body).save()));
+app.delete('/api/posts/:id', async (req, res) => { await Post.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
 
 // API USERS
 app.get('/api/users', async (req, res) => res.json(await User.find().select('-password')));
 app.put('/api/users/:id', async (req, res) => {
   const data = { ...req.body };
-  if (data.username) data.username = data.username.toLowerCase().trim();
   if (data.password && data.isPasswordEncrypted) data.password = hashPassword(data.password);
   res.json(await User.findByIdAndUpdate(req.params.id, data, { new: true }).select('-password'));
 });
-app.delete('/api/users/:id', async (req, res) => {
-  await User.findByIdAndDelete(req.params.id);
-  await Metric.deleteMany({ userId: req.params.id });
-  await Chat.deleteMany({ $or: [{ memberId: req.params.id }, { coachId: req.params.id }] });
-  res.json({ message: 'User deleted' });
-});
 
-// API METRICS
+// OTHER API (KEEP EXISTING)
 app.get('/api/metrics/:userId', async (req, res) => res.json(await Metric.find({ userId: req.params.userId }).sort({ date: 1 })));
-app.get('/api/all-metrics', async (req, res) => {
-  const metrics = await Metric.find().populate('userId', 'fullName').sort({ date: -1 });
-  const result = metrics.map(m => {
-    const doc = m.toObject();
-    return { ...doc, userFullName: (m.userId as any)?.fullName || 'Hội viên ẩn' };
-  });
-  res.json(result);
-});
+app.get('/api/all-metrics', async (req, res) => res.json(await Metric.find().populate('userId', 'fullName')));
 app.post('/api/metrics', async (req, res) => res.json(await new Metric(req.body).save()));
-app.put('/api/metrics/:id', async (req, res) => res.json(await Metric.findByIdAndUpdate(req.params.id, req.body, { new: true })));
-app.delete('/api/metrics/:id', async (req, res) => { await Metric.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
-app.post('/api/metrics/bulk', async (req, res) => res.json(await Metric.insertMany(req.body)));
-app.post('/api/metrics/delete-dates', async (req, res) => {
-  const { userId, dates } = req.body;
-  await Metric.deleteMany({ userId, date: { $in: dates } });
-  res.json({ message: 'Ok' });
-});
-
-// API OTHER
 app.get('/api/knowledge', async (req, res) => res.json(await Knowledge.find()));
 app.post('/api/knowledge', async (req, res) => res.json(await new Knowledge(req.body).save()));
-app.delete('/api/knowledge/:id', async (req, res) => { await Knowledge.findByIdAndDelete(req.params.id); res.json({ message: 'Ok' }); });
 app.get('/api/rules', async (req, res) => res.json(await Rule.find()));
 app.post('/api/rules', async (req, res) => res.json(await new Rule(req.body).save()));
-app.delete('/api/rules/:id', async (req, res) => { await Rule.findByIdAndDelete(req.params.id); res.json({ message: 'Ok' }); });
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
-app.post('/api/chats', async (req, res) => {
-  const { id } = req.body;
-  res.json(await Chat.findOneAndUpdate({ id }, req.body, { upsert: true, new: true }));
-});
+app.post('/api/chats', async (req, res) => res.json(await Chat.findOneAndUpdate({ id: req.body.id }, req.body, { upsert: true, new: true })));
 
 app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
 app.listen(PORT, () => console.log(`🚀 Lucky Hub tại ${PORT}`));

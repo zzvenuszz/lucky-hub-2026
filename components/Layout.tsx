@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { User, UserRole } from '../types.ts';
+import BadgeDisplay from './BadgeDisplay.tsx';
 
 interface LayoutProps {
   user: User;
@@ -42,17 +43,18 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
         <div className="container mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
             <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-100 group-hover:scale-110 group-hover:rotate-12 transition-all">🍀</div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-800">Lucky Hub</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-800 hidden sm:block">Lucky Hub</h1>
           </div>
           
-          <nav className="hidden md:flex items-center space-x-1 bg-slate-50 p-1 rounded-2xl">
+          <nav className="flex items-center space-x-1 bg-slate-50 p-1 rounded-2xl overflow-x-auto no-scrollbar max-w-[50%] sm:max-w-none">
             {[
-              { id: 'dashboard', label: 'Tổng quan' },
-              { id: 'metrics', label: 'Chỉ số' }
+              { id: 'dashboard', label: '📊 Tổng quan' },
+              { id: 'community', label: '🌍 Cộng đồng' },
+              { id: 'metrics', label: '📈 Chỉ số' }
             ].map(tab => (
               <button 
                 key={tab.id} onClick={() => setActiveTab(tab.id)} 
-                className={`px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`px-4 sm:px-6 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wide transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 {tab.label}
               </button>
@@ -60,8 +62,11 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
           </nav>
 
           <div className="flex items-center space-x-4">
-            <div className="hidden lg:block text-right">
-              <div className="text-sm font-bold text-slate-800">{user.fullName}</div>
+            <div className="hidden lg:flex flex-col items-end">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-black text-slate-800">{user.fullName}</span>
+                <BadgeDisplay badgeIds={user.badges} />
+              </div>
               <div className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">{user.role}</div>
             </div>
             
@@ -76,8 +81,11 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
               {isMenuOpen && (
                 <div className="absolute right-0 mt-3 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 py-3 z-[100] animate-in slide-in-from-top-2 duration-200">
                   <div className="px-5 py-3 border-b border-slate-50 mb-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tài khoản</p>
-                    <p className="font-bold text-slate-800 truncate">{user.fullName}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Hồ sơ hội viên</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="font-bold text-slate-800 truncate">{user.fullName}</p>
+                      <BadgeDisplay badgeIds={user.badges} />
+                    </div>
                   </div>
                   
                   <div className="px-2 space-y-1">
@@ -85,18 +93,18 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
                       <span className="text-lg group-hover:scale-110 transition-transform">👤</span> Hồ sơ cá nhân
                     </button>
                     <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
-                      <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Quản lý chỉ số
+                      <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
                     </button>
                     {user.role === UserRole.ADMIN && (
                       <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
-                        <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Admin Panel
+                        <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Quản trị Lucky Hub
                       </button>
                     )}
                   </div>
 
                   <div className="mt-2 pt-2 border-t border-slate-50 px-2">
                     <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-rose-500 hover:bg-rose-50 transition-all text-sm font-black uppercase tracking-widest group">
-                      <span className="text-lg group-hover:translate-x-1 transition-transform">🚪</span> Đăng xuất
+                      <span className="text-lg group-hover:translate-x-1 transition-transform">🚪</span> Thoát tài khoản
                     </button>
                   </div>
                 </div>
@@ -114,7 +122,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
 
       <footer className="bg-white border-t border-slate-100 py-10 mt-10">
         <div className="container mx-auto px-4 text-center space-y-3">
-          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Copyright 2026 by Lucky Hub Team</p>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">© 2026 Lucky Hub - Chuyên gia sức khỏe của bạn</p>
         </div>
       </footer>
     </div>

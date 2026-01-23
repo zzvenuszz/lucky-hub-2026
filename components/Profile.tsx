@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, HealthGoal, UserRole } from '../types.ts';
+import BadgeDisplay from './BadgeDisplay.tsx';
 
 interface ProfileProps {
   user: User;
@@ -29,10 +30,6 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 2 * 1024 * 1024) {
-        alert("Kích thước ảnh quá lớn (tối đa 2MB)");
-        return;
-      }
       const reader = new FileReader();
       reader.onloadend = () => setFormData({ ...formData, avatar: reader.result as string });
       reader.readAsDataURL(file);
@@ -47,36 +44,27 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Admin Quick Access Card */}
       {user.role === UserRole.ADMIN && (
-        <div className="bg-amber-50 border border-amber-200 rounded-[2rem] p-6 flex items-center justify-between shadow-sm animate-pulse hover:animate-none transition-all">
+        <div className="bg-amber-50 border border-amber-200 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-amber-200">🛡️</div>
             <div>
-              <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest">Đặc quyền Quản trị viên</h4>
-              <p className="text-xs text-amber-600 font-medium">Bạn có quyền truy cập vào hệ thống quản lý toàn cục.</p>
+              <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest">Quản trị viên</h4>
+              <p className="text-xs text-amber-600 font-medium">Bạn có quyền truy cập hệ thống quản trị.</p>
             </div>
           </div>
-          <button 
-            onClick={onNavigateToAdmin}
-            className="bg-amber-600 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-amber-700 active:scale-95 transition-all shadow-md"
-          >
-            Vào Admin Panel
-          </button>
+          <button onClick={onNavigateToAdmin} className="bg-amber-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-md">Admin Panel</button>
         </div>
       )}
 
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden transition-all hover:shadow-md">
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="bg-emerald-600 h-32 relative">
           <div className="absolute -bottom-12 left-8">
             <label className="relative cursor-pointer group block">
               <div className="w-24 h-24 rounded-2xl border-4 border-white shadow-lg overflow-hidden bg-white">
-                <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover" />
               </div>
-              <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity">
-                <span className="text-[10px] font-black uppercase tracking-tighter">Thay đổi</span>
-                <span className="text-lg">📸</span>
-              </div>
+              <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">📸</div>
               <input type="file" className="hidden" accept="image/*" onChange={handleAvatarChange} />
             </label>
           </div>
@@ -84,11 +72,13 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
         
         <form onSubmit={handleSubmit} className="p-8 pt-16 space-y-6">
           <div className="flex items-center justify-between border-b border-slate-50 pb-4">
-            <div>
-              <h3 className="text-xl font-bold text-slate-800">Thông tin cá nhân</h3>
-              <p className="text-xs text-slate-400 font-medium">Cập nhật hồ sơ để AI tư vấn chính xác hơn</p>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-3">
+                <h3 className="text-xl font-bold text-slate-800">{user.fullName}</h3>
+                <BadgeDisplay badgeIds={user.badges} size="md" />
+              </div>
+              <p className="text-xs text-slate-400 font-medium">Hành trình của bạn tại Lucky Hub</p>
             </div>
-            <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest">{user.role}</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -105,10 +95,6 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
               <input required type="number" value={formData.height} onChange={e => setFormData({...formData, height: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Cân nặng (KG)</label>
-              <input required type="number" step="0.1" value={formData.weight} onChange={e => setFormData({...formData, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" />
-            </div>
-            <div className="md:col-span-2 space-y-1">
               <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mục tiêu sức khỏe</label>
               <select value={formData.healthGoal} onChange={e => setFormData({...formData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium">
                 {Object.values(HealthGoal).map(goal => <option key={goal} value={goal}>{goal}</option>)}
@@ -118,7 +104,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
 
           <div className="pt-4">
             <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-100 hover:bg-emerald-700 active:scale-[0.98] transition-all">
-              Lưu thay đổi hồ sơ
+              Cập nhật hồ sơ hội viên
             </button>
           </div>
         </form>
