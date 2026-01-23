@@ -255,7 +255,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
   return (
     <div 
-      className="fixed bottom-24 left-6 w-[400px] max-w-[95vw] h-[600px] max-h-[85vh] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden z-[999] animate-in slide-in-from-bottom-6 duration-300"
+      className="fixed bottom-24 right-6 w-[400px] max-w-[95vw] h-[600px] max-h-[85vh] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden z-[999] animate-in slide-in-from-bottom-6 duration-300"
       onWheel={(e) => e.stopPropagation()}
     >
       <div className="p-5 bg-emerald-600 text-white flex items-center justify-between shrink-0">

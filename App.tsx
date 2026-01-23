@@ -59,7 +59,7 @@ const App: React.FC = () => {
     const currentBadges = new Set(user.badges || []);
     if (metrics.length === 0) return Array.from(currentBadges);
 
-    const sorted = [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const sorted = [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     const firstMetric = sorted[0];
     const latestMetric = sorted[sorted.length - 1];
 
@@ -251,7 +251,7 @@ const App: React.FC = () => {
       {activeTab === 'admin' && currentUser.role === UserRole.ADMIN && <AdminPanel currentUser={currentUser} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       {isChatOpen && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       {!isChatOpen && (
-        <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 left-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>
+        <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>
       )}
       {isAddingMetric && <MetricForm onSave={async (m) => { const uid = (currentUser as any).id || (currentUser as any)._id; await Database.saveMetric({ ...m, userId: uid }); setRefreshTrigger(t => t+1); setIsAddingMetric(false); }} onSaveBulk={async (l) => { const uid = (currentUser as any).id || (currentUser as any)._id; await Database.saveMetricsBulk(l.map(m => ({...m, userId: uid}))); setRefreshTrigger(t => t+1); setIsAddingMetric(false); }} existingDates={existingMetrics.map(m => m.date)} onClose={() => setIsAddingMetric(false)} />}
       
