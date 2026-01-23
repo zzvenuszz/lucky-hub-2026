@@ -4,6 +4,11 @@ import { User, UserRole, AccountStatus, AIKnowledge, AIRule, Message, HealthMetr
 import { Database } from '../services/database.ts';
 import { getAICoachResponse } from '../services/gemini.ts';
 
+/**
+ * PHÂN TÍCH: TypeScript báo lỗi do interface 'AdminPanelProps' chưa được định nghĩa.
+ * CÁCH GIẢI QUYẾT: Định nghĩa interface AdminPanelProps với các thuộc tính cần thiết 
+ * dựa trên cách component này được sử dụng trong App.tsx.
+ */
 interface AdminPanelProps {
   currentUser: User;
   users: User[];
@@ -27,25 +32,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Debug settings
   const [showConsole, setShowConsole] = useState(false);
   const [logFilters, setLogFilters] = useState({ system: true, ai: true });
 
-  // AI Management
   const [testMessages, setTestMessages] = useState<Message[]>([]);
   const [testInput, setTestInput] = useState('');
   const [isTestTyping, setIsTestTyping] = useState(false);
   const [newK, setNewK] = useState({ keyword: '', content: '' });
   const [newRule, setNewRule] = useState('');
 
-  // Member & Metrics
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedMetricUser, setSelectedMetricUser] = useState<User | null>(null);
   const [userMetrics, setUserMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
   
-  const adminDateInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     const consoleEl = document.getElementById('debug-console');
     if (consoleEl) consoleEl.style.display = showConsole ? 'flex' : 'none';
@@ -66,22 +66,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   useEffect(() => {
     loadUserMetrics();
   }, [selectedMetricUser]);
-
-  const triggerAdminDatePicker = () => {
-    if (adminDateInputRef.current) {
-      try {
-        if ('showPicker' in HTMLInputElement.prototype) {
-          (adminDateInputRef.current as any).showPicker();
-        } else {
-          adminDateInputRef.current.focus();
-          adminDateInputRef.current.click();
-        }
-      } catch (e) {
-        adminDateInputRef.current.focus();
-        adminDateInputRef.current.click();
-      }
-    }
-  };
 
   const handleTestAI = async () => {
     if (!testInput.trim()) return;
@@ -244,7 +228,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
           </div>
         ) : (
           <div className="space-y-8 animate-in fade-in duration-300 flex flex-col min-h-full">
-            {/* AI Management Section - Giữ nguyên không thay đổi logic */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div className="bg-emerald-50/50 p-6 rounded-[2rem] border border-emerald-100 space-y-4 shadow-sm">
@@ -291,7 +274,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
               </div>
             </div>
 
-            {/* AI Sandbox Console - Giữ nguyên */}
             <div className="bg-slate-900 rounded-[2.5rem] p-6 text-emerald-400 font-mono text-[11px] h-[350px] flex flex-col shadow-2xl relative border-4 border-slate-800 shrink-0">
               <div className="mb-3 border-b border-emerald-900/50 pb-2 text-[9px] font-black uppercase tracking-widest opacity-60 flex justify-between">
                 <span>> 🍀Trợ lý Lucky Sandbox Console</span>
@@ -317,7 +299,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         )}
       </div>
 
-      {/* Editing Metric Modal - Đảm bảo đủ các trường bao gồm Tuổi SH và Cân đối */}
       {editingMetric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1000] flex items-center justify-center p-4 animate-in zoom-in-95 overflow-y-auto">
           <form onSubmit={handleUpdateMetric} className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 space-y-6 shadow-2xl my-auto">
@@ -332,12 +313,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="md:col-span-3 space-y-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
-                <div className="relative cursor-pointer group" onClick={triggerAdminDatePicker}>
-                  <input ref={adminDateInputRef} type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="absolute opacity-0 pointer-events-none" />
-                  <div className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-100 group-hover:border-emerald-200 group-hover:bg-slate-100 transition-all flex items-center justify-between z-10">
+                <div className="relative group overflow-hidden">
+                  <div className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-100 group-hover:border-emerald-200 group-hover:bg-slate-100 transition-all flex items-center justify-between">
                     <span className="font-bold text-xs select-none">{formatDateVN(editingMetric.date)}</span>
                     <span className="text-sm">📅</span>
                   </div>
+                  <input 
+                    type="date" 
+                    value={editingMetric.date} 
+                    onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} 
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
                 </div>
               </div>
               <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label><input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
@@ -359,7 +345,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         </div>
       )}
 
-      {/* Editing User Modal - Giữ nguyên */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[210] flex items-center justify-center p-4 animate-in zoom-in-95">
           <form onSubmit={async (e) => { e.preventDefault(); await Database.updateUser((editingUser as any).id || (editingUser as any)._id, editingUser); setEditingUser(null); onRefresh(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 shadow-2xl">

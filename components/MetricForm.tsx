@@ -47,9 +47,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dateInputRef = useRef<HTMLInputElement>(null);
 
-  // Tự động ẩn thông báo sau 5 giây
   useEffect(() => {
     if (statusMsg) {
       const timer = setTimeout(() => setStatusMsg(null), 5000);
@@ -57,29 +55,13 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     }
   }, [statusMsg]);
 
-  const triggerDatePicker = () => {
-    if (dateInputRef.current) {
-      try {
-        if ('showPicker' in HTMLInputElement.prototype) {
-          (dateInputRef.current as any).showPicker();
-        } else {
-          dateInputRef.current.focus();
-          dateInputRef.current.click();
-        }
-      } catch (e) {
-        dateInputRef.current.focus();
-        dateInputRef.current.click();
-      }
-    }
-  };
-
   const handleAIUpload = async (e: React.ChangeEvent<HTMLInputElement>, isBulk: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
     setLoadingAI(true);
     setBulkMode(isBulk);
-    setStatusMsg(null); // Xóa thông báo cũ khi bắt đầu tác vụ mới
+    setStatusMsg(null);
 
     const reader = new FileReader();
     reader.onloadend = async () => {
@@ -197,7 +179,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         </div>
 
         <div className="p-8 overflow-y-auto space-y-6 no-scrollbar relative">
-          {/* Custom Notification Element */}
           {statusMsg && (
             <div className={`p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-300 shadow-sm ${statusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
               <div className="flex items-center gap-3">
@@ -274,12 +255,18 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
-                  <div className="relative cursor-pointer group" onClick={triggerDatePicker}>
-                    <input ref={dateInputRef} type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="absolute opacity-0 pointer-events-none" />
+                  <div className="relative group overflow-hidden">
+                    {/* Native Input Overlay: Phủ lên trên giao diện ảo nhưng để tàng hình để đón click của trình duyệt */}
                     <div className="w-full px-5 py-4 bg-emerald-50 text-emerald-800 rounded-2xl border-2 border-emerald-100 group-hover:bg-emerald-100 group-hover:border-emerald-300 transition-all flex items-center justify-between shadow-sm">
                       <span className="text-2xl font-black tracking-tight select-none">{formatDateVN(formData.date)}</span>
                       <span className="text-xl">📅</span>
                     </div>
+                    <input 
+                      type="date" 
+                      value={formData.date} 
+                      onChange={e => setFormData({...formData, date: e.target.value})} 
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    />
                   </div>
                 </div>
 
