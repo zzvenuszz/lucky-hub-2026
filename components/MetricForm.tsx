@@ -36,9 +36,10 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     return localDate.toISOString().split('T')[0];
   };
 
-  const [formData, setFormData] = useState<Omit<HealthMetric, 'id' | 'userId'>>({
+  // Sử dụng chuỗi rỗng thay vì 0 để hiển thị placeholder
+  const [formData, setFormData] = useState<any>({
     date: getTodayISO(),
-    weight: 0, bodyFat: 0, boneMinerals: 0, waterPercent: 0, muscleMass: 0, energy: 0, bioAge: 0, visceralFat: 0, balanceIndex: 0
+    weight: '', bodyFat: '', boneMinerals: '', waterPercent: '', muscleMass: '', energy: '', bioAge: '', visceralFat: '', balanceIndex: ''
   });
   
   const [loadingAI, setLoadingAI] = useState(false);
@@ -159,16 +160,40 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   };
 
   const metricFields = [
-    { key: 'weight', label: 'Cân nặng (kg)' },
-    { key: 'bodyFat', label: 'Mỡ cơ thể (%)' },
-    { key: 'muscleMass', label: 'Lượng cơ (kg)' },
-    { key: 'balanceIndex', label: 'Cân đối' },
-    { key: 'visceralFat', label: 'Mỡ nội tạng' },
-    { key: 'boneMinerals', label: 'Khoáng chất (kg)' },
-    { key: 'waterPercent', label: 'Nước (%)' },
-    { key: 'energy', label: 'Năng Lượng (kcal)' },
-    { key: 'bioAge', label: 'Tuổi sinh học' },
+    { key: 'weight', label: 'Cân nặng (kg)', placeholder: '65.5' },
+    { key: 'bodyFat', label: 'Mỡ cơ thể (%)', placeholder: '20.0' },
+    { key: 'muscleMass', label: 'Lượng cơ (kg)', placeholder: '45.0' },
+    { key: 'balanceIndex', label: 'Cân đối', placeholder: '80' },
+    { key: 'visceralFat', label: 'Mỡ nội tạng', placeholder: '5' },
+    { key: 'boneMinerals', label: 'Khoáng chất (kg)', placeholder: '2.5' },
+    { key: 'waterPercent', label: 'Nước (%)', placeholder: '55.0' },
+    { key: 'energy', label: 'Năng Lượng (kcal)', placeholder: '1500' },
+    { key: 'bioAge', label: 'Tuổi sinh học', placeholder: '25' },
   ];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Kiểm tra tất cả các chỉ số phải được nhập và > 0
+    const requiredKeys = metricFields.map(f => f.key);
+    const isInvalid = requiredKeys.some(key => {
+      const val = formData[key];
+      return val === '' || val === null || Number(val) <= 0;
+    });
+
+    if (isInvalid) {
+      setStatusMsg({ text: "⚠️ Vui lòng nhập đầy đủ tất cả các chỉ số và giá trị phải lớn hơn 0!", type: 'error' });
+      return;
+    }
+
+    // Chuyển đổi về number trước khi lưu
+    const submissionData = { ...formData };
+    requiredKeys.forEach(key => {
+      submissionData[key] = Number(formData[key]);
+    });
+
+    onSave(submissionData);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
@@ -251,13 +276,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               <button onClick={() => onSaveBulk(bulkPreview)} className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-emerald-700 transition-all">Xác nhận lưu {bulkPreview.length} bản ghi</button>
             </div>
           ) : !loadingAI && (
-            <form onSubmit={(e) => { e.preventDefault(); onSave(formData); }} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
                   <div className="relative group overflow-hidden">
-                    {/* Native Input Overlay: Phủ lên trên giao diện ảo nhưng để tàng hình để đón click của trình duyệt */}
-                    <div className="w-full px-5 py-4 bg-emerald-50 text-emerald-800 rounded-2xl border-2 border-emerald-100 group-hover:bg-emerald-100 group-hover:border-emerald-300 transition-all flex items-center justify-between shadow-sm">
+                    <div className="w-full px-5 py-4 bg-emerald-50 text-emerald-800 rounded-2xl border-2 border-emerald-100 group-hover:bg-emerald-100 group-hover:border-emerald-300 transition-all flex items-center justify-between shadow-sm pointer-events-none">
                       <span className="text-2xl font-black tracking-tight select-none">{formatDateVN(formData.date)}</span>
                       <span className="text-xl">📅</span>
                     </div>
@@ -265,7 +289,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       type="date" 
                       value={formData.date} 
                       onChange={e => setFormData({...formData, date: e.target.value})} 
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
                     />
                   </div>
                 </div>
@@ -273,7 +297,15 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 {metricFields.map(field => (
                   <div key={field.key} className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{field.label}</label>
-                    <input required type="number" step="0.1" value={(formData as any)[field.key]} onChange={e => setFormData({...formData, [field.key]: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm" />
+                    <input 
+                      required 
+                      type="number" 
+                      step="0.1" 
+                      placeholder={field.placeholder}
+                      value={(formData as any)[field.key]} 
+                      onChange={e => setFormData({...formData, [field.key]: e.target.value})} 
+                      className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm" 
+                    />
                   </div>
                 ))}
                </div>
