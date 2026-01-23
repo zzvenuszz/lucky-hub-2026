@@ -63,11 +63,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
     const response = await getAICoachResponse([...testMessages, userMsg], knowledge, rules, userMsg.content, HealthGoal.BODY_RECOMP);
     setIsTestTyping(false);
     if (response) {
-      setTestMessages(prev => [...prev, { id: Date.now().toString(), senderId: 'ai', senderName: 'Lucky AI', senderRole: 'AI' as any, content: response, timestamp: new Date().toISOString() }]);
+      setTestMessages(prev => [...prev, { id: Date.now().toString(), senderId: 'ai', senderName: '🍀Trợ lý Lucky', senderRole: 'AI' as any, content: response, timestamp: new Date().toISOString() }]);
     }
   };
 
-  // CHUẨN HÓA XỬ LÝ ID CHO MONGODB
   const handleDeleteMetric = async (metric: HealthMetric) => {
     const mid = metric.id || (metric as any)._id;
     if (!mid) return alert("Không tìm thấy ID bản ghi");
@@ -103,7 +102,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden min-h-[75vh] flex flex-col">
-      {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row bg-slate-50/50 p-4 m-6 rounded-3xl border border-slate-100 gap-4 shrink-0">
         <div className="flex bg-white/50 p-1 rounded-2xl flex-grow overflow-x-auto no-scrollbar">
           <button onClick={() => setActiveTab('users')} className={`flex-1 min-w-[100px] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Hội viên</button>
@@ -111,7 +109,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
           <button onClick={() => setActiveTab('ai')} className={`flex-1 min-w-[100px] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === 'ai' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}>Huấn luyện AI</button>
         </div>
         
-        {/* Debug Controls */}
         <div className="flex items-center gap-2 bg-white/50 p-1 rounded-2xl px-4">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-2">Gỡ lỗi:</span>
           <button onClick={() => setShowConsole(!showConsole)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${showConsole ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' : 'bg-slate-100 text-slate-400'}`}>📟</button>
@@ -247,7 +244,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             {/* AI Sandbox Console */}
             <div className="bg-slate-900 rounded-[2.5rem] p-6 text-emerald-400 font-mono text-[11px] h-[350px] flex flex-col shadow-2xl relative border-4 border-slate-800 shrink-0">
               <div className="mb-3 border-b border-emerald-900/50 pb-2 text-[9px] font-black uppercase tracking-widest opacity-60 flex justify-between">
-                <span>> Lucky AI Sandbox Console</span>
+                <span>> 🍀Trợ lý Lucky Sandbox Console</span>
                 <button onClick={() => setTestMessages([])} className="text-emerald-700 hover:text-emerald-400 transition-colors">CLEAN</button>
               </div>
               <div className="flex-grow overflow-y-auto space-y-2 no-scrollbar mb-4">
@@ -258,7 +255,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                     <span className="whitespace-pre-wrap">{m.content}</span>
                   </div>
                 ))}
-                {isTestTyping && <div className="animate-pulse text-emerald-600">> AI đang phản hồi...</div>}
+                {isTestTyping && <div className="animate-pulse text-emerald-600">> 🍀Trợ lý Lucky đang phản hồi...</div>}
               </div>
               <div className="flex gap-2 p-1.5 bg-emerald-950/20 rounded-xl border border-emerald-900/30">
                 <span className="pl-3 py-2 text-emerald-600 font-black">></span>
@@ -270,7 +267,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         )}
       </div>
 
-      {/* Modal Sửa Chỉ Số - HOÀN THIỆN ĐẦY ĐỦ CÁC TRƯỜNG */}
       {editingMetric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1000] flex items-center justify-center p-4 animate-in zoom-in-95 overflow-y-auto">
           <form onSubmit={handleUpdateMetric} className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 space-y-6 shadow-2xl my-auto">
@@ -283,42 +279,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label>
-                <input type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
-                <input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Tỉ lệ mỡ (%)</label>
-                <input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cơ bắp (kg)</label>
-                <input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Khối xương (kg)</label>
-                <input type="number" step="0.1" value={editingMetric.boneMinerals} onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Lượng nước (%)</label>
-                <input type="number" step="0.1" value={editingMetric.waterPercent} onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label>
-                <input type="number" value={editingMetric.visceralFat} onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">BMR (kcal)</label>
-                <input type="number" value={editingMetric.energy} onChange={e => setEditingMetric({...editingMetric, energy: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Tuổi sinh học</label>
-                <input type="number" value={editingMetric.bioAge} onChange={e => setEditingMetric({...editingMetric, bioAge: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" />
-              </div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Ngày đo</label><input type="date" value={editingMetric.date} onChange={e => setEditingMetric({...editingMetric, date: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label><input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Tỉ lệ mỡ (%)</label><input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Cơ bắp (kg)</label><input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Khối xương (kg)</label><input type="number" step="0.1" value={editingMetric.boneMinerals} onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Lượng nước (%)</label><input type="number" step="0.1" value={editingMetric.waterPercent} onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label><input type="number" value={editingMetric.visceralFat} onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">BMR (kcal)</label><input type="number" value={editingMetric.energy} onChange={e => setEditingMetric({...editingMetric, energy: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
+              <div className="space-y-1"><label className="text-[9px] font-black text-slate-400 uppercase ml-1">Tuổi sinh học</label><input type="number" value={editingMetric.bioAge} onChange={e => setEditingMetric({...editingMetric, bioAge: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-1 focus:ring-emerald-500 font-bold text-xs" /></div>
             </div>
 
             <div className="flex gap-4 pt-4 border-t border-slate-50">
@@ -329,7 +298,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         </div>
       )}
 
-      {/* Modal Sửa Hội viên */}
       {editingUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[210] flex items-center justify-center p-4 animate-in zoom-in-95">
           <form onSubmit={async (e) => { e.preventDefault(); await Database.updateUser((editingUser as any).id || (editingUser as any)._id, editingUser); setEditingUser(null); onRefresh(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 shadow-2xl">

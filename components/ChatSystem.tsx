@@ -62,7 +62,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     const aiMessage: Message = {
       id: `msg_ai_${Date.now()}_${Math.random()}`, 
       senderId: 'ai_coach', 
-      senderName: 'Lucky AI', 
+      senderName: '🍀Trợ lý Lucky', 
       senderRole: 'AI' as any, 
       content: textToDisplay, 
       timestamp: new Date().toISOString()
@@ -157,16 +157,16 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
     let updatedMessages = [...selectedChat.messages, newMessage];
     
-    // NÂNG CẤP: Kiểm tra từ khóa trong chat 1-on-1 (Không phải AI chat)
+    // KIỂM TRA TỪ KHÓA TRONG CHAT 1-ON-1
     if (!isTargetAI) {
-      const lowerText = inputText.toLowerCase();
+      const lowerText = (inputText || "").toLowerCase();
       const matchedKnowledge = knowledge.find(k => lowerText.includes(k.keyword.toLowerCase()));
       
       if (matchedKnowledge) {
         const aiPrompt: Message = {
           id: `msg_prompt_${Date.now()}`,
           senderId: 'ai_coach',
-          senderName: 'Lucky AI',
+          senderName: '🍀Trợ lý Lucky',
           senderRole: 'AI' as any,
           content: AI_PROMPT_TEXT,
           timestamp: new Date().toISOString()
@@ -203,7 +203,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     }
   };
 
-  // NÂNG CẤP: Xử lý lựa chọn Tham khảo/Bỏ qua trong chat 1-on-1
   const handleAiChoice = async (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => {
     const choiceMessage: Message = {
       id: `msg_choice_${Date.now()}`,
@@ -222,14 +221,19 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
     if (choice === 'tham khảo') {
       setIsTypingAI(true);
-      // Tìm lại từ khóa gần nhất để AI phản hồi đúng chủ đề
-      const lastUserMsg = [...chat.messages].reverse().find(m => m.senderId !== 'ai_coach' && m.content.length > 1 && !m.content.includes('lựa chọn'));
-      const triggerText = lastUserMsg ? lastUserMsg.content : "Vui lòng cung cấp thông tin liên quan.";
+      // Tìm lại nội dung trước tin nhắn nhắc lựa chọn để AI tư vấn
+      const lastUserMsg = [...chat.messages].reverse().find(m => 
+        m.senderRole !== 'AI' && 
+        !m.content.includes('lựa chọn') && 
+        m.content.length > 2
+      );
+      
+      const triggerText = lastUserMsg ? lastUserMsg.content : "Vui lòng cung cấp kiến thức liên quan.";
 
       try {
         const aiResponse = await getAICoachResponse(
           updatedMessages, knowledge, rules, 
-          `Hội viên vừa yêu cầu tôi hỗ trợ về nội dung này: "${triggerText}". Hãy cung cấp kiến thức liên quan từ kho dữ liệu.`,
+          `Hội viên vừa chọn "Tham khảo" về chủ đề này: "${triggerText}". Hãy cung cấp thông tin khoa học liên quan.`,
           currentUser.healthGoal, latestMetric
         );
         
@@ -238,13 +242,13 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
           setPendingQueue(prev => [...prev, ...chunks]);
         }
       } catch (e) {
-        setPendingQueue(prev => [...prev, "Tôi xin lỗi, có lỗi khi lấy dữ liệu kiến thức."]);
+        setPendingQueue(prev => [...prev, "Tôi xin lỗi, có lỗi khi truy xuất dữ liệu kiến thức."]);
       }
     }
   };
 
   const getOtherUser = (chat: ChatSession) => {
-    if (chat.coachId === 'ai_coach') return { fullName: 'Lucky AI Advisor', role: 'AI', id: 'ai_coach' };
+    if (chat.coachId === 'ai_coach') return { fullName: '🍀Trợ lý Lucky', role: 'AI', id: 'ai_coach' };
     const otherId = currentUid === chat.memberId ? chat.coachId : chat.memberId;
     return users.find(u => ((u as any).id || (u as any)._id) === otherId);
   };
@@ -281,7 +285,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
               return (
                 <div key={chat.id} onClick={() => { setSelectedChat(chat); setShowContacts(false); }} className="p-4 bg-white rounded-2xl cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all border border-slate-50 flex items-center gap-3 group">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${other.id === 'ai_coach' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                    {other.id === 'ai_coach' ? 'AI' : other.fullName.charAt(0)}
+                    {other.id === 'ai_coach' ? '🍀' : other.fullName.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center">
@@ -303,15 +307,18 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                 return (
                   <div key={msg.id} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
                     <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
-                      isAiPrompt ? 'bg-emerald-50 border-2 border-emerald-500 text-slate-800 rounded-xl animate-bounce-short shadow-emerald-100' :
-                      msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none' : 
+                      isAiPrompt ? 'bg-emerald-50 border-2 border-emerald-500 text-slate-800 rounded-xl animate-bounce shadow-emerald-100' :
+                      msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none font-medium' : 
                       isMyMessage ? 'bg-emerald-600 text-white rounded-tr-none' : 
                       'bg-white text-slate-800 rounded-tl-none border border-slate-100'
                     }`}>
                       {msg.imageUrl && <img src={msg.imageUrl} className="rounded-xl mb-2 max-h-40 w-auto shadow-sm" alt="Attach" />}
-                      {msg.content}
+                      <div className="flex flex-col gap-1">
+                        {!isMyMessage && <span className="text-[9px] font-black uppercase text-slate-400 mb-1">{msg.senderName}</span>}
+                        {msg.content}
+                      </div>
 
-                      {/* Nâng cấp: Hiển thị nút lựa chọn nếu là tin nhắn prompt của AI */}
+                      {/* Hiển thị nút lựa chọn nếu là tin nhắn gợi ý AI */}
                       {isAiPrompt && (
                         <div className="mt-4 flex gap-2">
                           <button 
@@ -339,7 +346,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                     <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce"></span>
                     <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
                     <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
-                    <span className="text-[9px] font-black uppercase tracking-widest ml-1">AI Advisor đang soạn phản hồi...</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest ml-1">🍀 Trợ lý đang soạn phản hồi...</span>
                   </div>
                 </div>
               )}

@@ -42,10 +42,6 @@ const formatDateVN = (dateStr: string) => {
   }
 };
 
-/**
- * Hàm vẽ hình dáng khi Active: 
- * Sử dụng Sector của Recharts để đảm bảo hiệu ứng phóng to mượt mà nhất.
- */
 const renderActiveShape = (props: any) => {
   const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
   return (
@@ -54,7 +50,7 @@ const renderActiveShape = (props: any) => {
         cx={cx}
         cy={cy}
         innerRadius={innerRadius}
-        outerRadius={outerRadius + 10} // Hiệu ứng phóng to 10px
+        outerRadius={outerRadius + 10}
         startAngle={startAngle}
         endAngle={endAngle}
         fill={fill}
@@ -82,10 +78,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
 
-  /**
-   * Cập nhật dữ liệu Pie: Chỉ giữ Cơ, Nước, Mỡ.
-   * Màu sắc: Cơ (Đỏ), Nước (Xanh), Mỡ (Vàng).
-   */
   const pieData = useMemo(() => {
     if (!latestMetric) return [];
     
@@ -94,9 +86,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     const muscle = latestMetric.muscleMass || 0;
 
     return [
-      { name: 'Cơ', value: muscle, color: '#ef4444' },         // Đỏ
-      { name: 'Nước', value: waterMass, color: '#0ea5e9' },    // Xanh
-      { name: 'Mỡ', value: fatMass, color: '#fde047' },       // Vàng
+      { name: 'Cơ', value: muscle, color: '#ef4444' },
+      { name: 'Nước', value: waterMass, color: '#0ea5e9' },
+      { name: 'Mỡ', value: fatMass, color: '#fde047' },
     ];
   }, [latestMetric]);
 
@@ -165,57 +157,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Biểu đồ Tròn (ĐÃ KHÔI PHỤC HIỆU ỨNG GỐC VÀ TỐI ƯU) */}
-        <div 
-          className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative"
-          onClick={() => setActiveIndex(null)}
-        >
+        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative" onClick={() => setActiveIndex(null)}>
           <div className="mb-2">
             <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Cơ (Đỏ), Nước (Xanh), Mỡ (Vàng)</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">🍀Trợ lý Lucky phân tích: Cơ, Nước, Mỡ</p>
           </div>
           
           <div className="flex-grow flex items-center justify-center relative">
             {latestMetric ? (
               <div className="relative w-full h-full flex items-center justify-center">
-                {/* Tâm biểu đồ */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 select-none">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">
-                    {activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}
-                  </span>
-                  <span className="text-3xl font-black text-slate-800 tabular-nums">
-                    {activeIndex !== null ? `${pieData[activeIndex].value}kg` : `${latestMetric.weight}kg`}
-                  </span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">{activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}</span>
+                  <span className="text-3xl font-black text-slate-800 tabular-nums">{activeIndex !== null ? `${pieData[activeIndex].value}kg` : `${latestMetric.weight}kg`}</span>
                 </div>
                 
                 <ResponsiveContainer width="100%" height={340}>
                   <PieChart>
-                    <Pie
-                      activeIndex={activeIndex === null ? undefined : activeIndex}
-                      activeShape={renderActiveShape}
-                      data={pieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={80}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                      onMouseEnter={onPieEnter}
-                      onMouseLeave={onPieLeave}
-                      onClick={(e, index) => { e.stopPropagation(); setActiveIndex(index); }}
-                      stroke="none"
-                      animationBegin={0}
-                      animationDuration={1500}
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
+                    <Pie activeIndex={activeIndex === null ? undefined : activeIndex} activeShape={renderActiveShape} data={pieData} cx="50%" cy="50%" innerRadius={80} outerRadius={100} paddingAngle={5} dataKey="value" onMouseEnter={onPieEnter} onMouseLeave={onPieLeave} onClick={(e, index) => { e.stopPropagation(); setActiveIndex(index); }} stroke="none" animationBegin={0} animationDuration={1500}>
+                      {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                     </Pie>
-                    <Legend 
-                      verticalAlign="bottom" 
-                      height={36} 
-                      wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} 
-                    />
+                    <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -225,13 +186,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
           </div>
         </div>
 
-        {/* Biểu đồ Xu hướng */}
         <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px]">
           <div className="flex justify-between items-start mb-8">
-            <div>
-              <h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sự thay đổi theo thời gian</p>
-            </div>
+            <div><h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sự thay đổi theo thời gian</p></div>
             <div className="flex gap-1 overflow-x-auto no-scrollbar">
               {TIME_RANGES.map(range => (
                 <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1 text-[9px] font-black rounded-xl border transition-all ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-slate-50 text-slate-400 border-transparent'}`}>{range.label}</button>
@@ -263,15 +220,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
           <table className="w-full text-left text-[11px] min-w-[1000px]">
             <thead className="bg-white border-b border-slate-50">
               <tr className="text-slate-400 font-black uppercase tracking-widest">
-                <th className="p-4">Ngày đo</th>
-                <th className="p-4">Cân (kg)</th>
-                <th className="p-4">Mỡ (%)</th>
-                <th className="p-4">Cơ (kg)</th>
-                <th className="p-4">Cân đối</th>
-                <th className="p-4">Xương (kg)</th>
-                <th className="p-4">Nước (%)</th>
-                <th className="p-4">Mỡ nội tạng</th>
-                <th className="p-4">BMR (kcal)</th>
+                <th className="p-4">Ngày đo</th><th className="p-4">Cân (kg)</th><th className="p-4">Mỡ (%)</th><th className="p-4">Cơ (kg)</th><th className="p-4">Cân đối</th><th className="p-4">Xương (kg)</th><th className="p-4">Nước (%)</th><th className="p-4">Mỡ nội tạng</th><th className="p-4">BMR (kcal)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -291,9 +240,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                   </tr>
                 );
               })}
-              {sortedMetrics.length === 0 && (
-                <tr><td colSpan={9} className="p-10 text-center text-slate-400 font-medium">Chưa có dữ liệu lịch sử</td></tr>
-              )}
+              {sortedMetrics.length === 0 && <tr><td colSpan={9} className="p-10 text-center text-slate-400 font-medium">Chưa có dữ liệu lịch sử</td></tr>}
             </tbody>
           </table>
         </div>

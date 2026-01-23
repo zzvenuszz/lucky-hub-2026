@@ -118,17 +118,22 @@ export const getAICoachResponse = async (
       .filter(k => latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()))
       .map(k => `- ${k.keyword}: ${k.content}`).join("\n");
 
-    const systemInstruction = `Bạn là "Lucky AI Advisor". Mục tiêu hội viên: ${userGoal}.
+    const systemInstruction = `Bạn là "🍀Trợ lý Lucky". Mục tiêu hội viên: ${userGoal}.
 Chỉ số mới nhất: ${latestMetric ? `Cân ${latestMetric.weight}kg, Mỡ ${latestMetric.bodyFat}%, Cơ ${latestMetric.muscleMass}kg, Cân đối: ${latestMetric.balanceIndex}` : "Chưa có dữ liệu"}.
 
 QUY TẮC:
 ${systemRules}
 
 KIẾN THỨC:
-${contextKnowledge}`;
+${contextKnowledge}
+
+PHONG CÁCH:
+- Bạn là một trợ lý sức khỏe thông minh, chuyên nghiệp và tận tâm.
+- Trả lời ngắn gọn, đi thẳng vào vấn đề kiến thức.
+- Nếu bạn tham gia vào cuộc hội thoại giữa 2 người, hãy đóng vai trò là chuyên gia tư vấn trung lập cung cấp dữ liệu khoa học.`;
 
     const formattedHistory = history.slice(-6).map(m => ({
-      role: m.senderId === 'ai_coach' ? 'model' : 'user',
+      role: (m.senderId === 'ai_coach' || m.senderRole === 'AI') ? 'model' : 'user',
       parts: [{ text: m.content }]
     }));
 
