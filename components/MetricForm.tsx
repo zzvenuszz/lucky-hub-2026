@@ -29,7 +29,6 @@ const formatDateVN = (dateStr: string) => {
 };
 
 const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose }) => {
-  // Lấy ngày hiện tại chuẩn ISO YYYY-MM-DD theo múi giờ địa phương
   const getTodayISO = () => {
     const now = new Date();
     const offset = now.getTimezoneOffset();
@@ -48,7 +47,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
-  // Hàm kích hoạt bộ chọn ngày của trình duyệt
   const triggerDatePicker = () => {
     if (dateInputRef.current) {
       try {
@@ -88,7 +86,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         if (!isBulk) {
           try {
             const extracted = await extractMetricsFromImage(compressedBase64);
-            if (extracted && (extracted.weight && extracted.weight > 0)) {
+            if (extracted && extracted.weight && extracted.weight > 0) {
               setFormData(prev => ({ 
                 ...prev, 
                 ...extracted, 
@@ -103,7 +101,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             alert("⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh. Vui lòng thử lại!");
           } finally { setLoadingAI(false); }
         } else {
-          const currentYear = new Date().getFullYear();
           try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
@@ -111,7 +108,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               contents: { 
                 parts: [
                   { inlineData: { mimeType: 'image/jpeg', data: compressedBase64 } }, 
-                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ: date (YYYY-MM-DD), weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. NẾU KHÔNG THẤY CHỈ SỐ CÂN ĐỐI (balanceIndex) THÌ TRẢ VỀ 0. Nếu thấy ngày dạng DD/MM, hãy tự hiểu là năm ${currentYear}. NẾU KHÔNG CÓ DỮ LIỆU, TRẢ VỀ MẢNG RỖNG [].` }
+                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ: date (YYYY-MM-DD), weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. NẾU KHÔNG CÓ DỮ LIỆU HỢP LỆ, TRẢ VỀ MẢNG RỖNG [].` }
                 ] 
               },
               config: { 
@@ -152,7 +149,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
       };
     };
     reader.readAsDataURL(file);
-    // Reset file input để có thể chọn lại cùng 1 file nếu cần
     e.target.value = '';
   };
 
@@ -243,27 +239,13 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
-                  
-                  <div 
-                    className="relative cursor-pointer group"
-                    onClick={triggerDatePicker}
-                  >
-                    <input 
-                      ref={dateInputRef}
-                      type="date" 
-                      value={formData.date} 
-                      onChange={e => setFormData({...formData, date: e.target.value})}
-                      className="absolute opacity-0 pointer-events-none"
-                    />
-                    
+                  <div className="relative cursor-pointer group" onClick={triggerDatePicker}>
+                    <input ref={dateInputRef} type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="absolute opacity-0 pointer-events-none" />
                     <div className="w-full px-5 py-4 bg-emerald-50 text-emerald-800 rounded-2xl border-2 border-emerald-100 group-hover:bg-emerald-100 group-hover:border-emerald-300 transition-all flex items-center justify-between shadow-sm">
-                      <span className="text-2xl font-black tracking-tight select-none">
-                        {formatDateVN(formData.date)}
-                      </span>
+                      <span className="text-2xl font-black tracking-tight select-none">{formatDateVN(formData.date)}</span>
                       <span className="text-xl">📅</span>
                     </div>
                   </div>
-                  <p className="text-[9px] text-slate-400 italic ml-1">* Bấm vào vùng màu xanh để chọn ngày từ lịch. Mặc định là hôm nay.</p>
                 </div>
 
                 {metricFields.map(field => (

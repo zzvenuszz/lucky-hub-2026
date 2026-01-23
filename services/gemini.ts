@@ -36,7 +36,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: `Phân tích ảnh InBody. TRÍCH XUẤT 9 CHỈ SỐ: 
+          { text: `Bạn là chuyên gia đọc phiếu InBody. TRÍCH XUẤT CÁC CHỈ SỐ: 
           1. weight (Cân nặng)
           2. bodyFat (Mỡ cơ thể - %)
           3. muscleMass (Lượng cơ - kg)
@@ -45,13 +45,12 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
           6. waterPercent (Nước - %)
           7. energy (Năng Lượng - Kcal)
           8. bioAge (Tuổi cơ thể)
-          9. balanceIndex (Cân đối - Thường ghi là Balance/Body Balance).
+          9. balanceIndex (Cân đối).
           
-          VỀ NGÀY THÁNG: Nếu thấy DD/MM hoặc DD-MM, hãy tự hiểu là năm ${currentYear} và trả về YYYY-MM-DD.
-          
-          LƯU Ý QUAN TRỌNG: 
-          - NẾU HÌNH ẢNH KHÔNG CHỨA BẤT KỲ CHỈ SỐ INBODY NÀO, HOẶC QUÁ MỜ KHÔNG THỂ ĐỌC ĐƯỢC: Hãy trả về tất cả các trường là 0.
-          - Chỉ trích xuất nếu số liệu rõ ràng.` }
+          LƯU Ý ĐẶC BIỆT QUAN TRỌNG:
+          - Nếu hình ảnh KHÔNG phải là phiếu đo chỉ số (InBody, sổ tay sức khỏe) hoặc ảnh QUÁ MỜ, BỊ LÓA không thể đọc được con số nào: Hãy trả về JSON với tất cả các trường giá trị là 0.
+          - Chỉ trích xuất khi bạn chắc chắn về con số đó.
+          - Ngày tháng (date): Nếu có DD/MM, hãy dùng năm ${currentYear} (YYYY-MM-DD).` }
         ]
       },
       config: {
@@ -76,9 +75,9 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 
     const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
     
-    // Kiểm tra tính hợp lệ: Nếu cân nặng và mỡ cơ thể đều bằng 0 hoặc không có, coi như không tìm thấy dữ liệu
+    // Kiểm tra tính hợp lệ: Nếu cân nặng bằng 0 hoặc không có, coi như ảnh không hợp lệ
     if (!result.weight || result.weight <= 0) {
-      log("Không tìm thấy chỉ số hợp lệ trong ảnh.", "error");
+      log("Không tìm thấy chỉ số hợp lệ hoặc ảnh quá mờ.", "error");
       return null;
     }
 
@@ -96,7 +95,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       result.date = new Date().toISOString().split('T')[0];
     }
 
-    log(`Kết quả: ${result.weight}kg - Cân đối: ${result.balanceIndex} - Ngày: ${result.date}`, "success");
+    log(`Trích xuất thành công: ${result.weight}kg`, "success");
     return result;
   }).catch(e => {
     log(`LỖI: ${e.message}`, "error");
