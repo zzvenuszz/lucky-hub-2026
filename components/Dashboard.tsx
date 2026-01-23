@@ -109,18 +109,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     return metrics.filter(m => new Date(m.date) >= cutoff).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
 
-  const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
-    if (prev === undefined || current === prev) return null;
-    const isUp = current > prev;
-    const isGood = inverse ? !isUp : isUp;
-    return <span className={isGood ? 'text-emerald-500' : 'text-rose-500'}>{isUp ? '↑' : '↓'}</span>;
-  };
-
   return (
     <div className="space-y-6 pb-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub Dashboard</h2>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Trung tâm điều khiển</h2>
           {user.role !== UserRole.MEMBER ? (
             <div className="mt-2 flex items-center space-x-2">
               <span className="text-sm text-slate-500 font-medium">Hội viên:</span>
@@ -208,41 +201,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
-          <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Lịch sử chỉ số chi tiết (DD/MM/YYYY)</h3>
-          {latestMetric && <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase">Lần đo mới nhất: {formatDateVN(latestMetric.date)}</span>}
-        </div>
-        <div className="overflow-x-auto no-scrollbar">
-          <table className="w-full text-left text-[11px] min-w-[1000px]">
-            <thead className="bg-white border-b border-slate-50">
-              <tr className="text-slate-400 font-black uppercase tracking-widest">
-                <th className="p-4">Ngày đo</th><th className="p-4">Cân (kg)</th><th className="p-4">Mỡ (%)</th><th className="p-4">Cơ (kg)</th><th className="p-4">Cân đối</th><th className="p-4">Xương (kg)</th><th className="p-4">Nước (%)</th><th className="p-4">Mỡ nội tạng</th><th className="p-4">BMR (kcal)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {sortedMetrics.map((m, idx) => {
-                const prev = sortedMetrics[idx + 1];
-                return (
-                  <tr key={m.id || (m as any)._id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="p-4 font-bold text-slate-700">{formatDateVN(m.date)}</td>
-                    <td className="p-4 font-black text-emerald-600">{m.weight} {renderTrendIcon(m.weight, prev?.weight)}</td>
-                    <td className="p-4 font-bold text-rose-500">{m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}</td>
-                    <td className="p-4 font-bold text-blue-600">{m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass)}</td>
-                    <td className="p-4 font-black text-indigo-600">{m.balanceIndex ?? 0}</td>
-                    <td className="p-4 text-slate-600">{m.boneMinerals || '--'}</td>
-                    <td className="p-4 text-sky-600">{m.waterPercent}%</td>
-                    <td className="p-4 font-bold text-amber-600">{m.visceralFat || '--'}</td>
-                    <td className="p-4 text-slate-500">{m.energy || '--'}</td>
-                  </tr>
-                );
-              })}
-              {sortedMetrics.length === 0 && <tr><td colSpan={9} className="p-10 text-center text-slate-400 font-medium">Chưa có dữ liệu lịch sử</td></tr>}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>

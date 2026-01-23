@@ -1,0 +1,108 @@
+
+import React, { useMemo, useState, useEffect } from 'react';
+import { HealthMetric, User, UserRole } from '../types.ts';
+import { Database } from '../services/database.ts';
+
+interface MetricsManagementProps {
+  user: User;
+  users: User[];
+  onAddMetric: () => void;
+  refreshTrigger?: number;
+}
+
+const formatDateVN = (dateStr: string) => {
+  if (!dateStr) return '--/--/----';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+};
+
+const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
+  if (prev === undefined || current === prev) return null;
+  const isUp = current > prev;
+  const isGood = inverse ? !isUp : isUp;
+  return <span className={isGood ? 'text-emerald-500' : 'text-rose-500'}>{isUp ? '↑' : '↓'}</span>;
+};
+
+const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
+  const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
+  const [metrics, setMetrics] = useState<HealthMetric[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      const data = await Database.getMetrics(selectedUserId);
+      setMetrics(data || []);
+    };
+    load();
+  }, [selectedUserId, refreshTrigger]);
+
+  const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Quản lý chỉ số cơ thể</h2>
+          <p className="text-slate-400 text-xs font-medium mt-1 uppercase tracking-widest">Lịch sử đo lường chi tiết</p>
+        </div>
+        <div className="flex items-center gap-4">
+          {user.role !== UserRole.MEMBER && (
+            <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} className="bg-emerald-50 text-emerald-700 font-bold px-4 py-2 rounded-xl border-none text-sm outline-none">
+              {users.map(u => <option key={(u as any).id || (u as any)._id} value={(u as any).id || (u as any)._id}>{u.fullName}</option>)}
+            </select>
+          )}
+          <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">+ Thêm mới</button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+        <div className="overflow-x-auto no-scrollbar">
+          <table className="w-full text-left text-[11px] min-w-[1000px]">
+            <thead className="bg-slate-50 border-b border-slate-100">
+              <tr className="text-slate-400 font-black uppercase tracking-widest">
+                <th className="p-5">Ngày đo</th>
+                <th className="p-5">Cân (kg)</th>
+                <th className="p-5">Mỡ (%)</th>
+                <th className="p-5">Cơ (kg)</th>
+                <th className="p-5">Cân đối</th>
+                <th className="p-5">Xương (kg)</th>
+                <th className="p-5">Nước (%)</th>
+                <th className="p-5">Mỡ nội tạng</th>
+                <th className="p-5">BMR (kcal)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {sortedMetrics.map((m, idx) => {
+                const prev = sortedMetrics[idx + 1];
+                return (
+                  <tr key={m.id || (m as any)._id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-5 font-bold text-slate-700">{formatDateVN(m.date)}</td>
+                    <td className="p-5 font-black text-emerald-600">{m.weight} {renderTrendIcon(m.weight, prev?.weight)}</td>
+                    <td className="p-5 font-bold text-rose-500">{m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}</td>
+                    <td className="p-5 font-bold text-blue-600">{m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass)}</td>
+                    <td className="p-5 font-black text-indigo-600">{m.balanceIndex ?? 0}</td>
+                    <td className="p-5 text-slate-600">{m.boneMinerals || '--'}</td>
+                    <td className="p-5 text-sky-600">{m.waterPercent}%</td>
+                    <td className="p-5 font-bold text-amber-600">{m.visceralFat || '--'}</td>
+                    <td className="p-5 text-slate-500">{m.energy || '--'}</td>
+                  </tr>
+                );
+              })}
+              {sortedMetrics.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MetricsManagement;

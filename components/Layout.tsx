@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { User, UserRole } from '../types.ts';
 
 interface LayoutProps {
@@ -11,6 +11,9 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, setActiveTab }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
   const getAvatar = () => {
     if (user.avatar) return user.avatar;
     return user.gender === 'Nữ'
@@ -18,19 +21,34 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
       : `https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=f8fafc`;
   };
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleMenuClick = (tab: string) => {
+    setActiveTab(tab);
+    setIsMenuOpen(false);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50">
       <header className="bg-white border-b border-slate-100 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
-            <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-emerald-100 group-hover:scale-105 transition-transform">L</div>
+            <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-100 group-hover:scale-110 group-hover:rotate-12 transition-all">🍀</div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-800">Lucky Hub</h1>
           </div>
           
           <nav className="hidden md:flex items-center space-x-1 bg-slate-50 p-1 rounded-2xl">
             {[
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'profile', label: 'Hồ sơ' }
+              { id: 'dashboard', label: 'Tổng quan' },
+              { id: 'metrics', label: 'Chỉ số' }
             ].map(tab => (
               <button 
                 key={tab.id} onClick={() => setActiveTab(tab.id)} 
@@ -39,14 +57,6 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
                 {tab.label}
               </button>
             ))}
-            {user.role === UserRole.ADMIN && (
-              <button 
-                onClick={() => setActiveTab('admin')} 
-                className={`px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'admin' ? 'bg-amber-500 text-white shadow-lg shadow-amber-100' : 'bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-100'}`}
-              >
-                🛡️ Quản trị
-              </button>
-            )}
           </nav>
 
           <div className="flex items-center space-x-4">
@@ -54,10 +64,44 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
               <div className="text-sm font-bold text-slate-800">{user.fullName}</div>
               <div className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">{user.role}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl border border-slate-100 shadow-sm overflow-hidden bg-slate-50 cursor-pointer hover:ring-2 hover:ring-emerald-500 transition-all" onClick={() => setActiveTab('profile')}>
-              <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover" />
+            
+            <div className="relative" ref={menuRef}>
+              <div 
+                className={`w-12 h-12 rounded-2xl border-2 transition-all cursor-pointer overflow-hidden shadow-sm ${isMenuOpen ? 'border-emerald-500 scale-105 ring-4 ring-emerald-50' : 'border-slate-100 hover:border-emerald-300'}`}
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+              >
+                <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover" />
+              </div>
+
+              {isMenuOpen && (
+                <div className="absolute right-0 mt-3 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 py-3 z-[100] animate-in slide-in-from-top-2 duration-200">
+                  <div className="px-5 py-3 border-b border-slate-50 mb-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tài khoản</p>
+                    <p className="font-bold text-slate-800 truncate">{user.fullName}</p>
+                  </div>
+                  
+                  <div className="px-2 space-y-1">
+                    <button onClick={() => handleMenuClick('profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
+                      <span className="text-lg group-hover:scale-110 transition-transform">👤</span> Hồ sơ cá nhân
+                    </button>
+                    <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
+                      <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Quản lý chỉ số
+                    </button>
+                    {user.role === UserRole.ADMIN && (
+                      <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
+                        <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Admin Panel
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-slate-50 px-2">
+                    <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-rose-500 hover:bg-rose-50 transition-all text-sm font-black uppercase tracking-widest group">
+                      <span className="text-lg group-hover:translate-x-1 transition-transform">🚪</span> Đăng xuất
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <button onClick={onLogout} className="p-2.5 hover:bg-red-50 text-red-400 rounded-xl transition-all hover:scale-110 active:scale-90" title="Đăng xuất">🚪</button>
           </div>
         </div>
       </header>
