@@ -44,8 +44,18 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [loadingAI, setLoadingAI] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
+  const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dateInputRef = useRef<HTMLInputElement>(null);
+
+  // Tự động ẩn thông báo sau 5 giây
+  useEffect(() => {
+    if (statusMsg) {
+      const timer = setTimeout(() => setStatusMsg(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMsg]);
 
   const triggerDatePicker = () => {
     if (dateInputRef.current) {
@@ -66,8 +76,10 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const handleAIUpload = async (e: React.ChangeEvent<HTMLInputElement>, isBulk: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
     setLoadingAI(true);
     setBulkMode(isBulk);
+    setStatusMsg(null); // Xóa thông báo cũ khi bắt đầu tác vụ mới
 
     const reader = new FileReader();
     reader.onloadend = async () => {
@@ -86,6 +98,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         if (!isBulk) {
           try {
             const extracted = await extractMetricsFromImage(compressedBase64);
+            setLoadingAI(false);
+
             if (extracted && extracted.weight && extracted.weight > 0) {
               setFormData(prev => ({ 
                 ...prev, 
@@ -93,13 +107,20 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 balanceIndex: extracted.balanceIndex ?? 0, 
                 date: extracted.date || prev.date 
               }));
-              alert(`✅ Lucky AI đã trích xuất xong!\n\n📅 Ngày đo: ${formatDateVN(extracted.date || '')}\n⚖️ Cân nặng: ${extracted.weight}kg\n🔥 Mỡ cơ thể: ${extracted.bodyFat}%\n💎 Cân đối: ${extracted.balanceIndex ?? 0}`);
+              setStatusMsg({ 
+                text: `✅ Lucky AI đã trích xuất xong! (Cân nặng: ${extracted.weight}kg, Mỡ: ${extracted.bodyFat}%)`, 
+                type: 'success' 
+              });
             } else {
-              alert("⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ. Vui lòng đảm bảo ảnh chụp tờ InBody rõ nét, không bị lóa hoặc quá mờ!");
+              setStatusMsg({ 
+                text: "⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ. Vui lòng đảm bảo ảnh rõ nét, không bị lóa hoặc quá mờ!", 
+                type: 'error' 
+              });
             }
           } catch (err) {
-            alert("⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh. Vui lòng thử lại!");
-          } finally { setLoadingAI(false); }
+            setLoadingAI(false);
+            setStatusMsg({ text: "⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh. Vui lòng thử lại!", type: 'error' });
+          }
         } else {
           try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -137,14 +158,17 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             const data = JSON.parse(cleanJsonResponse(response.text || "[]"));
             const validData = data.filter((item: any) => item.weight && item.weight > 0);
             
+            setLoadingAI(false);
             if (validData.length > 0) {
               setBulkPreview(validData.map((item: any) => ({...formData, balanceIndex: 0, ...item})));
+              setStatusMsg({ text: `✅ Đã quét thành công ${validData.length} bản ghi!`, type: 'success' });
             } else {
-              alert("⚠️ Không tìm thấy danh sách chỉ số hợp lệ trong ảnh quét hàng loạt. Vui lòng kiểm tra lại độ rõ nét của tài liệu!");
+              setStatusMsg({ text: "⚠️ Không tìm thấy danh sách chỉ số hợp lệ trong ảnh quét hàng loạt.", type: 'error' });
             }
           } catch (err) {
-            alert("⚠️ Lỗi phân tích ảnh hàng loạt. Vui lòng thử lại!");
-          } finally { setLoadingAI(false); }
+            setLoadingAI(false);
+            setStatusMsg({ text: "⚠️ Lỗi phân tích ảnh hàng loạt. Vui lòng thử lại!", type: 'error' });
+          }
         }
       };
     };
@@ -172,7 +196,18 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           <button onClick={onClose} className="text-2xl hover:scale-110">&times;</button>
         </div>
 
-        <div className="p-8 overflow-y-auto space-y-6 no-scrollbar">
+        <div className="p-8 overflow-y-auto space-y-6 no-scrollbar relative">
+          {/* Custom Notification Element */}
+          {statusMsg && (
+            <div className={`p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-300 shadow-sm ${statusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+              <div className="flex items-center gap-3">
+                <span className="text-lg">{statusMsg.type === 'success' ? '✅' : '⚠️'}</span>
+                <span className="text-xs font-black uppercase tracking-tight">{statusMsg.text}</span>
+              </div>
+              <button onClick={() => setStatusMsg(null)} className="text-lg font-bold opacity-50 hover:opacity-100">&times;</button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button disabled={loadingAI} onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📸</span>

@@ -36,21 +36,12 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       contents: {
         parts: [
           { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: `Bạn là chuyên gia đọc phiếu InBody. TRÍCH XUẤT CÁC CHỈ SỐ: 
-          1. weight (Cân nặng)
-          2. bodyFat (Mỡ cơ thể - %)
-          3. muscleMass (Lượng cơ - kg)
-          4. visceralFat (Mỡ nội tạng)
-          5. boneMinerals (Khoáng chất - kg)
-          6. waterPercent (Nước - %)
-          7. energy (Năng Lượng - Kcal)
-          8. bioAge (Tuổi cơ thể)
-          9. balanceIndex (Cân đối).
+          { text: `Bạn là chuyên gia phân tích phiếu InBody. Hãy trích xuất: weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex.
           
-          LƯU Ý ĐẶC BIỆT QUAN TRỌNG:
-          - Nếu hình ảnh KHÔNG phải là phiếu đo chỉ số (InBody, sổ tay sức khỏe) hoặc ảnh QUÁ MỜ, BỊ LÓA không thể đọc được con số nào: Hãy trả về JSON với tất cả các trường giá trị là 0.
-          - Chỉ trích xuất khi bạn chắc chắn về con số đó.
-          - Ngày tháng (date): Nếu có DD/MM, hãy dùng năm ${currentYear} (YYYY-MM-DD).` }
+          QUY TẮC CỰC KỲ QUAN TRỌNG:
+          1. NẾU HÌNH ẢNH KHÔNG CHỨA CHỈ SỐ SỨC KHỎE, QUÁ MỜ, HOẶC KHÔNG PHẢI LÀ PHIẾU ĐO: Trả về JSON với weight: 0 và các trường khác: 0.
+          2. Ngày tháng (date): Nếu có DD/MM, dùng năm ${currentYear} (YYYY-MM-DD).
+          3. Chỉ trích xuất khi thấy con số rõ ràng.` }
         ]
       },
       config: {
@@ -75,7 +66,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 
     const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
     
-    // Kiểm tra tính hợp lệ: Nếu cân nặng bằng 0 hoặc không có, coi như ảnh không hợp lệ
+    // Kiểm tra tính hợp lệ: Nếu cân nặng là 0, null hoặc không có, coi như ảnh không hợp lệ
     if (!result.weight || result.weight <= 0) {
       log("Không tìm thấy chỉ số hợp lệ hoặc ảnh quá mờ.", "error");
       return null;
