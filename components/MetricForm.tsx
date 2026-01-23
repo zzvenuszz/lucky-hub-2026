@@ -47,6 +47,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (statusMsg) {
@@ -54,6 +55,23 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
       return () => clearTimeout(timer);
     }
   }, [statusMsg]);
+
+  // Hàm kích hoạt trình chọn ngày một cách cưỡng bức (Dùng cho PC)
+  const openDatePicker = () => {
+    if (dateInputRef.current) {
+      try {
+        if ('showPicker' in HTMLInputElement.prototype) {
+          (dateInputRef.current as any).showPicker();
+        } else {
+          dateInputRef.current.focus();
+          dateInputRef.current.click();
+        }
+      } catch (e) {
+        dateInputRef.current.focus();
+        dateInputRef.current.click();
+      }
+    }
+  };
 
   const handleAIUpload = async (e: React.ChangeEvent<HTMLInputElement>, isBulk: boolean) => {
     const file = e.target.files?.[0];
@@ -255,17 +273,18 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
-                  <div className="relative group overflow-hidden">
-                    {/* Native Input Overlay: Phủ lên trên giao diện ảo nhưng để tàng hình để đón click của trình duyệt */}
+                  <div className="relative group overflow-hidden cursor-pointer" onClick={openDatePicker}>
+                    {/* Native Input Overlay: Phủ lên trên giao diện ảo nhưng để tàng hình */}
                     <div className="w-full px-5 py-4 bg-emerald-50 text-emerald-800 rounded-2xl border-2 border-emerald-100 group-hover:bg-emerald-100 group-hover:border-emerald-300 transition-all flex items-center justify-between shadow-sm">
                       <span className="text-2xl font-black tracking-tight select-none">{formatDateVN(formData.date)}</span>
                       <span className="text-xl">📅</span>
                     </div>
                     <input 
+                      ref={dateInputRef}
                       type="date" 
                       value={formData.date} 
                       onChange={e => setFormData({...formData, date: e.target.value})} 
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
                     />
                   </div>
                 </div>
