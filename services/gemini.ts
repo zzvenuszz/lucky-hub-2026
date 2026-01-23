@@ -21,7 +21,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Pr
   }
 }
 
-export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric>> => {
+export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric> | null> => {
   const log = (msg: string, type: string = 'ai') => {
     if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
   };
@@ -45,9 +45,13 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
           6. waterPercent (Nước - %)
           7. energy (Năng Lượng - Kcal)
           8. bioAge (Tuổi cơ thể)
-          9. balanceIndex (Cân đối - Thường ghi là Balance/Body Balance. NẾU KHÔNG CÓ TRẢ VỀ 0).
+          9. balanceIndex (Cân đối - Thường ghi là Balance/Body Balance).
           
-          VỀ NGÀY THÁNG: Nếu thấy DD/MM hoặc DD-MM, hãy tự hiểu là năm ${currentYear} và trả về YYYY-MM-DD.` }
+          VỀ NGÀY THÁNG: Nếu thấy DD/MM hoặc DD-MM, hãy tự hiểu là năm ${currentYear} và trả về YYYY-MM-DD.
+          
+          LƯU Ý QUAN TRỌNG: 
+          - NẾU HÌNH ẢNH KHÔNG CHỨA BẤT KỲ CHỈ SỐ INBODY NÀO, HOẶC QUÁ MỜ KHÔNG THỂ ĐỌC ĐƯỢC: Hãy trả về tất cả các trường là 0.
+          - Chỉ trích xuất nếu số liệu rõ ràng.` }
         ]
       },
       config: {
@@ -65,19 +69,21 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
             energy: { type: Type.NUMBER },
             bioAge: { type: Type.NUMBER },
             visceralFat: { type: Type.NUMBER }
-          },
-          required: ["weight", "bodyFat"]
+          }
         }
       }
     });
 
     const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
     
-    // Đảm bảo balanceIndex luôn có giá trị
-    result.balanceIndex = result.balanceIndex || 0;
+    // Kiểm tra tính hợp lệ: Nếu cân nặng và mỡ cơ thể đều bằng 0 hoặc không có, coi như không tìm thấy dữ liệu
+    if (!result.weight || result.weight <= 0) {
+      log("Không tìm thấy chỉ số hợp lệ trong ảnh.", "error");
+      return null;
+    }
 
     // Hậu xử lý ngày tháng
-    if (result.date) {
+    if (result.date && result.date !== "0") {
       const parts = result.date.split(/[-/]/);
       if (parts.length === 2) {
         result.date = `${currentYear}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
@@ -94,7 +100,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     return result;
   }).catch(e => {
     log(`LỖI: ${e.message}`, "error");
-    return { balanceIndex: 0, date: new Date().toISOString().split('T')[0] };
+    return null;
   });
 };
 

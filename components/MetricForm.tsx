@@ -52,7 +52,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const triggerDatePicker = () => {
     if (dateInputRef.current) {
       try {
-        // Sử dụng phương thức hiện đại showPicker nếu trình duyệt hỗ trợ
         if ('showPicker' in HTMLInputElement.prototype) {
           (dateInputRef.current as any).showPicker();
         } else {
@@ -60,7 +59,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           dateInputRef.current.click();
         }
       } catch (e) {
-        // Fallback cho các trình duyệt cũ
         dateInputRef.current.focus();
         dateInputRef.current.click();
       }
@@ -90,7 +88,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         if (!isBulk) {
           try {
             const extracted = await extractMetricsFromImage(compressedBase64);
-            if (extracted && (extracted.weight || extracted.bodyFat)) {
+            if (extracted && (extracted.weight && extracted.weight > 0)) {
               setFormData(prev => ({ 
                 ...prev, 
                 ...extracted, 
@@ -98,7 +96,11 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 date: extracted.date || prev.date 
               }));
               alert(`✅ Lucky AI đã trích xuất xong!\n\n📅 Ngày đo: ${formatDateVN(extracted.date || '')}\n⚖️ Cân nặng: ${extracted.weight}kg\n🔥 Mỡ cơ thể: ${extracted.bodyFat}%\n💎 Cân đối: ${extracted.balanceIndex ?? 0}`);
+            } else {
+              alert("⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ. Vui lòng đảm bảo ảnh chụp tờ InBody rõ nét, không bị lóa hoặc quá mờ!");
             }
+          } catch (err) {
+            alert("⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh. Vui lòng thử lại!");
           } finally { setLoadingAI(false); }
         } else {
           const currentYear = new Date().getFullYear();
@@ -109,7 +111,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               contents: { 
                 parts: [
                   { inlineData: { mimeType: 'image/jpeg', data: compressedBase64 } }, 
-                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ: date (YYYY-MM-DD), weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. NẾU KHÔNG THẤY CHỈ SỐ CÂN ĐỐI (balanceIndex) THÌ TRẢ VỀ 0. Nếu thấy ngày dạng DD/MM, hãy tự hiểu là năm ${currentYear}.` }
+                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ: date (YYYY-MM-DD), weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. NẾU KHÔNG THẤY CHỈ SỐ CÂN ĐỐI (balanceIndex) THÌ TRẢ VỀ 0. Nếu thấy ngày dạng DD/MM, hãy tự hiểu là năm ${currentYear}. NẾU KHÔNG CÓ DỮ LIỆU, TRẢ VỀ MẢNG RỖNG [].` }
                 ] 
               },
               config: { 
@@ -136,12 +138,22 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               }
             });
             const data = JSON.parse(cleanJsonResponse(response.text || "[]"));
-            setBulkPreview(data.map((item: any) => ({...formData, balanceIndex: 0, ...item})));
+            const validData = data.filter((item: any) => item.weight && item.weight > 0);
+            
+            if (validData.length > 0) {
+              setBulkPreview(validData.map((item: any) => ({...formData, balanceIndex: 0, ...item})));
+            } else {
+              alert("⚠️ Không tìm thấy danh sách chỉ số hợp lệ trong ảnh quét hàng loạt. Vui lòng kiểm tra lại độ rõ nét của tài liệu!");
+            }
+          } catch (err) {
+            alert("⚠️ Lỗi phân tích ảnh hàng loạt. Vui lòng thử lại!");
           } finally { setLoadingAI(false); }
         }
       };
     };
     reader.readAsDataURL(file);
+    // Reset file input để có thể chọn lại cùng 1 file nếu cần
+    e.target.value = '';
   };
 
   const metricFields = [
@@ -232,12 +244,10 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
                   
-                  {/* Hybrid Date Picker Logic - Cải thiện clickability */}
                   <div 
                     className="relative cursor-pointer group"
                     onClick={triggerDatePicker}
                   >
-                    {/* Native Date Input: Ẩn đi nhưng vẫn hoạt động */}
                     <input 
                       ref={dateInputRef}
                       type="date" 
@@ -246,7 +256,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       className="absolute opacity-0 pointer-events-none"
                     />
                     
-                    {/* Display UI: Vùng hiển thị có tương tác */}
                     <div className="w-full px-5 py-4 bg-emerald-50 text-emerald-800 rounded-2xl border-2 border-emerald-100 group-hover:bg-emerald-100 group-hover:border-emerald-300 transition-all flex items-center justify-between shadow-sm">
                       <span className="text-2xl font-black tracking-tight select-none">
                         {formatDateVN(formData.date)}
