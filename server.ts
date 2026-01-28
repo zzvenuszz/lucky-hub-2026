@@ -186,6 +186,15 @@ app.put('/api/users/:id', async (req, res) => {
 app.get('/api/metrics/:userId', async (req, res) => res.json(await Metric.find({ userId: req.params.userId }).sort({ date: 1 })));
 app.get('/api/all-metrics', async (req, res) => res.json(await Metric.find().populate('userId', 'fullName')));
 app.post('/api/metrics', async (req, res) => res.json(await new Metric(req.body).save()));
+app.post('/api/metrics/bulk', async (req, res) => {
+  try {
+    const results = await Metric.insertMany(req.body);
+    res.json(results);
+  } catch (err) {
+    console.error('Lỗi lưu hàng loạt:', err);
+    res.status(400).json({ message: 'Lỗi lưu dữ liệu hàng loạt. Vui lòng kiểm tra lại ngày đo (không được trùng lặp).', error: err });
+  }
+});
 app.get('/api/knowledge', async (req, res) => res.json(await Knowledge.find()));
 app.post('/api/knowledge', async (req, res) => res.json(await new Knowledge(req.body).save()));
 app.delete('/api/knowledge/:id', async (req, res) => { await Knowledge.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
