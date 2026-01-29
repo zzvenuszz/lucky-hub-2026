@@ -27,14 +27,20 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 
   log("Gửi yêu cầu trích xuất chỉ số tới Server...");
   
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 30000); // 30s timeout cho AI
+
   try {
     const res = await fetch('/api/ai/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: base64Image })
+      body: JSON.stringify({ imageBase64: base64Image }),
+      signal: controller.signal
     });
 
-    if (!res.ok) throw new Error("Server AI Error");
+    clearTimeout(id);
+
+    if (!res.ok) throw new Error("Server AI Error or Timeout");
     
     const result = await res.json();
     if (!result.weight || result.weight <= 0) {
@@ -46,7 +52,12 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     log(`Trích xuất thành công: ${result.weight}kg cho ngày ${result.date}`, "success");
     return result;
   } catch (e: any) {
-    log(`LỖI: ${e.message}`, "error");
+    clearTimeout(id);
+    if (e.name === 'AbortError') {
+      log(`LỖI: Yêu cầu trích xuất ảnh quá hạn (30s).`, "error");
+    } else {
+      log(`LỖI: ${e.message}`, "error");
+    }
     return null;
   }
 };
@@ -63,6 +74,9 @@ export const getAICoachResponse = async (
   const log = (msg: string, type: string = 'ai') => {
     if (window.debugLog) window.debugLog(`[Gemini Coach Proxy] ${msg}`, type);
   };
+
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
   try {
     const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
@@ -97,12 +111,19 @@ PHONG CÁCH:
         systemInstruction,
         latestUserMessage,
         imageBase64: base64Image
-      })
+      }),
+      signal: controller.signal
     });
+
+    clearTimeout(id);
 
     const data = await res.json();
     return data.text;
-  } catch (e) {
+  } catch (e: any) {
+    clearTimeout(id);
+    if (e.name === 'AbortError') {
+      log("Yêu cầu tư vấn quá hạn (30s).", "error");
+    }
     return "Xin lỗi, tôi đang bận một chút.";
   }
 };

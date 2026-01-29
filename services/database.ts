@@ -8,18 +8,24 @@ const logSystem = (msg: string, type: 'info' | 'success' | 'error' = 'info') => 
   if (window.debugLog) window.debugLog(`[Hệ thống] ${msg}`, type);
 };
 
-async function request<T>(url: string, method = 'GET', body?: any): Promise<T | null> {
+async function request<T>(url: string, method = 'GET', body?: any, timeout = 15000): Promise<T | null> {
   if (isOfflineMode) return null;
   
   const endpoint = url.replace(API_BASE, '');
   logSystem(`Yêu cầu ${method}: ${endpoint}...`);
 
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+
   try {
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
     });
+
+    clearTimeout(id);
 
     if (!res.ok) {
       logSystem(`LỖI ${res.status} tại ${endpoint}`, 'error');
@@ -29,8 +35,13 @@ async function request<T>(url: string, method = 'GET', body?: any): Promise<T | 
     const data = await res.json();
     logSystem(`Thành công: ${method} ${endpoint}`, 'success');
     return data;
-  } catch (e) {
-    logSystem(`Lỗi kết nối nghiêm trọng: ${endpoint}`, 'error');
+  } catch (e: any) {
+    clearTimeout(id);
+    if (e.name === 'AbortError') {
+      logSystem(`Yêu cầu quá hạn (Timeout ${timeout}ms): ${endpoint}`, 'error');
+    } else {
+      logSystem(`Lỗi kết nối nghiêm trọng: ${endpoint}`, 'error');
+    }
     return null;
   }
 }
