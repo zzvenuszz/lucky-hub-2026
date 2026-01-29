@@ -19,25 +19,30 @@ app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '15mb' }) as any);
 
 /**
- * Cấu hình Email Transporter với Logging và Verify
+ * Cấu hình Email Transporter - Đã chuyển sang Port 587 để tránh ETIMEDOUT trên Render
  */
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // sử dụng SSL cho cổng 465
+  port: 587,
+  secure: false, // false cho cổng 587
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
   tls: {
-    rejectUnauthorized: false // Giúp tránh lỗi chứng chỉ trên một số server
-  }
+    // Không kiểm tra chứng chỉ nghiêm ngặt để tăng khả năng tương thích trên Cloud
+    rejectUnauthorized: false 
+  },
+  connectionTimeout: 20000, // 20 giây
+  greetingTimeout: 20000,
+  socketTimeout: 30000
 });
 
 // Kiểm tra kết nối SMTP ngay khi khởi động
+console.log('⏳ [Email] Đang kiểm tra kết nối tới máy chủ SMTP...');
 transporter.verify((error, success) => {
   if (error) {
-    console.error('❌ [Email] LỖI CẤU HÌNH SMTP:');
+    console.error('❌ [Email] LỖI CẤU HÌNH SMTP (Không thể kết nối):');
     console.error(error);
   } else {
     console.log('✅ [Email] Hệ thống SMTP đã sẵn sàng gửi thư.');
@@ -252,7 +257,7 @@ app.post('/api/forgot-password', async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 3600000); 
     await user.save();
 
-    console.log(`[Email Service] Đang tiến hành gửi mail tới: ${user.email}`);
+    console.log(`[Email Service] Đang chuẩn bị gửi mail tới: ${user.email}`);
 
     const mailOptions = {
       from: `"Lucky Hub 2026" <${process.env.SMTP_USER}>`,
@@ -279,15 +284,15 @@ app.post('/api/forgot-password', async (req, res) => {
       console.log(`✅ [Email Service] Gửi thành công tới ${user.email}. MessageId: ${info.messageId}`);
       res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn.' });
     } catch (mailError: any) {
-      console.error('❌ [Email Service] Gửi mail thất bại (LỖI SMTP):');
+      console.error('❌ [Email Service] Gửi mail thất bại (LỖI SMTP/NETWORK):');
       console.error(mailError);
       res.status(500).json({ 
-        message: 'Lỗi dịch vụ email. Vui lòng liên hệ Admin nếu vấn đề tiếp diễn.',
+        message: 'Lỗi dịch vụ email (ETIMEDOUT hoặc Auth Error). Vui lòng kiểm tra lại cấu hình SMTP.',
         error: process.env.NODE_ENV !== 'production' ? mailError.message : undefined
       });
     }
   } catch (err: any) {
-    console.error('❌ [Email Service] Lỗi server xử lý route forgot-password:', err);
+    console.error('❌ [Email Service] Lỗi hệ thống xử lý quên mật khẩu:', err);
     res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu.' });
   }
 });
