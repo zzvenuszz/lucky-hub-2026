@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer'; // Cần cài đặt: npm install nodemailer
 import { transform } from 'sucrase';
 import { GoogleGenAI, Type } from "@google/genai";
 import { UserRole, AccountStatus, HealthGoal, Permission } from './types.ts';
@@ -16,6 +17,17 @@ const app = express();
 
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '15mb' }) as any);
+
+/**
+ * Cấu hình Email Transporter
+ */
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 /**
  * Mã hóa mật khẩu đơn giản bằng SHA-256
@@ -38,7 +50,6 @@ app.use((req, res, next) => {
   const forbiddenFiles = ['.env', 'server.ts', 'run.js', 'package.json', 'package-lock.json', 'tsconfig.json'];
   const url = req.path.toLowerCase();
   
-  // Kiểm tra nếu URL kết thúc bằng tên file cấm hoặc chứa thư mục ẩn (như .git)
   const isForbidden = forbiddenFiles.some(file => url.endsWith(file)) || url.includes('/.');
   
   if (isForbidden) {
@@ -48,7 +59,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware biên dịch TypeScript/JSX on-the-fly (dành cho client-side scripts)
+// Middleware biên dịch TypeScript/JSX on-the-fly
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   const rootDir = path.resolve();
@@ -90,6 +101,7 @@ const API_KEYS = [
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
   fullName: { type: String, required: true },
   phoneNumber: { type: String, default: '' },
@@ -104,7 +116,6 @@ const userSchema = new mongoose.Schema({
   avatar: String,
   isPasswordEncrypted: { type: Boolean, default: false },
   badges: { type: [String], default: [] },
-  // Thêm các trường khôi phục mật khẩu
   resetPasswordToken: String,
   resetPasswordExpires: Date
 }, { timestamps: true });
@@ -128,7 +139,7 @@ const metricSchema = new mongoose.Schema({
 metricSchema.index({ userId: 1, date: 1 }, { unique: true });
 const Metric = mongoose.model('Metric', metricSchema);
 
-const postSchema = new mongoose.Schema({
+const Post = mongoose.model('Post', new mongoose.Schema({
   userId: String,
   userFullName: String,
   userAvatar: String,
@@ -136,16 +147,14 @@ const postSchema = new mongoose.Schema({
   content: String,
   imageUrl: String,
   timestamp: String
-}, { timestamps: true });
-const Post = mongoose.model('Post', postSchema);
+}, { timestamps: true }));
 
-const chatSchema = new mongoose.Schema({
+const Chat = mongoose.model('Chat', new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   memberId: { type: String, required: true },
   coachId: { type: String, required: true },
   messages: [{ id: String, senderId: String, senderName: String, senderRole: String, content: String, timestamp: String, imageUrl: String }]
-}, { timestamps: true });
-const Chat = mongoose.model('Chat', chatSchema);
+}, { timestamps: true }));
 
 const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
 const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
@@ -163,9 +172,6 @@ initDB();
 
 let currentKeyIndex = 0;
 
-/**
- * Hỗ trợ xoay vòng API Keys để tránh giới hạn quota
- */
 async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
   let lastError = null;
   const numKeys = API_KEYS.length;
@@ -195,34 +201,67 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', database: states[mongoose.connection.readyState] || 'unknown' });
 });
 
-// ROUTE QUÊN MẬT KHẨU
+// ROUTE KIỂM TRA EMAIL TRÙNG
+app.post('/api/check-email', async (req, res) => {
+  try {
+    const { email, excludeUserId } = req.body;
+    const query: any = { email: email.toLowerCase().trim() };
+    if (excludeUserId) query._id = { $ne: excludeUserId };
+    
+    const exists = await User.findOne(query);
+    res.json({ exists: !!exists });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi kiểm tra email' });
+  }
+});
+
+// ROUTE QUÊN MẬT KHẨU (GỬI EMAIL THẬT)
 app.post('/api/forgot-password', async (req, res) => {
   try {
     const { username } = req.body;
-    const user = await User.findOne({ username: username.toLowerCase().trim() });
+    const user = await User.findOne({ 
+      $or: [
+        { username: username.toLowerCase().trim() },
+        { email: username.toLowerCase().trim() }
+      ]
+    });
     
     if (!user) {
-      return res.status(404).json({ message: 'Không tìm thấy tài khoản này trong hệ thống.' });
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản hoặc email này trong hệ thống.' });
     }
 
-    // Tạo mã token ngẫu nhiên 6 chữ số
     const token = Math.floor(100000 + Math.random() * 900000).toString();
-    
     user.resetPasswordToken = token;
-    user.resetPasswordExpires = new Date(Date.now() + 3600000); // Có hiệu lực trong 1 giờ
+    user.resetPasswordExpires = new Date(Date.now() + 3600000); 
     await user.save();
 
-    // MÔ PHỎNG GỬI MAIL (Vì triển khai trên Render cần cấu hình SMTP phức tạp)
-    // Trong thực tế, bạn sẽ dùng nodemailer ở đây.
-    console.log(`[Email Service] Gửi mã khôi phục tới ${user.fullName}: ${token}`);
-    
-    // Giả lập thông báo thành công. Trong thực tế sẽ gửi thật qua SMTP.
-    res.json({ 
-      message: 'Mã xác nhận đã được gửi vào hệ thống quản lý. (Trong bản demo này, mã sẽ hiển thị ở log server hoặc được giả định gửi thành công).',
-      debugToken: process.env.NODE_ENV !== 'production' ? token : undefined // Chỉ trả về token ở môi trường dev để test
-    });
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu.' });
+    const mailOptions = {
+      from: `"Lucky Hub 2026" <${process.env.SMTP_USER}>`,
+      to: user.email,
+      subject: 'Mã xác nhận khôi phục mật khẩu - Lucky Hub',
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #333; line-height: 1.6;">
+          <h2 style="color: #10b981;">Xin chào ${user.fullName},</h2>
+          <p>Chúng tôi nhận được yêu cầu khôi phục mật khẩu cho tài khoản <strong>${user.username}</strong> của bạn.</p>
+          <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0;">
+            <p style="margin: 0; font-size: 14px; color: #64748b; text-transform: uppercase; font-weight: bold;">Mã xác nhận của bạn là:</p>
+            <h1 style="margin: 10px 0; font-size: 32px; letter-spacing: 5px; color: #0f172a;">${token}</h1>
+            <p style="margin: 0; font-size: 12px; color: #94a3b8;">Mã này sẽ hết hạn sau 1 giờ.</p>
+          </div>
+          <p>Nếu bạn không yêu cầu thay đổi mật khẩu, vui lòng bỏ qua email này hoặc liên hệ hỗ trợ nếu thấy có dấu hiệu bất thường.</p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
+          <p style="font-size: 12px; color: #94a3b8; text-align: center;">🍀 Lucky Hub 2026 - Chuyên gia sức khỏe của bạn</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`[Email Service] Đã gửi mã ${token} tới ${user.email}`);
+
+    res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn.' });
+  } catch (err: any) {
+    console.error('Lỗi gửi mail:', err.message);
+    res.status(500).json({ message: 'Không thể gửi email lúc này. Vui lòng thử lại sau.' });
   }
 });
 
@@ -231,7 +270,10 @@ app.post('/api/reset-password', async (req, res) => {
   try {
     const { username, token, newPassword } = req.body;
     const user = await User.findOne({ 
-      username: username.toLowerCase().trim(),
+      $or: [
+        { username: username.toLowerCase().trim() },
+        { email: username.toLowerCase().trim() }
+      ],
       resetPasswordToken: token,
       resetPasswordExpires: { $gt: Date.now() }
     });
@@ -240,7 +282,6 @@ app.post('/api/reset-password', async (req, res) => {
       return res.status(400).json({ message: 'Mã xác nhận không chính xác hoặc đã hết hạn.' });
     }
 
-    // Cập nhật mật khẩu mới
     user.password = hashPassword(newPassword);
     user.isPasswordEncrypted = true;
     user.resetPasswordToken = undefined;
@@ -253,9 +294,7 @@ app.post('/api/reset-password', async (req, res) => {
   }
 });
 
-/**
- * AI Extract: Trích xuất chỉ số InBody từ hình ảnh đơn lẻ
- */
+/** AI Extract & Coach Route (Giữ nguyên logic cũ) **/
 app.post('/api/ai/extract', async (req, res) => {
   try {
     const { imageBase64 } = req.body;
@@ -276,9 +315,6 @@ app.post('/api/ai/extract', async (req, res) => {
   } catch (err) { res.status(500).json({ message: 'Lỗi AI trích xuất' }); }
 });
 
-/**
- * AI Bulk Extract: Trích xuất danh sách chỉ số từ ảnh chụp bảng/sổ tay
- */
 app.post('/api/ai/bulk-extract', async (req, res) => {
   try {
     const { imageBase64 } = req.body;
@@ -299,23 +335,13 @@ app.post('/api/ai/bulk-extract', async (req, res) => {
   } catch (err) { res.status(500).json({ message: 'Lỗi AI trích xuất hàng loạt' }); }
 });
 
-/**
- * AI Coach: Phản hồi tư vấn sức khỏe dựa trên lịch sử và ngữ cảnh
- */
 app.post('/api/ai/coach', async (req, res) => {
   try {
     const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
     const resultText = await callAiWithFallback(async (ai) => {
       const parts: any[] = [{ text: latestUserMessage }];
-      if (imageBase64) {
-        parts.push({ inlineData: { mimeType: 'image/jpeg', data: imageBase64 } });
-      }
-
-      const contents = [
-        ...history,
-        { role: 'user', parts }
-      ];
-
+      if (imageBase64) parts.push({ inlineData: { mimeType: 'image/jpeg', data: imageBase64 } });
+      const contents = [...history, { role: 'user', parts }];
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents,
@@ -330,13 +356,17 @@ app.post('/api/ai/coach', async (req, res) => {
 // AUTH & USERS
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, password, fullName, ...rest } = req.body;
-    const existing = await User.findOne({ username: username.toLowerCase() });
-    if (existing) return res.status(400).json({ message: 'Tài khoản đã tồn tại' });
+    const { username, email, password, fullName, ...rest } = req.body;
+    const existingUser = await User.findOne({ username: username.toLowerCase().trim() });
+    if (existingUser) return res.status(400).json({ message: 'Tên tài khoản đã tồn tại' });
+    
+    const existingEmail = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existingEmail) return res.status(400).json({ message: 'Email này đã được đăng ký' });
 
     const newUser = new User({
       ...rest,
-      username: username.toLowerCase(),
+      username: username.toLowerCase().trim(),
+      email: email.toLowerCase().trim(),
       password: hashPassword(password),
       isPasswordEncrypted: true,
       fullName
@@ -349,7 +379,12 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await User.findOne({ username: username.toLowerCase() });
+    const user = await User.findOne({ 
+      $or: [
+        { username: username.toLowerCase().trim() },
+        { email: username.toLowerCase().trim() }
+      ]
+    });
     if (!user) return res.status(401).json({ message: 'Sai tài khoản hoặc mật khẩu' });
 
     const hashed = hashPassword(password);
@@ -372,9 +407,19 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.put('/api/users/:id', async (req, res) => {
-  const u = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  if (u) res.json({ ...u.toObject(), id: u._id });
-  else res.status(404).json({ message: 'Không tìm thấy' });
+  try {
+    const { email } = req.body;
+    if (email) {
+      const existing = await User.findOne({ 
+        email: email.toLowerCase().trim(), 
+        _id: { $ne: req.params.id } 
+      });
+      if (existing) return res.status(400).json({ message: 'Email đã tồn tại' });
+    }
+    const u = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (u) res.json({ ...u.toObject(), id: u._id });
+    else res.status(404).json({ message: 'Không tìm thấy' });
+  } catch (err) { res.status(500).json({ message: 'Lỗi cập nhật người dùng' }); }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
@@ -394,11 +439,9 @@ app.get('/api/metrics/:userId', async (req, res) => {
 });
 
 app.post('/api/metrics', async (req, res) => {
-  try {
-    const m = new Metric(req.body);
-    await m.save();
-    res.json({ ...m.toObject(), id: m._id });
-  } catch (err) { res.status(500).json({ message: 'Lỗi lưu chỉ số' }); }
+  const m = new Metric(req.body);
+  await m.save();
+  res.json({ ...m.toObject(), id: m._id });
 });
 
 app.put('/api/metrics/:id', async (req, res) => {
@@ -412,18 +455,12 @@ app.delete('/api/metrics/:id', async (req, res) => {
 });
 
 app.post('/api/metrics/bulk', async (req, res) => {
-  try {
-    const results = [];
-    for (const item of req.body) {
-      const u = await Metric.findOneAndUpdate(
-        { userId: item.userId, date: item.date },
-        item,
-        { upsert: true, new: true }
-      );
-      results.push(u);
-    }
-    res.json(results);
-  } catch (err) { res.status(500).json({ message: 'Lỗi lưu hàng loạt' }); }
+  const results = [];
+  for (const item of req.body) {
+    const u = await Metric.findOneAndUpdate({ userId: item.userId, date: item.date }, item, { upsert: true, new: true });
+    results.push(u);
+  }
+  res.json(results);
 });
 
 app.post('/api/metrics/delete-bulk', async (req, res) => {
@@ -436,7 +473,7 @@ app.delete('/api/metrics/all/:userId', async (req, res) => {
   res.json({ success: true });
 });
 
-// KNOWLEDGE & RULES
+// KNOWLEDGE, RULES, CHATS, POSTS
 app.get('/api/knowledge', async (req, res) => {
   const k = await Knowledge.find();
   res.json(k.map(i => ({ ...i.toObject(), id: i._id })));
@@ -469,7 +506,6 @@ app.delete('/api/rules/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// CHATS
 app.get('/api/chats', async (req, res) => {
   const c = await Chat.find();
   res.json(c);
@@ -481,7 +517,6 @@ app.post('/api/chats', async (req, res) => {
   res.json(c);
 });
 
-// POSTS
 app.get('/api/posts', async (req, res) => {
   const p = await Post.find().sort({ createdAt: -1 });
   res.json(p.map(i => ({ ...i.toObject(), id: i._id })));
@@ -498,13 +533,8 @@ app.delete('/api/posts/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// --- PHỤC VỤ TỆP TĨNH VÀ SPA FALLBACK ---
+// --- PHỤC VỤ TỆP TĨNH ---
 app.use(express.static('.') as any);
+app.get(/^[^\.]*$/, (req, res) => { res.sendFile(path.resolve('index.html')); });
 
-app.get(/^[^\.]*$/, (req, res) => {
-  res.sendFile(path.resolve('index.html'));
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 [Server] Đang chạy tại http://localhost:${PORT}`);
-});
+app.listen(PORT, () => { console.log(`🚀 [Server] Đang chạy tại http://localhost:${PORT}`); });

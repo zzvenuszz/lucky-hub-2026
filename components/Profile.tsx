@@ -13,6 +13,7 @@ interface ProfileProps {
 const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) => {
   const [formData, setFormData] = useState({
     fullName: user.fullName,
+    email: user.email || '',
     height: user.height,
     weight: user.weight || 0,
     phoneNumber: user.phoneNumber || '',
@@ -20,6 +21,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
     avatar: user.avatar || '',
     gender: user.gender
   });
+
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   // State cho việc cắt ảnh
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -34,6 +37,37 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
       : `https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=f8fafc`;
   };
 
+  const validateEmail = (email: string) => {
+    return String(email)
+      .toLowerCase()
+      .match(
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+      );
+  };
+
+  const checkEmailExists = async (email: string) => {
+    if (email === user.email) {
+      setEmailError(null);
+      return;
+    }
+    if (!email || !validateEmail(email)) {
+      setEmailError('Email không hợp lệ');
+      return;
+    }
+    try {
+      const res = await fetch('/api/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, excludeUserId: (user as any).id || (user as any)._id })
+      });
+      const data = await res.json();
+      if (data.exists) setEmailError('Email này đã được người khác sử dụng');
+      else setEmailError(null);
+    } catch (e) {
+      console.error('Lỗi check email');
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -41,7 +75,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
       reader.onload = () => setImageToCrop(reader.result as string);
       reader.readAsDataURL(file);
     }
-    e.target.value = ''; // Reset input
+    e.target.value = ''; 
   };
 
   const onCropComplete = useCallback((_area: any, pixels: any) => {
@@ -60,27 +94,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
     const image = await createImage(imageSrc);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-
     if (!ctx) return '';
-
-    // Kích thước chuẩn cho Avatar để tối ưu dung lượng
     const targetSize = 400;
     canvas.width = targetSize;
     canvas.height = targetSize;
-
-    ctx.drawImage(
-      image,
-      pixelCrop.x,
-      pixelCrop.y,
-      pixelCrop.width,
-      pixelCrop.height,
-      0,
-      0,
-      targetSize,
-      targetSize
-    );
-
-    // Nén ảnh chất lượng 0.8
+    ctx.drawImage(image, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height, 0, 0, targetSize, targetSize);
     return canvas.toDataURL('image/jpeg', 0.8);
   };
 
@@ -90,14 +108,13 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
         const croppedImg = await getCroppedImg(imageToCrop, croppedAreaPixels);
         setFormData({ ...formData, avatar: croppedImg });
         setImageToCrop(null);
-      } catch (e) {
-        console.error(e);
-      }
+      } catch (e) { console.error(e); }
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (emailError) return alert('Vui lòng sửa lỗi email trước khi lưu');
     onUpdate(formData);
     alert('Đã cập nhật thông tin thành công!');
   };
@@ -137,7 +154,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
                 <h3 className="text-xl font-bold text-slate-800">{user.fullName}</h3>
                 <BadgeDisplay badgeIds={user.badges} size="md" />
               </div>
-              <p className="text-xs text-slate-400 font-medium">Hành trình của bạn tại Lucky Hub</p>
+              <p className="text-xs text-slate-400 font-medium">@{user.username}</p>
             </div>
           </div>
 
@@ -147,6 +164,11 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
               <input required type="text" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" />
             </div>
             <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Email</label>
+              <input required type="email" value={formData.email} onBlur={() => checkEmailExists(formData.email)} onChange={e => setFormData({...formData, email: e.target.value})} className={`w-full px-4 py-3 rounded-xl border-2 outline-none transition-all text-sm font-medium ${emailError ? 'border-rose-400 focus:border-rose-500 bg-rose-50/10' : 'border-transparent bg-slate-50 focus:border-emerald-500 focus:bg-white'}`} />
+              {emailError && <p className="text-[9px] text-rose-500 font-bold ml-1">{emailError}</p>}
+            </div>
+            <div className="space-y-1">
               <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Số điện thoại</label>
               <input required type="tel" value={formData.phoneNumber} onChange={e => setFormData({...formData, phoneNumber: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" />
             </div>
@@ -154,7 +176,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
               <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Chiều cao (CM)</label>
               <input required type="number" value={formData.height} onChange={e => setFormData({...formData, height: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium" />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 md:col-span-2">
               <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mục tiêu sức khỏe</label>
               <select value={formData.healthGoal} onChange={e => setFormData({...formData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 focus:bg-white outline-none transition-all text-sm font-medium">
                 {Object.values(HealthGoal).map(goal => <option key={goal} value={goal}>{goal}</option>)}
@@ -170,48 +192,19 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
         </form>
       </div>
 
-      {/* Modal Cắt ảnh */}
       {imageToCrop && (
         <div className="fixed inset-0 bg-slate-900/90 z-[1001] flex flex-col p-4 sm:p-10 animate-in fade-in duration-300">
           <div className="relative flex-grow bg-slate-800 rounded-[2rem] overflow-hidden">
-            <Cropper
-              image={imageToCrop}
-              crop={crop}
-              zoom={zoom}
-              aspect={1}
-              cropShape="round"
-              showGrid={false}
-              onCropChange={setCrop}
-              onZoomChange={setZoom}
-              onCropComplete={onCropComplete}
-            />
+            <Cropper image={imageToCrop} crop={crop} zoom={zoom} aspect={1} cropShape="round" showGrid={false} onCropChange={setCrop} onZoomChange={setZoom} onCropComplete={onCropComplete} />
           </div>
           <div className="mt-6 flex flex-col gap-4 max-w-md mx-auto w-full">
             <div className="flex items-center gap-4 text-white">
               <span className="text-xs font-black uppercase tracking-widest">Phóng to:</span>
-              <input
-                type="range"
-                min={1}
-                max={3}
-                step={0.1}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="flex-grow accent-emerald-500"
-              />
+              <input type="range" min={1} max={3} step={0.1} value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="flex-grow accent-emerald-500" />
             </div>
             <div className="flex gap-4">
-              <button 
-                onClick={() => setImageToCrop(null)} 
-                className="flex-1 py-4 bg-slate-700 text-white rounded-2xl font-black uppercase tracking-widest text-[10px]"
-              >
-                Hủy
-              </button>
-              <button 
-                onClick={handleSaveCrop} 
-                className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-emerald-900/20"
-              >
-                Cắt & Lưu
-              </button>
+              <button onClick={() => setImageToCrop(null)} className="flex-1 py-4 bg-slate-700 text-white rounded-2xl font-black uppercase tracking-widest text-[10px]">Hủy</button>
+              <button onClick={handleSaveCrop} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-emerald-900/20">Cắt & Lưu</button>
             </div>
           </div>
         </div>

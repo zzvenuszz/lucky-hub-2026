@@ -19,14 +19,11 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isRegistering, setIsRegistering] = useState(false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
-  const [forgotPasswordStep, setForgotPasswordStep] = useState(1); // 1: Email, 2: Token & New Pass
+  const [forgotPasswordStep, setForgotPasswordStep] = useState(1); 
   const [needsUpgrade, setNeedsUpgrade] = useState(false); 
-  const [tempUpgradeData, setTempUpgradeData] = useState<{userId: string, fullName: string} | null>(null);
-  const [upgradePasswords, setUpgradePasswords] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
   
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [showRegPass, setShowRegPass] = useState(false);
-  const [showUpgradePass, setShowUpgradePass] = useState(false);
   const [showForgotPass, setShowForgotPass] = useState(false);
 
   const [users, setUsers] = useState<User[]>([]);
@@ -44,10 +41,12 @@ const App: React.FC = () => {
   const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
 
   const [regData, setRegData] = useState({
-    username: '', password: '', fullName: '', phoneNumber: '',
+    username: '', email: '', password: '', fullName: '', phoneNumber: '',
     birthDate: '', height: 170, weight: 65,
     gender: 'Nam' as 'Nam'|'Nữ', healthGoal: HealthGoal.BODY_RECOMP
   });
+  
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
@@ -55,6 +54,33 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
     setIsChatOpen(false);
   }, []);
+
+  const validateEmail = (email: string) => {
+    return String(email)
+      .toLowerCase()
+      .match(
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+      );
+  };
+
+  const checkEmailExists = async (email: string) => {
+    if (!email || !validateEmail(email)) {
+      setEmailError(email ? 'Email không đúng định dạng' : 'Email là bắt buộc');
+      return;
+    }
+    try {
+      const res = await fetch('/api/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (data.exists) setEmailError('Email này đã được sử dụng');
+      else setEmailError(null);
+    } catch (e) {
+      console.error('Lỗi check email');
+    }
+  };
 
   const checkBadges = useCallback((metrics: HealthMetric[], user: User): string[] => {
     const currentBadges = new Set(user.badges || []);
@@ -88,9 +114,7 @@ const App: React.FC = () => {
     Database.checkHealth();
     const savedUser = localStorage.getItem('lucky_hub_user');
     if (savedUser) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (e) { localStorage.removeItem('lucky_hub_user'); }
+      try { setCurrentUser(JSON.parse(savedUser)); } catch (e) { localStorage.removeItem('lucky_hub_user'); }
     }
     const remembered = localStorage.getItem('remembered_login');
     if (remembered) {
@@ -174,16 +198,13 @@ const App: React.FC = () => {
         localStorage.setItem('lucky_hub_user', JSON.stringify(result));
         if (rememberMe) localStorage.setItem('remembered_login', btoa(JSON.stringify(loginData)));
         else localStorage.removeItem('remembered_login');
-      } else if (response.status === 426) {
-        setTempUpgradeData({ userId: result.userId, fullName: result.fullName });
-        setUpgradePasswords({ ...upgradePasswords, oldPassword: loginData.password });
-        setNeedsUpgrade(true);
-      } else { alert(result.message || 'Sai thông tin'); }
+      } else alert(result.message || 'Sai thông tin');
     } catch (error) { alert('Lỗi kết nối Server'); } finally { setIsLoading(false); }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (emailError) return alert('Vui lòng sửa lỗi email trước khi đăng ký');
     setIsLoading(true);
     try {
       const response = await fetch('/api/register', {
@@ -258,11 +279,11 @@ const App: React.FC = () => {
               {forgotPasswordStep === 1 ? (
                 <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tài khoản (Username)</label>
-                    <input required placeholder="Nhập tên tài khoản..." value={forgotData.username} onChange={e => setForgotData({...forgotData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username hoặc Email</label>
+                    <input required placeholder="Nhập tên tài khoản hoặc email..." value={forgotData.username} onChange={e => setForgotData({...forgotData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
                   </div>
                   <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest">
-                    {isLoading ? 'Đang xử lý...' : 'Gửi mã xác nhận'}
+                    {isLoading ? 'Đang gửi mã...' : 'Gửi mã về Email'}
                   </button>
                 </form>
               ) : (
@@ -279,11 +300,11 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nhập lại mật khẩu mới</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nhập lại mật khẩu</label>
                     <input required type="password" placeholder="Xác nhận lại..." value={forgotData.confirmPassword} onChange={e => setForgotData({...forgotData, confirmPassword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
                   </div>
                   <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest">
-                    {isLoading ? 'Đang đổi mật khẩu...' : 'Xác nhận đổi mật khẩu'}
+                    {isLoading ? 'Đang xử lý...' : 'Đổi mật khẩu'}
                   </button>
                 </form>
               )}
@@ -295,21 +316,21 @@ const App: React.FC = () => {
             <form className="space-y-4" onSubmit={handleRegister}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label><input required placeholder="Tên..." value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
-                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SĐT</label><input required placeholder="SĐT..." value={regData.phoneNumber} onChange={e => setRegData({...regData, phoneNumber: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
-                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">User</label><input required placeholder="User..." value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
-                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pass</label><div className="relative"><input required type={showRegPass ? "text" : "password"} placeholder="Pass..." value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm pr-12" /><button type="button" onClick={() => setShowRegPass(!showRegPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40">👁️</button></div></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email (Bắt buộc)</label><input required type="email" placeholder="Email..." value={regData.email} onBlur={() => checkEmailExists(regData.email)} onChange={e => setRegData({...regData, email: e.target.value})} className={`w-full px-4 py-3 rounded-xl bg-slate-50 border-2 outline-none font-medium text-sm ${emailError ? 'border-rose-400 focus:border-rose-500' : 'border-transparent focus:border-emerald-500'}`} />{emailError && <p className="text-[9px] text-rose-500 font-bold ml-1">{emailError}</p>}</div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label><input required placeholder="User..." value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Password</label><div className="relative"><input required type={showRegPass ? "text" : "password"} placeholder="Pass..." value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm pr-12" /><button type="button" onClick={() => setShowRegPass(!showRegPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40">👁️</button></div></div>
                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Giới tính</label><select value={regData.gender} onChange={e => setRegData({...regData, gender: e.target.value as any})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm"><option value="Nam">Nam</option><option value="Nữ">Nữ</option></select></div>
                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ngày sinh</label><input type="date" value={regData.birthDate} onChange={e => setRegData({...regData, birthDate: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Chiều cao</label><input type="number" value={regData.height} onChange={e => setRegData({...regData, height: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cân nặng</label><input type="number" value={regData.weight} onChange={e => setRegData({...regData, weight: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
                 <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mục tiêu</label><select value={regData.healthGoal} onChange={e => setRegData({...regData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm">{Object.values(HealthGoal).map(goal => <option key={goal} value={goal}>{goal}</option>)}</select></div>
               </div>
-              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95 mt-4">{isLoading ? '...' : 'Đăng ký'}</button>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest mt-4">{isLoading ? '...' : 'Đăng ký'}</button>
               <div className="text-center mt-4"><button type="button" onClick={() => setIsRegistering(false)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">Đã có tài khoản? Đăng nhập</button></div>
             </form>
           ) : (
             <form className="space-y-4" onSubmit={handleLogin}>
-              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label><input required placeholder="User..." value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" /></div>
+              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username hoặc Email</label><input required placeholder="User hoặc Email..." value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" /></div>
               <div className="space-y-1">
                 <div className="flex justify-between items-center ml-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Password</label>
