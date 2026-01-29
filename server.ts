@@ -19,14 +19,29 @@ app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '15mb' }) as any);
 
 /**
- * Cấu hình Email Transporter
+ * Cấu hình Email Transporter với Logging và Verify
  */
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // sử dụng SSL cho cổng 465
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  tls: {
+    rejectUnauthorized: false // Giúp tránh lỗi chứng chỉ trên một số server
+  }
+});
+
+// Kiểm tra kết nối SMTP ngay khi khởi động
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ [Email] LỖI CẤU HÌNH SMTP:');
+    console.error(error);
+  } else {
+    console.log('✅ [Email] Hệ thống SMTP đã sẵn sàng gửi thư.');
+  }
 });
 
 /**
@@ -219,6 +234,7 @@ app.post('/api/check-email', async (req, res) => {
 app.post('/api/forgot-password', async (req, res) => {
   try {
     const { username } = req.body;
+    console.log(`[Email Service] Đang tìm kiếm người dùng: ${username}`);
     const user = await User.findOne({ 
       $or: [
         { username: username.toLowerCase().trim() },
@@ -227,6 +243,7 @@ app.post('/api/forgot-password', async (req, res) => {
     });
     
     if (!user) {
+      console.warn(`[Email Service] Yêu cầu reset mật khẩu cho tài khoản không tồn tại: ${username}`);
       return res.status(404).json({ message: 'Không tìm thấy tài khoản hoặc email này trong hệ thống.' });
     }
 
@@ -234,6 +251,8 @@ app.post('/api/forgot-password', async (req, res) => {
     user.resetPasswordToken = token;
     user.resetPasswordExpires = new Date(Date.now() + 3600000); 
     await user.save();
+
+    console.log(`[Email Service] Đang tiến hành gửi mail tới: ${user.email}`);
 
     const mailOptions = {
       from: `"Lucky Hub 2026" <${process.env.SMTP_USER}>`,
@@ -255,13 +274,21 @@ app.post('/api/forgot-password', async (req, res) => {
       `
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`[Email Service] Đã gửi mã ${token} tới ${user.email}`);
-
-    res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn.' });
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ [Email Service] Gửi thành công tới ${user.email}. MessageId: ${info.messageId}`);
+      res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn.' });
+    } catch (mailError: any) {
+      console.error('❌ [Email Service] Gửi mail thất bại (LỖI SMTP):');
+      console.error(mailError);
+      res.status(500).json({ 
+        message: 'Lỗi dịch vụ email. Vui lòng liên hệ Admin nếu vấn đề tiếp diễn.',
+        error: process.env.NODE_ENV !== 'production' ? mailError.message : undefined
+      });
+    }
   } catch (err: any) {
-    console.error('Lỗi gửi mail:', err.message);
-    res.status(500).json({ message: 'Không thể gửi email lúc này. Vui lòng thử lại sau.' });
+    console.error('❌ [Email Service] Lỗi server xử lý route forgot-password:', err);
+    res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu.' });
   }
 });
 
