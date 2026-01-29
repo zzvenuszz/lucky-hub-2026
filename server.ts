@@ -19,35 +19,35 @@ app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '15mb' }) as any);
 
 /**
- * Cấu hình Email Transporter - Đã chuyển sang Port 587 để tránh ETIMEDOUT trên Render
+ * Cấu hình Email Transporter - Sử dụng 'service: gmail' để tối ưu hóa trên Cloud
  */
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // false cho cổng 587
+const smtpConfig = {
+  service: 'gmail',
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
   tls: {
-    // Không kiểm tra chứng chỉ nghiêm ngặt để tăng khả năng tương thích trên Cloud
-    rejectUnauthorized: false 
-  },
-  connectionTimeout: 20000, // 20 giây
-  greetingTimeout: 20000,
-  socketTimeout: 30000
-});
-
-// Kiểm tra kết nối SMTP ngay khi khởi động
-console.log('⏳ [Email] Đang kiểm tra kết nối tới máy chủ SMTP...');
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ [Email] LỖI CẤU HÌNH SMTP (Không thể kết nối):');
-    console.error(error);
-  } else {
-    console.log('✅ [Email] Hệ thống SMTP đã sẵn sàng gửi thư.');
+    rejectUnauthorized: false
   }
-});
+};
+
+const transporter = nodemailer.createTransport(smtpConfig);
+
+// Kiểm tra sự tồn tại của biến môi trường ngay khi khởi động
+if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  console.error('⚠️ [Email] CẢNH BÁO: Thiếu biến môi trường SMTP_USER hoặc SMTP_PASS trong cấu hình Render!');
+} else {
+  console.log('⏳ [Email] Đang kiểm tra kết nối SMTP với service: gmail...');
+  transporter.verify((error, success) => {
+    if (error) {
+      console.error('❌ [Email] LỖI KẾT NỐI (Render có thể đang chặn cổng SMTP):');
+      console.error(error);
+    } else {
+      console.log('✅ [Email] Kết nối SMTP thành công. Hệ thống sẵn sàng gửi thư.');
+    }
+  });
+}
 
 /**
  * Mã hóa mật khẩu đơn giản bằng SHA-256
@@ -257,7 +257,7 @@ app.post('/api/forgot-password', async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 3600000); 
     await user.save();
 
-    console.log(`[Email Service] Đang chuẩn bị gửi mail tới: ${user.email}`);
+    console.log(`[Email Service] Đang tiến hành gửi mail tới: ${user.email}`);
 
     const mailOptions = {
       from: `"Lucky Hub 2026" <${process.env.SMTP_USER}>`,
@@ -284,15 +284,22 @@ app.post('/api/forgot-password', async (req, res) => {
       console.log(`✅ [Email Service] Gửi thành công tới ${user.email}. MessageId: ${info.messageId}`);
       res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn.' });
     } catch (mailError: any) {
-      console.error('❌ [Email Service] Gửi mail thất bại (LỖI SMTP/NETWORK):');
-      console.error(mailError);
+      console.error('❌ [Email Service] Gửi mail thất bại (LỖI KẾT NỐI):');
+      console.error('Chi tiết lỗi:', mailError.code, '-', mailError.message);
+      
+      // Thông báo cụ thể hơn cho người dùng dựa trên lỗi
+      let userFriendlyMsg = 'Lỗi dịch vụ email (ETIMEDOUT). Render có thể đang chặn cổng SMTP của bạn.';
+      if (mailError.code === 'EAUTH') {
+        userFriendlyMsg = 'Lỗi xác thực (EAUTH). Vui lòng kiểm tra lại SMTP_USER và SMTP_PASS (Mật khẩu ứng dụng).';
+      }
+
       res.status(500).json({ 
-        message: 'Lỗi dịch vụ email (ETIMEDOUT hoặc Auth Error). Vui lòng kiểm tra lại cấu hình SMTP.',
+        message: userFriendlyMsg,
         error: process.env.NODE_ENV !== 'production' ? mailError.message : undefined
       });
     }
   } catch (err: any) {
-    console.error('❌ [Email Service] Lỗi hệ thống xử lý quên mật khẩu:', err);
+    console.error('❌ [Email Service] Lỗi hệ thống server:', err);
     res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu.' });
   }
 });
