@@ -19,12 +19,12 @@ app.use(express.json({ limit: '15mb' }) as any);
 
 /**
  * CẤU HÌNH DỊCH VỤ EMAIL QUA MAILEROO API V2
- * Sử dụng x.maileroo.net làm API Gateway để đảm bảo tính ổn định và tránh lỗi 404
+ * Cập nhật dựa trên tài liệu chính thức: https://smtp.maileroo.com/api/v2/emails
  */
 const MAILEROO_CONFIG = {
   apiKey: process.env.MAILEROO_API_KEY,
-  endpoint: 'https://x.maileroo.net/app/v2/send', // Endpoint API v2 chính xác
-  fromEmail: process.env.SMTP_USER, // Email gửi đi (phải được verify trên Maileroo)
+  endpoint: 'https://smtp.maileroo.com/api/v2/emails', // Endpoint chuẩn từ ảnh hướng dẫn
+  fromEmail: process.env.SMTP_USER, 
   fromName: "Lucky Hub 2026"
 };
 
@@ -32,11 +32,11 @@ const MAILEROO_CONFIG = {
 if (!MAILEROO_CONFIG.apiKey) {
   console.error('⚠️ [Email] LỖI: Thiếu MAILEROO_API_KEY trong biến môi trường!');
 } else {
-  console.log('✅ [Email] Hệ thống Maileroo API v2 đã cấu hình Endpoint: ' + MAILEROO_CONFIG.endpoint);
+  console.log('✅ [Email] Hệ thống Maileroo API v2 sử dụng Endpoint: ' + MAILEROO_CONFIG.endpoint);
 }
 
 /**
- * Hàm gửi email sử dụng Maileroo API v2
+ * Hàm gửi email sử dụng Maileroo API v2 với cấu trúc Object theo tài liệu
  */
 async function sendMailViaMaileroo(to: string, subject: string, html: string) {
   try {
@@ -47,9 +47,17 @@ async function sendMailViaMaileroo(to: string, subject: string, html: string) {
         'X-API-Key': MAILEROO_CONFIG.apiKey || ''
       },
       body: JSON.stringify({
-        from_name: MAILEROO_CONFIG.fromName,
-        from_address: MAILEROO_CONFIG.fromEmail,
-        to: to,
+        // Theo ảnh: 'from' phải là một Object
+        from: {
+          address: MAILEROO_CONFIG.fromEmail,
+          name: MAILEROO_CONFIG.fromName
+        },
+        // Maileroo v2 thường yêu cầu 'to' là một mảng các địa chỉ
+        to: [
+          {
+            address: to
+          }
+        ],
         subject: subject,
         html: html
       })
@@ -60,7 +68,6 @@ async function sendMailViaMaileroo(to: string, subject: string, html: string) {
     if (!response.ok || !result.success) {
       console.error('❌ [Maileroo API Error Details]:', JSON.stringify(result, null, 2));
       
-      // Phân tích lỗi cụ thể để thông báo cho Admin
       let errorMsg = result.message || 'Lỗi không xác định từ Maileroo';
       if (result.errors) {
         if (typeof result.errors === 'object') {
@@ -78,6 +85,7 @@ async function sendMailViaMaileroo(to: string, subject: string, html: string) {
     return result;
   } catch (error: any) {
     console.error('❌ [Maileroo API Connection Error]:', error.message);
+    if (error.cause) console.error('🔍 [Root Cause]:', error.cause);
     throw error;
   }
 }
@@ -290,7 +298,7 @@ app.post('/api/forgot-password', async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 3600000); 
     await user.save();
 
-    console.log(`[Email Service] Đang gửi mail qua Maileroo v2 tới: ${user.email}`);
+    console.log(`[Email Service] Đang gửi mail qua Maileroo tới: ${user.email}`);
 
     const subject = 'Mã xác nhận khôi phục mật khẩu - Lucky Hub';
     const html = `
@@ -310,7 +318,7 @@ app.post('/api/forgot-password', async (req, res) => {
 
     try {
       await sendMailViaMaileroo(user.email, subject, html);
-      console.log(`✅ [Email Service] Maileroo v2 đã gửi thành công tới ${user.email}.`);
+      console.log(`✅ [Email Service] Maileroo đã gửi thành công tới ${user.email}.`);
       res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn qua Maileroo API v2.' });
     } catch (mailError: any) {
       console.error('❌ [Email Service Error]:', mailError.message);
