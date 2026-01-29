@@ -132,11 +132,46 @@ const Chat = mongoose.model('Chat', chatSchema);
 const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
 const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 
+async function seedAdmin() {
+  try {
+    const adminUsername = 'administrator';
+    const existingAdmin = await User.findOne({ username: adminUsername });
+    
+    if (!existingAdmin) {
+      console.log('🚀 [Seed] Đang tạo tài khoản quản trị viên mặc định...');
+      const adminPassword = 'HuyHoan76';
+      const hashedPassword = hashPassword(adminPassword);
+      
+      const newAdmin = new User({
+        username: adminUsername,
+        password: hashedPassword,
+        fullName: 'System Administrator',
+        role: UserRole.ADMIN,
+        status: AccountStatus.ACTIVE,
+        isPasswordEncrypted: true,
+        healthGoal: HealthGoal.BODY_RECOMP,
+        gender: 'Nam'
+      });
+      
+      await newAdmin.save();
+      console.log('✅ [Seed] Đã tạo tài khoản: administrator / HuyHoan76');
+    } else {
+      console.log('ℹ️ [Seed] Tài khoản administrator đã tồn tại.');
+    }
+  } catch (err: any) {
+    console.error('❌ [Seed] Lỗi khi tạo tài khoản admin:', err.message);
+  }
+}
+
 async function initDB() {
   try {
     console.log('⏳ [Database] Đang kết nối tới MongoDB...');
     await mongoose.connect(MONGODB_URI);
     console.log('✅ [Database] Đã kết nối thành công.');
+    
+    // Khởi tạo admin sau khi kết nối thành công
+    await seedAdmin();
+    
   } catch (err: any) { 
     console.error('❌ [Database] KHÔNG THỂ KẾT NỐI DATABASE:', err.message);
   }
