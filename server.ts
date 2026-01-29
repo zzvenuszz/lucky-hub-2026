@@ -6,7 +6,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer'; // Cần cài đặt: npm install nodemailer
 import { transform } from 'sucrase';
 import { GoogleGenAI, Type } from "@google/genai";
 import { UserRole, AccountStatus, HealthGoal, Permission } from './types.ts';
@@ -19,38 +18,59 @@ app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '15mb' }) as any);
 
 /**
- * Cấu hình Email Transporter - Sử dụng 'service: gmail' để tối ưu hóa trên Cloud
+ * CẤU HÌNH DỊCH VỤ EMAIL QUA MAILEROO API V2
+ * Giải pháp tối ưu nhất cho môi trường Render.com (Gửi qua HTTP API cổng 443)
  */
-const smtpConfig = {
-  service: 'gmail',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
+const MAILEROO_CONFIG = {
+  apiKey: process.env.MAILEROO_API_KEY,
+  endpoint: 'https://smtp.maileroo.com/api/v2/send',
+  fromEmail: process.env.SMTP_USER, // Email gửi đi (phải được verify trên Maileroo)
+  fromName: "Lucky Hub 2026"
 };
 
-const transporter = nodemailer.createTransport(smtpConfig);
-
-// Kiểm tra sự tồn tại của biến môi trường ngay khi khởi động
-if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-  console.error('⚠️ [Email] CẢNH BÁO: Thiếu biến môi trường SMTP_USER hoặc SMTP_PASS trong cấu hình Render!');
+// Kiểm tra cấu hình API khi khởi động
+if (!MAILEROO_CONFIG.apiKey) {
+  console.error('⚠️ [Email] LỖI: Thiếu MAILEROO_API_KEY trong biến môi trường!');
 } else {
-  console.log('⏳ [Email] Đang kiểm tra kết nối SMTP với service: gmail...');
-  transporter.verify((error, success) => {
-    if (error) {
-      console.error('❌ [Email] LỖI KẾT NỐI (Render có thể đang chặn cổng SMTP):');
-      console.error(error);
-    } else {
-      console.log('✅ [Email] Kết nối SMTP thành công. Hệ thống sẵn sàng gửi thư.');
-    }
-  });
+  console.log('✅ [Email] Hệ thống Maileroo API v2 đã sẵn sàng.');
 }
 
 /**
- * Mã hóa mật khẩu đơn giản bằng SHA-256
+ * Hàm gửi email sử dụng Maileroo API v2
+ */
+async function sendMailViaMaileroo(to: string, subject: string, html: string) {
+  try {
+    const response = await fetch(MAILEROO_CONFIG.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': MAILEROO_CONFIG.apiKey || ''
+      },
+      body: JSON.stringify({
+        from_name: MAILEROO_CONFIG.fromName,
+        from_address: MAILEROO_CONFIG.fromEmail,
+        to: to,
+        subject: subject,
+        html: html
+      })
+    });
+
+    const result = await response.json();
+    
+    if (!response.ok || !result.success) {
+      console.error('❌ [Maileroo API] Phản hồi lỗi:', result);
+      throw new Error(result.message || (result.errors ? JSON.stringify(result.errors) : 'Lỗi không xác định từ Maileroo API v2'));
+    }
+    
+    return result;
+  } catch (error: any) {
+    console.error('❌ [Maileroo API] Lỗi kết nối HTTP:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Mã hóa mật khẩu đơn bằng SHA-256
  */
 function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
@@ -235,7 +255,7 @@ app.post('/api/check-email', async (req, res) => {
   }
 });
 
-// ROUTE QUÊN MẬT KHẨU (GỬI EMAIL THẬT)
+// ROUTE QUÊN MẬT KHẨU (SỬ DỤNG MAILEROO API V2)
 app.post('/api/forgot-password', async (req, res) => {
   try {
     const { username } = req.body;
@@ -257,44 +277,32 @@ app.post('/api/forgot-password', async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 3600000); 
     await user.save();
 
-    console.log(`[Email Service] Đang tiến hành gửi mail tới: ${user.email}`);
+    console.log(`[Email Service] Đang gửi mail qua Maileroo v2 tới: ${user.email}`);
 
-    const mailOptions = {
-      from: `"Lucky Hub 2026" <${process.env.SMTP_USER}>`,
-      to: user.email,
-      subject: 'Mã xác nhận khôi phục mật khẩu - Lucky Hub',
-      html: `
-        <div style="font-family: sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-          <h2 style="color: #10b981;">Xin chào ${user.fullName},</h2>
-          <p>Chúng tôi nhận được yêu cầu khôi phục mật khẩu cho tài khoản <strong>${user.username}</strong> của bạn.</p>
-          <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0;">
-            <p style="margin: 0; font-size: 14px; color: #64748b; text-transform: uppercase; font-weight: bold;">Mã xác nhận của bạn là:</p>
-            <h1 style="margin: 10px 0; font-size: 32px; letter-spacing: 5px; color: #0f172a;">${token}</h1>
-            <p style="margin: 0; font-size: 12px; color: #94a3b8;">Mã này sẽ hết hạn sau 1 giờ.</p>
-          </div>
-          <p>Nếu bạn không yêu cầu thay đổi mật khẩu, vui lòng bỏ qua email này hoặc liên hệ hỗ trợ nếu thấy có dấu hiệu bất thường.</p>
-          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
-          <p style="font-size: 12px; color: #94a3b8; text-align: center;">🍀 Lucky Hub 2026 - Chuyên gia sức khỏe của bạn</p>
+    const subject = 'Mã xác nhận khôi phục mật khẩu - Lucky Hub';
+    const html = `
+      <div style="font-family: sans-serif; padding: 20px; color: #333; line-height: 1.6;">
+        <h2 style="color: #10b981;">Xin chào ${user.fullName},</h2>
+        <p>Chúng tôi nhận được yêu cầu khôi phục mật khẩu cho tài khoản <strong>${user.username}</strong> của bạn.</p>
+        <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0;">
+          <p style="margin: 0; font-size: 14px; color: #64748b; text-transform: uppercase; font-weight: bold;">Mã xác nhận của bạn là:</p>
+          <h1 style="margin: 10px 0; font-size: 32px; letter-spacing: 5px; color: #0f172a;">${token}</h1>
+          <p style="margin: 0; font-size: 12px; color: #94a3b8;">Mã này sẽ hết hạn sau 1 giờ.</p>
         </div>
-      `
-    };
+        <p>Nếu bạn không yêu cầu thay đổi mật khẩu, vui lòng bỏ qua email này.</p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
+        <p style="font-size: 12px; color: #94a3b8; text-align: center;">🍀 Lucky Hub 2026 - Chuyên gia sức khỏe của bạn</p>
+      </div>
+    `;
 
     try {
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`✅ [Email Service] Gửi thành công tới ${user.email}. MessageId: ${info.messageId}`);
-      res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn.' });
+      await sendMailViaMaileroo(user.email, subject, html);
+      console.log(`✅ [Email Service] Maileroo v2 đã gửi thành công tới ${user.email}.`);
+      res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn qua Maileroo API v2.' });
     } catch (mailError: any) {
-      console.error('❌ [Email Service] Gửi mail thất bại (LỖI KẾT NỐI):');
-      console.error('Chi tiết lỗi:', mailError.code, '-', mailError.message);
-      
-      // Thông báo cụ thể hơn cho người dùng dựa trên lỗi
-      let userFriendlyMsg = 'Lỗi dịch vụ email (ETIMEDOUT). Render có thể đang chặn cổng SMTP của bạn.';
-      if (mailError.code === 'EAUTH') {
-        userFriendlyMsg = 'Lỗi xác thực (EAUTH). Vui lòng kiểm tra lại SMTP_USER và SMTP_PASS (Mật khẩu ứng dụng).';
-      }
-
+      console.error('❌ [Email Service] Gửi mail thất bại qua Maileroo v2:', mailError.message);
       res.status(500).json({ 
-        message: userFriendlyMsg,
+        message: 'Lỗi API Maileroo v2. Vui lòng kiểm tra lại MAILEROO_API_KEY hoặc trạng thái Domain trên Maileroo.',
         error: process.env.NODE_ENV !== 'production' ? mailError.message : undefined
       });
     }
@@ -333,7 +341,7 @@ app.post('/api/reset-password', async (req, res) => {
   }
 });
 
-/** AI Extract & Coach Route (Giữ nguyên logic cũ) **/
+/** AI Extract & Coach Route **/
 app.post('/api/ai/extract', async (req, res) => {
   try {
     const { imageBase64 } = req.body;
