@@ -103,7 +103,10 @@ const userSchema = new mongoose.Schema({
   permissions: { type: [String], default: [] },
   avatar: String,
   isPasswordEncrypted: { type: Boolean, default: false },
-  badges: { type: [String], default: [] }
+  badges: { type: [String], default: [] },
+  // Thêm các trường khôi phục mật khẩu
+  resetPasswordToken: String,
+  resetPasswordExpires: Date
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
@@ -190,6 +193,64 @@ async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
 app.get('/api/health', (req, res) => {
   const states: Record<number, string> = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
   res.json({ status: 'ok', database: states[mongoose.connection.readyState] || 'unknown' });
+});
+
+// ROUTE QUÊN MẬT KHẨU
+app.post('/api/forgot-password', async (req, res) => {
+  try {
+    const { username } = req.body;
+    const user = await User.findOne({ username: username.toLowerCase().trim() });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy tài khoản này trong hệ thống.' });
+    }
+
+    // Tạo mã token ngẫu nhiên 6 chữ số
+    const token = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = new Date(Date.now() + 3600000); // Có hiệu lực trong 1 giờ
+    await user.save();
+
+    // MÔ PHỎNG GỬI MAIL (Vì triển khai trên Render cần cấu hình SMTP phức tạp)
+    // Trong thực tế, bạn sẽ dùng nodemailer ở đây.
+    console.log(`[Email Service] Gửi mã khôi phục tới ${user.fullName}: ${token}`);
+    
+    // Giả lập thông báo thành công. Trong thực tế sẽ gửi thật qua SMTP.
+    res.json({ 
+      message: 'Mã xác nhận đã được gửi vào hệ thống quản lý. (Trong bản demo này, mã sẽ hiển thị ở log server hoặc được giả định gửi thành công).',
+      debugToken: process.env.NODE_ENV !== 'production' ? token : undefined // Chỉ trả về token ở môi trường dev để test
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu.' });
+  }
+});
+
+// ROUTE RESET MẬT KHẨU
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { username, token, newPassword } = req.body;
+    const user = await User.findOne({ 
+      username: username.toLowerCase().trim(),
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Mã xác nhận không chính xác hoặc đã hết hạn.' });
+    }
+
+    // Cập nhật mật khẩu mới
+    user.password = hashPassword(newPassword);
+    user.isPasswordEncrypted = true;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Mật khẩu đã được thay đổi thành công. Vui lòng đăng nhập lại.' });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi server khi đặt lại mật khẩu.' });
+  }
 });
 
 /**

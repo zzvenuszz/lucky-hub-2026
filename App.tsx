@@ -18,6 +18,8 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotPasswordStep, setForgotPasswordStep] = useState(1); // 1: Email, 2: Token & New Pass
   const [needsUpgrade, setNeedsUpgrade] = useState(false); 
   const [tempUpgradeData, setTempUpgradeData] = useState<{userId: string, fullName: string} | null>(null);
   const [upgradePasswords, setUpgradePasswords] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -25,6 +27,7 @@ const App: React.FC = () => {
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [showRegPass, setShowRegPass] = useState(false);
   const [showUpgradePass, setShowUpgradePass] = useState(false);
+  const [showForgotPass, setShowForgotPass] = useState(false);
 
   const [users, setUsers] = useState<User[]>([]);
   const [knowledge, setKnowledge] = useState<any[]>([]);
@@ -36,6 +39,7 @@ const App: React.FC = () => {
   const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
   
   const [loginData, setLoginData] = useState({ username: '', password: '' });
+  const [forgotData, setForgotData] = useState({ username: '', token: '', newPassword: '', confirmPassword: '' });
   const [rememberMe, setRememberMe] = useState(false);
   const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
 
@@ -81,9 +85,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Kiểm tra tình trạng Database khi App khởi chạy
     Database.checkHealth();
-
     const savedUser = localStorage.getItem('lucky_hub_user');
     if (savedUser) {
       try {
@@ -198,6 +200,47 @@ const App: React.FC = () => {
     } catch (error) { alert('Lỗi kết nối'); } finally { setIsLoading(false); }
   };
 
+  const handleForgotPasswordRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: forgotData.username })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message);
+        setForgotPasswordStep(2);
+      } else alert(data.message);
+    } catch (e) { alert('Lỗi hệ thống'); } finally { setIsLoading(false); }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (forgotData.newPassword !== forgotData.confirmPassword) return alert('Mật khẩu nhập lại không khớp');
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          username: forgotData.username,
+          token: forgotData.token,
+          newPassword: forgotData.newPassword
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message);
+        setIsForgotPassword(false);
+        setForgotPasswordStep(1);
+        setLoginData({ ...loginData, username: forgotData.username });
+      } else alert(data.message);
+    } catch (e) { alert('Lỗi hệ thống'); } finally { setIsLoading(false); }
+  };
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-emerald-600 flex items-center justify-center p-4">
@@ -205,9 +248,50 @@ const App: React.FC = () => {
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-emerald-50 text-white text-3xl flex items-center justify-center rounded-2xl mx-auto mb-4 shadow-xl animate-bounce-short">🍀</div>
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub</h1>
-            <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-black">{isRegistering ? 'Gia nhập cộng đồng Lucky Hub' : 'Chuyên gia sức khỏe 2026'}</p>
+            <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-black">
+              {isRegistering ? 'Gia nhập cộng đồng Lucky Hub' : isForgotPassword ? 'Khôi phục mật khẩu' : 'Chuyên gia sức khỏe 2026'}
+            </p>
           </div>
-          {isRegistering ? (
+
+          {isForgotPassword ? (
+            <div className="space-y-4">
+              {forgotPasswordStep === 1 ? (
+                <form onSubmit={handleForgotPasswordRequest} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tài khoản (Username)</label>
+                    <input required placeholder="Nhập tên tài khoản..." value={forgotData.username} onChange={e => setForgotData({...forgotData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
+                  </div>
+                  <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest">
+                    {isLoading ? 'Đang xử lý...' : 'Gửi mã xác nhận'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleResetPassword} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mã xác nhận (6 chữ số)</label>
+                    <input required placeholder="000000" value={forgotData.token} onChange={e => setForgotData({...forgotData, token: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-center text-xl tracking-widest" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu mới</label>
+                    <div className="relative">
+                      <input required type={showForgotPass ? "text" : "password"} placeholder="Mật khẩu mới..." value={forgotData.newPassword} onChange={e => setForgotData({...forgotData, newPassword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium pr-12" />
+                      <button type="button" onClick={() => setShowForgotPass(!showForgotPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40">👁️</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nhập lại mật khẩu mới</label>
+                    <input required type="password" placeholder="Xác nhận lại..." value={forgotData.confirmPassword} onChange={e => setForgotData({...forgotData, confirmPassword: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
+                  </div>
+                  <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest">
+                    {isLoading ? 'Đang đổi mật khẩu...' : 'Xác nhận đổi mật khẩu'}
+                  </button>
+                </form>
+              )}
+              <div className="text-center mt-4">
+                <button type="button" onClick={() => { setIsForgotPassword(false); setForgotPasswordStep(1); }} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">Quay lại đăng nhập</button>
+              </div>
+            </div>
+          ) : isRegistering ? (
             <form className="space-y-4" onSubmit={handleRegister}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label><input required placeholder="Tên..." value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
@@ -226,7 +310,16 @@ const App: React.FC = () => {
           ) : (
             <form className="space-y-4" onSubmit={handleLogin}>
               <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label><input required placeholder="User..." value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" /></div>
-              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Password</label><div className="relative"><input required type={showLoginPass ? "text" : "password"} placeholder="Pass..." value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium pr-12" /><button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40">👁️</button></div></div>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center ml-1">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Password</label>
+                  <button type="button" onClick={() => setIsForgotPassword(true)} className="text-[9px] font-black text-emerald-600 uppercase tracking-wider hover:underline">Quên mật khẩu?</button>
+                </div>
+                <div className="relative">
+                  <input required type={showLoginPass ? "text" : "password"} placeholder="Pass..." value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium pr-12" />
+                  <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40">👁️</button>
+                </div>
+              </div>
               <div className="flex items-center gap-2 py-1"><input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="w-4 h-4 rounded text-emerald-600" /><span className="text-xs font-bold text-slate-500">Ghi nhớ</span></div>
               <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95">{isLoading ? '...' : 'Đăng nhập'}</button>
               <div className="text-center mt-6"><button type="button" onClick={() => setIsRegistering(true)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">Chưa có tài khoản? Đăng ký</button></div>
