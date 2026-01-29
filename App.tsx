@@ -37,8 +37,6 @@ const App: React.FC = () => {
   
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [rememberMe, setRememberMe] = useState(false);
-  
-  // State cho thông báo danh hiệu mới
   const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
 
   const [regData, setRegData] = useState({
@@ -54,16 +52,12 @@ const App: React.FC = () => {
     setIsChatOpen(false);
   }, []);
 
-  // LOGIC TỰ ĐỘNG GÁN DANH HIỆU
   const checkBadges = useCallback((metrics: HealthMetric[], user: User): string[] => {
     const currentBadges = new Set(user.badges || []);
     if (metrics.length === 0) return Array.from(currentBadges);
-
     const sorted = [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
     const firstMetric = sorted[0];
     const latestMetric = sorted[sorted.length - 1];
-
-    // 1. Chiến thần diệt mỡ (3kg/30 ngày)
     for (let i = 0; i < sorted.length; i++) {
       const dateI = new Date(sorted[i].date);
       for (let j = i + 1; j < sorted.length; j++) {
@@ -75,38 +69,27 @@ const App: React.FC = () => {
         }
       }
     }
-
-    // 2. 7 ngày vàng (1kg/7 ngày đầu)
     const week1Metric = sorted.find(m => {
       const diff = (new Date(m.date).getTime() - new Date(firstMetric.date).getTime()) / (1000 * 3600 * 24);
       return diff >= 5 && diff <= 10;
     });
-    if (week1Metric && firstMetric.weight - week1Metric.weight >= 1) {
-      currentBadges.add('b_7_golden_days');
-    }
-
-    // 3. Đánh tan mỡ thừa (Giảm 3% mỡ)
+    if (week1Metric && firstMetric.weight - week1Metric.weight >= 1) currentBadges.add('b_7_golden_days');
     const maxFat = Math.max(...sorted.map(m => m.bodyFat));
-    if (maxFat - latestMetric.bodyFat >= 3) {
-      currentBadges.add('b_fat_destroyer');
-    }
-
-    // 4. Chuyên cần (Có ít nhất 10 bản ghi)
-    if (sorted.length >= 10) {
-      currentBadges.add('b_dedicated');
-    }
-
+    if (maxFat - latestMetric.bodyFat >= 3) currentBadges.add('b_fat_destroyer');
+    if (sorted.length >= 10) currentBadges.add('b_dedicated');
     return Array.from(currentBadges);
   }, []);
 
   useEffect(() => {
+    // Kiểm tra tình trạng Database khi App khởi chạy
+    Database.checkHealth();
+
     const savedUser = localStorage.getItem('lucky_hub_user');
     if (savedUser) {
       try {
         setCurrentUser(JSON.parse(savedUser));
       } catch (e) { localStorage.removeItem('lucky_hub_user'); }
     }
-
     const remembered = localStorage.getItem('remembered_login');
     if (remembered) {
       try {
@@ -143,34 +126,22 @@ const App: React.FC = () => {
       setUsers(u || []);
       setKnowledge(k || []);
       setRules(r || []);
-
       if (currentUser) {
         const uid = (currentUser as any).id || (currentUser as any)._id;
         const metrics = await Database.getMetrics(uid);
         setExistingMetrics(metrics || []);
-
-        // Logic phát hiện danh hiệu mới
         const updatedBadges = checkBadges(metrics || [], currentUser);
         const oldBadges = currentUser.badges || [];
-        
-        // Tìm các danh hiệu có trong updated nhưng chưa có trong old
         const newlyEarnedIds = updatedBadges.filter(id => !oldBadges.includes(id));
-
         if (newlyEarnedIds.length > 0) {
-           // Lấy thông tin chi tiết danh hiệu đầu tiên vừa đạt được để chúc mừng
            const badgeInfo = BADGES_DB.find(b => b.id === newlyEarnedIds[0]);
-           if (badgeInfo) {
-             setNewEarnedBadge(badgeInfo);
-           }
-           
-           // Lưu vào DB ngay lập tức
+           if (badgeInfo) setNewEarnedBadge(badgeInfo);
            const u = await Database.updateUser(uid, { badges: updatedBadges });
            if(u) { 
              setCurrentUser(u); 
              localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
            }
         } else if (JSON.stringify(updatedBadges) !== JSON.stringify(currentUser.badges)) {
-           // Trường hợp cập nhật khác (ví dụ admin xóa badge)
            const u = await Database.updateUser(uid, { badges: updatedBadges });
            if(u) { 
              setCurrentUser(u); 
@@ -206,7 +177,7 @@ const App: React.FC = () => {
         setUpgradePasswords({ ...upgradePasswords, oldPassword: loginData.password });
         setNeedsUpgrade(true);
       } else { alert(result.message || 'Sai thông tin'); }
-    } catch (error) { alert('Lỗi kết nối'); } finally { setIsLoading(false); }
+    } catch (error) { alert('Lỗi kết nối Server'); } finally { setIsLoading(false); }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -216,24 +187,15 @@ const App: React.FC = () => {
       const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          ...regData, 
-          username: regData.username.toLowerCase().trim() 
-        })
+        body: JSON.stringify({ ...regData, username: regData.username.toLowerCase().trim() })
       });
       const result = await response.json();
       if (response.ok) {
-        alert('Đăng ký thành công! Vui lòng đăng nhập.');
+        alert('Đăng ký thành công!');
         setIsRegistering(false);
         setLoginData({ username: regData.username, password: regData.password });
-      } else {
-        alert(result.message || 'Lỗi đăng ký');
-      }
-    } catch (error) {
-      alert('Lỗi kết nối server');
-    } finally {
-      setIsLoading(false);
-    }
+      } else alert(result.message || 'Lỗi đăng ký');
+    } catch (error) { alert('Lỗi kết nối'); } finally { setIsLoading(false); }
   };
 
   if (!currentUser) {
@@ -243,96 +205,31 @@ const App: React.FC = () => {
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-emerald-50 text-white text-3xl flex items-center justify-center rounded-2xl mx-auto mb-4 shadow-xl animate-bounce-short">🍀</div>
             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Lucky Hub</h1>
-            <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-black">
-              {isRegistering ? 'Gia nhập cộng đồng Lucky Hub' : 'Chuyên gia sức khỏe 2026'}
-            </p>
+            <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-black">{isRegistering ? 'Gia nhập cộng đồng Lucky Hub' : 'Chuyên gia sức khỏe 2026'}</p>
           </div>
-          
           {isRegistering ? (
             <form className="space-y-4" onSubmit={handleRegister}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label>
-                  <input required placeholder="Họ và tên của bạn..." value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Số điện thoại</label>
-                  <input required placeholder="Số điện thoại..." value={regData.phoneNumber} onChange={e => setRegData({...regData, phoneNumber: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tên đăng nhập</label>
-                  <input required placeholder="Username..." value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu</label>
-                  <div className="relative">
-                    <input required type={showRegPass ? "text" : "password"} placeholder="Mật khẩu..." value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm pr-12" />
-                    <button type="button" onClick={() => setShowRegPass(!showRegPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100">{showRegPass ? '👁️' : '🙈'}</button>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Giới tính</label>
-                  <select value={regData.gender} onChange={e => setRegData({...regData, gender: e.target.value as any})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm">
-                    <option value="Nam">Nam</option>
-                    <option value="Nữ">Nữ</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ngày sinh</label>
-                  <input type="date" value={regData.birthDate} onChange={e => setRegData({...regData, birthDate: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Chiều cao (cm)</label>
-                  <input type="number" value={regData.height} onChange={e => setRegData({...regData, height: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cân nặng (kg)</label>
-                  <input type="number" value={regData.weight} onChange={e => setRegData({...regData, weight: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" />
-                </div>
-                <div className="md:col-span-2 space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mục tiêu sức khỏe</label>
-                  <select value={regData.healthGoal} onChange={e => setRegData({...regData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm">
-                    {Object.values(HealthGoal).map(goal => <option key={goal} value={goal}>{goal}</option>)}
-                  </select>
-                </div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Họ và tên</label><input required placeholder="Tên..." value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">SĐT</label><input required placeholder="SĐT..." value={regData.phoneNumber} onChange={e => setRegData({...regData, phoneNumber: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">User</label><input required placeholder="User..." value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Pass</label><div className="relative"><input required type={showRegPass ? "text" : "password"} placeholder="Pass..." value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm pr-12" /><button type="button" onClick={() => setShowRegPass(!showRegPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40">👁️</button></div></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Giới tính</label><select value={regData.gender} onChange={e => setRegData({...regData, gender: e.target.value as any})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm"><option value="Nam">Nam</option><option value="Nữ">Nữ</option></select></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Ngày sinh</label><input type="date" value={regData.birthDate} onChange={e => setRegData({...regData, birthDate: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Chiều cao</label><input type="number" value={regData.height} onChange={e => setRegData({...regData, height: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
+                <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Cân nặng</label><input type="number" value={regData.weight} onChange={e => setRegData({...regData, weight: Number(e.target.value)})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm" /></div>
+                <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mục tiêu</label><select value={regData.healthGoal} onChange={e => setRegData({...regData, healthGoal: e.target.value as HealthGoal})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium text-sm">{Object.values(HealthGoal).map(goal => <option key={goal} value={goal}>{goal}</option>)}</select></div>
               </div>
-              
-              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95 mt-4">
-                {isLoading ? 'Đang khởi tạo...' : 'Đăng ký hội viên'}
-              </button>
-              
-              <div className="text-center mt-4">
-                <button type="button" onClick={() => setIsRegistering(false)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">
-                  Đã có tài khoản? <span className="text-emerald-600 underline">Đăng nhập ngay</span>
-                </button>
-              </div>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95 mt-4">{isLoading ? '...' : 'Đăng ký'}</button>
+              <div className="text-center mt-4"><button type="button" onClick={() => setIsRegistering(false)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">Đã có tài khoản? Đăng nhập</button></div>
             </form>
           ) : (
             <form className="space-y-4" onSubmit={handleLogin}>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tên đăng nhập</label>
-                <input required placeholder="Nhập tên đăng nhập..." value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Mật khẩu</label>
-                <div className="relative">
-                  <input required type={showLoginPass ? "text" : "password"} placeholder="Nhập mật khẩu..." value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium pr-12" />
-                  <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100">{showLoginPass ? '👁️' : '🙈'}</button>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 py-1">
-                <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-                <span className="text-xs font-bold text-slate-500">Ghi nhớ đăng nhập</span>
-              </div>
-              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95">
-                {isLoading ? '...' : 'Đăng nhập'}
-              </button>
-              
-              <div className="text-center mt-6">
-                <button type="button" onClick={() => setIsRegistering(true)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">
-                  Chưa có tài khoản? <span className="text-emerald-600 underline">Đăng ký hội viên mới</span>
-                </button>
-              </div>
+              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username</label><input required placeholder="User..." value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium" /></div>
+              <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Password</label><div className="relative"><input required type={showLoginPass ? "text" : "password"} placeholder="Pass..." value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-transparent focus:border-emerald-500 outline-none font-medium pr-12" /><button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 opacity-40">👁️</button></div></div>
+              <div className="flex items-center gap-2 py-1"><input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} className="w-4 h-4 rounded text-emerald-600" /><span className="text-xs font-bold text-slate-500">Ghi nhớ</span></div>
+              <button type="submit" disabled={isLoading} className="w-full bg-emerald-600 text-white font-black py-4 rounded-xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest active:scale-95">{isLoading ? '...' : 'Đăng nhập'}</button>
+              <div className="text-center mt-6"><button type="button" onClick={() => setIsRegistering(true)} className="text-xs font-bold text-slate-400 hover:text-emerald-600 transition-colors">Chưa có tài khoản? Đăng ký</button></div>
             </form>
           )}
         </div>
@@ -348,18 +245,9 @@ const App: React.FC = () => {
       {activeTab === 'profile' && <Profile user={currentUser} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { const uid = (currentUser as any).id || (currentUser as any)._id; const u = await Database.updateUser(uid, d); if(u) { setCurrentUser(u); localStorage.setItem('lucky_hub_user', JSON.stringify(u)); } }} />}
       {activeTab === 'admin' && currentUser.role === UserRole.ADMIN && <AdminPanel currentUser={currentUser} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       {isChatOpen && <ChatSystem currentUser={currentUser} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
-      {!isChatOpen && (
-        <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>
-      )}
+      {!isChatOpen && <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>}
       {isAddingMetric && <MetricForm onSave={async (m) => { const uid = (currentUser as any).id || (currentUser as any)._id; await Database.saveMetric({ ...m, userId: uid }); setRefreshTrigger(t => t+1); setIsAddingMetric(false); }} onSaveBulk={async (l) => { const uid = (currentUser as any).id || (currentUser as any)._id; await Database.saveMetricsBulk(l.map(m => ({...m, userId: uid}))); setRefreshTrigger(t => t+1); setIsAddingMetric(false); }} existingDates={existingMetrics.map(m => m.date)} onClose={() => setIsAddingMetric(false)} />}
-      
-      {/* Modal Chúc mừng danh hiệu */}
-      {newEarnedBadge && (
-        <BadgeCongratulation 
-          badge={newEarnedBadge} 
-          onClose={() => setNewEarnedBadge(null)} 
-        />
-      )}
+      {newEarnedBadge && <BadgeCongratulation badge={newEarnedBadge} onClose={() => setNewEarnedBadge(null)} />}
     </Layout>
   );
 };
