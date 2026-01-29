@@ -34,7 +34,7 @@ const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm' }) =>
       ))}
 
       {activeBadge && (
-        <div className="absolute bottom-full mb-2 left-0 w-48 bg-slate-900 text-white p-3 rounded-2xl shadow-2xl z-[100] animate-in zoom-in-95 duration-200">
+        <div className="absolute top-full mt-2 left-0 w-48 bg-slate-900 text-white p-3 rounded-2xl shadow-2xl z-[100] animate-in zoom-in-95 duration-200">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-lg">{activeBadge.icon}</span>
             <span className="font-black text-[10px] uppercase tracking-widest text-emerald-400">{activeBadge.name}</span>
@@ -42,7 +42,8 @@ const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm' }) =>
           <p className="text-[10px] leading-relaxed text-slate-300 font-medium italic">
             "{activeBadge.description}"
           </p>
-          <div className="absolute top-full left-4 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900"></div>
+          {/* Mũi tên chỉ ngược lên phía trên Badge */}
+          <div className="absolute bottom-full left-4 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900"></div>
           <button 
             className="absolute -top-1 -right-1 bg-white/20 hover:bg-white/40 w-4 h-4 rounded-full text-[8px] flex items-center justify-center"
             onClick={(e) => { e.stopPropagation(); setActiveBadge(null); }}
