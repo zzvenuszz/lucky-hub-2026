@@ -36,7 +36,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     return localDate.toISOString().split('T')[0];
   };
 
-  // Sử dụng chuỗi rỗng thay vì 0 để hiển thị placeholder
   const [formData, setFormData] = useState<any>({
     date: getTodayISO(),
     weight: '', bodyFat: '', boneMinerals: '', waterPercent: '', muscleMass: '', energy: '', bioAge: '', visceralFat: '', balanceIndex: ''
@@ -63,6 +62,11 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     setLoadingAI(true);
     setBulkMode(isBulk);
     setStatusMsg(null);
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const currentDate = now.getDate();
 
     const reader = new FileReader();
     reader.onloadend = async () => {
@@ -112,7 +116,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               contents: { 
                 parts: [
                   { inlineData: { mimeType: 'image/jpeg', data: compressedBase64 } }, 
-                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ: date (YYYY-MM-DD), weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. NẾU KHÔNG CÓ DỮ LIỆU HỢP LỆ, TRẢ VỀ MẢNG RỖNG [].` }
+                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ. QUAN TRỌNG: trường date chỉ trả về Ngày và Tháng định dạng "DD/MM" (ví dụ "15/01"). NẾU KHÔNG CÓ DỮ LIỆU HỢP LỆ, TRẢ VỀ MẢNG RỖNG [].` }
                 ] 
               },
               config: { 
@@ -139,12 +143,29 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               }
             });
             const data = JSON.parse(cleanJsonResponse(response.text || "[]"));
-            const validData = data.filter((item: any) => item.weight && item.weight > 0);
+            
+            // Áp dụng logic xác định năm cho từng bản ghi trong mảng
+            const processedData = data.filter((item: any) => item.weight && item.weight > 0).map((item: any) => {
+              if (item.date && item.date.includes('/')) {
+                const parts = item.date.split('/');
+                const d = parseInt(parts[0]);
+                const m = parseInt(parts[1]);
+                
+                let year = currentYear;
+                if (m > currentMonth || (m === currentMonth && d > currentDate)) {
+                  year = currentYear - 1;
+                }
+                item.date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              } else {
+                item.date = now.toISOString().split('T')[0];
+              }
+              return { ...formData, balanceIndex: 0, ...item };
+            });
             
             setLoadingAI(false);
-            if (validData.length > 0) {
-              setBulkPreview(validData.map((item: any) => ({...formData, balanceIndex: 0, ...item})));
-              setStatusMsg({ text: `✅ Đã quét thành công ${validData.length} bản ghi!`, type: 'success' });
+            if (processedData.length > 0) {
+              setBulkPreview(processedData);
+              setStatusMsg({ text: `✅ Đã quét thành công ${processedData.length} bản ghi!`, type: 'success' });
             } else {
               setStatusMsg({ text: "⚠️ Không tìm thấy danh sách chỉ số hợp lệ trong ảnh quét hàng loạt.", type: 'error' });
             }
@@ -173,8 +194,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Kiểm tra tất cả các chỉ số phải được nhập và > 0
     const requiredKeys = metricFields.map(f => f.key);
     const isInvalid = requiredKeys.some(key => {
       const val = formData[key];
@@ -186,7 +205,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
       return;
     }
 
-    // Chuyển đổi về number trước khi lưu
     const submissionData = { ...formData };
     requiredKeys.forEach(key => {
       submissionData[key] = Number(formData[key]);

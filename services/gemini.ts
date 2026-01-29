@@ -26,7 +26,11 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
   };
 
-  const currentYear = new Date().getFullYear();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const currentDate = now.getDate();
+
   log("Bắt đầu trích xuất chỉ số (9 chỉ số)...");
   
   return withRetry(async () => {
@@ -40,7 +44,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
           
           QUY TẮC CỰC KỲ QUAN TRỌNG:
           1. NẾU HÌNH ẢNH KHÔNG CHỨA CHỈ SỐ SỨC KHỎE, QUÁ MỜ, HOẶC KHÔNG PHẢI LÀ PHIẾU ĐO: Trả về JSON với weight: 0 và các trường khác: 0.
-          2. Ngày tháng (date): Nếu có DD/MM, dùng năm ${currentYear} (YYYY-MM-DD).
+          2. Ngày tháng (date): Chỉ trích xuất phần Ngày và Tháng (định dạng DD/MM). Nếu không thấy ngày, trả về "0".
           3. Chỉ trích xuất khi thấy con số rõ ràng.` }
         ]
       },
@@ -66,24 +70,28 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 
     const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
     
-    // Kiểm tra tính hợp lệ: Nếu cân nặng là 0, null hoặc không có, coi như ảnh không hợp lệ
     if (!result.weight || result.weight <= 0) {
       log("Không tìm thấy chỉ số hợp lệ hoặc ảnh quá mờ.", "error");
       return null;
     }
 
-    // Hậu xử lý ngày tháng
+    // Logic xử lý năm thông minh
     if (result.date && result.date !== "0") {
       const parts = result.date.split(/[-/]/);
-      if (parts.length === 2) {
-        result.date = `${currentYear}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      } else if (parts.length === 3) {
-        let y = parts[0], m = parts[1], d = parts[2];
-        if (y.length < 4) { y = parts[2]; d = parts[0]; }
-        result.date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      if (parts.length >= 2) {
+        const d = parseInt(parts[0]);
+        const m = parseInt(parts[1]);
+        
+        let year = currentYear;
+        // Nếu tháng trích xuất > tháng hiện tại, hoặc cùng tháng nhưng ngày trích xuất > ngày hiện tại
+        if (m > currentMonth || (m === currentMonth && d > currentDate)) {
+          year = currentYear - 1;
+        }
+        
+        result.date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       }
     } else {
-      result.date = new Date().toISOString().split('T')[0];
+      result.date = now.toISOString().split('T')[0];
     }
 
     log(`Trích xuất thành công: ${result.weight}kg`, "success");
