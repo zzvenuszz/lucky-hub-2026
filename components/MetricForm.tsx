@@ -65,8 +65,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
     const now = new Date();
     const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    const currentDate = now.getDate();
 
     const reader = new FileReader();
     reader.onloadend = async () => {
@@ -95,12 +93,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 date: extracted.date || prev.date 
               }));
               setStatusMsg({ 
-                text: `✅ Lucky AI đã trích xuất xong! (Cân nặng: ${extracted.weight}kg, Mỡ: ${extracted.bodyFat}%)`, 
+                text: `✅ Lucky AI đã trích xuất xong cho ngày ${formatDateVN(extracted.date || "")}!`, 
                 type: 'success' 
               });
             } else {
               setStatusMsg({ 
-                text: "⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ. Vui lòng đảm bảo ảnh rõ nét, không bị lóa hoặc quá mờ!", 
+                text: "⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ. Vui lòng đảm bảo ảnh rõ nét!", 
                 type: 'error' 
               });
             }
@@ -144,18 +142,21 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             });
             const data = JSON.parse(cleanJsonResponse(response.text || "[]"));
             
-            // Áp dụng logic xác định năm cho từng bản ghi trong mảng
+            // Áp dụng logic xác định năm thông minh cho từng bản ghi
             const processedData = data.filter((item: any) => item.weight && item.weight > 0).map((item: any) => {
               if (item.date && item.date.includes('/')) {
                 const parts = item.date.split('/');
                 const d = parseInt(parts[0]);
                 const m = parseInt(parts[1]);
                 
-                let year = currentYear;
-                if (m > currentMonth || (m === currentMonth && d > currentDate)) {
-                  year = currentYear - 1;
+                // Giả định ngày đo thuộc năm nay để so sánh
+                const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
+                
+                let finalYear = currentYear;
+                if (extractedDateThisYear > now) {
+                  finalYear = currentYear - 1;
                 }
-                item.date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                item.date = `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
               } else {
                 item.date = now.toISOString().split('T')[0];
               }
@@ -167,7 +168,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               setBulkPreview(processedData);
               setStatusMsg({ text: `✅ Đã quét thành công ${processedData.length} bản ghi!`, type: 'success' });
             } else {
-              setStatusMsg({ text: "⚠️ Không tìm thấy danh sách chỉ số hợp lệ trong ảnh quét hàng loạt.", type: 'error' });
+              setStatusMsg({ text: "⚠️ Không tìm thấy danh sách chỉ số hợp lệ.", type: 'error' });
             }
           } catch (err) {
             setLoadingAI(false);
@@ -201,7 +202,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     });
 
     if (isInvalid) {
-      setStatusMsg({ text: "⚠️ Vui lòng nhập đầy đủ tất cả các chỉ số và giá trị phải lớn hơn 0!", type: 'error' });
+      setStatusMsg({ text: "⚠️ Vui lòng nhập đầy đủ chỉ số!", type: 'error' });
       return;
     }
 

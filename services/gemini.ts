@@ -28,8 +28,6 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 
   const now = new Date();
   const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  const currentDate = now.getDate();
 
   log("Bắt đầu trích xuất chỉ số (9 chỉ số)...");
   
@@ -75,26 +73,29 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       return null;
     }
 
-    // Logic xử lý năm thông minh
+    // Logic xử lý năm thông minh theo yêu cầu mới
     if (result.date && result.date !== "0") {
       const parts = result.date.split(/[-/]/);
       if (parts.length >= 2) {
         const d = parseInt(parts[0]);
         const m = parseInt(parts[1]);
         
-        let year = currentYear;
-        // Nếu tháng trích xuất > tháng hiện tại, hoặc cùng tháng nhưng ngày trích xuất > ngày hiện tại
-        if (m > currentMonth || (m === currentMonth && d > currentDate)) {
-          year = currentYear - 1;
+        // Tạo một mốc thời gian giả định vào năm hiện tại để so sánh
+        const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
+        
+        let finalYear = currentYear;
+        // Nếu ngày trích xuất (năm nay) lớn hơn thời điểm hiện tại -> Nghĩa là dữ liệu của năm ngoái
+        if (extractedDateThisYear > now) {
+          finalYear = currentYear - 1;
         }
         
-        result.date = `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        result.date = `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       }
     } else {
       result.date = now.toISOString().split('T')[0];
     }
 
-    log(`Trích xuất thành công: ${result.weight}kg`, "success");
+    log(`Trích xuất thành công: ${result.weight}kg cho ngày ${result.date}`, "success");
     return result;
   }).catch(e => {
     log(`LỖI: ${e.message}`, "error");
