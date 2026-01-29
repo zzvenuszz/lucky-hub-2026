@@ -422,6 +422,13 @@ app.delete('/api/posts/:id', async (req, res) => {
   res.json({ success: true });
 });
 
+// --- PHỤC VỤ TỆP TĨNH VÀ SPA FALLBACK ---
+app.use(express.static('.') as any);
+
+app.get(/^[^\.]*$/, (req, res) => {
+  res.sendFile(path.resolve('index.html'));
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 [Server] Đang chạy tại http://localhost:${PORT}`);
 });
