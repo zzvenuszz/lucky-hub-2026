@@ -24,7 +24,7 @@ app.use(express.json({ limit: '15mb' }) as any);
 const MAILEROO_CONFIG = {
   apiKey: process.env.MAILEROO_API_KEY,
   endpoint: 'https://smtp.maileroo.com/api/v2/send',
-  fromEmail: process.env.SMTP_USER, // Email gửi đi (phải được verify trên Maileroo)
+  fromEmail: process.env.SMTP_USER, // LƯU Ý: Phải là email thuộc domain đã verify trên Maileroo
   fromName: "Lucky Hub 2026"
 };
 
@@ -58,13 +58,22 @@ async function sendMailViaMaileroo(to: string, subject: string, html: string) {
     const result = await response.json();
     
     if (!response.ok || !result.success) {
-      console.error('❌ [Maileroo API] Phản hồi lỗi:', result);
-      throw new Error(result.message || (result.errors ? JSON.stringify(result.errors) : 'Lỗi không xác định từ Maileroo API v2'));
+      console.error('❌ [Maileroo API Error Details]:', JSON.stringify(result, null, 2));
+      
+      // Phân tích lỗi cụ thể để thông báo
+      let errorMsg = result.message || 'Lỗi không xác định từ Maileroo';
+      if (result.errors) {
+        errorMsg = Object.entries(result.errors)
+          .map(([field, msg]) => `${field}: ${msg}`)
+          .join(', ');
+      }
+      
+      throw new Error(errorMsg);
     }
     
     return result;
   } catch (error: any) {
-    console.error('❌ [Maileroo API] Lỗi kết nối HTTP:', error.message);
+    console.error('❌ [Maileroo API Connection Error]:', error.message);
     throw error;
   }
 }
@@ -300,15 +309,23 @@ app.post('/api/forgot-password', async (req, res) => {
       console.log(`✅ [Email Service] Maileroo v2 đã gửi thành công tới ${user.email}.`);
       res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn qua Maileroo API v2.' });
     } catch (mailError: any) {
-      console.error('❌ [Email Service] Gửi mail thất bại qua Maileroo v2:', mailError.message);
+      console.error('❌ [Email Service Error]:', mailError.message);
+      
+      let userFriendlyMsg = 'Lỗi gửi Email. Vui lòng liên hệ Admin.';
+      if (mailError.message.includes('domain') || mailError.message.includes('verified')) {
+        userFriendlyMsg = 'Lỗi: Tên miền gửi chưa được xác thực trên Maileroo (Cần cấu hình DNS).';
+      } else if (mailError.message.includes('API key')) {
+        userFriendlyMsg = 'Lỗi: API Key của Maileroo không chính xác.';
+      }
+
       res.status(500).json({ 
-        message: 'Lỗi API Maileroo v2. Vui lòng kiểm tra lại MAILEROO_API_KEY hoặc trạng thái Domain trên Maileroo.',
+        message: userFriendlyMsg,
         error: process.env.NODE_ENV !== 'production' ? mailError.message : undefined
       });
     }
   } catch (err: any) {
-    console.error('❌ [Email Service] Lỗi hệ thống server:', err);
-    res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu.' });
+    console.error('❌ [Email Service Critical Error]:', err);
+    res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu email.' });
   }
 });
 
