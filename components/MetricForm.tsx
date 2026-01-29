@@ -2,7 +2,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { HealthMetric } from '../types';
 import { extractMetricsFromImage } from '../services/gemini';
-import { GoogleGenAI, Type } from "@google/genai";
 
 interface MetricFormProps {
   onSave: (metric: Omit<HealthMetric, 'id' | 'userId'>) => void;
@@ -10,12 +9,6 @@ interface MetricFormProps {
   existingDates?: string[];
   onClose: () => void;
 }
-
-const cleanJsonResponse = (text: string): string => {
-  const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (match) return match[0];
-  return text.trim();
-};
 
 const formatDateVN = (dateStr: string) => {
   if (!dateStr) return '';
@@ -98,60 +91,29 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               });
             } else {
               setStatusMsg({ 
-                text: "⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ. Vui lòng đảm bảo ảnh rõ nét!", 
+                text: "⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ.", 
                 type: 'error' 
               });
             }
           } catch (err) {
             setLoadingAI(false);
-            setStatusMsg({ text: "⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh. Vui lòng thử lại!", type: 'error' });
+            setStatusMsg({ text: "⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh.", type: 'error' });
           }
         } else {
           try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: { 
-                parts: [
-                  { inlineData: { mimeType: 'image/jpeg', data: compressedBase64 } }, 
-                  { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ. QUAN TRỌNG: trường date chỉ trả về Ngày và Tháng định dạng "DD/MM" (ví dụ "15/01"). NẾU KHÔNG CÓ DỮ LIỆU HỢP LỆ, TRẢ VỀ MẢNG RỖNG [].` }
-                ] 
-              },
-              config: { 
-                responseMimeType: "application/json",
-                responseSchema: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      date: { type: Type.STRING },
-                      weight: { type: Type.NUMBER },
-                      bodyFat: { type: Type.NUMBER },
-                      muscleMass: { type: Type.NUMBER },
-                      visceralFat: { type: Type.NUMBER },
-                      boneMinerals: { type: Type.NUMBER },
-                      waterPercent: { type: Type.NUMBER },
-                      energy: { type: Type.NUMBER },
-                      bioAge: { type: Type.NUMBER },
-                      balanceIndex: { type: Type.NUMBER }
-                    },
-                    required: ["weight"]
-                  }
-                }
-              }
+            const res = await fetch('/api/ai/bulk-extract', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ imageBase64: compressedBase64 })
             });
-            const data = JSON.parse(cleanJsonResponse(response.text || "[]"));
+            const data = await res.json();
             
-            // Áp dụng logic xác định năm thông minh cho từng bản ghi
             const processedData = data.filter((item: any) => item.weight && item.weight > 0).map((item: any) => {
               if (item.date && item.date.includes('/')) {
                 const parts = item.date.split('/');
                 const d = parseInt(parts[0]);
                 const m = parseInt(parts[1]);
-                
-                // Giả định ngày đo thuộc năm nay để so sánh
                 const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
-                
                 let finalYear = currentYear;
                 if (extractedDateThisYear > now) {
                   finalYear = currentYear - 1;
@@ -172,7 +134,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             }
           } catch (err) {
             setLoadingAI(false);
-            setStatusMsg({ text: "⚠️ Lỗi phân tích ảnh hàng loạt. Vui lòng thử lại!", type: 'error' });
+            setStatusMsg({ text: "⚠️ Lỗi phân tích ảnh hàng loạt.", type: 'error' });
           }
         }
       };
@@ -248,7 +210,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           {loadingAI && (
             <div className="flex flex-col items-center justify-center p-12 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
               <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <span className="text-emerald-700 font-black text-xs uppercase tracking-widest">Lucky AI đang phân tích dữ liệu...</span>
+              <span className="text-emerald-700 font-black text-xs uppercase tracking-widest">Lucky AI đang phân tích dữ liệu qua Server...</span>
             </div>
           )}
 

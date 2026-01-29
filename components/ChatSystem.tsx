@@ -27,6 +27,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
   const [latestMetric, setLatestMetric] = useState<HealthMetric | undefined>(undefined);
   const [showContacts, setShowContacts] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,8 +137,27 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   }, [currentUser, users, selectedChat?.id, isTypingAI]);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (scrollRef.current && !showScrollButton) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
   }, [selectedChat?.messages, isTypingAI, isProcessingQueue]);
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    // Nếu khoảng cách tới đáy > 200px thì hiện nút
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 200;
+    setShowScrollButton(!isAtBottom);
+  };
+
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   const handleSendMessage = async () => {
     if ((!inputText.trim() && !selectedImage) || !selectedChat) return;
@@ -264,7 +284,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
             <button onClick={() => setShowContacts(true)} className="p-2 hover:bg-white/10 rounded-xl transition-all">←</button>
           )}
           
-          {/* Avatar trong khung chat riêng (Header) */}
           {!showContacts && selectedChat && (
             <div className="w-10 h-10 rounded-xl bg-white/20 overflow-hidden flex items-center justify-center font-black text-sm shrink-0 border border-white/30">
               {getOtherUser(selectedChat)?.avatar ? (
@@ -287,7 +306,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-full font-bold text-xl transition-all">×</button>
       </div>
 
-      <div className="flex-grow flex flex-col min-h-0 bg-slate-50/30">
+      <div className="flex-grow flex flex-col min-h-0 bg-slate-50/30 relative">
         {showContacts ? (
           <div className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">Hội thoại của bạn</div>
@@ -296,7 +315,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
               if (!other) return null;
               return (
                 <div key={chat.id} onClick={() => { setSelectedChat(chat); setShowContacts(false); }} className="p-4 bg-white rounded-2xl cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all border border-slate-50 flex items-center gap-3 group">
-                  {/* Avatar trong danh sách liên lạc */}
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm overflow-hidden shrink-0 ${other.id === 'ai_coach' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
                     {other.avatar ? (
                       <img src={other.avatar} alt={other.fullName} className="w-full h-full object-cover" />
@@ -316,7 +334,12 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
           </div>
         ) : selectedChat ? (
           <>
-            <div ref={scrollRef} className="flex-grow p-4 overflow-y-auto space-y-4 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
+            <div 
+              ref={scrollRef} 
+              onScroll={handleScroll}
+              className="flex-grow p-4 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-slate-200" 
+              style={{ overscrollBehavior: 'contain' }}
+            >
               {selectedChat.messages.map((msg, idx) => {
                 const isMyMessage = msg.senderId === currentUid;
                 const isAiPrompt = msg.content === AI_PROMPT_TEXT;
@@ -335,7 +358,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                         {msg.content}
                       </div>
 
-                      {/* Hiển thị nút lựa chọn nếu là tin nhắn gợi ý AI */}
                       {isAiPrompt && (
                         <div className="mt-4 flex gap-2">
                           <button 
@@ -369,6 +391,17 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
               )}
             </div>
             
+            {/* Nút cuộn xuống tin nhắn mới nhất */}
+            {showScrollButton && (
+              <button 
+                onClick={scrollToBottom}
+                className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-white text-emerald-600 w-10 h-10 rounded-full shadow-xl flex items-center justify-center border border-emerald-100 hover:bg-emerald-50 transition-all animate-bounce z-10"
+                title="Cuộn xuống tin nhắn mới nhất"
+              >
+                <span className="text-xl">↓</span>
+              </button>
+            )}
+
             <div className="p-4 bg-white border-t border-slate-50 shrink-0">
               {selectedImage && (
                 <div className="relative w-16 h-16 mb-2">

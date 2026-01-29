@@ -1,106 +1,54 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
 import { HealthMetric, Message, AIKnowledge, AIRule, HealthGoal } from "../types.ts";
 
-const cleanJsonResponse = (text: string): string => {
-  const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (match) return match[0];
-  return text.trim();
-};
+const processYearLogic = (extractedDate: string) => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  if (!extractedDate || extractedDate === "0") return now.toISOString().split('T')[0];
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
-  try {
-    return await fn();
-  } catch (error: any) {
-    if (retries > 0 && (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED'))) {
-      if (window.debugLog) window.debugLog(`Đang thử lại do nghẽn mạng (còn ${retries} lần)...`, "info");
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return withRetry(fn, retries - 1, delay * 2);
+  const parts = extractedDate.split(/[-/]/);
+  if (parts.length >= 2) {
+    const d = parseInt(parts[0]);
+    const m = parseInt(parts[1]);
+    const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
+    let finalYear = currentYear;
+    if (extractedDateThisYear > now) {
+      finalYear = currentYear - 1;
     }
-    throw error;
+    return `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   }
-}
+  return now.toISOString().split('T')[0];
+};
 
 export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric> | null> => {
   const log = (msg: string, type: string = 'ai') => {
-    if (window.debugLog) window.debugLog(`[Gemini OCR] ${msg}`, type);
+    if (window.debugLog) window.debugLog(`[Gemini OCR Proxy] ${msg}`, type);
   };
 
-  const now = new Date();
-  const currentYear = now.getFullYear();
-
-  log("Bắt đầu trích xuất chỉ số (9 chỉ số)...");
+  log("Gửi yêu cầu trích xuất chỉ số tới Server...");
   
-  return withRetry(async () => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: {
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          { text: `Bạn là chuyên gia phân tích phiếu InBody. Hãy trích xuất: weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex.
-          
-          QUY TẮC CỰC KỲ QUAN TRỌNG:
-          1. NẾU HÌNH ẢNH KHÔNG CHỨA CHỈ SỐ SỨC KHỎE, QUÁ MỜ, HOẶC KHÔNG PHẢI LÀ PHIẾU ĐO: Trả về JSON với weight: 0 và các trường khác: 0.
-          2. Ngày tháng (date): Chỉ trích xuất phần Ngày và Tháng (định dạng DD/MM). Nếu không thấy ngày, trả về "0".
-          3. Chỉ trích xuất khi thấy con số rõ ràng.` }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            date: { type: Type.STRING },
-            weight: { type: Type.NUMBER },
-            bodyFat: { type: Type.NUMBER },
-            boneMinerals: { type: Type.NUMBER },
-            waterPercent: { type: Type.NUMBER },
-            muscleMass: { type: Type.NUMBER },
-            balanceIndex: { type: Type.NUMBER },
-            energy: { type: Type.NUMBER },
-            bioAge: { type: Type.NUMBER },
-            visceralFat: { type: Type.NUMBER }
-          }
-        }
-      }
+  try {
+    const res = await fetch('/api/ai/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64Image })
     });
 
-    const result = JSON.parse(cleanJsonResponse(response.text || "{}"));
+    if (!res.ok) throw new Error("Server AI Error");
     
+    const result = await res.json();
     if (!result.weight || result.weight <= 0) {
-      log("Không tìm thấy chỉ số hợp lệ hoặc ảnh quá mờ.", "error");
+      log("Không tìm thấy chỉ số hợp lệ.", "error");
       return null;
     }
 
-    // Logic xử lý năm thông minh theo yêu cầu mới
-    if (result.date && result.date !== "0") {
-      const parts = result.date.split(/[-/]/);
-      if (parts.length >= 2) {
-        const d = parseInt(parts[0]);
-        const m = parseInt(parts[1]);
-        
-        // Tạo một mốc thời gian giả định vào năm hiện tại để so sánh
-        const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
-        
-        let finalYear = currentYear;
-        // Nếu ngày trích xuất (năm nay) lớn hơn thời điểm hiện tại -> Nghĩa là dữ liệu của năm ngoái
-        if (extractedDateThisYear > now) {
-          finalYear = currentYear - 1;
-        }
-        
-        result.date = `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      }
-    } else {
-      result.date = now.toISOString().split('T')[0];
-    }
-
+    result.date = processYearLogic(result.date);
     log(`Trích xuất thành công: ${result.weight}kg cho ngày ${result.date}`, "success");
     return result;
-  }).catch(e => {
+  } catch (e: any) {
     log(`LỖI: ${e.message}`, "error");
     return null;
-  });
+  }
 };
 
 export const getAICoachResponse = async (
@@ -113,11 +61,10 @@ export const getAICoachResponse = async (
   base64Image?: string
 ): Promise<string | null> => {
   const log = (msg: string, type: string = 'ai') => {
-    if (window.debugLog) window.debugLog(`[Gemini Coach] ${msg}`, type);
+    if (window.debugLog) window.debugLog(`[Gemini Coach Proxy] ${msg}`, type);
   };
 
-  return withRetry(async () => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
     const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
     const contextKnowledge = knowledge
       .filter(k => latestUserMessage.toLowerCase().includes(k.keyword.toLowerCase()))
@@ -142,12 +89,20 @@ PHONG CÁCH:
       parts: [{ text: m.content }]
     }));
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: [...formattedHistory, { role: 'user', parts: base64Image ? [{ text: latestUserMessage || "Phân tích ảnh" }, { inlineData: { mimeType: 'image/jpeg', data: base64Image } }] : [{ text: latestUserMessage }] }],
-      config: { systemInstruction, temperature: 0.7 }
+    const res = await fetch('/api/ai/coach', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        history: formattedHistory,
+        systemInstruction,
+        latestUserMessage,
+        imageBase64: base64Image
+      })
     });
 
-    return response.text;
-  }).catch(() => "Xin lỗi, tôi đang bận một chút.");
+    const data = await res.json();
+    return data.text;
+  } catch (e) {
+    return "Xin lỗi, tôi đang bận một chút.";
+  }
 };

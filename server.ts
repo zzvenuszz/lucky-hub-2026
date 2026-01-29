@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { transform } from 'sucrase';
+import { GoogleGenAI, Type } from "@google/genai";
 import { UserRole, AccountStatus, HealthGoal, Permission } from './types.ts';
 
 dotenv.config();
@@ -14,11 +15,17 @@ dotenv.config();
 const app = express();
 
 app.use(cors({ origin: '*' }) as any);
-app.use(express.json({ limit: '10mb' }) as any);
+app.use(express.json({ limit: '15mb' }) as any); // Tăng limit để xử lý ảnh base64
 
 function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
+
+const cleanJsonResponse = (text: string): string => {
+  const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (match) return match[0];
+  return text.trim();
+};
 
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
@@ -52,7 +59,8 @@ app.use((req, res, next) => {
 app.use(express.static('.') as any);
 
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
+// Ưu tiên sử dụng MONGO_URI từ render.com
+const MONGODB_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -120,6 +128,119 @@ async function initDB() {
   } catch (err) { console.error('❌ DB ERROR:', err); }
 }
 initDB();
+
+// INITIALIZE GEMINI ON SERVER
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+
+// API AI PROXY
+app.post('/api/ai/extract', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ message: 'Thiếu hình ảnh' });
+
+    const model = genAI.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: {
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+          { text: `Bạn là chuyên gia phân tích phiếu InBody. Hãy trích xuất: weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. Trả về JSON với các trường này. Nếu không thấy, trả về 0 cho trường đó. Ngày (date) trả về định dạng DD/MM.` }
+        ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            date: { type: Type.STRING },
+            weight: { type: Type.NUMBER },
+            bodyFat: { type: Type.NUMBER },
+            boneMinerals: { type: Type.NUMBER },
+            waterPercent: { type: Type.NUMBER },
+            muscleMass: { type: Type.NUMBER },
+            balanceIndex: { type: Type.NUMBER },
+            energy: { type: Type.NUMBER },
+            bioAge: { type: Type.NUMBER },
+            visceralFat: { type: Type.NUMBER }
+          }
+        }
+      }
+    });
+
+    const result = await model;
+    res.json(JSON.parse(cleanJsonResponse(result.text || "{}")));
+  } catch (err) {
+    console.error("AI ERROR:", err);
+    res.status(500).json({ message: 'Lỗi AI Server' });
+  }
+});
+
+app.post('/api/ai/bulk-extract', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+    const response = await genAI.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: { 
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }, 
+          { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ. Trường date chỉ trả về Ngày và Tháng định dạng "DD/MM". NẾU KHÔNG CÓ DỮ LIỆU HỢP LỆ, TRẢ VỀ MẢNG RỖNG [].` }
+        ] 
+      },
+      config: { 
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING },
+              weight: { type: Type.NUMBER },
+              bodyFat: { type: Type.NUMBER },
+              muscleMass: { type: Type.NUMBER },
+              visceralFat: { type: Type.NUMBER },
+              boneMinerals: { type: Type.NUMBER },
+              waterPercent: { type: Type.NUMBER },
+              energy: { type: Type.NUMBER },
+              bioAge: { type: Type.NUMBER },
+              balanceIndex: { type: Type.NUMBER }
+            },
+            required: ["weight"]
+          }
+        }
+      }
+    });
+    res.json(JSON.parse(cleanJsonResponse(response.text || "[]")));
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi quét hàng loạt' });
+  }
+});
+
+app.post('/api/ai/coach', async (req, res) => {
+  try {
+    const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
+    
+    const contents: any[] = history.map((m: any) => ({
+      role: m.role,
+      parts: [{ text: m.parts[0].text }]
+    }));
+
+    const userParts: any[] = [{ text: latestUserMessage }];
+    if (imageBase64) {
+      userParts.push({ inlineData: { mimeType: 'image/jpeg', data: imageBase64 } });
+    }
+
+    contents.push({ role: 'user', parts: userParts });
+
+    const response = await genAI.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents,
+      config: { systemInstruction, temperature: 0.7 }
+    });
+
+    res.json({ text: response.text });
+  } catch (err) {
+    res.status(500).json({ text: 'Tôi đang bận một chút, hãy thử lại sau.' });
+  }
+});
 
 // API AUTH
 app.post('/api/login', async (req, res) => {
