@@ -248,7 +248,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   const getOtherUser = (chat: ChatSession) => {
-    if (chat.coachId === 'ai_coach') return { fullName: '🍀Trợ lý Lucky', role: 'AI', id: 'ai_coach' };
+    if (chat.coachId === 'ai_coach') return { fullName: '🍀Trợ lý Lucky', role: 'AI', id: 'ai_coach', avatar: null };
     const otherId = currentUid === chat.memberId ? chat.coachId : chat.memberId;
     return users.find(u => ((u as any).id || (u as any)._id) === otherId);
   };
@@ -263,6 +263,18 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
           {!showContacts && (
             <button onClick={() => setShowContacts(true)} className="p-2 hover:bg-white/10 rounded-xl transition-all">←</button>
           )}
+          
+          {/* Avatar trong khung chat riêng (Header) */}
+          {!showContacts && selectedChat && (
+            <div className="w-10 h-10 rounded-xl bg-white/20 overflow-hidden flex items-center justify-center font-black text-sm shrink-0 border border-white/30">
+              {getOtherUser(selectedChat)?.avatar ? (
+                <img src={getOtherUser(selectedChat)!.avatar} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <span>{getOtherUser(selectedChat)?.fullName.charAt(0)}</span>
+              )}
+            </div>
+          )}
+
           <div>
             <div className="font-black text-xs uppercase tracking-widest">
               {showContacts ? 'Hỗ trợ trực tuyến' : getOtherUser(selectedChat!)?.fullName}
@@ -284,8 +296,13 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
               if (!other) return null;
               return (
                 <div key={chat.id} onClick={() => { setSelectedChat(chat); setShowContacts(false); }} className="p-4 bg-white rounded-2xl cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all border border-slate-50 flex items-center gap-3 group">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${other.id === 'ai_coach' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                    {other.id === 'ai_coach' ? '🍀' : other.fullName.charAt(0)}
+                  {/* Avatar trong danh sách liên lạc */}
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm overflow-hidden shrink-0 ${other.id === 'ai_coach' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                    {other.avatar ? (
+                      <img src={other.avatar} alt={other.fullName} className="w-full h-full object-cover" />
+                    ) : (
+                      <span>{other.id === 'ai_coach' ? '🍀' : other.fullName.charAt(0)}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center">
