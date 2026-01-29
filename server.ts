@@ -47,12 +47,10 @@ async function sendMailViaMaileroo(to: string, subject: string, html: string) {
         'X-API-Key': MAILEROO_CONFIG.apiKey || ''
       },
       body: JSON.stringify({
-        // Theo ảnh: 'from' phải là một Object
         from: {
           address: MAILEROO_CONFIG.fromEmail,
           name: MAILEROO_CONFIG.fromName
         },
-        // Maileroo v2 thường yêu cầu 'to' là một mảng các địa chỉ
         to: [
           {
             address: to
@@ -154,11 +152,14 @@ app.use((req, res, next) => {
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
 
+// Thu thập tất cả API Keys có sẵn
 const API_KEYS = [
   process.env.API_KEY, 
   process.env.API_KEY_2, 
   process.env.API_KEY_3
 ].filter(k => !!k);
+
+console.log(`📡 [AI Service] Tìm thấy ${API_KEYS.length} API Keys trong cấu hình.`);
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -233,25 +234,49 @@ initDB();
 
 let currentKeyIndex = 0;
 
+/**
+ * Hàm gọi AI với cơ chế xoay vòng 3 Key (Round-robin) và Fallback thông minh
+ * Đảm bảo thử lần lượt toàn bộ danh sách Key trước khi báo lỗi.
+ */
 async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
   let lastError = null;
   const numKeys = API_KEYS.length;
-  if (numKeys === 0) throw new Error("Không tìm thấy API Key nào");
+  
+  if (numKeys === 0) {
+    console.error("❌ [AI Service] Không tìm thấy API Key nào trong cấu hình .env");
+    throw new Error("Không tìm thấy API Key nào");
+  }
+
+  // Luôn bắt đầu từ Key tiếp theo để dàn đều tải
   const startIndex = currentKeyIndex;
   currentKeyIndex = (currentKeyIndex + 1) % numKeys;
+
   for (let attempt = 0; attempt < numKeys; attempt++) {
     const index = (startIndex + attempt) % numKeys;
     const key = API_KEYS[index];
+    const maskedKey = `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
+
     try {
+      console.log(`🤖 [AI Service] Đang thử yêu cầu với Key #${index + 1} (${maskedKey}) - Lần thử ${attempt + 1}/${numKeys}`);
+      
       const ai = new GoogleGenAI({ apiKey: key });
-      return await callFn(ai);
+      const result = await callFn(ai);
+      
+      console.log(`✅ [AI Service] Key #${index + 1} phản hồi thành công.`);
+      return result;
     } catch (err: any) {
       lastError = err;
-      const isQuotaError = err.message?.includes('429') || err.message?.toLowerCase().includes('quota');
-      if (isQuotaError && attempt < numKeys - 1) continue;
-      break; 
+      console.error(`⚠️ [AI Service] Key #${index + 1} thất bại: ${err.message}`);
+      
+      // Nếu còn Key trong danh sách, tiếp tục thử Key tiếp theo bất kể loại lỗi
+      if (attempt < numKeys - 1) {
+        console.log(`🔄 [AI Service] Đang chuyển sang Key dự phòng tiếp theo...`);
+        continue;
+      }
     }
   }
+  
+  console.error(`❌ [AI Service] Tất cả ${numKeys} Keys đều thất bại. Lỗi cuối cùng: ${lastError?.message}`);
   throw lastError;
 }
 
