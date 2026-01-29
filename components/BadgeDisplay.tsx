@@ -9,7 +9,7 @@ interface BadgeDisplayProps {
 }
 
 const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm' }) => {
-  const [activeBadge, setActiveBadge] = useState<Badge | null>(null);
+  const [activeBadgeId, setActiveBadgeId] = useState<string | null>(null);
 
   if (!badgeIds || badgeIds.length === 0) return null;
 
@@ -18,40 +18,41 @@ const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm' }) =>
     .filter((b): b is Badge => !!b);
 
   return (
-    <div className="flex flex-wrap gap-1 items-center relative">
+    <div className="flex flex-wrap gap-1 items-center">
       {userBadges.map(badge => (
-        <div 
-          key={badge.id}
-          className={`cursor-pointer flex items-center gap-1 rounded-full px-2 py-0.5 text-white font-black uppercase tracking-tighter ${badge.color} hover:scale-105 transition-all shadow-sm ${size === 'sm' ? 'text-[8px]' : 'text-[10px]'}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            setActiveBadge(activeBadge?.id === badge.id ? null : badge);
-          }}
-        >
-          <span>{badge.icon}</span>
-          <span className="hidden sm:inline">{badge.name}</span>
+        <div key={badge.id} className="relative">
+          <div 
+            className={`cursor-pointer flex items-center gap-1 rounded-full px-2 py-0.5 text-white font-black uppercase tracking-tighter ${badge.color} hover:scale-105 transition-all shadow-sm ${size === 'sm' ? 'text-[8px]' : 'text-[10px]'}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveBadgeId(activeBadgeId === badge.id ? null : badge.id);
+            }}
+          >
+            <span>{badge.icon}</span>
+            <span className="hidden sm:inline">{badge.name}</span>
+          </div>
+
+          {activeBadgeId === badge.id && (
+            <div className="absolute top-full mt-2 left-0 w-48 bg-slate-900 text-white p-3 rounded-2xl shadow-2xl z-[100] animate-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">{badge.icon}</span>
+                <span className="font-black text-[10px] uppercase tracking-widest text-emerald-400">{badge.name}</span>
+              </div>
+              <p className="text-[10px] leading-relaxed text-slate-300 font-medium italic">
+                "{badge.description}"
+              </p>
+              {/* Mũi tên trỏ thẳng lên Badge phía trên */}
+              <div className="absolute bottom-full left-3 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900"></div>
+              <button 
+                className="absolute -top-1 -right-1 bg-white/20 hover:bg-white/40 w-4 h-4 rounded-full text-[8px] flex items-center justify-center"
+                onClick={(e) => { e.stopPropagation(); setActiveBadgeId(null); }}
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
       ))}
-
-      {activeBadge && (
-        <div className="absolute top-full mt-2 left-0 w-48 bg-slate-900 text-white p-3 rounded-2xl shadow-2xl z-[100] animate-in zoom-in-95 duration-200">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-lg">{activeBadge.icon}</span>
-            <span className="font-black text-[10px] uppercase tracking-widest text-emerald-400">{activeBadge.name}</span>
-          </div>
-          <p className="text-[10px] leading-relaxed text-slate-300 font-medium italic">
-            "{activeBadge.description}"
-          </p>
-          {/* Mũi tên chỉ ngược lên phía trên Badge */}
-          <div className="absolute bottom-full left-4 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900"></div>
-          <button 
-            className="absolute -top-1 -right-1 bg-white/20 hover:bg-white/40 w-4 h-4 rounded-full text-[8px] flex items-center justify-center"
-            onClick={(e) => { e.stopPropagation(); setActiveBadge(null); }}
-          >
-            ×
-          </button>
-        </div>
-      )}
     </div>
   );
 };
