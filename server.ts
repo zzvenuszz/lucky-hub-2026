@@ -58,10 +58,10 @@ app.use((req, res, next) => {
 
 app.use(express.static('.') as any);
 
-// THỐNG NHẤT BIẾN MÔI TRƯỜNG THEO .ENV
+// QUẢN LÝ CẤU HÌNH API KEYS
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
-const GEMINI_KEY = process.env.API_KEY || '';
+const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2].filter(k => !!k);
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -140,7 +140,49 @@ async function initDB() {
 }
 initDB();
 
-const genAI = new GoogleGenAI({ apiKey: GEMINI_KEY });
+/**
+ * BIẾN TOÀN CỤC ĐỂ THEO DÕI KEY ĐANG SỬ DỤNG (ROUND-ROBIN)
+ */
+let currentKeyIndex = 0;
+
+/**
+ * HÀM WRAPPER ĐỂ XỬ LÝ LUÂN PHIÊN VÀ DỰ PHÒNG API KEY
+ * 1. Chọn key bắt đầu theo cơ chế Round-robin (xoay vòng).
+ * 2. Nếu key đó lỗi, thử các key còn lại trong danh sách (fallback).
+ */
+async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
+  let lastError = null;
+  const numKeys = API_KEYS.length;
+  
+  // Xác định vị trí bắt đầu cho request này
+  const startIndex = currentKeyIndex;
+  
+  // Cập nhật chỉ số cho request tiếp theo ngay lập tức
+  currentKeyIndex = (currentKeyIndex + 1) % numKeys;
+  
+  for (let attempt = 0; attempt < numKeys; attempt++) {
+    // Tính toán index dựa trên lượt xoay vòng và số lần thử lại
+    const index = (startIndex + attempt) % numKeys;
+    const key = API_KEYS[index];
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      console.log(`📡 [AI Request] Sử dụng Key index: ${index} (Key ${index + 1}/${numKeys})`);
+      return await callFn(ai);
+    } catch (err: any) {
+      lastError = err;
+      const isQuotaError = err.message?.includes('429') || err.message?.toLowerCase().includes('quota');
+      const isNetworkError = err.message?.includes('fetch') || err.message?.includes('socket');
+      
+      if ((isQuotaError || isNetworkError) && attempt < numKeys - 1) {
+        console.warn(`⚠️ API Key index ${index} gặp lỗi, thử key tiếp theo trong cụm Round-robin...`);
+        continue; // Thử key tiếp theo trong danh sách xoay vòng
+      }
+      break; // Lỗi nghiêm trọng hoặc đã thử hết tất cả các key
+    }
+  }
+  throw lastError;
+}
 
 // API AI PROXY
 app.post('/api/ai/extract', async (req, res) => {
@@ -148,80 +190,86 @@ app.post('/api/ai/extract', async (req, res) => {
     const { imageBase64 } = req.body;
     if (!imageBase64) return res.status(400).json({ message: 'Thiếu hình ảnh' });
 
-    const model = genAI.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: {
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
-          { text: `Bạn là chuyên gia phân tích phiếu InBody. Hãy trích xuất: weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. Trả về JSON với các trường này. Nếu không thấy, trả về 0 cho trường đó. Ngày (date) trả về định dạng DD/MM.` }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            date: { type: Type.STRING },
-            weight: { type: Type.NUMBER },
-            bodyFat: { type: Type.NUMBER },
-            boneMinerals: { type: Type.NUMBER },
-            waterPercent: { type: Type.NUMBER },
-            muscleMass: { type: Type.NUMBER },
-            balanceIndex: { type: Type.NUMBER },
-            energy: { type: Type.NUMBER },
-            bioAge: { type: Type.NUMBER },
-            visceralFat: { type: Type.NUMBER }
+    const resultText = await callAiWithFallback(async (ai) => {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
+            { text: `Bạn là chuyên gia phân tích phiếu InBody. Hãy trích xuất: weight, bodyFat, muscleMass, visceralFat, boneMinerals, waterPercent, energy, bioAge, balanceIndex. Trả về JSON với các trường này. Nếu không thấy, trả về 0 cho trường đó. Ngày (date) trả về định dạng DD/MM.` }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING },
+              weight: { type: Type.NUMBER },
+              bodyFat: { type: Type.NUMBER },
+              boneMinerals: { type: Type.NUMBER },
+              waterPercent: { type: Type.NUMBER },
+              muscleMass: { type: Type.NUMBER },
+              balanceIndex: { type: Type.NUMBER },
+              energy: { type: Type.NUMBER },
+              bioAge: { type: Type.NUMBER },
+              visceralFat: { type: Type.NUMBER }
+            }
           }
         }
-      }
+      });
+      return response.text;
     });
 
-    const result = await model;
-    res.json(JSON.parse(cleanJsonResponse(result.text || "{}")));
+    res.json(JSON.parse(cleanJsonResponse(resultText || "{}")));
   } catch (err) {
     console.error("AI EXTRACT ERROR:", err);
-    res.status(500).json({ message: 'Lỗi AI Server' });
+    res.status(500).json({ message: 'Lỗi AI Server (Cả 2 Key đều quá tải)' });
   }
 });
 
 app.post('/api/ai/bulk-extract', async (req, res) => {
   try {
     const { imageBase64 } = req.body;
-    const response = await genAI.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: { 
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }, 
-          { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ. Trường date chỉ trả về Ngày và Tháng định dạng "DD/MM". NẾU KHÔNG CÓ DỮ LIỆU HỢP LỆ, TRẢ VỀ MẢNG RỖNG [].` }
-        ] 
-      },
-      config: { 
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              date: { type: Type.STRING },
-              weight: { type: Type.NUMBER },
-              bodyFat: { type: Type.NUMBER },
-              muscleMass: { type: Type.NUMBER },
-              visceralFat: { type: Type.NUMBER },
-              boneMinerals: { type: Type.NUMBER },
-              waterPercent: { type: Type.NUMBER },
-              energy: { type: Type.NUMBER },
-              bioAge: { type: Type.NUMBER },
-              balanceIndex: { type: Type.NUMBER }
-            },
-            required: ["weight"]
+    const resultText = await callAiWithFallback(async (ai) => {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: { 
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }, 
+            { text: `Đọc bảng kết quả sức khỏe. Trích xuất mảng JSON ĐẦY ĐỦ 9 CHỈ SỐ. Trường date chỉ trả về Ngày và Tháng định dạng "DD/MM". NẾU KHÔNG CÓ DỮ LIỆU HỢP LỆ, TRẢ VỀ MẢNG RỖNG [].` }
+          ] 
+        },
+        config: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                date: { type: Type.STRING },
+                weight: { type: Type.NUMBER },
+                bodyFat: { type: Type.NUMBER },
+                muscleMass: { type: Type.NUMBER },
+                visceralFat: { type: Type.NUMBER },
+                boneMinerals: { type: Type.NUMBER },
+                waterPercent: { type: Type.NUMBER },
+                energy: { type: Type.NUMBER },
+                bioAge: { type: Type.NUMBER },
+                balanceIndex: { type: Type.NUMBER }
+              },
+              required: ["weight"]
+            }
           }
         }
-      }
+      });
+      return response.text;
     });
-    res.json(JSON.parse(cleanJsonResponse(response.text || "[]")));
+    
+    res.json(JSON.parse(cleanJsonResponse(resultText || "[]")));
   } catch (err) {
     console.error("AI BULK ERROR:", err);
-    res.status(500).json({ message: 'Lỗi quét hàng loạt' });
+    res.status(500).json({ message: 'Lỗi quét hàng loạt (Cả 2 Key đều quá tải)' });
   }
 });
 
@@ -241,16 +289,19 @@ app.post('/api/ai/coach', async (req, res) => {
 
     contents.push({ role: 'user', parts: userParts });
 
-    const response = await genAI.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents,
-      config: { systemInstruction, temperature: 0.7 }
+    const resultText = await callAiWithFallback(async (ai) => {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents,
+        config: { systemInstruction, temperature: 0.7 }
+      });
+      return response.text;
     });
 
-    res.json({ text: response.text });
+    res.json({ text: resultText });
   } catch (err) {
     console.error("AI COACH ERROR:", err);
-    res.status(500).json({ text: 'Tôi đang bận một chút, hãy thử lại sau.' });
+    res.status(500).json({ text: 'Tôi đang bận một chút (Cả 2 Key đều quá tải), hãy thử lại sau.' });
   }
 });
 
@@ -363,6 +414,6 @@ app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
 
 app.listen(PORT, () => {
   console.log(`🚀 Lucky Hub is running on port ${PORT}`);
-  console.log(`📡 AI Key Loaded: ${GEMINI_KEY ? 'Yes' : 'No'}`);
+  console.log(`📡 AI Keys Configured: ${API_KEYS.length} keys`);
   console.log(`🗄️ DB URI Loaded: ${MONGODB_URI ? 'Yes' : 'No'}`);
 });
