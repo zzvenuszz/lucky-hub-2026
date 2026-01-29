@@ -33,6 +33,53 @@ if (!MAILEROO_CONFIG.apiKey) {
   console.log('✅ [Email] Hệ thống Maileroo API v2 sử dụng Endpoint: ' + MAILEROO_CONFIG.endpoint);
 }
 
+/**
+ * HÀM TIỆN ÍCH UPLOAD ẢNH LÊN IMGBB
+ * @param base64Data Chuỗi base64 đầy đủ (có prefix data:image/...)
+ * @returns URL trực tiếp của ảnh hoặc chuỗi gốc nếu thất bại
+ */
+async function uploadToImgBB(base64Data: string | undefined): Promise<string | undefined> {
+  if (!base64Data || !base64Data.startsWith('data:image')) {
+    return base64Data; // Trả về giá trị gốc nếu không phải base64
+  }
+
+  try {
+    console.log('📤 [ImgBB] Đang upload hình ảnh lên CDN...');
+    const apiKey = process.env.IMGBB_API_KEY;
+    if (!apiKey) {
+      console.warn('⚠️ [ImgBB] Thiếu IMGBB_API_KEY. Lưu Base64 như dự phòng.');
+      return base64Data;
+    }
+
+    // Tách phần dữ liệu thực tế từ chuỗi base64
+    const base64Image = base64Data.split(',')[1];
+    
+    const formData = new URLSearchParams();
+    formData.append('image', base64Image);
+
+    const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      console.log('✅ [ImgBB] Upload thành công:', result.data.url);
+      return result.data.url;
+    } else {
+      console.error('❌ [ImgBB] Upload thất bại:', result.error?.message);
+      return base64Data; // Dự phòng lưu base64 nếu API lỗi
+    }
+  } catch (error: any) {
+    console.error('❌ [ImgBB] Lỗi kết nối API:', error.message);
+    return base64Data;
+  }
+}
+
 async function sendMailViaMaileroo(to: string, subject: string, html: string) {
   try {
     const response = await fetch(MAILEROO_CONFIG.endpoint, {
@@ -182,17 +229,13 @@ let currentKeyIndex = 0;
 
 /**
  * Hàm gọi AI với cơ chế Luân phiên (Round-robin) 3 Key
- * Đảm bảo sử dụng tất cả các Key được cấu hình trong .env
  */
 async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
   const numKeys = API_KEYS.length;
   if (numKeys === 0) throw new Error("Không tìm thấy API Key Gemini nào trong cấu hình.");
 
   let lastError = null;
-  
-  // Xác định Key bắt đầu cho yêu cầu này (luân phiên)
   const startIndex = currentKeyIndex;
-  // Cập nhật chỉ số cho yêu cầu tiếp theo ngay lập tức
   currentKeyIndex = (currentKeyIndex + 1) % numKeys;
 
   for (let attempt = 0; attempt < numKeys; attempt++) {
@@ -202,26 +245,19 @@ async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
 
     try {
       console.log(`🤖 [AI Service] [Yêu cầu mới] Thử Key #${index + 1} (${maskedKey}) - Lần thử ${attempt + 1}/${numKeys}`);
-      
       const ai = new GoogleGenAI({ apiKey: key });
       const result = await callFn(ai);
-      
       console.log(`✅ [AI Service] Key #${index + 1} phản hồi thành công.`);
       return result;
     } catch (err: any) {
       lastError = err;
-      const errorDetail = err.message || "Lỗi không rõ nguyên nhân";
-      console.error(`⚠️ [AI Service] Key #${index + 1} thất bại: ${errorDetail.substring(0, 100)}`);
-      
-      // Nếu còn Key khác, tiếp tục thử Key tiếp theo
+      console.error(`⚠️ [AI Service] Key #${index + 1} thất bại: ${err.message?.substring(0, 100)}`);
       if (attempt < numKeys - 1) {
         console.log(`🔄 [AI Service] Đang tự động chuyển sang Key dự phòng kế tiếp...`);
         continue;
       }
     }
   }
-  
-  console.error(`❌ [AI Service] TẤT CẢ ${numKeys} KEYS ĐỀU THẤT BẠI.`);
   throw lastError;
 }
 
@@ -325,10 +361,22 @@ app.post('/api/ai/coach', async (req, res) => {
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, email, password, fullName, ...rest } = req.body;
+    const { username, email, password, fullName, avatar, ...rest } = req.body;
     const existing = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: email.toLowerCase().trim() }] });
     if (existing) return res.status(400).json({ message: 'Tài khoản hoặc email đã tồn tại' });
-    const newUser = new User({ ...rest, username: username.toLowerCase().trim(), email: email.toLowerCase().trim(), password: hashPassword(password), isPasswordEncrypted: true, fullName });
+    
+    // Tự động xử lý upload avatar nếu là base64
+    const finalAvatar = await uploadToImgBB(avatar);
+
+    const newUser = new User({ 
+      ...rest, 
+      username: username.toLowerCase().trim(), 
+      email: email.toLowerCase().trim(), 
+      password: hashPassword(password), 
+      isPasswordEncrypted: true, 
+      fullName,
+      avatar: finalAvatar
+    });
     await newUser.save();
     res.json({ message: 'Đăng ký thành công' });
   } catch (err) { res.status(500).json({ message: 'Lỗi đăng ký' }); }
@@ -354,7 +402,12 @@ app.get('/api/users', async (req, res) => {
 
 app.put('/api/users/:id', async (req, res) => {
   try {
-    const u = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const data = req.body;
+    // Tự động xử lý upload avatar nếu là base64
+    if (data.avatar) {
+      data.avatar = await uploadToImgBB(data.avatar);
+    }
+    const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
     res.json({ ...u?.toObject(), id: u?._id });
   } catch (err) { res.status(500).json({ message: 'Lỗi cập nhật' }); }
 });
@@ -458,7 +511,12 @@ app.get('/api/posts', async (req, res) => {
 });
 
 app.post('/api/posts', async (req, res) => {
-  const p = new Post(req.body);
+  const data = req.body;
+  // Tự động xử lý upload ảnh bài viết nếu là base64
+  if (data.imageUrl) {
+    data.imageUrl = await uploadToImgBB(data.imageUrl);
+  }
+  const p = new Post(data);
   await p.save();
   res.json({ ...p.toObject(), id: p._id });
 });
