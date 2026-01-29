@@ -160,9 +160,18 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   const handleSendMessage = async () => {
-    if ((!inputText.trim() && !selectedImage) || !selectedChat) return;
-    const base64Data = selectedImage ? selectedImage.split(',')[1] : undefined;
-    const currentImageUrl = selectedImage;
+    // 1. Kiểm tra tính hợp lệ của nội dung gửi
+    const trimmedText = inputText.trim();
+    if ((!trimmedText && !selectedImage) || !selectedChat) return;
+
+    // 2. Lưu lại giá trị hiện tại để xử lý và XÓA NGAY nội dung trên UI
+    const sentText = trimmedText;
+    const sentImage = selectedImage;
+    setInputText('');
+    setSelectedImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    const base64Data = sentImage ? sentImage.split(',')[1] : undefined;
     const isTargetAI = selectedChat.coachId === 'ai_coach';
     
     const newMessage: Message = {
@@ -170,8 +179,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       senderId: currentUid, 
       senderName: currentUser.fullName, 
       senderRole: currentUser.role,
-      content: inputText || (selectedImage ? "[Đã gửi một hình ảnh]" : ""), 
-      imageUrl: currentImageUrl || undefined,
+      content: sentText || (sentImage ? "[Đã gửi một hình ảnh]" : ""), 
+      imageUrl: sentImage || undefined,
       timestamp: new Date().toISOString()
     };
 
@@ -179,7 +188,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     
     // KIỂM TRA TỪ KHÓA TRONG CHAT 1-ON-1
     if (!isTargetAI) {
-      const lowerText = (inputText || "").toLowerCase();
+      const lowerText = sentText.toLowerCase();
       const matchedKnowledge = knowledge.find(k => lowerText.includes(k.keyword.toLowerCase()));
       
       if (matchedKnowledge) {
@@ -199,10 +208,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     setSelectedChat(updatedChat);
     await Database.saveChat(updatedChat);
     
-    const sentText = inputText;
-    setInputText('');
-    setSelectedImage(null);
-
     // Xử lý AI chat riêng tư
     if (isTargetAI) {
       setIsTypingAI(true);
@@ -218,6 +223,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
           setPendingQueue(prev => [...prev, ...chunks]);
         }
       } catch (e) {
+        setIsTypingAI(false);
         setPendingQueue(prev => [...prev, "Hệ thống AI đang quá tải, tôi sẽ phản hồi lại sau ít phút."]);
       }
     }
@@ -262,6 +268,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
           setPendingQueue(prev => [...prev, ...chunks]);
         }
       } catch (e) {
+        setIsTypingAI(false);
         setPendingQueue(prev => [...prev, "Tôi xin lỗi, có lỗi khi truy xuất dữ liệu kiến thức."]);
       }
     }
@@ -415,8 +422,25 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                   const f = e.target.files?.[0];
                   if(f){ const r = new FileReader(); r.onload = () => setSelectedImage(r.result as string); r.readAsDataURL(f); }
                 }} />
-                <input placeholder="Gửi tin nhắn..." value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} className="flex-grow px-4 bg-slate-50 rounded-xl border-none outline-none focus:ring-1 focus:ring-emerald-500 text-[12px] font-medium" />
-                <button onClick={handleSendMessage} className="bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all">🚀</button>
+                <input 
+                  placeholder="Gửi tin nhắn..." 
+                  value={inputText} 
+                  onChange={e => setInputText(e.target.value)} 
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && !e.shiftKey && (inputText.trim() || selectedImage)) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }} 
+                  className="flex-grow px-4 bg-slate-50 rounded-xl border-none outline-none focus:ring-1 focus:ring-emerald-500 text-[12px] font-medium" 
+                />
+                <button 
+                  onClick={handleSendMessage} 
+                  disabled={!inputText.trim() && !selectedImage}
+                  className={`bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-lg ${(!inputText.trim() && !selectedImage) ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:bg-emerald-700 shadow-emerald-100 active:scale-95'}`}
+                >
+                  🚀
+                </button>
               </div>
             </div>
           </>

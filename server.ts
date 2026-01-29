@@ -19,25 +19,20 @@ app.use(express.json({ limit: '15mb' }) as any);
 
 /**
  * CẤU HÌNH DỊCH VỤ EMAIL QUA MAILEROO API V2
- * Cập nhật dựa trên tài liệu chính thức: https://smtp.maileroo.com/api/v2/emails
  */
 const MAILEROO_CONFIG = {
   apiKey: process.env.MAILEROO_API_KEY,
-  endpoint: 'https://smtp.maileroo.com/api/v2/emails', // Endpoint chuẩn từ ảnh hướng dẫn
+  endpoint: 'https://smtp.maileroo.com/api/v2/emails', 
   fromEmail: process.env.SMTP_USER, 
   fromName: "Lucky Hub 2026"
 };
 
-// Kiểm tra cấu hình API khi khởi động
 if (!MAILEROO_CONFIG.apiKey) {
   console.error('⚠️ [Email] LỖI: Thiếu MAILEROO_API_KEY trong biến môi trường!');
 } else {
   console.log('✅ [Email] Hệ thống Maileroo API v2 sử dụng Endpoint: ' + MAILEROO_CONFIG.endpoint);
 }
 
-/**
- * Hàm gửi email sử dụng Maileroo API v2 với cấu trúc Object theo tài liệu
- */
 async function sendMailViaMaileroo(to: string, subject: string, html: string) {
   try {
     const response = await fetch(MAILEROO_CONFIG.endpoint, {
@@ -47,119 +42,71 @@ async function sendMailViaMaileroo(to: string, subject: string, html: string) {
         'X-API-Key': MAILEROO_CONFIG.apiKey || ''
       },
       body: JSON.stringify({
-        from: {
-          address: MAILEROO_CONFIG.fromEmail,
-          name: MAILEROO_CONFIG.fromName
-        },
-        to: [
-          {
-            address: to
-          }
-        ],
+        from: { address: MAILEROO_CONFIG.fromEmail, name: MAILEROO_CONFIG.fromName },
+        to: [{ address: to }],
         subject: subject,
         html: html
       })
     });
-
     const result = await response.json();
-    
-    if (!response.ok || !result.success) {
-      console.error('❌ [Maileroo API Error Details]:', JSON.stringify(result, null, 2));
-      
-      let errorMsg = result.message || 'Lỗi không xác định từ Maileroo';
-      if (result.errors) {
-        if (typeof result.errors === 'object') {
-          errorMsg = Object.entries(result.errors)
-            .map(([field, msg]) => `${field}: ${msg}`)
-            .join(', ');
-        } else {
-          errorMsg = String(result.errors);
-        }
-      }
-      
-      throw new Error(errorMsg);
-    }
-    
+    if (!response.ok || !result.success) throw new Error(result.message || 'Lỗi Maileroo');
     return result;
   } catch (error: any) {
-    console.error('❌ [Maileroo API Connection Error]:', error.message);
-    if (error.cause) console.error('🔍 [Root Cause]:', error.cause);
+    console.error('❌ [Maileroo Error]:', error.message);
     throw error;
   }
 }
 
-/**
- * Mã hóa mật khẩu đơn bằng SHA-256
- */
 function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-/**
- * Làm sạch phản hồi JSON từ AI (loại bỏ markdown nếu có)
- */
 const cleanJsonResponse = (text: string): string => {
   const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   if (match) return match[0];
   return text.trim();
 };
 
-// Middleware bảo mật: Chặn truy cập trực tiếp vào các file nhạy cảm
 app.use((req, res, next) => {
   const forbiddenFiles = ['.env', 'server.ts', 'run.js', 'package.json', 'package-lock.json', 'tsconfig.json'];
   const url = req.path.toLowerCase();
-  
-  const isForbidden = forbiddenFiles.some(file => url.endsWith(file)) || url.includes('/.');
-  
-  if (isForbidden) {
-    console.warn(`[Security] Chặn truy cập trái phép tới: ${req.path}`);
-    return res.status(403).json({ message: 'Access Denied: You do not have permission to access this resource.' });
+  if (forbiddenFiles.some(file => url.endsWith(file)) || url.includes('/.')) {
+    return res.status(403).json({ message: 'Access Denied' });
   }
   next();
 });
 
-// Middleware biên dịch TypeScript/JSX on-the-fly
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   const rootDir = path.resolve();
   let filePath = path.join(rootDir, req.path);
   let targetFile = null;
-  if (fs.existsSync(filePath) && !fs.lstatSync(filePath).isDirectory()) {
-    targetFile = filePath;
-  } else if (fs.existsSync(filePath + '.ts')) {
-    targetFile = filePath + '.ts';
-  } else if (fs.existsSync(filePath + '.tsx')) {
-    targetFile = filePath + '.tsx';
-  }
+  if (fs.existsSync(filePath) && !fs.lstatSync(filePath).isDirectory()) targetFile = filePath;
+  else if (fs.existsSync(filePath + '.ts')) targetFile = filePath + '.ts';
+  else if (fs.existsSync(filePath + '.tsx')) targetFile = filePath + '.tsx';
+  
   if (targetFile && (targetFile.endsWith('.ts') || targetFile.endsWith('.tsx'))) {
     try {
       const content = fs.readFileSync(targetFile, 'utf-8');
-      const result = transform(content, {
-        transforms: ['typescript', 'jsx'],
-        production: false,
-        jsxRuntime: 'automatic'
-      });
+      const result = transform(content, { transforms: ['typescript', 'jsx'], production: false, jsxRuntime: 'automatic' });
       res.type('application/javascript').send(result.code);
       return;
-    } catch (err) {
-      return res.status(500).send('Error compiling file');
-    }
+    } catch (err) { return res.status(500).send('Error compiling file'); }
   }
   next();
 });
 
-// QUẢN LÝ CẤU HÌNH API KEYS & DATABASE
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
 
-// Thu thập tất cả API Keys có sẵn
+// QUẢN LÝ 3 API KEYS GEMINI
 const API_KEYS = [
   process.env.API_KEY, 
   process.env.API_KEY_2, 
   process.env.API_KEY_3
 ].filter(k => !!k);
 
-console.log(`📡 [AI Service] Tìm thấy ${API_KEYS.length} API Keys trong cấu hình.`);
+console.log(`📡 [AI Service] Khởi tạo thành công với ${API_KEYS.length} Keys: [${API_KEYS.map((_, i) => `Key#${i+1}`).join(', ')}]`);
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -226,38 +173,35 @@ async function initDB() {
     console.log('⏳ [Database] Đang kết nối tới MongoDB...');
     await mongoose.connect(MONGODB_URI);
     console.log('✅ [Database] Đã kết nối thành công.');
-  } catch (err: any) { 
-    console.error('❌ [Database] KHÔNG THỂ KẾT NỐI DATABASE:', err.message);
-  }
+  } catch (err: any) { console.error('❌ [Database] Lỗi:', err.message); }
 }
 initDB();
 
+// BIẾN TOÀN CỤC ĐỂ THEO DÕI THỨ TỰ KEY
 let currentKeyIndex = 0;
 
 /**
- * Hàm gọi AI với cơ chế xoay vòng 3 Key (Round-robin) và Fallback thông minh
- * Đảm bảo thử lần lượt toàn bộ danh sách Key trước khi báo lỗi.
+ * Hàm gọi AI với cơ chế Luân phiên (Round-robin) 3 Key
+ * Đảm bảo sử dụng tất cả các Key được cấu hình trong .env
  */
 async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
-  let lastError = null;
   const numKeys = API_KEYS.length;
-  
-  if (numKeys === 0) {
-    console.error("❌ [AI Service] Không tìm thấy API Key nào trong cấu hình .env");
-    throw new Error("Không tìm thấy API Key nào");
-  }
+  if (numKeys === 0) throw new Error("Không tìm thấy API Key Gemini nào trong cấu hình.");
 
-  // Luôn bắt đầu từ Key tiếp theo để dàn đều tải
+  let lastError = null;
+  
+  // Xác định Key bắt đầu cho yêu cầu này (luân phiên)
   const startIndex = currentKeyIndex;
+  // Cập nhật chỉ số cho yêu cầu tiếp theo ngay lập tức
   currentKeyIndex = (currentKeyIndex + 1) % numKeys;
 
   for (let attempt = 0; attempt < numKeys; attempt++) {
     const index = (startIndex + attempt) % numKeys;
     const key = API_KEYS[index];
-    const maskedKey = `${key.substring(0, 4)}...${key.substring(key.length - 4)}`;
+    const maskedKey = `${key.substring(0, 8)}...`;
 
     try {
-      console.log(`🤖 [AI Service] Đang thử yêu cầu với Key #${index + 1} (${maskedKey}) - Lần thử ${attempt + 1}/${numKeys}`);
+      console.log(`🤖 [AI Service] [Yêu cầu mới] Thử Key #${index + 1} (${maskedKey}) - Lần thử ${attempt + 1}/${numKeys}`);
       
       const ai = new GoogleGenAI({ apiKey: key });
       const result = await callFn(ai);
@@ -266,17 +210,18 @@ async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
       return result;
     } catch (err: any) {
       lastError = err;
-      console.error(`⚠️ [AI Service] Key #${index + 1} thất bại: ${err.message}`);
+      const errorDetail = err.message || "Lỗi không rõ nguyên nhân";
+      console.error(`⚠️ [AI Service] Key #${index + 1} thất bại: ${errorDetail.substring(0, 100)}`);
       
-      // Nếu còn Key trong danh sách, tiếp tục thử Key tiếp theo bất kể loại lỗi
+      // Nếu còn Key khác, tiếp tục thử Key tiếp theo
       if (attempt < numKeys - 1) {
-        console.log(`🔄 [AI Service] Đang chuyển sang Key dự phòng tiếp theo...`);
+        console.log(`🔄 [AI Service] Đang tự động chuyển sang Key dự phòng kế tiếp...`);
         continue;
       }
     }
   }
   
-  console.error(`❌ [AI Service] Tất cả ${numKeys} Keys đều thất bại. Lỗi cuối cùng: ${lastError?.message}`);
+  console.error(`❌ [AI Service] TẤT CẢ ${numKeys} KEYS ĐỀU THẤT BẠI.`);
   throw lastError;
 }
 
@@ -287,133 +232,62 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', database: states[mongoose.connection.readyState] || 'unknown' });
 });
 
-// ROUTE KIỂM TRA EMAIL TRÙNG
 app.post('/api/check-email', async (req, res) => {
   try {
     const { email, excludeUserId } = req.body;
     const query: any = { email: email.toLowerCase().trim() };
     if (excludeUserId) query._id = { $ne: excludeUserId };
-    
     const exists = await User.findOne(query);
     res.json({ exists: !!exists });
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi kiểm tra email' });
-  }
+  } catch (err) { res.status(500).json({ message: 'Lỗi kiểm tra email' }); }
 });
 
-// ROUTE QUÊN MẬT KHẨU (SỬ DỤNG MAILEROO API V2)
 app.post('/api/forgot-password', async (req, res) => {
   try {
     const { username } = req.body;
-    console.log(`[Email Service] Đang tìm kiếm người dùng: ${username}`);
-    const user = await User.findOne({ 
-      $or: [
-        { username: username.toLowerCase().trim() },
-        { email: username.toLowerCase().trim() }
-      ]
-    });
-    
-    if (!user) {
-      console.warn(`[Email Service] Yêu cầu reset mật khẩu cho tài khoản không tồn tại: ${username}`);
-      return res.status(404).json({ message: 'Không tìm thấy tài khoản hoặc email này trong hệ thống.' });
-    }
+    const user = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: username.toLowerCase().trim() }] });
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy tài khoản.' });
 
     const token = Math.floor(100000 + Math.random() * 900000).toString();
     user.resetPasswordToken = token;
     user.resetPasswordExpires = new Date(Date.now() + 3600000); 
     await user.save();
 
-    console.log(`[Email Service] Đang gửi mail qua Maileroo tới: ${user.email}`);
-
     const subject = 'Mã xác nhận khôi phục mật khẩu - Lucky Hub';
-    const html = `
-      <div style="font-family: sans-serif; padding: 20px; color: #333; line-height: 1.6;">
-        <h2 style="color: #10b981;">Xin chào ${user.fullName},</h2>
-        <p>Chúng tôi nhận được yêu cầu khôi phục mật khẩu cho tài khoản <strong>${user.username}</strong> của bạn.</p>
-        <div style="background: #f1f5f9; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0;">
-          <p style="margin: 0; font-size: 14px; color: #64748b; text-transform: uppercase; font-weight: bold;">Mã xác nhận của bạn là:</p>
-          <h1 style="margin: 10px 0; font-size: 32px; letter-spacing: 5px; color: #0f172a;">${token}</h1>
-          <p style="margin: 0; font-size: 12px; color: #94a3b8;">Mã này sẽ hết hạn sau 1 giờ.</p>
-        </div>
-        <p>Nếu bạn không yêu cầu thay đổi mật khẩu, vui lòng bỏ qua email này.</p>
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
-        <p style="font-size: 12px; color: #94a3b8; text-align: center;">🍀 Lucky Hub 2026 - Chuyên gia sức khỏe của bạn</p>
-      </div>
-    `;
+    const html = `<div style="font-family: sans-serif; padding: 20px;"><h2>Xin chào ${user.fullName},</h2><p>Mã xác nhận của bạn là:</p><h1 style="color: #10b981;">${token}</h1><p>Mã hết hạn sau 1 giờ.</p></div>`;
 
-    try {
-      await sendMailViaMaileroo(user.email, subject, html);
-      console.log(`✅ [Email Service] Maileroo đã gửi thành công tới ${user.email}.`);
-      res.json({ message: 'Mã xác nhận đã được gửi thành công tới email của bạn qua Maileroo API v2.' });
-    } catch (mailError: any) {
-      console.error('❌ [Email Service Error]:', mailError.message);
-      
-      let userFriendlyMsg = 'Lỗi gửi Email. Vui lòng liên hệ Admin.';
-      if (mailError.message.toLowerCase().includes('domain') || mailError.message.toLowerCase().includes('verified')) {
-        userFriendlyMsg = 'Lỗi: Tên miền gửi chưa được xác thực trên Maileroo (Cần cấu hình DNS).';
-      } else if (mailError.message.toLowerCase().includes('api key')) {
-        userFriendlyMsg = 'Lỗi: API Key của Maileroo không chính xác.';
-      }
-
-      res.status(500).json({ 
-        message: userFriendlyMsg,
-        error: process.env.NODE_ENV !== 'production' ? mailError.message : undefined
-      });
-    }
-  } catch (err: any) {
-    console.error('❌ [Email Service Critical Error]:', err);
-    res.status(500).json({ message: 'Lỗi server khi xử lý yêu cầu email.' });
-  }
+    await sendMailViaMaileroo(user.email, subject, html);
+    res.json({ message: 'Mã xác nhận đã được gửi thành công.' });
+  } catch (err: any) { res.status(500).json({ message: 'Lỗi gửi mail.' }); }
 });
 
-// ROUTE RESET MẬT KHẨU
 app.post('/api/reset-password', async (req, res) => {
   try {
     const { username, token, newPassword } = req.body;
-    const user = await User.findOne({ 
-      $or: [
-        { username: username.toLowerCase().trim() },
-        { email: username.toLowerCase().trim() }
-      ],
-      resetPasswordToken: token,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
-
-    if (!user) {
-      return res.status(400).json({ message: 'Mã xác nhận không chính xác hoặc đã hết hạn.' });
-    }
-
+    const user = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: username.toLowerCase().trim() }], resetPasswordToken: token, resetPasswordExpires: { $gt: Date.now() } });
+    if (!user) return res.status(400).json({ message: 'Mã không chính xác hoặc hết hạn.' });
     user.password = hashPassword(newPassword);
     user.isPasswordEncrypted = true;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     await user.save();
-
-    res.json({ message: 'Mật khẩu đã được thay đổi thành công. Vui lòng đăng nhập lại.' });
-  } catch (err) {
-    res.status(500).json({ message: 'Lỗi server khi đặt lại mật khẩu.' });
-  }
+    res.json({ message: 'Đổi mật khẩu thành công.' });
+  } catch (err) { res.status(500).json({ message: 'Lỗi server.' }); }
 });
 
-/** AI Extract & Coach Route **/
 app.post('/api/ai/extract', async (req, res) => {
   try {
     const { imageBase64 } = req.body;
     const resultText = await callAiWithFallback(async (ai) => {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [{
-          parts: [
-            { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
-            { text: "Hãy trích xuất các chỉ số từ phiếu InBody này và trả về JSON có các trường: weight, bodyFat, muscleMass, balanceIndex, visceralFat, boneMinerals, waterPercent, energy, bioAge, date (format DD/MM). Nếu không thấy trường nào hãy để mặc định phù hợp hoặc 0." }
-          ]
-        }],
+        contents: [{ parts: [{ inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }, { text: "Trích xuất chỉ số InBody sang JSON: weight, bodyFat, muscleMass, balanceIndex, visceralFat, boneMinerals, waterPercent, energy, bioAge, date (DD/MM)." }] }],
         config: { responseMimeType: "application/json" }
       });
       return response.text;
     });
     res.json(JSON.parse(cleanJsonResponse(resultText || "{}")));
-  } catch (err) { res.status(500).json({ message: 'Lỗi AI trích xuất' }); }
+  } catch (err) { res.status(500).json({ message: 'AI bận, vui lòng thử lại sau.' }); }
 });
 
 app.post('/api/ai/bulk-extract', async (req, res) => {
@@ -422,18 +296,13 @@ app.post('/api/ai/bulk-extract', async (req, res) => {
     const resultText = await callAiWithFallback(async (ai) => {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: [{
-          parts: [
-            { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } },
-            { text: "Trích xuất danh sách kết quả đo lường từ hình ảnh này. Trả về mảng JSON các đối tượng có trường: weight, bodyFat, muscleMass, balanceIndex, visceralFat, boneMinerals, waterPercent, energy, bioAge, date (DD/MM)." }
-          ]
-        }],
+        contents: [{ parts: [{ inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }, { text: "Trích xuất mảng JSON các kết quả đo: weight, bodyFat, muscleMass, balanceIndex, visceralFat, boneMinerals, waterPercent, energy, bioAge, date (DD/MM)." }] }],
         config: { responseMimeType: "application/json" }
       });
       return response.text;
     });
     res.json(JSON.parse(cleanJsonResponse(resultText || "[]")));
-  } catch (err) { res.status(500).json({ message: 'Lỗi AI trích xuất hàng loạt' }); }
+  } catch (err) { res.status(500).json({ message: 'AI bận, vui lòng thử lại sau.' }); }
 });
 
 app.post('/api/ai/coach', async (req, res) => {
@@ -450,28 +319,16 @@ app.post('/api/ai/coach', async (req, res) => {
       });
       return response.text;
     });
-    res.json({ text: resultText || "Xin lỗi, tôi đang bận một chút." });
+    res.json({ text: resultText || "Xin lỗi, tôi đang bận." });
   } catch (err) { res.status(500).json({ text: 'AI bận, vui lòng thử lại sau.' }); }
 });
 
-// AUTH & USERS
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, fullName, ...rest } = req.body;
-    const existingUser = await User.findOne({ username: username.toLowerCase().trim() });
-    if (existingUser) return res.status(400).json({ message: 'Tên tài khoản đã tồn tại' });
-    
-    const existingEmail = await User.findOne({ email: email.toLowerCase().trim() });
-    if (existingEmail) return res.status(400).json({ message: 'Email này đã được đăng ký' });
-
-    const newUser = new User({
-      ...rest,
-      username: username.toLowerCase().trim(),
-      email: email.toLowerCase().trim(),
-      password: hashPassword(password),
-      isPasswordEncrypted: true,
-      fullName
-    });
+    const existing = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: email.toLowerCase().trim() }] });
+    if (existing) return res.status(400).json({ message: 'Tài khoản hoặc email đã tồn tại' });
+    const newUser = new User({ ...rest, username: username.toLowerCase().trim(), email: email.toLowerCase().trim(), password: hashPassword(password), isPasswordEncrypted: true, fullName });
     await newUser.save();
     res.json({ message: 'Đăng ký thành công' });
   } catch (err) { res.status(500).json({ message: 'Lỗi đăng ký' }); }
@@ -480,22 +337,10 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await User.findOne({ 
-      $or: [
-        { username: username.toLowerCase().trim() },
-        { email: username.toLowerCase().trim() }
-      ]
-    });
-    if (!user) return res.status(401).json({ message: 'Sai tài khoản hoặc mật khẩu' });
-
+    const user = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: username.toLowerCase().trim() }] });
+    if (!user) return res.status(401).json({ message: 'Sai thông tin' });
     const hashed = hashPassword(password);
-    if (user.password !== hashed) {
-      if (!user.isPasswordEncrypted && user.password === password) {
-        return res.status(426).json({ message: 'Yêu cầu nâng cấp mật khẩu', userId: user._id, fullName: user.fullName });
-      }
-      return res.status(401).json({ message: 'Sai tài khoản hoặc mật khẩu' });
-    }
-
+    if (user.password !== hashed) return res.status(401).json({ message: 'Sai thông tin' });
     const u = user.toObject();
     delete u.password;
     res.json({ ...u, id: user._id });
@@ -509,18 +354,9 @@ app.get('/api/users', async (req, res) => {
 
 app.put('/api/users/:id', async (req, res) => {
   try {
-    const { email } = req.body;
-    if (email) {
-      const existing = await User.findOne({ 
-        email: email.toLowerCase().trim(), 
-        _id: { $ne: req.params.id } 
-      });
-      if (existing) return res.status(400).json({ message: 'Email đã tồn tại' });
-    }
     const u = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (u) res.json({ ...u.toObject(), id: u._id });
-    else res.status(404).json({ message: 'Không tìm thấy' });
-  } catch (err) { res.status(500).json({ message: 'Lỗi cập nhật người dùng' }); }
+    res.json({ ...u?.toObject(), id: u?._id });
+  } catch (err) { res.status(500).json({ message: 'Lỗi cập nhật' }); }
 });
 
 app.delete('/api/users/:id', async (req, res) => {
@@ -528,7 +364,6 @@ app.delete('/api/users/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// METRICS
 app.get('/api/all-metrics', async (req, res) => {
   const m = await Metric.find().sort({ date: -1 });
   res.json(m.map(item => ({ ...item.toObject(), id: item._id })));
@@ -574,7 +409,6 @@ app.delete('/api/metrics/all/:userId', async (req, res) => {
   res.json({ success: true });
 });
 
-// KNOWLEDGE, RULES, CHATS, POSTS
 app.get('/api/knowledge', async (req, res) => {
   const k = await Knowledge.find();
   res.json(k.map(i => ({ ...i.toObject(), id: i._id })));
@@ -634,7 +468,6 @@ app.delete('/api/posts/:id', async (req, res) => {
   res.json({ success: true });
 });
 
-// --- PHỤC VỤ TỆP TĨNH ---
 app.use(express.static('.') as any);
 app.get(/^[^\.]*$/, (req, res) => { res.sendFile(path.resolve('index.html')); });
 
