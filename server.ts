@@ -19,12 +19,12 @@ app.use(express.json({ limit: '15mb' }) as any);
 
 /**
  * CẤU HÌNH DỊCH VỤ EMAIL QUA MAILEROO API V2
- * Giải pháp tối ưu nhất cho môi trường Render.com (Gửi qua HTTP API cổng 443)
+ * Sử dụng x.maileroo.net làm API Gateway để đảm bảo tính ổn định và tránh lỗi 404
  */
 const MAILEROO_CONFIG = {
   apiKey: process.env.MAILEROO_API_KEY,
-  endpoint: 'https://smtp.maileroo.com/api/v2/send',
-  fromEmail: process.env.SMTP_USER, // LƯU Ý: Phải là email thuộc domain đã verify trên Maileroo
+  endpoint: 'https://x.maileroo.net/app/v2/send', // Endpoint API v2 chính xác
+  fromEmail: process.env.SMTP_USER, // Email gửi đi (phải được verify trên Maileroo)
   fromName: "Lucky Hub 2026"
 };
 
@@ -32,7 +32,7 @@ const MAILEROO_CONFIG = {
 if (!MAILEROO_CONFIG.apiKey) {
   console.error('⚠️ [Email] LỖI: Thiếu MAILEROO_API_KEY trong biến môi trường!');
 } else {
-  console.log('✅ [Email] Hệ thống Maileroo API v2 đã sẵn sàng.');
+  console.log('✅ [Email] Hệ thống Maileroo API v2 đã cấu hình Endpoint: ' + MAILEROO_CONFIG.endpoint);
 }
 
 /**
@@ -60,12 +60,16 @@ async function sendMailViaMaileroo(to: string, subject: string, html: string) {
     if (!response.ok || !result.success) {
       console.error('❌ [Maileroo API Error Details]:', JSON.stringify(result, null, 2));
       
-      // Phân tích lỗi cụ thể để thông báo
+      // Phân tích lỗi cụ thể để thông báo cho Admin
       let errorMsg = result.message || 'Lỗi không xác định từ Maileroo';
       if (result.errors) {
-        errorMsg = Object.entries(result.errors)
-          .map(([field, msg]) => `${field}: ${msg}`)
-          .join(', ');
+        if (typeof result.errors === 'object') {
+          errorMsg = Object.entries(result.errors)
+            .map(([field, msg]) => `${field}: ${msg}`)
+            .join(', ');
+        } else {
+          errorMsg = String(result.errors);
+        }
       }
       
       throw new Error(errorMsg);
@@ -312,9 +316,9 @@ app.post('/api/forgot-password', async (req, res) => {
       console.error('❌ [Email Service Error]:', mailError.message);
       
       let userFriendlyMsg = 'Lỗi gửi Email. Vui lòng liên hệ Admin.';
-      if (mailError.message.includes('domain') || mailError.message.includes('verified')) {
+      if (mailError.message.toLowerCase().includes('domain') || mailError.message.toLowerCase().includes('verified')) {
         userFriendlyMsg = 'Lỗi: Tên miền gửi chưa được xác thực trên Maileroo (Cần cấu hình DNS).';
-      } else if (mailError.message.includes('API key')) {
+      } else if (mailError.message.toLowerCase().includes('api key')) {
         userFriendlyMsg = 'Lỗi: API Key của Maileroo không chính xác.';
       }
 
