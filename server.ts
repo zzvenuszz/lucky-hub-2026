@@ -58,10 +58,16 @@ app.use((req, res, next) => {
 
 app.use(express.static('.') as any);
 
-// QUẢN LÝ CẤU HÌNH API KEYS
+// QUẢN LÝ CẤU HÌNH API KEYS & DATABASE
 const PORT = process.env.PORT || 3000;
+// THỐNG NHẤT BIẾN MÔI TRƯỜNG MONGODB_URI
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
-const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2].filter(k => !!k);
+
+const API_KEYS = [
+  process.env.API_KEY, 
+  process.env.API_KEY_2, 
+  process.env.API_KEY_3
+].filter(k => !!k);
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -125,6 +131,9 @@ const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 async function initDB() {
   try {
     console.log('⏳ Đang kết nối Database...');
+    if (!process.env.MONGODB_URI) {
+      console.warn('⚠️ CẢNH BÁO: Biến MONGODB_URI không tồn tại trong .env, đang sử dụng mặc định localhost.');
+    }
     const maskedUri = MONGODB_URI.replace(/:([^@]+)@/, ':****@');
     console.log(`🔗 URI mục tiêu: ${maskedUri}`);
 
@@ -147,27 +156,25 @@ let currentKeyIndex = 0;
 
 /**
  * HÀM WRAPPER ĐỂ XỬ LÝ LUÂN PHIÊN VÀ DỰ PHÒNG API KEY
- * 1. Chọn key bắt đầu theo cơ chế Round-robin (xoay vòng).
- * 2. Nếu key đó lỗi, thử các key còn lại trong danh sách (fallback).
  */
 async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
   let lastError = null;
   const numKeys = API_KEYS.length;
   
-  // Xác định vị trí bắt đầu cho request này
-  const startIndex = currentKeyIndex;
+  if (numKeys === 0) {
+    throw new Error("Không tìm thấy API Key nào trong cấu hình hệ thống (.env)");
+  }
   
-  // Cập nhật chỉ số cho request tiếp theo ngay lập tức
+  const startIndex = currentKeyIndex;
   currentKeyIndex = (currentKeyIndex + 1) % numKeys;
   
   for (let attempt = 0; attempt < numKeys; attempt++) {
-    // Tính toán index dựa trên lượt xoay vòng và số lần thử lại
     const index = (startIndex + attempt) % numKeys;
     const key = API_KEYS[index];
     
     try {
       const ai = new GoogleGenAI({ apiKey: key });
-      console.log(`📡 [AI Request] Sử dụng Key index: ${index} (Key ${index + 1}/${numKeys})`);
+      console.log(`📡 [AI Request] Xoay vòng lượt: Key index ${index} (Key ${index + 1}/${numKeys})`);
       return await callFn(ai);
     } catch (err: any) {
       lastError = err;
@@ -175,10 +182,10 @@ async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
       const isNetworkError = err.message?.includes('fetch') || err.message?.includes('socket');
       
       if ((isQuotaError || isNetworkError) && attempt < numKeys - 1) {
-        console.warn(`⚠️ API Key index ${index} gặp lỗi, thử key tiếp theo trong cụm Round-robin...`);
-        continue; // Thử key tiếp theo trong danh sách xoay vòng
+        console.warn(`⚠️ API Key index ${index} gặp lỗi (Hết quota/Kết nối), đang thử Key dự phòng tiếp theo...`);
+        continue;
       }
-      break; // Lỗi nghiêm trọng hoặc đã thử hết tất cả các key
+      break; 
     }
   }
   throw lastError;
@@ -224,7 +231,7 @@ app.post('/api/ai/extract', async (req, res) => {
     res.json(JSON.parse(cleanJsonResponse(resultText || "{}")));
   } catch (err) {
     console.error("AI EXTRACT ERROR:", err);
-    res.status(500).json({ message: 'Lỗi AI Server (Cả 2 Key đều quá tải)' });
+    res.status(500).json({ message: 'Lỗi AI Server (Tất cả Key đều quá tải hoặc lỗi mạng)' });
   }
 });
 
@@ -269,7 +276,7 @@ app.post('/api/ai/bulk-extract', async (req, res) => {
     res.json(JSON.parse(cleanJsonResponse(resultText || "[]")));
   } catch (err) {
     console.error("AI BULK ERROR:", err);
-    res.status(500).json({ message: 'Lỗi quét hàng loạt (Cả 2 Key đều quá tải)' });
+    res.status(500).json({ message: 'Lỗi quét hàng loạt (Tất cả Key đều quá tải)' });
   }
 });
 
@@ -301,7 +308,7 @@ app.post('/api/ai/coach', async (req, res) => {
     res.json({ text: resultText });
   } catch (err) {
     console.error("AI COACH ERROR:", err);
-    res.status(500).json({ text: 'Tôi đang bận một chút (Cả 2 Key đều quá tải), hãy thử lại sau.' });
+    res.status(500).json({ text: 'Hệ thống đang bận xử lý nhiều yêu cầu (Tất cả Key đều quá tải), vui lòng thử lại sau.' });
   }
 });
 
@@ -349,12 +356,10 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// API POSTS
+// API USERS, POSTS, METRICS... (Giữ nguyên phần còn lại)
 app.get('/api/posts', async (req, res) => res.json(await Post.find().sort({ createdAt: -1 })));
 app.post('/api/posts', async (req, res) => res.json(await new Post(req.body).save()));
 app.delete('/api/posts/:id', async (req, res) => { await Post.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
-
-// API USERS
 app.get('/api/users', async (req, res) => res.json(await User.find().select('-password')));
 app.put('/api/users/:id', async (req, res) => {
   const data = { ...req.body };
@@ -362,8 +367,6 @@ app.put('/api/users/:id', async (req, res) => {
   res.json(await User.findByIdAndUpdate(req.params.id, data, { new: true }).select('-password'));
 });
 app.delete('/api/users/:id', async (req, res) => { await User.findByIdAndDelete(req.params.id); res.json({ message: 'User Deleted' }); });
-
-// API METRICS
 app.get('/api/metrics/:userId', async (req, res) => res.json(await Metric.find({ userId: req.params.userId }).sort({ date: 1 })));
 app.get('/api/all-metrics', async (req, res) => res.json(await Metric.find().populate('userId', 'fullName')));
 app.post('/api/metrics', async (req, res) => res.json(await new Metric(req.body).save()));
@@ -398,7 +401,6 @@ app.delete('/api/metrics/all/:userId', async (req, res) => {
   }
 });
 
-// OTHER API
 app.get('/api/knowledge', async (req, res) => res.json(await Knowledge.find()));
 app.post('/api/knowledge', async (req, res) => res.json(await new Knowledge(req.body).save()));
 app.delete('/api/knowledge/:id', async (req, res) => { await Knowledge.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
@@ -414,6 +416,6 @@ app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
 
 app.listen(PORT, () => {
   console.log(`🚀 Lucky Hub is running on port ${PORT}`);
-  console.log(`📡 AI Keys Configured: ${API_KEYS.length} keys`);
-  console.log(`🗄️ DB URI Loaded: ${MONGODB_URI ? 'Yes' : 'No'}`);
+  console.log(`📡 AI Keys Configured: ${API_KEYS.length} keys (Round-robin Active)`);
+  console.log(`🗄️ MongoDB URI: Thống nhất sử dụng MONGODB_URI`);
 });
