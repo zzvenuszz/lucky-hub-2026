@@ -15,7 +15,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors({ origin: '*' }) as any);
-app.use(express.json({ limit: '15mb' }) as any); // Tăng limit để xử lý ảnh base64
+app.use(express.json({ limit: '15mb' }) as any);
 
 function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
@@ -58,9 +58,10 @@ app.use((req, res, next) => {
 
 app.use(express.static('.') as any);
 
+// THỐNG NHẤT BIẾN MÔI TRƯỜNG THEO .ENV
 const PORT = process.env.PORT || 3000;
-// Ưu tiên sử dụng MONGO_URI từ render.com
-const MONGODB_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
+const GEMINI_KEY = process.env.API_KEY || '';
 
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -123,14 +124,23 @@ const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 
 async function initDB() {
   try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('✅ DATABASE CONNECTED');
-  } catch (err) { console.error('❌ DB ERROR:', err); }
+    console.log('⏳ Đang kết nối Database...');
+    const maskedUri = MONGODB_URI.replace(/:([^@]+)@/, ':****@');
+    console.log(`🔗 URI mục tiêu: ${maskedUri}`);
+
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000, 
+    });
+    console.log('✅ DATABASE CONNECTED SUCCESSFULLY');
+  } catch (err: any) { 
+    console.error('❌ DATABASE CONNECTION ERROR:');
+    console.error(`- Error: ${err.message}`);
+    console.error(`- Kiểm tra: .env có MONGODB_URI chưa? Atlas đã mở IP 0.0.0.0/0 chưa?`);
+  }
 }
 initDB();
 
-// INITIALIZE GEMINI ON SERVER
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const genAI = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
 // API AI PROXY
 app.post('/api/ai/extract', async (req, res) => {
@@ -169,7 +179,7 @@ app.post('/api/ai/extract', async (req, res) => {
     const result = await model;
     res.json(JSON.parse(cleanJsonResponse(result.text || "{}")));
   } catch (err) {
-    console.error("AI ERROR:", err);
+    console.error("AI EXTRACT ERROR:", err);
     res.status(500).json({ message: 'Lỗi AI Server' });
   }
 });
@@ -210,6 +220,7 @@ app.post('/api/ai/bulk-extract', async (req, res) => {
     });
     res.json(JSON.parse(cleanJsonResponse(response.text || "[]")));
   } catch (err) {
+    console.error("AI BULK ERROR:", err);
     res.status(500).json({ message: 'Lỗi quét hàng loạt' });
   }
 });
@@ -238,21 +249,31 @@ app.post('/api/ai/coach', async (req, res) => {
 
     res.json({ text: response.text });
   } catch (err) {
+    console.error("AI COACH ERROR:", err);
     res.status(500).json({ text: 'Tôi đang bận một chút, hãy thử lại sau.' });
   }
 });
 
 // API AUTH
 app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ username: username.toLowerCase().trim() });
-  if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại' });
-  if (user.isPasswordEncrypted) {
-    if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Mật khẩu sai' });
-    res.json(user);
-  } else {
-    if (user.password !== password) return res.status(401).json({ message: 'Mật khẩu sai' });
-    res.status(426).json({ userId: user._id, fullName: user.fullName });
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ message: 'Thiếu thông tin đăng nhập' });
+
+    const user = await User.findOne({ username: username.toLowerCase().trim() });
+    
+    if (!user) return res.status(401).json({ message: 'Tài khoản không tồn tại' });
+    
+    if (user.isPasswordEncrypted) {
+      if (user.password !== hashPassword(password)) return res.status(401).json({ message: 'Mật khẩu sai' });
+      res.json(user);
+    } else {
+      if (user.password !== password) return res.status(401).json({ message: 'Mật khẩu sai' });
+      res.status(426).json({ userId: user._id, fullName: user.fullName });
+    }
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
+    res.status(500).json({ message: 'Lỗi server khi đăng nhập' });
   }
 });
 
@@ -272,6 +293,7 @@ app.post('/api/register', async (req, res) => {
     await newUser.save();
     res.status(201).json({ message: 'Đăng ký thành công' });
   } catch (err) {
+    console.error("REGISTER ERROR:", err);
     res.status(500).json({ message: 'Lỗi server khi đăng ký' });
   }
 });
@@ -335,5 +357,12 @@ app.delete('/api/rules/:id', async (req, res) => { await Rule.findByIdAndDelete(
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
 app.post('/api/chats', async (req, res) => res.json(await Chat.findOneAndUpdate({ id: req.body.id }, req.body, { upsert: true, new: true })));
 
+app.get('/api/health', (req, res) => res.json({ status: 'ok', database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' }));
+
 app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
-app.listen(PORT, () => console.log(`🚀 Lucky Hub tại ${PORT}`));
+
+app.listen(PORT, () => {
+  console.log(`🚀 Lucky Hub is running on port ${PORT}`);
+  console.log(`📡 AI Key Loaded: ${GEMINI_KEY ? 'Yes' : 'No'}`);
+  console.log(`🗄️ DB URI Loaded: ${MONGODB_URI ? 'Yes' : 'No'}`);
+});
