@@ -139,37 +139,23 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password, fullName, phoneNumber, birthDate, height, weight, gender, healthGoal } = req.body;
-    
-    // Kiểm tra tài khoản tồn tại
     const existingUser = await User.findOne({ username: username.toLowerCase().trim() });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Tên đăng nhập đã được sử dụng' });
-    }
+    if (existingUser) return res.status(400).json({ message: 'Tên đăng nhập đã được sử dụng' });
 
     const newUser = new User({
       username: username.toLowerCase().trim(),
       password: hashPassword(password),
-      fullName,
-      phoneNumber,
-      birthDate,
-      height,
-      weight,
-      gender,
-      healthGoal,
-      role: UserRole.MEMBER,
-      status: AccountStatus.ACTIVE,
-      isPasswordEncrypted: true
+      fullName, phoneNumber, birthDate, height, weight, gender, healthGoal,
+      role: UserRole.MEMBER, status: AccountStatus.ACTIVE, isPasswordEncrypted: true
     });
-
     await newUser.save();
     res.status(201).json({ message: 'Đăng ký thành công' });
   } catch (err) {
-    console.error('Lỗi đăng ký:', err);
     res.status(500).json({ message: 'Lỗi server khi đăng ký' });
   }
 });
 
-// API POSTS (NEWS FEED)
+// API POSTS
 app.get('/api/posts', async (req, res) => res.json(await Post.find().sort({ createdAt: -1 })));
 app.post('/api/posts', async (req, res) => res.json(await new Post(req.body).save()));
 app.delete('/api/posts/:id', async (req, res) => { await Post.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });
@@ -181,20 +167,44 @@ app.put('/api/users/:id', async (req, res) => {
   if (data.password && data.isPasswordEncrypted) data.password = hashPassword(data.password);
   res.json(await User.findByIdAndUpdate(req.params.id, data, { new: true }).select('-password'));
 });
+app.delete('/api/users/:id', async (req, res) => { await User.findByIdAndDelete(req.params.id); res.json({ message: 'User Deleted' }); });
 
-// OTHER API (KEEP EXISTING)
+// API METRICS
 app.get('/api/metrics/:userId', async (req, res) => res.json(await Metric.find({ userId: req.params.userId }).sort({ date: 1 })));
 app.get('/api/all-metrics', async (req, res) => res.json(await Metric.find().populate('userId', 'fullName')));
 app.post('/api/metrics', async (req, res) => res.json(await new Metric(req.body).save()));
+app.put('/api/metrics/:id', async (req, res) => res.json(await Metric.findByIdAndUpdate(req.params.id, req.body, { new: true })));
+app.delete('/api/metrics/:id', async (req, res) => { 
+  await Metric.findByIdAndDelete(req.params.id); 
+  res.json({ message: 'Metric Deleted' }); 
+});
 app.post('/api/metrics/bulk', async (req, res) => {
   try {
     const results = await Metric.insertMany(req.body);
     res.json(results);
   } catch (err) {
-    console.error('Lỗi lưu hàng loạt:', err);
-    res.status(400).json({ message: 'Lỗi lưu dữ liệu hàng loạt. Vui lòng kiểm tra lại ngày đo (không được trùng lặp).', error: err });
+    res.status(400).json({ message: 'Lỗi lưu dữ liệu hàng loạt', error: err });
   }
 });
+app.post('/api/metrics/delete-bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    await Metric.deleteMany({ _id: { $in: ids } });
+    res.json({ message: 'Bulk Deleted' });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi xóa hàng loạt' });
+  }
+});
+app.delete('/api/metrics/all/:userId', async (req, res) => {
+  try {
+    await Metric.deleteMany({ userId: req.params.userId });
+    res.json({ message: 'All Metrics Cleared' });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi xóa trắng' });
+  }
+});
+
+// OTHER API
 app.get('/api/knowledge', async (req, res) => res.json(await Knowledge.find()));
 app.post('/api/knowledge', async (req, res) => res.json(await new Knowledge(req.body).save()));
 app.delete('/api/knowledge/:id', async (req, res) => { await Knowledge.findByIdAndDelete(req.params.id); res.json({ message: 'Deleted' }); });

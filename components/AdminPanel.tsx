@@ -4,11 +4,6 @@ import { User, UserRole, AccountStatus, AIKnowledge, AIRule, Message, HealthMetr
 import { Database } from '../services/database.ts';
 import { getAICoachResponse } from '../services/gemini.ts';
 
-/**
- * PHÂN TÍCH: TypeScript báo lỗi do interface 'AdminPanelProps' chưa được định nghĩa.
- * CÁCH GIẢI QUYẾT: Định nghĩa interface AdminPanelProps với các thuộc tính cần thiết 
- * dựa trên cách component này được sử dụng trong App.tsx.
- */
 interface AdminPanelProps {
   currentUser: User;
   users: User[];
@@ -46,6 +41,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   const [userMetrics, setUserMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
   
+  // States cho việc chọn hàng loạt
+  const [selectedMetricIds, setSelectedMetricIds] = useState<string[]>([]);
+  
   useEffect(() => {
     const consoleEl = document.getElementById('debug-console');
     if (consoleEl) consoleEl.style.display = showConsole ? 'flex' : 'none';
@@ -60,6 +58,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
       const uid = (selectedMetricUser as any).id || (selectedMetricUser as any)._id;
       const m = await Database.getMetrics(uid);
       setUserMetrics(m || []);
+      setSelectedMetricIds([]); // Reset selection khi đổi user
     }
   };
 
@@ -86,13 +85,61 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
     
     if (confirm(`Bạn có chắc muốn xóa chỉ số ngày ${formatDateVN(metric.date)}?`)) {
       try {
-        await Database.deleteMetric(mid);
-        loadUserMetrics();
-        onRefresh();
-        alert("Đã xóa thành công!");
+        const res = await Database.deleteMetric(mid);
+        if (res) {
+          loadUserMetrics();
+          onRefresh();
+          alert("Đã xóa thành công!");
+        }
       } catch (err) {
         alert("Lỗi khi xóa bản ghi.");
       }
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedMetricIds.length === 0) return;
+    if (confirm(`Bạn có chắc muốn xóa ${selectedMetricIds.length} bản ghi đã chọn?`)) {
+      try {
+        await Database.deleteMetricsBulk(selectedMetricIds);
+        loadUserMetrics();
+        onRefresh();
+        alert(`Đã xóa thành công ${selectedMetricIds.length} bản ghi!`);
+      } catch (err) {
+        alert("Lỗi khi xóa hàng loạt.");
+      }
+    }
+  };
+
+  const handleClearAllMetrics = async () => {
+    if (!selectedMetricUser) return;
+    const uid = (selectedMetricUser as any).id || (selectedMetricUser as any)._id;
+    
+    if (confirm(`CẢNH BÁO: Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ chỉ số của hội viên ${selectedMetricUser.fullName}? Hành động này không thể hoàn tác.`)) {
+      if (confirm(`Xác nhận lần 2: Bạn thực sự muốn xóa sạch mọi dữ liệu đo lường của người này?`)) {
+        try {
+          await Database.deleteAllUserMetrics(uid);
+          loadUserMetrics();
+          onRefresh();
+          alert("Đã xóa trắng toàn bộ dữ liệu chỉ số thành công!");
+        } catch (err) {
+          alert("Lỗi khi xóa trắng dữ liệu.");
+        }
+      }
+    }
+  };
+
+  const toggleSelectMetric = (id: string) => {
+    setSelectedMetricIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedMetricIds.length === userMetrics.length) {
+      setSelectedMetricIds([]);
+    } else {
+      setSelectedMetricIds(userMetrics.map(m => (m.id || (m as any)._id)!));
     }
   };
 
@@ -189,51 +236,82 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                 ))}
               </div>
             </div>
-            <div className="lg:col-span-9 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px] overflow-hidden flex flex-col">
+            <div className="lg:col-span-9 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px] flex flex-col overflow-hidden">
               {selectedMetricUser ? (
-                <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200">
-                  <table className="w-full text-[11px] text-left min-w-[1300px]">
-                    <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50">
-                      <tr>
-                        <th className="p-3">Ngày</th>
-                        <th className="p-3">Cân nặng (kg)</th>
-                        <th className="p-3">Mỡ %</th>
-                        <th className="p-3">Cơ (kg)</th>
-                        <th className="p-3">Cân đối</th>
-                        <th className="p-3">Nội tạng</th>
-                        <th className="p-3">Khoáng (kg)</th>
-                        <th className="p-3">Nước %</th>
-                        <th className="p-3">Năng lượng</th>
-                        <th className="p-3">Tuổi SH</th>
-                        <th className="p-3 text-right">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                      {userMetrics.map(m => (
-                        <tr key={(m as any).id || (m as any)._id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-3 font-bold">{formatDateVN(m.date)}</td>
-                          <td className="p-3 font-black text-emerald-600">{m.weight}</td>
-                          <td className="p-3 font-bold text-rose-500">{m.bodyFat}%</td>
-                          <td className="p-3 font-bold text-blue-600">{m.muscleMass}</td>
-                          <td className="p-3 font-black text-indigo-600">{m.balanceIndex ?? 0}</td>
-                          <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? '--'}</td>
-                          <td className="p-3 text-slate-500">{m.boneMinerals ?? '--'}</td>
-                          <td className="p-3 text-sky-600">{m.waterPercent ?? '--'}%</td>
-                          <td className="p-3 text-slate-500">{m.energy ?? '--'}</td>
-                          <td className="p-3 font-bold text-slate-800">{m.bioAge ?? '--'}</td>
-                          <td className="p-3 text-right">
-                            <div className="flex justify-end gap-3">
-                              <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black text-[9px] hover:underline uppercase">Sửa</button>
-                              <button onClick={() => handleDeleteMetric(m)} className="text-red-400 font-black text-[9px] hover:underline uppercase">Xóa</button>
-                            </div>
-                          </td>
+                <div className="flex flex-col h-full">
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4 pb-4 border-b border-slate-50">
+                    <div className="flex items-center gap-4">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tác vụ hàng loạt:</span>
+                      <button 
+                        disabled={selectedMetricIds.length === 0} 
+                        onClick={handleBulkDelete}
+                        className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-[9px] font-black uppercase tracking-widest border border-rose-100 hover:bg-rose-100 disabled:opacity-30 transition-all"
+                      >
+                        Xóa đã chọn ({selectedMetricIds.length})
+                      </button>
+                      <button 
+                        onClick={handleClearAllMetrics}
+                        className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-black transition-all"
+                      >
+                        Xóa trắng toàn bộ
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Thanh cuộn cố định được xử lý bằng cách giới hạn chiều cao và overflow-x */}
+                  <div className="flex-grow overflow-x-auto overflow-y-auto no-scrollbar max-h-[65vh] border border-slate-50 rounded-2xl" style={{ scrollbarWidth: 'auto' }}>
+                    <table className="w-full text-[11px] text-left min-w-[1300px]">
+                      <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50 sticky top-0 bg-white z-10">
+                        <tr>
+                          <th className="p-3 w-10">
+                            <input type="checkbox" checked={userMetrics.length > 0 && selectedMetricIds.length === userMetrics.length} onChange={toggleSelectAll} className="w-4 h-4 rounded border-slate-300 text-emerald-600" />
+                          </th>
+                          <th className="p-3">Ngày</th>
+                          <th className="p-3">Cân nặng (kg)</th>
+                          <th className="p-3">Mỡ %</th>
+                          <th className="p-3">Cơ (kg)</th>
+                          <th className="p-3">Cân đối</th>
+                          <th className="p-3">Nội tạng</th>
+                          <th className="p-3">Khoáng (kg)</th>
+                          <th className="p-3">Nước %</th>
+                          <th className="p-3">Năng lượng</th>
+                          <th className="p-3">Tuổi SH</th>
+                          <th className="p-3 text-right">Thao tác</th>
                         </tr>
-                      ))}
-                      {userMetrics.length === 0 && (
-                        <tr><td colSpan={11} className="p-10 text-center text-slate-400 italic">Chưa có dữ liệu đo lường</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {userMetrics.map(m => {
+                          const mid = m.id || (m as any)._id;
+                          return (
+                            <tr key={mid} className={`hover:bg-slate-50/50 transition-colors ${selectedMetricIds.includes(mid) ? 'bg-emerald-50/30' : ''}`}>
+                              <td className="p-3">
+                                <input type="checkbox" checked={selectedMetricIds.includes(mid)} onChange={() => toggleSelectMetric(mid)} className="w-4 h-4 rounded border-slate-300 text-emerald-600" />
+                              </td>
+                              <td className="p-3 font-bold">{formatDateVN(m.date)}</td>
+                              <td className="p-3 font-black text-emerald-600">{m.weight}</td>
+                              <td className="p-3 font-bold text-rose-500">{m.bodyFat}%</td>
+                              <td className="p-3 font-bold text-blue-600">{m.muscleMass}</td>
+                              <td className="p-3 font-black text-indigo-600">{m.balanceIndex ?? 0}</td>
+                              <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? '--'}</td>
+                              <td className="p-3 text-slate-500">{m.boneMinerals ?? '--'}</td>
+                              <td className="p-3 text-sky-600">{m.waterPercent ?? '--'}%</td>
+                              <td className="p-3 text-slate-500">{m.energy ?? '--'}</td>
+                              <td className="p-3 font-bold text-slate-800">{m.bioAge ?? '--'}</td>
+                              <td className="p-3 text-right">
+                                <div className="flex justify-end gap-3">
+                                  <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black text-[9px] hover:underline uppercase">Sửa</button>
+                                  <button onClick={() => handleDeleteMetric(m)} className="text-red-400 font-black text-[9px] hover:underline uppercase">Xóa</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {userMetrics.length === 0 && (
+                          <tr><td colSpan={12} className="p-10 text-center text-slate-400 italic">Chưa có dữ liệu đo lường</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-300 p-20 text-center uppercase text-[10px] font-black tracking-widest">Chọn hội viên bên trái để quản lý chỉ số</div>

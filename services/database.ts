@@ -52,6 +52,8 @@ export const Database = {
   updateMetric: (id: string, data: any) => request<HealthMetric>(`${API_BASE}/metrics/${id}`, 'PUT', data),
   deleteMetric: (id: string) => request(`${API_BASE}/metrics/${id}`, 'DELETE'),
   saveMetricsBulk: (data: any[]) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
+  deleteMetricsBulk: (ids: string[]) => request(`${API_BASE}/metrics/delete-bulk`, 'POST', { ids }),
+  deleteAllUserMetrics: (userId: string) => request(`${API_BASE}/metrics/all/${userId}`, 'DELETE'),
   
   getKnowledge: () => request<AIKnowledge[]>(`${API_BASE}/knowledge`),
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data),
@@ -64,7 +66,6 @@ export const Database = {
   getChats: () => request<ChatSession[]>(`${API_BASE}/chats`),
   saveChat: (chat: ChatSession) => request<ChatSession>(`${API_BASE}/chats`, 'POST', chat),
 
-  // News Feed API
   getPosts: () => request<Post[]>(`${API_BASE}/posts`),
   createPost: (post: Omit<Post, 'id'>) => request<Post>(`${API_BASE}/posts`, 'POST', post),
   deletePost: (id: string) => request(`${API_BASE}/posts/${id}`, 'DELETE'),
