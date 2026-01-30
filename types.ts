@@ -38,12 +38,17 @@ export interface Badge {
   color: string;
 }
 
+export interface PostImage {
+  url: string;
+  deleteUrl: string;
+}
+
 export interface PostReaction {
   userId: string;
   userName?: string;
   userAvatar?: string;
   type: string; 
-  count: number; // Số lần thả cảm xúc này
+  count: number; 
 }
 
 export interface Post {
@@ -54,7 +59,8 @@ export interface Post {
   userAvatar?: string;
   userBadges: string[];
   content: string;
-  imageUrls: string[]; // Chuyển từ imageUrl sang mảng imageUrls
+  imageUrls: string[]; // Giữ lại để tương thích ngược nếu cần, nhưng sẽ dùng images chủ yếu
+  images?: PostImage[]; // Cấu trúc mới hỗ trợ xóa ảnh từ CDN
   timestamp: string;
   reactions?: PostReaction[];
 }

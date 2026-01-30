@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Post, UserRole, PostReaction } from '../types.ts';
+import { User, Post, UserRole, PostReaction, PostImage } from '../types.ts';
 import { Database } from '../services/database.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
 
@@ -21,7 +21,6 @@ const formatTimeAgo = (timestamp: string) => {
   const date = new Date(timestamp);
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
   if (diffInSeconds < 60) return 'Vừa xong';
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) return `${diffInMinutes} phút trước`;
@@ -35,9 +34,7 @@ const formatTimeAgo = (timestamp: string) => {
 
 const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
   if (!images || images.length === 0) return null;
-
   const count = images.length;
-  
   if (count === 1) {
     return (
       <div className="rounded-[2rem] overflow-hidden border border-slate-50 shadow-inner">
@@ -45,7 +42,6 @@ const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
       </div>
     );
   }
-
   if (count === 2) {
     return (
       <div className="grid grid-cols-2 gap-1 rounded-[2rem] overflow-hidden">
@@ -53,7 +49,6 @@ const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
       </div>
     );
   }
-
   if (count === 3) {
     return (
       <div className="grid grid-cols-2 gap-1 rounded-[2rem] overflow-hidden">
@@ -63,7 +58,6 @@ const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
       </div>
     );
   }
-
   if (count === 4) {
     return (
       <div className="grid grid-cols-2 gap-1 rounded-[2rem] overflow-hidden">
@@ -71,29 +65,15 @@ const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
       </div>
     );
   }
-
-  // 5+ images
   return (
     <div className="grid grid-cols-6 gap-1 rounded-[2rem] overflow-hidden h-[400px]">
-      <div className="col-span-3 h-full">
-        <img src={images[0]} className="w-full h-full object-cover" alt="Post" />
-      </div>
-      <div className="col-span-3 h-full">
-        <img src={images[1]} className="w-full h-full object-cover" alt="Post" />
-      </div>
-      <div className="col-span-2 h-[150px]">
-        <img src={images[2]} className="w-full h-full object-cover" alt="Post" />
-      </div>
-      <div className="col-span-2 h-[150px]">
-        <img src={images[3]} className="w-full h-full object-cover" alt="Post" />
-      </div>
+      <div className="col-span-3 h-full"><img src={images[0]} className="w-full h-full object-cover" alt="Post" /></div>
+      <div className="col-span-3 h-full"><img src={images[1]} className="w-full h-full object-cover" alt="Post" /></div>
+      <div className="col-span-2 h-[150px]"><img src={images[2]} className="w-full h-full object-cover" alt="Post" /></div>
+      <div className="col-span-2 h-[150px]"><img src={images[3]} className="w-full h-full object-cover" alt="Post" /></div>
       <div className="col-span-2 h-[150px] relative">
         <img src={images[4]} className="w-full h-full object-cover brightness-50" alt="Post" />
-        {count > 5 && (
-          <div className="absolute inset-0 flex items-center justify-center text-white text-xl font-black">
-            +{count - 5}
-          </div>
-        )}
+        {count > 5 && <div className="absolute inset-0 flex items-center justify-center text-white text-xl font-black">+{count - 5}</div>}
       </div>
     </div>
   );
@@ -104,10 +84,18 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editExistingImages, setEditExistingImages] = useState<PostImage[]>([]);
+  const [editNewImages, setEditNewImages] = useState<string[]>([]);
+  
   const [showReactionsFor, setShowReactionsFor] = useState<string | null>(null);
   const [showWhoReacted, setShowWhoReacted] = useState<Post | null>(null);
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+  const reactionMenuRef = useRef<HTMLDivElement>(null);
+  
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
 
   const fetchPosts = async () => {
@@ -119,6 +107,17 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
     fetchPosts();
     const interval = setInterval(fetchPosts, 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Xử lý đóng menu reaction khi nhấn ra ngoài (quan trọng cho mobile)
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
+        setShowReactionsFor(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleCreatePost = async () => {
@@ -143,11 +142,41 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
     setIsLoading(false);
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpdatePost = async () => {
+    if (!editingPost) return;
+    setIsLoading(true);
+    const postId = editingPost.id || (editingPost as any)._id;
+    const updated = await Database.updatePost(postId, {
+      content: editContent,
+      existingImages: editExistingImages,
+      newImages: editNewImages
+    });
+    if (updated) {
+      setPosts(prev => prev.map(p => {
+        const pId = p.id || (p as any)._id;
+        const uId = updated.id || (updated as any)._id;
+        return pId === uId ? { ...updated, id: uId } : p;
+      }));
+      setEditingPost(null);
+    }
+    setIsLoading(false);
+  };
+
+  const openEditModal = (post: Post) => {
+    setEditingPost(post);
+    setEditContent(post.content);
+    setEditExistingImages(post.images || []);
+    setEditNewImages([]);
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const files = Array.from(e.target.files || []);
     files.forEach(file => {
       const reader = new FileReader();
-      reader.onloadend = () => setSelectedImages(prev => [...prev, reader.result as string]);
+      reader.onloadend = () => {
+        if (isEdit) setEditNewImages(prev => [...prev, reader.result as string]);
+        else setSelectedImages(prev => [...prev, reader.result as string]);
+      };
       reader.readAsDataURL(file);
     });
   };
@@ -155,9 +184,15 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const handleReaction = async (postId: string, type: string) => {
     const updatedPost = await Database.reactToPost(postId, currentUserId, type, currentUser.fullName, currentUser.avatar);
     if (updatedPost) {
-      setPosts(prev => prev.map(p => (p.id === postId || (p as any)._id === postId) ? { ...updatedPost, id: postId } : p));
+      // CHUẨN HÓA SO SÁNH ID ĐỂ CẬP NHẬT TRẠNG THÁI NGAY LẬP TỨC
+      setPosts(prev => prev.map(p => {
+        const pId = p.id || (p as any)._id;
+        const uId = updatedPost.id || (updatedPost as any)._id;
+        return pId === uId ? { ...updatedPost, id: uId } : p;
+      }));
     }
-    if (type === 'clear') setShowReactionsFor(null);
+    // LUÔN ĐÓNG MENU SAU KHI TƯƠNG TÁC XONG
+    setShowReactionsFor(null);
   };
 
   const getReactionCountByType = (post: Post, type: string) => {
@@ -170,7 +205,6 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
-      {/* Post Creation */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-6 space-y-4">
         <div className="flex gap-4">
           <div className="w-12 h-12 rounded-2xl bg-emerald-50 border-2 border-white shadow-sm overflow-hidden shrink-0">
@@ -195,7 +229,7 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
             )}
             <div className="flex items-center justify-between pt-2 border-t border-slate-50">
               <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-all">📸 Đăng ảnh</button>
-              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={handleImageChange} />
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={(e) => handleImageChange(e, false)} />
               <button onClick={handleCreatePost} disabled={isLoading || (!inputText.trim() && selectedImages.length === 0)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50">
                 {isLoading ? 'Đang đăng...' : 'Chia sẻ'}
               </button>
@@ -204,11 +238,12 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
         </div>
       </div>
 
-      {/* Posts List */}
       <div className="space-y-6">
         {posts.map(post => {
           const postId = post.id || (post as any)._id;
           const totalReacts = getTotalReactionCount(post);
+          const isOwner = currentUserId === post.userId;
+          const isAdmin = currentUser.role === UserRole.ADMIN;
 
           return (
             <div key={postId} className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden group hover:shadow-md transition-all">
@@ -225,31 +260,36 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
                     {formatTimeAgo(post.timestamp)}
                   </div>
                 </div>
-                {(currentUserId === post.userId || currentUser.role === UserRole.ADMIN) && (
-                  <button onClick={() => { if(confirm("Xóa bài viết này?")) Database.deletePost(postId).then(fetchPosts); }} className="text-slate-300 hover:text-rose-500 transition-colors p-2">🗑️</button>
-                )}
+                <div className="flex items-center gap-2">
+                  {(isOwner || isAdmin) && (
+                    <button onClick={() => openEditModal(post)} className="text-slate-300 hover:text-emerald-500 transition-colors p-2" title="Sửa bài viết">✏️</button>
+                  )}
+                  {(isOwner || isAdmin) && (
+                    <button onClick={() => { if(confirm("Xóa bài viết này?")) Database.deletePost(postId).then(fetchPosts); }} className="text-slate-300 hover:text-rose-500 transition-colors p-2" title="Xóa bài viết">🗑️</button>
+                  )}
+                </div>
               </div>
               
               <div className="px-5 pb-3 space-y-4">
                 <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{post.content}</p>
-                <ImageGrid images={post.imageUrls} />
+                <ImageGrid images={post.imageUrls || []} />
               </div>
 
-              {/* Interactions */}
               <div className="px-5 pb-4">
                 <div className="flex items-center justify-between border-t border-slate-50 pt-3 relative">
                   <div className="flex items-center gap-2">
-                    <div className="relative">
+                    <div className="relative" ref={showReactionsFor === postId ? reactionMenuRef : null}>
                       <button 
-                        onMouseEnter={() => setShowReactionsFor(postId)}
-                        className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-emerald-50 hover:text-emerald-600 transition-all text-[10px] font-black uppercase tracking-widest"
+                        onClick={() => setShowReactionsFor(showReactionsFor === postId ? null : postId)}
+                        onMouseEnter={() => window.innerWidth > 768 && setShowReactionsFor(postId)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${showReactionsFor === postId ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600'}`}
                       >
                         👍 Tương tác
                       </button>
 
                       {showReactionsFor === postId && (
                         <div 
-                          onMouseLeave={() => setShowReactionsFor(null)}
+                          onMouseLeave={() => window.innerWidth > 768 && setShowReactionsFor(null)}
                           className="absolute bottom-full left-0 mb-2 bg-white rounded-full shadow-2xl border border-slate-100 p-1.5 flex items-center gap-1 animate-in slide-in-from-bottom-2 duration-200 z-10"
                         >
                           {REACTION_TYPES.map(react => (
@@ -261,17 +301,12 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
                       )}
                     </div>
                   </div>
-
                   {totalReacts > 0 && (
                     <button onClick={() => setShowWhoReacted(post)} className="flex items-center -space-x-1.5 hover:opacity-80 transition-opacity">
                       {REACTION_TYPES.map(r => {
                         const count = getReactionCountByType(post, r.type);
                         if (count === 0) return null;
-                        return (
-                          <div key={r.type} className="w-6 h-6 bg-white border-2 border-white rounded-full flex items-center justify-center shadow-sm text-[10px]">
-                            {r.icon}
-                          </div>
-                        );
+                        return (<div key={r.type} className="w-6 h-6 bg-white border-2 border-white rounded-full flex items-center justify-center shadow-sm text-[10px]">{r.icon}</div>);
                       })}
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">{totalReacts} tương tác</span>
                     </button>
@@ -283,7 +318,65 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
         })}
       </div>
 
-      {/* Modal: Who Reacted */}
+      {editingPost && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95">
+            <div className="p-6 bg-emerald-600 text-white flex justify-between items-center">
+              <h3 className="font-black uppercase tracking-widest text-xs">Chỉnh sửa bài viết</h3>
+              <button onClick={() => setEditingPost(null)} className="text-2xl hover:scale-110">×</button>
+            </div>
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto no-scrollbar">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nội dung</label>
+                <textarea 
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full bg-slate-50 border-none outline-none focus:ring-1 focus:ring-emerald-500 rounded-2xl p-4 text-sm font-medium resize-none min-h-[120px]"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Hình ảnh hiện tại</label>
+                <div className="flex flex-wrap gap-2">
+                  {editExistingImages.map((img, i) => (
+                    <div key={i} className="relative w-24 h-24">
+                      <img src={img.url} className="w-full h-full object-cover rounded-xl border-2 border-white shadow-sm" alt="Existing" />
+                      <button onClick={() => setEditExistingImages(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-2 -right-2 bg-rose-500 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center shadow-md">×</button>
+                    </div>
+                  ))}
+                  {editExistingImages.length === 0 && <div className="text-[10px] text-slate-400 italic">Tất cả ảnh đã bị gỡ.</div>}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Thêm ảnh mới</label>
+                <div className="flex flex-wrap gap-2">
+                  {editNewImages.map((img, i) => (
+                    <div key={i} className="relative w-24 h-24">
+                      <img src={img} className="w-full h-full object-cover rounded-xl border-2 border-emerald-100 shadow-sm" alt="New" />
+                      <button onClick={() => setEditNewImages(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-2 -right-2 bg-rose-500 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center shadow-md">×</button>
+                    </div>
+                  ))}
+                  <button onClick={() => editFileInputRef.current?.click()} className="w-24 h-24 rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300 hover:border-emerald-300 hover:text-emerald-500 transition-all">
+                    <span className="text-xl">+</span>
+                    <span className="text-[8px] font-black uppercase">Thêm ảnh</span>
+                  </button>
+                  <input type="file" ref={editFileInputRef} className="hidden" accept="image/*" multiple onChange={(e) => handleImageChange(e, true)} />
+                </div>
+              </div>
+            </div>
+            <div className="p-6 bg-slate-50 flex gap-3">
+              <button onClick={() => setEditingPost(null)} className="flex-1 py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Hủy</button>
+              <button 
+                onClick={handleUpdatePost} 
+                disabled={isLoading || (!editContent.trim() && editExistingImages.length === 0 && editNewImages.length === 0)}
+                className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-100 disabled:opacity-50"
+              >
+                {isLoading ? 'Đang lưu...' : 'Lưu thay đổi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showWhoReacted && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95">
@@ -304,9 +397,6 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
                   <div className="text-2xl">{REACTION_TYPES.find(rt => rt.type === r.type)?.icon}</div>
                 </div>
               ))}
-              {(!showWhoReacted.reactions || showWhoReacted.reactions.length === 0) && (
-                <div className="text-center py-10 text-slate-400 text-xs italic">Chưa có ai tương tác bài viết này.</div>
-              )}
             </div>
           </div>
         </div>

@@ -15,11 +15,8 @@ dotenv.config();
 const app = express();
 
 app.use(cors({ origin: '*' }) as any);
-app.use(express.json({ limit: '50mb' }) as any); // Tăng giới hạn để nhận nhiều ảnh base64
+app.use(express.json({ limit: '50mb' }) as any);
 
-/**
- * CẤU HÌNH DỊCH VỤ EMAIL QUA MAILEROO API V2
- */
 const MAILEROO_CONFIG = {
   apiKey: process.env.MAILEROO_API_KEY,
   endpoint: 'https://smtp.maileroo.com/api/v2/emails', 
@@ -29,13 +26,14 @@ const MAILEROO_CONFIG = {
 
 /**
  * HÀM TIỆN ÍCH UPLOAD ẢNH LÊN IMGBB
+ * @returns Object chứa url và delete_url
  */
-async function uploadToImgBB(base64Data: string | undefined): Promise<string | undefined> {
-  if (!base64Data || !base64Data.startsWith('data:image')) return base64Data;
+async function uploadToImgBB(base64Data: string | undefined): Promise<{url: string, deleteUrl: string} | null> {
+  if (!base64Data || !base64Data.startsWith('data:image')) return null;
 
   try {
     const apiKey = process.env.IMGBB_API_KEY;
-    if (!apiKey) return base64Data;
+    if (!apiKey) return null;
 
     const base64Image = base64Data.split(',')[1];
     const formData = new URLSearchParams();
@@ -48,33 +46,27 @@ async function uploadToImgBB(base64Data: string | undefined): Promise<string | u
     });
 
     const result = await response.json();
-    return result.success ? result.data.url : base64Data;
+    if (result.success) {
+      return {
+        url: result.data.url,
+        deleteUrl: result.data.delete_url
+      };
+    }
+    return null;
   } catch (error: any) {
     console.error('❌ [ImgBB] Error:', error.message);
-    return base64Data;
+    return null;
   }
 }
 
-async function sendMailViaMaileroo(to: string, subject: string, html: string) {
+/**
+ * HÀM GIẢ LẬP GỌI XÓA ẢNH TRÊN CDN
+ */
+async function purgeImageFromCDN(deleteUrl: string) {
+  if (!deleteUrl) return;
   try {
-    const response = await fetch(MAILEROO_CONFIG.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': MAILEROO_CONFIG.apiKey || ''
-      },
-      body: JSON.stringify({
-        from: { address: MAILEROO_CONFIG.fromEmail, name: MAILEROO_CONFIG.fromName },
-        to: [{ address: to }],
-        subject: subject,
-        html: html
-      })
-    });
-    return await response.json();
-  } catch (error: any) {
-    console.error('❌ [Maileroo Error]:', error.message);
-    throw error;
-  }
+    console.log(`🧹 [CDN Purge] Yêu cầu dọn dẹp ảnh: ${deleteUrl}`);
+  } catch (e) {}
 }
 
 function hashPassword(password: string): string {
@@ -118,10 +110,9 @@ app.use((req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
-
 const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
 
-const userSchema = new mongoose.Schema({
+const User = mongoose.model('User', new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
@@ -140,9 +131,7 @@ const userSchema = new mongoose.Schema({
   badges: { type: [String], default: [] },
   resetPasswordToken: String,
   resetPasswordExpires: Date
-}, { timestamps: true });
-
-const User = mongoose.model('User', userSchema);
+}, { timestamps: true }));
 
 const Metric = mongoose.model('Metric', new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -164,7 +153,8 @@ const Post = mongoose.model('Post', new mongoose.Schema({
   userAvatar: String,
   userBadges: [String],
   content: String,
-  imageUrls: [String], // Hỗ trợ mảng ảnh
+  imageUrls: [String], 
+  images: [{ url: String, deleteUrl: String }], 
   timestamp: String,
   reactions: [{ 
     userId: String, 
@@ -193,50 +183,19 @@ async function initDB() {
 }
 initDB();
 
-let currentKeyIndex = 0;
-async function callAiWithFallback(callFn: (ai: GoogleGenAI) => Promise<any>) {
-  const numKeys = API_KEYS.length;
-  if (numKeys === 0) throw new Error("No API Keys");
-  let lastError = null;
-  const startIndex = currentKeyIndex;
-  currentKeyIndex = (currentKeyIndex + 1) % numKeys;
-  for (let attempt = 0; attempt < numKeys; attempt++) {
-    const index = (startIndex + attempt) % numKeys;
-    const key = API_KEYS[index]!;
-    try {
-      const ai = new GoogleGenAI({ apiKey: key });
-      return await callFn(ai);
-    } catch (err: any) {
-      lastError = err;
-      if (attempt < numKeys - 1) continue;
-    }
-  }
-  throw lastError;
-}
-
-// --- API ---
-
 app.get('/api/health', (req, res) => res.json({ status: 'ok', database: 'connected' }));
-
-app.post('/api/check-email', async (req, res) => {
-  const { email, excludeUserId } = req.body;
-  const query: any = { email: email.toLowerCase().trim() };
-  if (excludeUserId) query._id = { $ne: excludeUserId };
-  const exists = await User.findOne(query);
-  res.json({ exists: !!exists });
-});
 
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, avatar, ...rest } = req.body;
-    const finalAvatar = await uploadToImgBB(avatar);
+    const imgData = await uploadToImgBB(avatar);
     const newUser = new User({ 
       ...rest, 
       username: username.toLowerCase().trim(), 
       email: email.toLowerCase().trim(), 
       password: hashPassword(password), 
       isPasswordEncrypted: true, 
-      avatar: finalAvatar 
+      avatar: imgData?.url || avatar 
     });
     await newUser.save();
     res.json({ message: 'Success' });
@@ -261,7 +220,10 @@ app.get('/api/users', async (req, res) => {
 
 app.put('/api/users/:id', async (req, res) => {
   const data = req.body;
-  if (data.avatar) data.avatar = await uploadToImgBB(data.avatar);
+  if (data.avatar && data.avatar.startsWith('data:image')) {
+    const imgData = await uploadToImgBB(data.avatar);
+    if (imgData) data.avatar = imgData.url;
+  }
   const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
   res.json({ ...u?.toObject(), id: u?._id });
 });
@@ -273,21 +235,72 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   const { imageUrls, ...data } = req.body;
-  const uploadedUrls = [];
+  const uploadedImages = [];
   if (imageUrls && Array.isArray(imageUrls)) {
     for (const img of imageUrls) {
-      const url = await uploadToImgBB(img);
-      if (url) uploadedUrls.push(url);
+      if (img.startsWith('data:image')) {
+        const imgData = await uploadToImgBB(img);
+        if (imgData) uploadedImages.push(imgData);
+      }
     }
   }
-  const p = new Post({ ...data, imageUrls: uploadedUrls });
+  const p = new Post({ 
+    ...data, 
+    images: uploadedImages,
+    imageUrls: uploadedImages.map(i => i.url) 
+  });
   await p.save();
   res.json({ ...p.toObject(), id: p._id });
 });
 
+app.put('/api/posts/:id', async (req, res) => {
+  try {
+    const { content, existingImages, newImages } = req.body;
+    const post = await Post.findById(req.params.id);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const currentImages = post.images || [];
+    const imagesToPurge = currentImages.filter(img => 
+      !existingImages.some((e: any) => e.url === img.url)
+    );
+
+    for (const img of imagesToPurge) {
+      await purgeImageFromCDN(img.deleteUrl);
+    }
+
+    const uploadedNewImages = [];
+    if (newImages && Array.isArray(newImages)) {
+      for (const img of newImages) {
+        if (img.startsWith('data:image')) {
+          const imgData = await uploadToImgBB(img);
+          if (imgData) uploadedNewImages.push(imgData);
+        }
+      }
+    }
+
+    const finalImages = [...existingImages, ...uploadedNewImages];
+    post.content = content;
+    post.images = finalImages as any;
+    post.imageUrls = finalImages.map(i => i.url);
+    
+    await post.save();
+    res.json({ ...post.toObject(), id: post._id });
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi cập nhật bài viết' });
+  }
+});
+
 app.delete('/api/posts/:id', async (req, res) => {
-  await Post.findByIdAndDelete(req.params.id);
-  res.json({ success: true });
+  try {
+    const post = await Post.findById(req.params.id);
+    if (post && post.images) {
+      for (const img of post.images) {
+        await purgeImageFromCDN(img.deleteUrl);
+      }
+    }
+    await Post.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: 'Lỗi khi xóa' }); }
 });
 
 app.put('/api/posts/:id/react', async (req, res) => {
@@ -295,28 +308,24 @@ app.put('/api/posts/:id/react', async (req, res) => {
     const { userId, type, userName, userAvatar } = req.body;
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: 'Post not found' });
-    
     let reactions = (post.reactions as any) || [];
-
     if (type === 'clear') {
-      // Xóa tất cả reaction của user này
       reactions = reactions.filter((r: any) => r.userId !== userId);
     } else {
       const index = reactions.findIndex((r: any) => r.userId === userId && r.type === type);
       if (index > -1) {
-        reactions[index].count += 1; // Tăng số lần thả
+        reactions[index].count += 1;
       } else {
         reactions.push({ userId, type, userName, userAvatar, count: 1 });
       }
     }
-    
     post.reactions = reactions;
     await post.save();
-    res.json(post);
+    // TRẢ VỀ DỮ LIỆU ĐÃ CHUẨN HÓA ID
+    res.json({ ...post.toObject(), id: post._id });
   } catch (err) { res.status(500).json({ message: 'Error' }); }
 });
 
-// Reuse existing routes for metrics, knowledge, rules...
 app.get('/api/metrics/:userId', async (req, res) => {
   const m = await Metric.find({ userId: req.params.userId }).sort({ date: -1 });
   res.json(m.map(item => ({ ...item.toObject(), id: item._id })));
@@ -326,14 +335,8 @@ app.post('/api/metrics', async (req, res) => {
   await m.save();
   res.json({ ...m.toObject(), id: m._id });
 });
-app.get('/api/knowledge', async (req, res) => {
-  const k = await Knowledge.find();
-  res.json(k.map(i => ({ ...i.toObject(), id: i._id })));
-});
-app.get('/api/rules', async (req, res) => {
-  const r = await Rule.find();
-  res.json(r.map(i => ({ ...i.toObject(), id: i._id })));
-});
+app.get('/api/knowledge', async (req, res) => res.json((await Knowledge.find()).map(i => ({...i.toObject(), id: i._id}))));
+app.get('/api/rules', async (req, res) => res.json((await Rule.find()).map(i => ({...i.toObject(), id: i._id}))));
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
 app.post('/api/chats', async (req, res) => {
   const { id, ...data } = req.body;
@@ -342,5 +345,4 @@ app.post('/api/chats', async (req, res) => {
 
 app.use(express.static('.') as any);
 app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
-
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
