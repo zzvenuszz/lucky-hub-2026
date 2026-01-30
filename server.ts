@@ -25,17 +25,30 @@ const MAILEROO_CONFIG = {
 };
 
 const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
+const healthyKeys: string[] = [];
+
+/**
+ * HÀM LẤY CLIENT AI (Xoay vòng Key)
+ */
+const getAIClient = () => {
+  // Ưu tiên dùng các key đã xác nhận hoạt động, nếu không có thì dùng bừa trong list gốc
+  const source = healthyKeys.length > 0 ? healthyKeys : API_KEYS;
+  const key = source[Math.floor(Math.random() * source.length)];
+  if (!key) throw new Error("Không có Gemini API Key nào khả dụng.");
+  return new GoogleGenAI({ apiKey: key });
+};
 
 /**
  * KIỂM TRA TRẠNG THÁI GEMINI API KEYS
  */
 async function validateGeminiKeys() {
   console.log('🔍 [Gemini] Đang kiểm tra trạng thái các API Keys...');
+  healthyKeys.length = 0; // Reset danh sách key khỏe
+
   for (let i = 0; i < API_KEYS.length; i++) {
     const key = API_KEYS[i]!;
     try {
       const ai = new GoogleGenAI({ apiKey: key });
-      // Thực hiện một request nhỏ để kiểm tra tính khả dụng của Key
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: 'ping',
@@ -43,6 +56,7 @@ async function validateGeminiKeys() {
       
       if (response && response.text) {
         console.log(`✅ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): HOẠT ĐỘNG`);
+        healthyKeys.push(key);
       } else {
         throw new Error("Không nhận được phản hồi từ Model");
       }
@@ -50,11 +64,11 @@ async function validateGeminiKeys() {
       console.error(`❌ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): LỖI - ${err.message}`);
     }
   }
+  console.log(`📊 [Gemini] Tổng kết: ${healthyKeys.length}/${API_KEYS.length} keys sẵn sàng.`);
 }
 
 /**
  * HÀM TIỆN ÍCH UPLOAD ẢNH LÊN IMGBB
- * @returns Object chứa url và delete_url
  */
 async function uploadToImgBB(base64Data: string | undefined): Promise<{url: string, deleteUrl: string} | null> {
   if (!base64Data || !base64Data.startsWith('data:image')) return null;
@@ -88,24 +102,18 @@ async function uploadToImgBB(base64Data: string | undefined): Promise<{url: stri
 }
 
 /**
- * HÀM THỰC THI XÓA ẢNH TRÊN CDN (Dựa trên Reverse Engineering Document)
- * Có cơ chế Retry (thử lại) và Timeout (thời gian chờ)
+ * HÀM THỰC THI XÓA ẢNH TRÊN CDN
  */
 async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolean> {
   if (!deleteUrl || !deleteUrl.includes('ibb.co')) return false;
   
   try {
-    // 1. Bóc tách image_id và image_hash từ URL xóa
     const urlParts = deleteUrl.split('/').filter(p => p.length > 0);
     const imageHash = urlParts.pop();
     const imageId = urlParts.pop();
 
-    if (!imageId || !imageHash) {
-      console.warn(`⚠️ [CDN Purge] Không xác định được ID/Hash: ${deleteUrl}`);
-      return false;
-    }
+    if (!imageId || !imageHash) return false;
 
-    // 2. Chuẩn bị dữ liệu Form Data theo đặc tả kỹ thuật của ibb.co/json
     const formData = new URLSearchParams();
     formData.append('pathname', `/${imageId}/${imageHash}`);
     formData.append('action', 'delete');
@@ -114,11 +122,8 @@ async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolea
     formData.append('deleting[id]', imageId);
     formData.append('deleting[hash]', imageHash);
 
-    // 3. Cơ chế Timeout 10 giây
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    console.log(`🧹 [CDN Purge] Đang xóa (${4 - retries}/3): ${imageId}`);
 
     const response = await fetch('https://ibb.co/json', {
       method: 'POST',
@@ -134,22 +139,15 @@ async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolea
 
     if (response.ok) {
       const result = await response.json();
-      if (result.status_code === 200) {
-        console.log(`✅ [CDN Purge] Thành công: ${imageId}`);
-        return true;
-      }
+      if (result.status_code === 200) return true;
     }
     
     throw new Error(`ImgBB API error ${response.status}`);
   } catch (e: any) {
-    // 4. Cơ chế Retry (Thử lại)
     if (retries > 1) {
-      const waitTime = (4 - retries) * 2000; // Exponential-ish backoff
-      console.warn(`🔄 [CDN Purge] Thất bại, đang thử lại sau ${waitTime}ms... (${e.message})`);
-      await new Promise(res => setTimeout(res, waitTime));
+      await new Promise(res => setTimeout(res, 2000));
       return purgeImageFromCDN(deleteUrl, retries - 1);
     }
-    console.error(`❌ [CDN Purge] Thất bại hoàn toàn sau 3 lần thử: ${deleteUrl}`);
     return false;
   }
 }
@@ -157,12 +155,6 @@ async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolea
 function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
-
-const cleanJsonResponse = (text: string): string => {
-  const match = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (match) return match[0];
-  return text.trim();
-};
 
 app.use((req, res, next) => {
   const forbiddenFiles = ['.env', 'server.ts', 'run.js', 'package.json', 'package-lock.json', 'tsconfig.json'];
@@ -263,13 +255,44 @@ async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected to MongoDB');
-    // Kiểm tra API Keys ngay sau khi DB sẵn sàng
     await validateGeminiKeys();
   } catch (err: any) { console.error('❌ DB Error:', err.message); }
 }
 initDB();
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', database: 'connected' }));
+
+/**
+ * API ĐIỀU PHỐI AI COACH
+ */
+app.post('/api/ai/coach', async (req, res) => {
+  console.log('🤖 [API Coach] Nhận yêu cầu tư vấn mới...');
+  try {
+    const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
+    const ai = getAIClient();
+    
+    const parts: any[] = [{ text: latestUserMessage }];
+    if (imageBase64) {
+      console.log('📸 [API Coach] Đang xử lý ảnh đính kèm...');
+      parts.push({ inlineData: { data: imageBase64, mimeType: 'image/jpeg' } });
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: [
+        ...history,
+        { role: 'user', parts }
+      ],
+      config: { systemInstruction }
+    });
+
+    console.log('✅ [API Coach] Gemini phản hồi thành công.');
+    res.json({ text: response.text });
+  } catch (err: any) {
+    console.error('❌ [API Coach] Lỗi xử lý:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+});
 
 app.post('/api/register', async (req, res) => {
   try {
@@ -344,19 +367,11 @@ app.put('/api/posts/:id', async (req, res) => {
     const { content, existingImages, newImages } = req.body;
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: 'Post not found' });
-
-    // 1. Xác định và xóa ảnh bị gỡ khỏi bài viết
     const currentImages = post.images || [];
-    const imagesToPurge = currentImages.filter(img => 
-      !existingImages.some((e: any) => e.url === img.url)
-    );
-
-    // Xử lý xóa song song không chặn tiến trình update chính
+    const imagesToPurge = currentImages.filter(img => !existingImages.some((e: any) => e.url === img.url));
     if (imagesToPurge.length > 0) {
       Promise.allSettled(imagesToPurge.map(img => purgeImageFromCDN(img.deleteUrl)));
     }
-
-    // 2. Upload các ảnh mới lên ImgBB
     const uploadedNewImages = [];
     if (newImages && Array.isArray(newImages)) {
       for (const img of newImages) {
@@ -366,38 +381,25 @@ app.put('/api/posts/:id', async (req, res) => {
         }
       }
     }
-
-    // 3. Cập nhật dữ liệu vào MongoDB
     const finalImages = [...existingImages, ...uploadedNewImages];
     post.content = content;
     post.images = finalImages as any;
     post.imageUrls = finalImages.map(i => i.url);
-    
     await post.save();
     res.json({ ...post.toObject(), id: post._id });
-  } catch (err: any) {
-    console.error('❌ [Post Update Error]:', err.message);
-    res.status(500).json({ message: 'Lỗi cập nhật bài viết' });
-  }
+  } catch (err: any) { res.status(500).json({ message: 'Error' }); }
 });
 
 app.delete('/api/posts/:id', async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: 'Không tìm thấy bài viết' });
-
-    // 1. Dọn dẹp sạch sẽ ảnh trên ImgBB trước khi xóa record
+    if (!post) return res.status(404).json({ message: 'Error' });
     if (post.images && post.images.length > 0) {
       await Promise.allSettled(post.images.map(img => purgeImageFromCDN(img.deleteUrl)));
     }
-
-    // 2. Xóa bản ghi trong MongoDB
     await Post.findByIdAndDelete(req.params.id);
     res.json({ success: true });
-  } catch (err: any) {
-    console.error('❌ [Post Delete Error]:', err.message);
-    res.status(500).json({ message: 'Lỗi khi xóa bài viết' }); 
-  }
+  } catch (err: any) { res.status(500).json({ message: 'Error' }); }
 });
 
 app.put('/api/posts/:id/react', async (req, res) => {

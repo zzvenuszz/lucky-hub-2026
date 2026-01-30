@@ -40,7 +40,10 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
 
     clearTimeout(id);
 
-    if (!res.ok) throw new Error("Server AI Error or Timeout");
+    if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `Server trả về lỗi ${res.status}`);
+    }
     
     const result = await res.json();
     if (!result.weight || result.weight <= 0) {
@@ -53,11 +56,7 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     return result;
   } catch (e: any) {
     clearTimeout(id);
-    if (e.name === 'AbortError') {
-      log(`LỖI: Yêu cầu trích xuất ảnh quá hạn (30s).`, "error");
-    } else {
-      log(`LỖI: ${e.message}`, "error");
-    }
+    log(`LỖI: ${e.message}`, "error");
     return null;
   }
 };
@@ -75,8 +74,10 @@ export const getAICoachResponse = async (
     if (window.debugLog) window.debugLog(`[Gemini Coach Proxy] ${msg}`, type);
   };
 
+  log("🚀 Bắt đầu gọi API tư vấn AI...");
+
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  const id = setTimeout(() => controller.abort(), 45000); // Tăng lên 45s cho an toàn
 
   try {
     const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
@@ -103,6 +104,8 @@ PHONG CÁCH:
       parts: [{ text: m.content }]
     }));
 
+    log("📡 Đang gửi dữ liệu lên Server...");
+
     const res = await fetch('/api/ai/coach', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -117,13 +120,22 @@ PHONG CÁCH:
 
     clearTimeout(id);
 
+    if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        log(`❌ Server báo lỗi HTTP ${res.status}: ${errData.message || 'Không xác định'}`, "error");
+        throw new Error(errData.message || "AI Server Error");
+    }
+
     const data = await res.json();
+    log("✅ Nhận được phản hồi từ AI.", "success");
     return data.text;
   } catch (e: any) {
     clearTimeout(id);
     if (e.name === 'AbortError') {
-      log("Yêu cầu tư vấn quá hạn (30s).", "error");
+      log("⏳ Yêu cầu tư vấn quá hạn (45s). Vui lòng thử lại.", "error");
+    } else {
+      log(`❌ Lỗi API Coach: ${e.message}`, "error");
     }
-    return "Xin lỗi, tôi đang bận một chút.";
+    return null; // Trả về null để ChatSystem xử lý thông báo lỗi thay vì fallback cứng
   }
 };
