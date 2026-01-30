@@ -23,6 +23,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
   });
 
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   // State cho việc cắt ảnh
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
@@ -71,8 +72,14 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        setIsCompressing(true);
+      }
       const reader = new FileReader();
-      reader.onload = () => setImageToCrop(reader.result as string);
+      reader.onload = () => {
+        setImageToCrop(reader.result as string);
+        setIsCompressing(false);
+      };
       reader.readAsDataURL(file);
     }
     e.target.value = ''; 
@@ -105,10 +112,15 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
   const handleSaveCrop = async () => {
     if (imageToCrop && croppedAreaPixels) {
       try {
+        setIsCompressing(true);
         const croppedImg = await getCroppedImg(imageToCrop, croppedAreaPixels);
         setFormData({ ...formData, avatar: croppedImg });
         setImageToCrop(null);
-      } catch (e) { console.error(e); }
+        setIsCompressing(false);
+      } catch (e) { 
+        setIsCompressing(false);
+        console.error(e); 
+      }
     }
   };
 
@@ -138,13 +150,18 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
         <div className="bg-emerald-600 h-32 relative">
           <div className="absolute -bottom-12 left-8">
             <label className="relative cursor-pointer group block">
-              <div className="w-24 h-24 rounded-2xl border-4 border-white shadow-lg overflow-hidden bg-white">
+              <div className={`w-24 h-24 rounded-2xl border-4 border-white shadow-lg overflow-hidden bg-white ${isCompressing ? 'animate-pulse opacity-50' : ''}`}>
                 <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover" />
               </div>
               <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">📸</div>
               <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
             </label>
           </div>
+          {isCompressing && (
+            <div className="absolute bottom-[-50px] left-36 bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm animate-bounce">
+              ⏳ Đang nén ảnh lớn...
+            </div>
+          )}
         </div>
         
         <form onSubmit={handleSubmit} className="p-8 pt-16 space-y-6">
@@ -204,7 +221,9 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
             </div>
             <div className="flex gap-4">
               <button onClick={() => setImageToCrop(null)} className="flex-1 py-4 bg-slate-700 text-white rounded-2xl font-black uppercase tracking-widest text-[10px]">Hủy</button>
-              <button onClick={handleSaveCrop} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-emerald-900/20">Cắt & Lưu</button>
+              <button onClick={handleSaveCrop} disabled={isCompressing} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-emerald-900/20 disabled:opacity-50">
+                {isCompressing ? 'Đang lưu...' : 'Cắt & Lưu'}
+              </button>
             </div>
           </div>
         </div>

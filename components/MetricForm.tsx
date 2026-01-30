@@ -21,6 +21,27 @@ const formatDateVN = (dateStr: string) => {
   }
 };
 
+/**
+ * HÀM TIỆN ÍCH NÉN ẢNH PHÍA CLIENT
+ */
+const compressImage = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 1200;
+      const scale = Math.min(1, MAX_WIDTH / img.width);
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
+
 const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose }) => {
   const getTodayISO = () => {
     const now = new Date();
@@ -35,9 +56,10 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   });
   
   const [loadingAI, setLoadingAI] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
-  const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+  const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' | 'info' } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -51,27 +73,33 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const handleAIUpload = async (e: React.ChangeEvent<HTMLInputElement>, isBulk: boolean) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Kiểm tra định dạng
+    if (!file.type.startsWith('image/')) {
+      setStatusMsg({ text: "⚠️ Định dạng tệp không được hỗ trợ. Vui lòng chọn ảnh.", type: 'error' });
+      return;
+    }
+
+    // Cảnh báo nếu file quá lớn (> 3MB)
+    if (file.size > 3 * 1024 * 1024) {
+      setStatusMsg({ text: "🚀 Ảnh dung lượng lớn, Lucky đang tối ưu để xử lý nhanh hơn...", type: 'info' });
+    }
     
-    setLoadingAI(true);
+    setIsCompressing(true);
     setBulkMode(isBulk);
-    setStatusMsg(null);
 
     const now = new Date();
     const currentYear = now.getFullYear();
 
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const img = new Image();
-      img.src = reader.result as string;
-      img.onload = async () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        const scale = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scale;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      try {
+        const compressedBase64Full = await compressImage(reader.result as string);
+        const compressedBase64 = compressedBase64Full.split(',')[1];
+        
+        setIsCompressing(false);
+        setLoadingAI(true);
+        setStatusMsg(null);
 
         if (!isBulk) {
           try {
@@ -86,18 +114,15 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 date: extracted.date || prev.date 
               }));
               setStatusMsg({ 
-                text: `✅ Lucky AI đã trích xuất xong cho ngày ${formatDateVN(extracted.date || "")}!`, 
+                text: `✅ Trích xuất xong cho ngày ${formatDateVN(extracted.date || "")}!`, 
                 type: 'success' 
               });
             } else {
-              setStatusMsg({ 
-                text: "⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ.", 
-                type: 'error' 
-              });
+              setStatusMsg({ text: "⚠️ Không tìm thấy chỉ số hợp lệ.", type: 'error' });
             }
           } catch (err) {
             setLoadingAI(false);
-            setStatusMsg({ text: "⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh.", type: 'error' });
+            setStatusMsg({ text: "⚠️ Lỗi phân tích ảnh.", type: 'error' });
           }
         } else {
           try {
@@ -115,9 +140,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 const m = parseInt(parts[1]);
                 const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
                 let finalYear = currentYear;
-                if (extractedDateThisYear > now) {
-                  finalYear = currentYear - 1;
-                }
+                if (extractedDateThisYear > now) finalYear = currentYear - 1;
                 item.date = `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
               } else {
                 item.date = now.toISOString().split('T')[0];
@@ -130,14 +153,17 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               setBulkPreview(processedData);
               setStatusMsg({ text: `✅ Đã quét thành công ${processedData.length} bản ghi!`, type: 'success' });
             } else {
-              setStatusMsg({ text: "⚠️ Không tìm thấy danh sách chỉ số hợp lệ.", type: 'error' });
+              setStatusMsg({ text: "⚠️ Không tìm thấy danh sách chỉ số.", type: 'error' });
             }
           } catch (err) {
             setLoadingAI(false);
             setStatusMsg({ text: "⚠️ Lỗi phân tích ảnh hàng loạt.", type: 'error' });
           }
         }
-      };
+      } catch (err) {
+        setIsCompressing(false);
+        setStatusMsg({ text: "⚠️ Lỗi khi nén ảnh.", type: 'error' });
+      }
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -186,9 +212,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
         <div className="p-8 overflow-y-auto space-y-6 no-scrollbar relative">
           {statusMsg && (
-            <div className={`p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-300 shadow-sm ${statusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+            <div className={`p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-300 shadow-sm ${statusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : statusMsg.type === 'error' ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
               <div className="flex items-center gap-3">
-                <span className="text-lg">{statusMsg.type === 'success' ? '✅' : '⚠️'}</span>
+                <span className="text-lg">{statusMsg.type === 'success' ? '✅' : statusMsg.type === 'error' ? '⚠️' : 'ℹ️'}</span>
                 <span className="text-xs font-black uppercase tracking-tight">{statusMsg.text}</span>
               </div>
               <button onClick={() => setStatusMsg(null)} className="text-lg font-bold opacity-50 hover:opacity-100">&times;</button>
@@ -196,25 +222,27 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button disabled={loadingAI} onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
+            <button disabled={loadingAI || isCompressing} onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📸</span>
               <span className="font-black text-emerald-800 text-[10px] uppercase tracking-widest">Tải ảnh/Chụp InBody</span>
             </button>
-            <button disabled={loadingAI} onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-slate-200'}`}>
+            <button disabled={loadingAI || isCompressing} onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📝</span>
               <span className="font-black text-amber-800 text-[10px] uppercase tracking-widest">Quét sổ tay hàng loạt</span>
             </button>
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkMode)} />
           </div>
 
-          {loadingAI && (
+          {(loadingAI || isCompressing) && (
             <div className="flex flex-col items-center justify-center p-12 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
               <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-              <span className="text-emerald-700 font-black text-xs uppercase tracking-widest">Lucky AI đang phân tích dữ liệu qua Server...</span>
+              <span className="text-emerald-700 font-black text-xs uppercase tracking-widest text-center">
+                {isCompressing ? '⏳ Ảnh dung lượng lớn, Lucky đang nén để xử lý nhanh hơn...' : '🍀 Lucky AI đang phân tích dữ liệu qua Server...'}
+              </span>
             </div>
           )}
 
-          {!loadingAI && bulkMode && bulkPreview.length > 0 ? (
+          {!loadingAI && !isCompressing && bulkMode && bulkPreview.length > 0 ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-slate-700">Dữ liệu quét được ({bulkPreview.length} ngày):</h3>
@@ -256,7 +284,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               </div>
               <button onClick={() => onSaveBulk(bulkPreview)} className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-emerald-700 transition-all">Xác nhận lưu {bulkPreview.length} bản ghi</button>
             </div>
-          ) : !loadingAI && (
+          ) : !loadingAI && !isCompressing && (
             <form onSubmit={handleSubmit} className="space-y-6">
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
