@@ -32,27 +32,6 @@ const formatTimeAgo = (timestamp: string) => {
   return date.toLocaleDateString('vi-VN');
 };
 
-/**
- * HÀM TIỆN ÍCH NÉN ẢNH PHÍA CLIENT
- */
-const compressImage = (base64Str: string): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64Str;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX_WIDTH = 1024;
-      const scale = Math.min(1, MAX_WIDTH / img.width);
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
-    };
-    img.onerror = () => resolve(base64Str);
-  });
-};
-
 const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
   if (!images || images.length === 0) return null;
   const count = images.length;
@@ -105,7 +84,6 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false);
   
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -131,6 +109,7 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // Xử lý đóng menu reaction khi nhấn ra ngoài (quan trọng cho mobile)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
@@ -144,25 +123,16 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const handleCreatePost = async () => {
     if (!inputText.trim() && selectedImages.length === 0) return;
     setIsLoading(true);
-
-    // Nén từng ảnh trước khi đăng
-    setIsCompressing(true);
-    const compressedImages = await Promise.all(
-      selectedImages.map(img => compressImage(img))
-    );
-    setIsCompressing(false);
-
     const newPostData = {
       userId: currentUserId,
       userFullName: currentUser.fullName,
       userAvatar: currentUser.avatar,
       userBadges: currentUser.badges || [],
       content: inputText,
-      imageUrls: compressedImages,
+      imageUrls: selectedImages,
       timestamp: new Date().toISOString(),
       reactions: []
     };
-    
     const saved = await Database.createPost(newPostData as any);
     if (saved) {
       setPosts([saved, ...posts]);
@@ -175,18 +145,11 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const handleUpdatePost = async () => {
     if (!editingPost) return;
     setIsLoading(true);
-    
-    setIsCompressing(true);
-    const compressedNewImages = await Promise.all(
-      editNewImages.map(img => compressImage(img))
-    );
-    setIsCompressing(false);
-
     const postId = editingPost.id || (editingPost as any)._id;
     const updated = await Database.updatePost(postId, {
       content: editContent,
       existingImages: editExistingImages,
-      newImages: compressedNewImages
+      newImages: editNewImages
     });
     if (updated) {
       setPosts(prev => prev.map(p => {
@@ -209,10 +172,6 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const files = Array.from(e.target.files || []);
     files.forEach(file => {
-      // Cảnh báo nếu file quá lớn
-      if (file.size > 2 * 1024 * 1024) {
-        if (window.debugLog) window.debugLog(`Ảnh "${file.name}" dung lượng lớn, Lucky sẽ tự động nén.`, "info");
-      }
       const reader = new FileReader();
       reader.onloadend = () => {
         if (isEdit) setEditNewImages(prev => [...prev, reader.result as string]);
@@ -220,18 +179,19 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
       };
       reader.readAsDataURL(file);
     });
-    e.target.value = '';
   };
 
   const handleReaction = async (postId: string, type: string) => {
     const updatedPost = await Database.reactToPost(postId, currentUserId, type, currentUser.fullName, currentUser.avatar);
     if (updatedPost) {
+      // CHUẨN HÓA SO SÁNH ID ĐỂ CẬP NHẬT TRẠNG THÁI NGAY LẬP TỨC
       setPosts(prev => prev.map(p => {
         const pId = p.id || (p as any)._id;
         const uId = updatedPost.id || (updatedPost as any)._id;
         return pId === uId ? { ...updatedPost, id: uId } : p;
       }));
     }
+    // LUÔN ĐÓNG MENU SAU KHI TƯƠNG TÁC XONG
     setShowReactionsFor(null);
   };
 
@@ -267,11 +227,10 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
                 ))}
               </div>
             )}
-            {isCompressing && <div className="text-[10px] text-emerald-600 font-bold animate-pulse">⏳ Lucky đang tối ưu ảnh lớn, vui lòng chờ...</div>}
             <div className="flex items-center justify-between pt-2 border-t border-slate-50">
               <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-all">📸 Đăng ảnh</button>
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={(e) => handleImageChange(e, false)} />
-              <button onClick={handleCreatePost} disabled={isLoading || isCompressing || (!inputText.trim() && selectedImages.length === 0)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50">
+              <button onClick={handleCreatePost} disabled={isLoading || (!inputText.trim() && selectedImages.length === 0)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50">
                 {isLoading ? 'Đang đăng...' : 'Chia sẻ'}
               </button>
             </div>
@@ -375,7 +334,6 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
                   className="w-full bg-slate-50 border-none outline-none focus:ring-1 focus:ring-emerald-500 rounded-2xl p-4 text-sm font-medium resize-none min-h-[120px]"
                 />
               </div>
-              {isCompressing && <div className="text-[10px] text-emerald-600 font-bold animate-pulse">⏳ Lucky đang tối ưu ảnh...</div>}
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Hình ảnh hiện tại</label>
                 <div className="flex flex-wrap gap-2">
@@ -409,7 +367,7 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
               <button onClick={() => setEditingPost(null)} className="flex-1 py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Hủy</button>
               <button 
                 onClick={handleUpdatePost} 
-                disabled={isLoading || isCompressing || (!editContent.trim() && editExistingImages.length === 0 && editNewImages.length === 0)}
+                disabled={isLoading || (!editContent.trim() && editExistingImages.length === 0 && editNewImages.length === 0)}
                 className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-100 disabled:opacity-50"
               >
                 {isLoading ? 'Đang lưu...' : 'Lưu thay đổi'}
