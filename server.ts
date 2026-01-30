@@ -263,20 +263,37 @@ initDB();
 app.get('/api/health', (req, res) => res.json({ status: 'ok', database: 'connected' }));
 
 /**
- * API ĐIỀU PHỐI AI COACH
+ * API ĐIỀU PHỐI AI COACH (ĐÃ NÂNG CẤP LOGS CHI TIẾT)
  */
 app.post('/api/ai/coach', async (req, res) => {
-  console.log('🤖 [API Coach] Nhận yêu cầu tư vấn mới...');
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  const startTime = Date.now();
+  
+  console.log(`\n[${requestId}] 🤖 [AI Operation] --- BẮT ĐẦU REQUEST MỚI ---`);
+  
   try {
     const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
-    const ai = getAIClient();
     
+    // Bước 1: Chọn Key và xác định định danh
+    const source = healthyKeys.length > 0 ? healthyKeys : API_KEYS;
+    const selectedKey = source[Math.floor(Math.random() * source.length)];
+    const keyIdx = API_KEYS.indexOf(selectedKey!) + 1;
+    console.log(`[${requestId}] 🔑 BƯỚC 1: Chọn Key #${keyIdx} (${selectedKey?.substring(0, 8)}...)`);
+
+    const ai = new GoogleGenAI({ apiKey: selectedKey! });
+    
+    // Bước 2: Chuẩn bị Payload và log thông số
+    const historyCount = history ? history.length : 0;
+    console.log(`[${requestId}] 📦 BƯỚC 2: Chuẩn bị Payload. Lịch sử: ${historyCount} tin nhắn. Ảnh: ${imageBase64 ? 'CÓ' : 'KHÔNG'}`);
+
     const parts: any[] = [{ text: latestUserMessage }];
     if (imageBase64) {
-      console.log('📸 [API Coach] Đang xử lý ảnh đính kèm...');
       parts.push({ inlineData: { data: imageBase64, mimeType: 'image/jpeg' } });
     }
 
+    // Bước 3: Gửi yêu cầu tới Model
+    console.log(`[${requestId}] 📡 BƯỚC 3: Đang gửi request tới 'gemini-3-flash-preview'...`);
+    
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [
@@ -286,11 +303,32 @@ app.post('/api/ai/coach', async (req, res) => {
       config: { systemInstruction }
     });
 
-    console.log('✅ [API Coach] Gemini phản hồi thành công.');
-    res.json({ text: response.text });
+    // Bước 4: Xử lý kết quả trả về
+    const duration = Date.now() - startTime;
+    const responseText = response.text || "";
+    console.log(`[${requestId}] ✅ BƯỚC 4: Gemini phản hồi THÀNH CÔNG.`);
+    console.log(`[${requestId}] ⏱️ Tổng thời gian xử lý: ${duration}ms`);
+    console.log(`[${requestId}] 📝 Độ dài phản hồi: ${responseText.length} ký tự.`);
+    
+    res.json({ text: responseText });
+
   } catch (err: any) {
-    console.error('❌ [API Coach] Lỗi xử lý:', err.message);
-    res.status(500).json({ message: err.message });
+    const duration = Date.now() - startTime;
+    console.error(`[${requestId}] ❌ LỖI VẬN HÀNH AI sau ${duration}ms:`);
+    console.error(`[${requestId}] ❗ Thông điệp lỗi: ${err.message}`);
+    
+    // Log chi tiết object lỗi nếu có cấu trúc đặc biệt từ Google SDK
+    if (err.response) {
+      console.error(`[${requestId}] ℹ️ Chi tiết phản hồi lỗi:`, JSON.stringify(err.response));
+    }
+
+    res.status(500).json({ 
+      message: err.message,
+      requestId: requestId,
+      errorType: err.name
+    });
+  } finally {
+    console.log(`[${requestId}] 🏁 --- KẾT THÚC REQUEST ---\n`);
   }
 });
 
