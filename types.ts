@@ -38,6 +38,11 @@ export interface Badge {
   color: string;
 }
 
+export interface PostReaction {
+  userId: string;
+  type: string; // 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry'
+}
+
 export interface Post {
   id: string;
   _id?: string;
@@ -48,6 +53,7 @@ export interface Post {
   content: string;
   imageUrl?: string;
   timestamp: string;
+  reactions?: PostReaction[];
 }
 
 export interface HealthMetric {

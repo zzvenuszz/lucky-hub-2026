@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Post, UserRole } from '../types.ts';
+import { User, Post, UserRole, PostReaction } from '../types.ts';
 import { Database } from '../services/database.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
 
@@ -8,12 +8,24 @@ interface NewsFeedProps {
   currentUser: User;
 }
 
+const REACTION_TYPES = [
+  { type: 'like', icon: '👍', label: 'Thích', color: 'text-blue-500' },
+  { type: 'love', icon: '❤️', label: 'Yêu thích', color: 'text-rose-500' },
+  { type: 'haha', icon: '😂', label: 'Haha', color: 'text-amber-500' },
+  { type: 'wow', icon: '😮', label: 'Wow', color: 'text-yellow-500' },
+  { type: 'sad', icon: '😢', label: 'Buồn', color: 'text-blue-400' },
+  { type: 'angry', icon: '😡', label: 'Phẫn nộ', color: 'text-orange-600' },
+];
+
 const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showReactionsFor, setShowReactionsFor] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const currentUserId = (currentUser as any).id || (currentUser as any)._id;
 
   const fetchPosts = async () => {
     const data = await Database.getPosts();
@@ -33,13 +45,14 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
     setIsLoading(true);
 
     const newPost: Omit<Post, 'id'> = {
-      userId: (currentUser as any).id || (currentUser as any)._id,
+      userId: currentUserId,
       userFullName: currentUser.fullName,
       userAvatar: currentUser.avatar,
       userBadges: currentUser.badges || [],
       content: inputText,
       imageUrl: selectedImage || undefined,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      reactions: []
     };
 
     const saved = await Database.createPost(newPost);
@@ -58,6 +71,22 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
       reader.onloadend = () => setSelectedImage(reader.result as string);
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleReaction = async (postId: string, type: string) => {
+    const updatedPost = await Database.reactToPost(postId, currentUserId, type);
+    if (updatedPost) {
+      setPosts(prev => prev.map(p => (p.id === postId || (p as any)._id === postId) ? { ...updatedPost, id: postId } : p));
+    }
+    setShowReactionsFor(null);
+  };
+
+  const getUserReaction = (post: Post) => {
+    return post.reactions?.find(r => r.userId === currentUserId)?.type;
+  };
+
+  const getReactionCount = (post: Post, type: string) => {
+    return post.reactions?.filter(r => r.type === type).length || 0;
   };
 
   return (
@@ -115,40 +144,108 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
 
       {/* Feed Section */}
       <div className="space-y-6">
-        {posts.map(post => (
-          <div key={post.id} className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden group hover:shadow-md transition-all">
-            <div className="p-5 flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 border-2 border-white shadow-sm overflow-hidden shrink-0">
-                <img 
-                  src={post.userAvatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${post.userFullName}&backgroundColor=f8fafc`} 
-                  className="w-full h-full object-cover" 
-                  alt={post.userFullName} 
-                />
+        {posts.map(post => {
+          const postId = post.id || (post as any)._id;
+          const userReactionType = getUserReaction(post);
+          const currentReact = REACTION_TYPES.find(r => r.type === userReactionType);
+          const hasAdminPrivilege = currentUser.role === UserRole.ADMIN;
+          const isOwner = currentUserId === post.userId;
+
+          return (
+            <div key={postId} className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden group hover:shadow-md transition-all">
+              <div className="p-5 flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border-2 border-white shadow-sm overflow-hidden shrink-0">
+                  <img 
+                    src={post.userAvatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${post.userFullName}&backgroundColor=f8fafc`} 
+                    className="w-full h-full object-cover" 
+                    alt={post.userFullName} 
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <span className="font-black text-slate-800 text-sm truncate">{post.userFullName}</span>
+                    <BadgeDisplay badgeIds={post.userBadges} />
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                    {new Date(post.timestamp).toLocaleDateString('vi-VN')} • {new Date(post.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </div>
+                </div>
+                {/* Admin có thể xóa bài bất kỳ, hoặc User xóa bài của mình */}
+                {(isOwner || hasAdminPrivilege) && (
+                  <button 
+                    onClick={() => { if(confirm(hasAdminPrivilege && !isOwner ? "Bạn là Admin, xóa bài viết vi phạm này?" : "Xóa bài viết này?")) Database.deletePost(postId).then(fetchPosts); }} 
+                    className={`transition-colors p-2 rounded-lg ${hasAdminPrivilege && !isOwner ? 'text-rose-500 bg-rose-50 hover:bg-rose-100' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
+                    title={hasAdminPrivilege && !isOwner ? "Quyền Quản trị viên" : "Xóa bài"}
+                  >
+                    🗑️
+                  </button>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <span className="font-black text-slate-800 text-sm truncate">{post.userFullName}</span>
-                  <BadgeDisplay badgeIds={post.userBadges} />
-                </div>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                  {new Date(post.timestamp).toLocaleDateString('vi-VN')} • {new Date(post.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              
+              <div className="px-5 pb-3 space-y-4">
+                <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{post.content}</p>
+                {post.imageUrl && (
+                  <div className="rounded-[2rem] overflow-hidden border border-slate-50 shadow-inner">
+                    <img src={post.imageUrl} className="w-full h-auto object-cover max-h-[500px]" alt="Journey" />
+                  </div>
+                )}
+              </div>
+
+              {/* Interaction Bar */}
+              <div className="px-5 pb-4">
+                <div className="flex items-center justify-between border-t border-slate-50 pt-3 relative">
+                  <div className="flex items-center gap-4">
+                    <div className="relative">
+                      <button 
+                        onMouseEnter={() => setShowReactionsFor(postId)}
+                        onClick={() => handleReaction(postId, 'like')}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all ${currentReact ? 'bg-slate-50 ' + currentReact.color : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        <span className="text-lg">{currentReact ? currentReact.icon : '👍'}</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest">
+                          {currentReact ? currentReact.label : 'Tương tác'}
+                        </span>
+                      </button>
+
+                      {/* Floating Reaction Selector */}
+                      {showReactionsFor === postId && (
+                        <div 
+                          onMouseLeave={() => setShowReactionsFor(null)}
+                          className="absolute bottom-full left-0 mb-2 bg-white rounded-full shadow-2xl border border-slate-100 p-1 flex items-center gap-1 animate-in slide-in-from-bottom-2 duration-200 z-10"
+                        >
+                          {REACTION_TYPES.map(react => (
+                            <button 
+                              key={react.type} 
+                              onClick={() => handleReaction(postId, react.type)}
+                              className="w-10 h-10 flex items-center justify-center text-xl hover:scale-125 transition-transform hover:bg-slate-50 rounded-full"
+                              title={react.label}
+                            >
+                              {react.icon}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Reaction Summary */}
+                  <div className="flex items-center -space-x-1">
+                    {REACTION_TYPES.map(r => {
+                      const count = getReactionCount(post, r.type);
+                      if (count === 0) return null;
+                      return (
+                        <div key={r.type} className="flex items-center bg-white border border-slate-50 rounded-full px-1.5 py-0.5 shadow-sm" title={`${count} lượt ${r.label}`}>
+                          <span className="text-xs">{r.icon}</span>
+                          <span className="text-[9px] font-black text-slate-500 ml-0.5">{count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-              {((currentUser as any).id || (currentUser as any)._id) === post.userId && (
-                <button onClick={() => { if(confirm("Xóa bài viết này?")) Database.deletePost(post.id).then(fetchPosts); }} className="text-slate-300 hover:text-rose-500 transition-colors">🗑️</button>
-              )}
             </div>
-            
-            <div className="px-5 pb-5 space-y-4">
-              <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{post.content}</p>
-              {post.imageUrl && (
-                <div className="rounded-[2rem] overflow-hidden border border-slate-50 shadow-inner">
-                  <img src={post.imageUrl} className="w-full h-auto object-cover max-h-[500px]" alt="Journey" />
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {posts.length === 0 && (
           <div className="py-20 text-center space-y-4">

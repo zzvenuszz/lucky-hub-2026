@@ -1,4 +1,3 @@
-
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
@@ -195,15 +194,19 @@ const metricSchema = new mongoose.Schema({
 metricSchema.index({ userId: 1, date: 1 }, { unique: true });
 const Metric = mongoose.model('Metric', metricSchema);
 
-const Post = mongoose.model('Post', new mongoose.Schema({
+const postSchema = new mongoose.Schema({
   userId: String,
   userFullName: String,
   userAvatar: String,
   userBadges: [String],
   content: String,
   imageUrl: String,
-  timestamp: String
-}, { timestamps: true }));
+  timestamp: String,
+  // PHÂN TÍCH: Định nghĩa rõ ràng cho field 'type' để tránh xung đột với keyword Schema options của Mongoose
+  reactions: [{ userId: String, type: { type: String } }]
+}, { timestamps: true });
+
+const Post = mongoose.model('Post', postSchema);
 
 const Chat = mongoose.model('Chat', new mongoose.Schema({
   id: { type: String, required: true, unique: true },
@@ -524,6 +527,37 @@ app.post('/api/posts', async (req, res) => {
 app.delete('/api/posts/:id', async (req, res) => {
   await Post.findByIdAndDelete(req.params.id);
   res.json({ success: true });
+});
+
+app.put('/api/posts/:id/react', async (req, res) => {
+  try {
+    const { userId, type } = req.body;
+    const post = await Post.findById(req.params.id);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+    
+    // PHÂN TÍCH: Ép kiểu reactions thành any[] để tránh lỗi TypeScript do inference sai lệch từ Mongoose Document
+    const reactions = (post.reactions as any) || [];
+    const index = reactions.findIndex((r: any) => r.userId === userId);
+    
+    if (index > -1) {
+      if (reactions[index].type === type) {
+        // Gỡ reaction nếu nhấn lại cùng loại
+        reactions.splice(index, 1);
+      } else {
+        // Cập nhật loại reaction mới
+        reactions[index].type = type;
+      }
+    } else {
+      // Thêm mới
+      reactions.push({ userId, type });
+    }
+    
+    post.reactions = reactions;
+    await post.save();
+    res.json(post);
+  } catch (err) {
+    res.status(500).json({ message: 'Lỗi phản hồi cảm xúc' });
+  }
 });
 
 app.use(express.static('.') as any);

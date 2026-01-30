@@ -79,4 +79,5 @@ export const Database = {
   getPosts: async () => (await request<Post[]>(`${API_BASE}/posts`)) ?? [],
   createPost: (post: Omit<Post, 'id'>) => request<Post>(`${API_BASE}/posts`, 'POST', post),
   deletePost: (id: string) => request(`${API_BASE}/posts/${id}`, 'DELETE'),
+  reactToPost: (postId: string, userId: string, type: string) => request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type }),
 };
