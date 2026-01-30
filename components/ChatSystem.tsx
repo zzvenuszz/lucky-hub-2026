@@ -175,7 +175,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     const trimmedText = inputText.trim();
     if ((!trimmedText && !selectedImage) || !selectedChat) return;
 
-    // Nén ảnh nếu có để tối ưu token/payload
     let finalImage = selectedImage;
     if (selectedImage) {
       setIsCompressing(true);
@@ -244,11 +243,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     }
   };
 
-  /**
-   * PHÂN TÍCH: TypeScript báo lỗi do mismatch định nghĩa kiểu dữ liệu.
-   * NGUYÊN NHÂN: Ở dòng 223 (cũ), kiểu dữ liệu tham số 'choice' có khoảng trắng thừa ' bỏ qua'.
-   * HƯỚNG GIẢI QUYẾT: Xóa khoảng trắng thừa để khớp với lời gọi hàm 'bỏ qua' ở dòng 341.
-   */
   const handleAiChoice = async (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => {
     const choiceMessage: Message = {
       id: `msg_choice_${Date.now()}`,
