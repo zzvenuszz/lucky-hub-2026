@@ -60,13 +60,22 @@ async function uploadToImgBB(base64Data: string | undefined): Promise<{url: stri
 }
 
 /**
- * HÀM GIẢ LẬP GỌI XÓA ẢNH TRÊN CDN
+ * HÀM THỰC THI XÓA ẢNH TRÊN CDN
+ * Gửi yêu cầu đến delete_url của ImgBB
  */
 async function purgeImageFromCDN(deleteUrl: string) {
-  if (!deleteUrl) return;
+  if (!deleteUrl || !deleteUrl.startsWith('http')) return;
   try {
-    console.log(`🧹 [CDN Purge] Yêu cầu dọn dẹp ảnh: ${deleteUrl}`);
-  } catch (e) {}
+    console.log(`🧹 [CDN Purge] Đang yêu cầu xóa ảnh tại: ${deleteUrl}`);
+    // Thực hiện gọi đến URL xóa. Lưu ý: ImgBB Free đôi khi yêu cầu cookie/session
+    // nhưng việc gửi request GET/POST là cách tốt nhất chúng ta có thể làm tự động.
+    const res = await fetch(deleteUrl, { method: 'GET' });
+    if (res.ok) {
+      console.log(`✅ [CDN Purge] Đã gửi yêu cầu thành công cho: ${deleteUrl}`);
+    }
+  } catch (e: any) {
+    console.error(`⚠️ [CDN Purge] Lỗi khi xóa ảnh ${deleteUrl}:`, e.message);
+  }
 }
 
 function hashPassword(password: string): string {
@@ -259,15 +268,18 @@ app.put('/api/posts/:id', async (req, res) => {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: 'Post not found' });
 
+    // 1. Xác định và xóa ảnh bị gỡ bỏ khỏi ImgBB
     const currentImages = post.images || [];
     const imagesToPurge = currentImages.filter(img => 
       !existingImages.some((e: any) => e.url === img.url)
     );
 
-    for (const img of imagesToPurge) {
-      await purgeImageFromCDN(img.deleteUrl);
+    // Sử dụng Promise.allSettled để xóa song song tất cả ảnh bị gỡ
+    if (imagesToPurge.length > 0) {
+      await Promise.allSettled(imagesToPurge.map(img => purgeImageFromCDN(img.deleteUrl)));
     }
 
+    // 2. Upload các ảnh mới lên ImgBB
     const uploadedNewImages = [];
     if (newImages && Array.isArray(newImages)) {
       for (const img of newImages) {
@@ -278,6 +290,7 @@ app.put('/api/posts/:id', async (req, res) => {
       }
     }
 
+    // 3. Cập nhật dữ liệu bài viết vào MongoDB
     const finalImages = [...existingImages, ...uploadedNewImages];
     post.content = content;
     post.images = finalImages as any;
@@ -285,7 +298,8 @@ app.put('/api/posts/:id', async (req, res) => {
     
     await post.save();
     res.json({ ...post.toObject(), id: post._id });
-  } catch (err) {
+  } catch (err: any) {
+    console.error('❌ [Post Update Error]:', err.message);
     res.status(500).json({ message: 'Lỗi cập nhật bài viết' });
   }
 });
@@ -293,14 +307,20 @@ app.put('/api/posts/:id', async (req, res) => {
 app.delete('/api/posts/:id', async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (post && post.images) {
-      for (const img of post.images) {
-        await purgeImageFromCDN(img.deleteUrl);
-      }
+    if (!post) return res.status(404).json({ message: 'Không tìm thấy bài viết' });
+
+    // 1. Dọn dẹp tất cả ảnh của bài viết trên ImgBB
+    if (post.images && post.images.length > 0) {
+      await Promise.allSettled(post.images.map(img => purgeImageFromCDN(img.deleteUrl)));
     }
+
+    // 2. Xóa bản ghi trong MongoDB
     await Post.findByIdAndDelete(req.params.id);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ message: 'Lỗi khi xóa' }); }
+  } catch (err: any) {
+    console.error('❌ [Post Delete Error]:', err.message);
+    res.status(500).json({ message: 'Lỗi khi xóa bài viết' }); 
+  }
 });
 
 app.put('/api/posts/:id/react', async (req, res) => {
@@ -321,7 +341,6 @@ app.put('/api/posts/:id/react', async (req, res) => {
     }
     post.reactions = reactions;
     await post.save();
-    // TRẢ VỀ DỮ LIỆU ĐÃ CHUẨN HÓA ID
     res.json({ ...post.toObject(), id: post._id });
   } catch (err) { res.status(500).json({ message: 'Error' }); }
 });
