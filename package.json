@@ -20,8 +20,6 @@
     "mongoose": "^9.1.4",
     "tsx": "^4.19.2",
     "sucrase": "^3.35.0",
-    "nodemailer": "^6.9.13",
-    "socket.io": "^4.7.4",
-    "socket.io-client": "^4.7.4"
+    "nodemailer": "^6.9.13"
   }
 }
