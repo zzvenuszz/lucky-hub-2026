@@ -99,6 +99,43 @@ async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolea
   }
 }
 
+// Middleware biên dịch TypeScript/JSX trên luồng (Crucial for fix blank page)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  
+  const rootDir = path.resolve();
+  let filePath = path.join(rootDir, req.path);
+  
+  // Xử lý các file .ts và .tsx
+  let targetFile = null;
+  if (fs.existsSync(filePath) && !fs.lstatSync(filePath).isDirectory()) {
+    if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) {
+        targetFile = filePath;
+    }
+  } else if (fs.existsSync(filePath + '.ts')) {
+    targetFile = filePath + '.ts';
+  } else if (fs.existsSync(filePath + '.tsx')) {
+    targetFile = filePath + '.tsx';
+  }
+
+  if (targetFile) {
+    try {
+      const content = fs.readFileSync(targetFile, 'utf-8');
+      const result = transform(content, {
+        transforms: ['typescript', 'jsx'],
+        production: false,
+        jsxRuntime: 'automatic',
+      });
+      res.type('application/javascript').send(result.code);
+      return;
+    } catch (err) {
+      console.error(`❌ Lỗi biên dịch file ${targetFile}:`, err);
+      return res.status(500).send('Error compiling file');
+    }
+  }
+  next();
+});
+
 // Schemas & Models
 const User = mongoose.model('User', new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -148,42 +185,30 @@ io.on('connection', (socket) => {
   socket.on('register_online', (userId: string) => {
     onlineUsers.set(userId, socket.id);
     io.emit('online_status_change', Array.from(onlineUsers.keys()));
-    console.log(`📡 User ${userId} is now online`);
   });
 
   socket.on('disconnect', () => {
-    let disconnectedUserId = '';
     for (const [uid, sid] of onlineUsers.entries()) {
       if (sid === socket.id) {
-        disconnectedUserId = uid;
         onlineUsers.delete(uid);
+        io.emit('online_status_change', Array.from(onlineUsers.keys()));
         break;
       }
     }
-    if (disconnectedUserId) {
-      io.emit('online_status_change', Array.from(onlineUsers.keys()));
-      console.log(`🔌 User ${disconnectedUserId} disconnected`);
-    }
   });
 
-  // Gửi tin nhắn real-time
   socket.on('send_message', async (data: { chatId: string, message: any }) => {
     const { chatId, message } = data;
     const chat = await Chat.findOne({ id: chatId });
     if (chat) {
       chat.messages.push(message);
       await chat.save();
-      
-      // Emit cho người nhận nếu họ online
       const targetUserId = message.senderId === chat.memberId ? chat.coachId : chat.memberId;
       const targetSocketId = onlineUsers.get(targetUserId);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit('receive_message', { chatId, message });
-      }
+      if (targetSocketId) io.to(targetSocketId).emit('receive_message', { chatId, message });
     }
   });
 
-  // Xử lý Reaction bài viết
   socket.on('post_reaction', (data: { postId: string, updatedPost: any }) => {
     socket.broadcast.emit('update_post_ui', data);
   });
@@ -261,42 +286,6 @@ app.post('/api/posts', async (req, res) => {
   res.json({ ...p.toObject(), id: p._id });
 });
 
-app.put('/api/posts/:id', async (req, res) => {
-  try {
-    const { content, existingImages, newImages } = req.body;
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: 'Post not found' });
-    const currentImages = post.images || [];
-    const imagesToPurge = currentImages.filter(img => !existingImages.some((e: any) => e.url === img.url));
-    if (imagesToPurge.length > 0) Promise.allSettled(imagesToPurge.map(img => purgeImageFromCDN(img.deleteUrl)));
-    const uploadedNewImages = [];
-    if (newImages && Array.isArray(newImages)) {
-      for (const img of newImages) {
-        if (img.startsWith('data:image')) {
-          const imgData = await uploadToImgBB(img);
-          if (imgData) uploadedNewImages.push(imgData);
-        }
-      }
-    }
-    const finalImages = [...existingImages, ...uploadedNewImages];
-    post.content = content; post.images = finalImages as any; post.imageUrls = finalImages.map(i => i.url);
-    await post.save();
-    io.emit('update_post_ui', { postId: post._id, updatedPost: { ...post.toObject(), id: post._id } });
-    res.json({ ...post.toObject(), id: post._id });
-  } catch (err) { res.status(500).json({ message: 'Error' }); }
-});
-
-app.delete('/api/posts/:id', async (req, res) => {
-  try {
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: 'Not found' });
-    if (post.images && post.images.length > 0) Promise.allSettled(post.images.map(img => purgeImageFromCDN(img.deleteUrl)));
-    await Post.findByIdAndDelete(req.params.id);
-    io.emit('delete_post', req.params.id);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ message: 'Error' }); }
-});
-
 app.put('/api/posts/:id/react', async (req, res) => {
   try {
     const { userId, type, userName, userAvatar } = req.body;
@@ -318,14 +307,17 @@ app.put('/api/posts/:id/react', async (req, res) => {
   } catch (err) { res.status(500).json({ message: 'Error' }); }
 });
 
-app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
-app.post('/api/chats', async (req, res) => {
-  const { id, ...data } = req.body;
-  const result = await Chat.findOneAndUpdate({ id }, { ...data, id }, { upsert: true, new: true });
-  res.json(result);
+app.get('/api/metrics/:userId', async (req, res) => {
+  const m = await Metric.find({ userId: req.params.userId }).sort({ date: -1 });
+  res.json(m.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
-// AI Logic (Proxy)
+app.post('/api/metrics', async (req, res) => {
+  const m = new Metric(req.body);
+  await m.save();
+  res.json({ ...m.toObject(), id: m._id });
+});
+
 app.post('/api/ai/coach', async (req, res) => {
   try {
     const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
@@ -341,8 +333,13 @@ app.post('/api/ai/coach', async (req, res) => {
   } catch (err: any) { res.status(500).json({ message: err.message }); }
 });
 
+// Phục vụ các file tĩnh khác (sau khi đã xử lý biên dịch)
 app.use(express.static('.') as any);
-app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
+
+// SPA Routing: Luôn gửi index.html cho các route không phải file
+app.get(/^[^\.]*$/, (req, res) => {
+  res.sendFile(path.resolve('index.html'));
+});
 
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => console.log(`🚀 Real-time Server running on port ${PORT}`));
