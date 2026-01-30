@@ -24,6 +24,34 @@ const MAILEROO_CONFIG = {
   fromName: "Lucky Hub 2026"
 };
 
+const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
+
+/**
+ * KIỂM TRA TRẠNG THÁI GEMINI API KEYS
+ */
+async function validateGeminiKeys() {
+  console.log('🔍 [Gemini] Đang kiểm tra trạng thái các API Keys...');
+  for (let i = 0; i < API_KEYS.length; i++) {
+    const key = API_KEYS[i]!;
+    try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      // Thực hiện một request nhỏ để kiểm tra tính khả dụng của Key
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: 'ping',
+      });
+      
+      if (response && response.text) {
+        console.log(`✅ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): HOẠT ĐỘNG`);
+      } else {
+        throw new Error("Không nhận được phản hồi từ Model");
+      }
+    } catch (err: any) {
+      console.error(`❌ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): LỖI - ${err.message}`);
+    }
+  }
+}
+
 /**
  * HÀM TIỆN ÍCH UPLOAD ẢNH LÊN IMGBB
  * @returns Object chứa url và delete_url
@@ -167,7 +195,6 @@ app.use((req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
-const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
 
 const User = mongoose.model('User', new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -236,6 +263,8 @@ async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected to MongoDB');
+    // Kiểm tra API Keys ngay sau khi DB sẵn sàng
+    await validateGeminiKeys();
   } catch (err: any) { console.error('❌ DB Error:', err.message); }
 }
 initDB();
