@@ -40,7 +40,10 @@ export interface Badge {
 
 export interface PostReaction {
   userId: string;
-  type: string; // 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry'
+  userName?: string;
+  userAvatar?: string;
+  type: string; 
+  count: number; // Số lần thả cảm xúc này
 }
 
 export interface Post {
@@ -49,9 +52,9 @@ export interface Post {
   userId: string;
   userFullName: string;
   userAvatar?: string;
-  userBadges: string[]; // Lưu ID của các danh hiệu
+  userBadges: string[];
   content: string;
-  imageUrl?: string;
+  imageUrls: string[]; // Chuyển từ imageUrl sang mảng imageUrls
   timestamp: string;
   reactions?: PostReaction[];
 }
@@ -77,7 +80,7 @@ export interface User {
   id: string;
   _id?: string;
   username: string;
-  email: string; // Thêm email (bắt buộc)
+  email: string;
   password?: string;
   fullName: string;
   birthDate: string;
@@ -91,7 +94,7 @@ export interface User {
   permissions: Permission[];
   avatar?: string;
   isPasswordEncrypted?: boolean; 
-  badges: string[]; // Danh sách ID danh hiệu đang sở hữu
+  badges: string[];
 }
 
 export interface Message {

@@ -10,11 +10,8 @@ const logSystem = (msg: string, type: 'info' | 'success' | 'error' = 'info') => 
 
 async function request<T>(url: string, method = 'GET', body?: any, timeout = 15000): Promise<T | null> {
   if (isOfflineMode) return null;
-  
-  const endpoint = url.replace(API_BASE, '');
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
-
   try {
     const res = await fetch(url, {
       method,
@@ -22,17 +19,11 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal
     });
-
     clearTimeout(id);
-    if (!res.ok) {
-      logSystem(`LỖI ${res.status} tại ${endpoint}`, 'error');
-      return null;
-    }
-    const data = await res.json();
-    return data;
+    if (!res.ok) return null;
+    return await res.json();
   } catch (e: any) {
     clearTimeout(id);
-    logSystem(`Lỗi kết nối: ${endpoint}`, 'error');
     return null;
   }
 }
@@ -45,19 +36,7 @@ export const BADGES_DB: Badge[] = [
 ];
 
 export const Database = {
-  checkHealth: async () => {
-    try {
-      const res = await fetch(`${API_BASE}/health`);
-      const data = await res.json();
-      const style = data.database === 'connected' ? 'color: #10b981; font-weight: bold' : 'color: #ef4444; font-weight: bold';
-      console.log(`%c[Database Health] Trạng thái: ${data.database.toUpperCase()}`, style);
-      if (window.debugLog) window.debugLog(`Kết nối Database: ${data.database.toUpperCase()}`, data.database === 'connected' ? 'success' : 'error');
-      return data;
-    } catch (e) {
-      console.error('[Database Health] Không thể kết nối tới Server API');
-      return { status: 'error', database: 'unreachable' };
-    }
-  },
+  checkHealth: async () => request(`${API_BASE}/health`),
   getUsers: async () => (await request<User[]>(`${API_BASE}/users`)) ?? [],
   updateUser: (id: string, data: Partial<User>) => request<User>(`${API_BASE}/users/${id}`, 'PUT', data),
   deleteUser: (id: string) => request(`${API_BASE}/users/${id}`, 'DELETE'),
@@ -79,5 +58,6 @@ export const Database = {
   getPosts: async () => (await request<Post[]>(`${API_BASE}/posts`)) ?? [],
   createPost: (post: Omit<Post, 'id'>) => request<Post>(`${API_BASE}/posts`, 'POST', post),
   deletePost: (id: string) => request(`${API_BASE}/posts/${id}`, 'DELETE'),
-  reactToPost: (postId: string, userId: string, type: string) => request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type }),
+  reactToPost: (postId: string, userId: string, type: string, userName?: string, userAvatar?: string) => 
+    request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type, userName, userAvatar }),
 };
