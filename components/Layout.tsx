@@ -41,12 +41,12 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
     <div className="min-h-screen flex flex-col bg-slate-50/50">
       <header className="bg-white border-b border-slate-100 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 h-20 flex items-center justify-between">
-          <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setActiveTab('dashboard')}>
-            <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-emerald-100 group-hover:scale-110 group-hover:rotate-12 transition-all">🍀</div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-800 hidden sm:block">Lucky Hub</h1>
+          <div className="flex items-center space-x-3 cursor-pointer group shrink-0" onClick={() => setActiveTab('dashboard')}>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-2xl sm:text-3xl shadow-lg shadow-emerald-100 group-hover:scale-110 group-hover:rotate-12 transition-all">🍀</div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-800 hidden sm:block">Lucky Hub</h1>
           </div>
           
-          <nav className="flex items-center space-x-1 bg-slate-50 p-1 rounded-2xl overflow-x-auto no-scrollbar max-w-[50%] sm:max-w-none">
+          <nav className="flex-1 mx-2 sm:mx-8 flex items-center space-x-1 bg-slate-50 p-1 rounded-2xl">
             {[
               { id: 'dashboard', label: '📊 Tổng quan' },
               { id: 'community', label: '🌍 Cộng đồng' },
@@ -54,14 +54,14 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
             ].map(tab => (
               <button 
                 key={tab.id} onClick={() => setActiveTab(tab.id)} 
-                className={`px-4 sm:px-6 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wide transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`flex-1 px-2 sm:px-6 py-2 rounded-xl text-[9px] sm:text-xs font-black uppercase tracking-tight sm:tracking-wide transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 {tab.label}
               </button>
             ))}
           </nav>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
             <div className="hidden lg:flex flex-col items-end">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-black text-slate-800">{user.fullName}</span>
@@ -72,7 +72,7 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
             
             <div className="relative" ref={menuRef}>
               <div 
-                className={`w-12 h-12 rounded-2xl border-2 transition-all cursor-pointer overflow-hidden shadow-sm ${isMenuOpen ? 'border-emerald-500 scale-105 ring-4 ring-emerald-50' : 'border-slate-100 hover:border-emerald-300'}`}
+                className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl border-2 transition-all cursor-pointer overflow-hidden shadow-sm ${isMenuOpen ? 'border-emerald-500 scale-105 ring-4 ring-emerald-50' : 'border-slate-100 hover:border-emerald-300'}`}
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
               >
                 <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover" />
