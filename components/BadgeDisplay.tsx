@@ -6,9 +6,10 @@ import { BADGES_DB } from '../services/database.ts';
 interface BadgeDisplayProps {
   badgeIds: string[];
   size?: 'sm' | 'md';
+  isCommunity?: boolean;
 }
 
-const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm' }) => {
+const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm', isCommunity = false }) => {
   const [activeBadgeId, setActiveBadgeId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +61,9 @@ const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm' }) =>
 
           {activeBadgeId === badge.id && (
             <div 
-              className="absolute top-full mt-2 right-0 sm:right-auto sm:left-0 w-48 bg-slate-900 text-white p-3 rounded-2xl shadow-2xl z-[100] animate-in zoom-in-95 duration-200 pointer-events-auto"
+              className={`absolute top-full mt-2 w-48 bg-slate-900 text-white p-3 rounded-2xl shadow-2xl z-[100] animate-in zoom-in-95 duration-200 pointer-events-auto ${
+                isCommunity ? 'left-0 sm:left-0' : 'right-0 sm:right-auto sm:left-0'
+              }`}
               onClick={(e) => e.stopPropagation()} // Ngăn chặn tooltip tự đóng khi nhấn vào nội dung bên trong
             >
               <div className="flex items-center gap-2 mb-1">
@@ -70,8 +73,12 @@ const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm' }) =>
               <p className="text-[10px] leading-relaxed text-slate-300 font-medium italic">
                 "{badge.description}"
               </p>
-              {/* Mũi tên trỏ thẳng lên Badge phía trên - Căn phải trên mobile, căn trái trên desktop */}
-              <div className="absolute bottom-full right-3 sm:right-auto sm:left-3 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900"></div>
+              
+              {/* Mũi tên trỏ thẳng lên Badge phía trên */}
+              <div className={`absolute bottom-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[6px] border-b-slate-900 ${
+                isCommunity ? 'left-3 sm:left-3' : 'right-3 sm:right-auto sm:left-3'
+              }`}></div>
+
               <button 
                 className="absolute -top-1 -right-1 bg-white/20 hover:bg-white/40 w-4 h-4 rounded-full text-[8px] flex items-center justify-center transition-colors"
                 onClick={(e) => { 

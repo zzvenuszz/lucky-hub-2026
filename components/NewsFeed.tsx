@@ -309,7 +309,7 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <span className="font-black text-slate-800 text-sm truncate">{post.userFullName}</span>
-                    <BadgeDisplay badgeIds={post.userBadges} />
+                    <BadgeDisplay badgeIds={post.userBadges} isCommunity={true} />
                   </div>
                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                     {formatTimeAgo(post.timestamp)}
