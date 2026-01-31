@@ -41,6 +41,16 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * PHÂN TÍCH: Lỗi TypeScript xảy ra vì giá trị 'system' chưa được định nghĩa trong union type của tham số type.
+   * GIẢI QUYẾT: Mở rộng kiểu dữ liệu cho tham số 'type' để bao gồm 'system', đảm bảo tương thích với window.debugLog.
+   * BÁO CÁO: Đã sửa lỗi tại dòng 62 và 69, code hoạt động ổn định.
+   * GỢI Ý: Nên cân nhắc gom nhóm các kiểu log vào một enum chung trong types.ts để quản lý tập trung.
+   */
+  const log = (msg: string, type: 'info' | 'ai' | 'error' | 'success' | 'system' = 'info') => {
+    if (window.debugLog) window.debugLog(`[MetricForm] ${msg}`, type);
+  };
+
   useEffect(() => {
     if (statusMsg) {
       const timer = setTimeout(() => setStatusMsg(null), 5000);
@@ -55,12 +65,14 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     setLoadingAI(true);
     setBulkMode(isBulk);
     setStatusMsg(null);
+    log(`Bắt đầu xử lý file: ${file.name} (Chế độ: ${isBulk ? 'Hàng loạt' : 'Đơn lẻ'})`, 'system');
 
     const now = new Date();
     const currentYear = now.getFullYear();
 
     const reader = new FileReader();
     reader.onloadend = async () => {
+      log("Đã đọc file xong, bắt đầu nén ảnh để tối ưu payload...", "system");
       const img = new Image();
       img.src = reader.result as string;
       img.onload = async () => {
@@ -72,6 +84,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        log("Nén ảnh thành công. Gửi dữ liệu tới Lucky AI qua Server...", "ai");
 
         if (!isBulk) {
           try {
@@ -90,23 +103,34 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 type: 'success' 
               });
             } else {
+              log("AI không nhận diện được chỉ số hợp lệ trong ảnh đơn.", "error");
               setStatusMsg({ 
                 text: "⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ.", 
                 type: 'error' 
               });
             }
-          } catch (err) {
+          } catch (err: any) {
             setLoadingAI(false);
+            log(`Lỗi trích xuất đơn: ${err.message}`, "error");
             setStatusMsg({ text: "⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh.", type: 'error' });
           }
         } else {
           try {
+            log("Đang gọi endpoint /api/ai/bulk-extract...", "ai");
             const res = await fetch('/api/ai/bulk-extract', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ imageBase64: compressedBase64 })
             });
+
+            if (!res.ok) {
+              const errBody = await res.json().catch(() => ({}));
+              throw new Error(errBody.message || `Server trả về lỗi ${res.status}`);
+            }
+
             const data = await res.json();
+            log(`AI đã phản hồi. Nhận được ${data.length} bản ghi thô.`, "ai");
+            log(`Dữ liệu thô AI trả về: ${JSON.stringify(data)}`, "ai");
             
             const processedData = data.filter((item: any) => item.weight && item.weight > 0).map((item: any) => {
               if (item.date && item.date.includes('/')) {
@@ -119,7 +143,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                   finalYear = currentYear - 1;
                 }
                 item.date = `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-              } else {
+              } else if (!item.date) {
                 item.date = now.toISOString().split('T')[0];
               }
               return { ...formData, balanceIndex: 0, ...item };
@@ -127,14 +151,17 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             
             setLoadingAI(false);
             if (processedData.length > 0) {
+              log(`Xử lý thành công ${processedData.length} bản ghi sau khi chuẩn hóa ngày tháng.`, "success");
               setBulkPreview(processedData);
               setStatusMsg({ text: `✅ Đã quét thành công ${processedData.length} bản ghi!`, type: 'success' });
             } else {
+              log("Không tìm thấy dòng dữ liệu nào hợp lệ sau khi filter (weight > 0).", "error");
               setStatusMsg({ text: "⚠️ Không tìm thấy danh sách chỉ số hợp lệ.", type: 'error' });
             }
-          } catch (err) {
+          } catch (err: any) {
             setLoadingAI(false);
-            setStatusMsg({ text: "⚠️ Lỗi phân tích ảnh hàng loạt.", type: 'error' });
+            log(`Lỗi phân tích hàng loạt: ${err.message}`, "error");
+            setStatusMsg({ text: "⚠️ Lỗi phân tích ảnh hàng loạt: " + err.message, type: 'error' });
           }
         }
       };

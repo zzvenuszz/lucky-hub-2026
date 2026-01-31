@@ -103,7 +103,7 @@ async function callAIWithRetry(
 }
 
 /**
- * API TRÍCH XUẤT CHỈ SỐ INBODY (BỔ SUNG)
+ * API TRÍCH XUẤT CHỈ SỐ INBODY ĐƠN LẺ
  */
 app.post('/api/ai/extract', async (req, res) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
@@ -150,7 +150,57 @@ app.post('/api/ai/extract', async (req, res) => {
 });
 
 /**
- * API TƯ VẤN COACH (CẬP NHẬT RETRY)
+ * API TRÍCH XUẤT CHỈ SỐ HÀNG LOẠT (BỔ SUNG)
+ */
+app.post('/api/ai/bulk-extract', async (req, res) => {
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  console.log(`[${requestId}] 📚 [Bulk OCR] Nhận yêu cầu quét hàng loạt...`);
+  
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+
+    const payload = {
+      contents: [{
+        parts: [
+          { text: "Đây là ảnh chụp danh sách nhiều ngày đo lường sức khỏe (InBody/Sổ tay). Hãy trích xuất tất cả các dòng dữ liệu tìm thấy dưới dạng một mảng JSON các đối tượng." },
+          { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }
+        ]
+      }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              date: { type: Type.STRING, description: "Ngày đo dạng DD/MM" },
+              weight: { type: Type.NUMBER },
+              bodyFat: { type: Type.NUMBER },
+              muscleMass: { type: Type.NUMBER },
+              waterPercent: { type: Type.NUMBER },
+              boneMinerals: { type: Type.NUMBER },
+              visceralFat: { type: Type.NUMBER },
+              energy: { type: Type.NUMBER },
+              bioAge: { type: Type.NUMBER },
+              balanceIndex: { type: Type.NUMBER }
+            }
+          }
+        }
+      }
+    };
+
+    const response = await callAIWithRetry(requestId, 'gemini-3-flash-preview', payload);
+    console.log(`[${requestId}] ✅ [Bulk OCR] Trích xuất thành công ${JSON.parse(response.text).length} bản ghi.`);
+    res.json(JSON.parse(response.text));
+  } catch (err: any) {
+    console.error(`[${requestId}] ❌ [Bulk OCR] Lỗi:`, err.message);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * API TƯ VẤN COACH
  */
 app.post('/api/ai/coach', async (req, res) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
@@ -362,6 +412,14 @@ app.post('/api/login', async (req, res) => {
   } catch (err) { res.status(500).json({ message: 'Error' }); }
 });
 
+app.post('/api/check-email', async (req, res) => {
+  const { email, excludeUserId } = req.body;
+  const query: any = { email: email.toLowerCase().trim() };
+  if (excludeUserId) query._id = { $ne: excludeUserId };
+  const exists = await User.exists(query);
+  res.json({ exists: !!exists });
+});
+
 app.get('/api/users', async (req, res) => {
   const u = await User.find();
   res.json(u.map(item => ({ ...item.toObject(), id: item._id })));
@@ -453,10 +511,20 @@ app.get('/api/metrics/:userId', async (req, res) => {
   const m = await Metric.find({ userId: req.params.userId }).sort({ date: -1 });
   res.json(m.map(item => ({ ...item.toObject(), id: item._id })));
 });
+
 app.post('/api/metrics', async (req, res) => {
   const m = new Metric(req.body); await m.save();
   res.json({ ...m.toObject(), id: m._id });
 });
+
+app.post('/api/metrics/bulk', async (req, res) => {
+  try {
+    const metrics = req.body;
+    const saved = await Metric.insertMany(metrics);
+    res.json(saved);
+  } catch (err) { res.status(500).json({ message: 'Lỗi lưu dữ liệu hàng loạt' }); }
+});
+
 app.get('/api/knowledge', async (req, res) => res.json((await Knowledge.find()).map(i => ({...i.toObject(), id: i._id}))));
 app.get('/api/rules', async (req, res) => res.json((await Rule.find()).map(i => ({...i.toObject(), id: i._id}))));
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
