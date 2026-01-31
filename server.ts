@@ -522,6 +522,20 @@ app.post('/api/metrics', async (req, res) => {
   res.json({ ...m.toObject(), id: m._id });
 });
 
+app.put('/api/metrics/:id', async (req, res) => {
+  try {
+    const m = await Metric.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.json({ ...m?.toObject(), id: m?._id });
+  } catch (err) { res.status(500).json({ message: 'Error' }); }
+});
+
+app.delete('/api/metrics/:id', async (req, res) => {
+  try {
+    await Metric.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: 'Error' }); }
+});
+
 app.post('/api/metrics/bulk', async (req, res) => {
   try {
     const metrics = req.body;
@@ -552,8 +566,42 @@ app.post('/api/metrics/bulk', async (req, res) => {
   }
 });
 
+app.post('/api/metrics/delete-bulk', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids)) return res.status(400).json({ message: 'Dữ liệu không hợp lệ' });
+    await Metric.deleteMany({ _id: { $in: ids } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: 'Error' }); }
+});
+
+app.delete('/api/metrics/all/:userId', async (req, res) => {
+  try {
+    await Metric.deleteMany({ userId: req.params.userId });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ message: 'Error' }); }
+});
+
 app.get('/api/knowledge', async (req, res) => res.json((await Knowledge.find()).map(i => ({...i.toObject(), id: i._id}))));
+app.post('/api/knowledge', async (req, res) => {
+  const k = new Knowledge(req.body); await k.save();
+  res.json({ ...k.toObject(), id: k._id });
+});
+app.delete('/api/knowledge/:id', async (req, res) => {
+  await Knowledge.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
 app.get('/api/rules', async (req, res) => res.json((await Rule.find()).map(i => ({...i.toObject(), id: i._id}))));
+app.post('/api/rules', async (req, res) => {
+  const r = new Rule(req.body); await r.save();
+  res.json({ ...r.toObject(), id: r._id });
+});
+app.delete('/api/rules/:id', async (req, res) => {
+  await Rule.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
 app.post('/api/chats', async (req, res) => {
   const { id, ...data } = req.body;
