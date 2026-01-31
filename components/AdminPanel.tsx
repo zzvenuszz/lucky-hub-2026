@@ -275,7 +275,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
                           <th className="p-3">Khoáng (kg)</th>
                           <th className="p-3">Nước %</th>
                           <th className="p-3">Năng lượng</th>
-                          <th className="p-3">Tuổi SH</th>
+                          <th className="p-3">Tuổi sinh học</th>
                           <th className="p-3 text-right">Thao tác</th>
                         </tr>
                       </thead>

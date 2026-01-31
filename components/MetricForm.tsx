@@ -260,7 +260,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       <th className="p-4 text-center">Khoáng chất (kg)</th>
                       <th className="p-4 text-center">Nước (%)</th>
                       <th className="p-4 text-center">Năng Lượng</th>
-                      <th className="p-4 text-center">Tuổi SH</th>
+                      <th className="p-4 text-center">Tuổi sinh học</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">

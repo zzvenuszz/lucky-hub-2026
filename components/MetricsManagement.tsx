@@ -66,7 +66,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
 
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto no-scrollbar">
-          <table className="w-full text-left text-[11px] min-w-[1000px]">
+          <table className="w-full text-left text-[11px] min-w-[1100px]">
             <thead className="bg-slate-50 border-b border-slate-100">
               <tr className="text-slate-400 font-black uppercase tracking-widest">
                 <th className="p-5">Ngày đo</th>
@@ -77,6 +77,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                 <th className="p-5">Khoáng chất (kg)</th>
                 <th className="p-5">Nước (%)</th>
                 <th className="p-5">Mỡ nội tạng</th>
+                <th className="p-5">Tuổi sinh học</th>
                 <th className="p-5">Năng Lượng (kcal)</th>
               </tr>
             </thead>
@@ -103,13 +104,16 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                     <td className="p-5 font-bold text-amber-600">
                       {m.visceralFat || '--'} {renderTrendIcon(m.visceralFat || 0, prev?.visceralFat, true)}
                     </td>
+                    <td className="p-5 font-bold text-slate-800">
+                      {m.bioAge || '--'} {renderTrendIcon(m.bioAge || 0, prev?.bioAge, true)}
+                    </td>
                     <td className="p-5 text-slate-500">{m.energy || '--'}</td>
                   </tr>
                 );
               })}
               {sortedMetrics.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</td>
+                  <td colSpan={10} className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</td>
                 </tr>
               )}
             </tbody>
