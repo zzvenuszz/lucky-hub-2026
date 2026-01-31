@@ -250,7 +250,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
           {latestMetric && (
             <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
               <p className="text-[9px] text-slate-500 font-bold leading-relaxed italic">
-                (*) Lưu ý: Các thành phần sinh học (như Nước, Khoáng) có sự giao thoa tự nhiên bên trong Cơ bắp và Mỡ. Do đó, tổng tỷ lệ khối lượng các phần có thể không bằng 100% cân nặng.
+                (*) Giải thích: Tổng tỷ lệ có thể khác 100% do sự giao thoa tự nhiên (ví dụ: Nước và Khoáng chất tồn tại bên trong tế bào Cơ và Mỡ). Đây là cấu trúc cơ thể sinh học bình thường.
               </p>
             </div>
           )}

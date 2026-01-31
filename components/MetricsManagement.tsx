@@ -34,16 +34,19 @@ const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
 };
 
 const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
-  const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
+  const currentUid = (user as any).id || (user as any)._id;
+  const [selectedUserId, setSelectedUserId] = useState(currentUid);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
 
   useEffect(() => {
     const load = async () => {
-      const data = await Database.getMetrics(selectedUserId);
+      // RÀNG BUỘC PHÂN QUYỀN: Nếu là MEMBER, luôn chỉ lấy ID của chính mình
+      const targetId = user.role === UserRole.MEMBER ? currentUid : selectedUserId;
+      const data = await Database.getMetrics(targetId);
       setMetrics(data || []);
     };
     load();
-  }, [selectedUserId, refreshTrigger]);
+  }, [selectedUserId, refreshTrigger, user.role, currentUid]);
 
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
 
@@ -55,9 +58,18 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           <p className="text-slate-400 text-xs font-medium mt-1 uppercase tracking-widest">Lịch sử đo lường chi tiết</p>
         </div>
         <div className="flex items-center gap-4">
+          {/* Chỉ Admin và Coach mới thấy thanh chọn hội viên */}
           {user.role !== UserRole.MEMBER && (
-            <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} className="bg-emerald-50 text-emerald-700 font-bold px-4 py-2 rounded-xl border-none text-sm outline-none">
-              {users.map(u => <option key={(u as any).id || (u as any)._id} value={(u as any).id || (u as any)._id}>{u.fullName}</option>)}
+            <select 
+              value={selectedUserId} 
+              onChange={e => setSelectedUserId(e.target.value)} 
+              className="bg-emerald-50 text-emerald-700 font-bold px-4 py-2 rounded-xl border-none text-sm outline-none ring-1 ring-emerald-100"
+            >
+              {users.map(u => (
+                <option key={(u as any).id || (u as any)._id} value={(u as any).id || (u as any)._id}>
+                  {u.fullName} {(u as any).id === currentUid || (u as any)._id === currentUid ? '(Tôi)' : ''}
+                </option>
+              ))}
             </select>
           )}
           <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">+ Thêm mới</button>
