@@ -352,7 +352,7 @@ const User = mongoose.model('User', new mongoose.Schema({
   resetPasswordExpires: Date
 }, { timestamps: true }));
 
-const Metric = mongoose.model('Metric', new mongoose.Schema({
+const MetricSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   date: { type: String, required: true },
   weight: Number,
@@ -364,7 +364,12 @@ const Metric = mongoose.model('Metric', new mongoose.Schema({
   energy: Number,
   bioAge: Number,
   visceralFat: Number
-}, { timestamps: true }));
+}, { timestamps: true });
+
+// Compound index để tối ưu việc tìm kiếm và ngăn chặn trùng lặp logic Upsert
+MetricSchema.index({ userId: 1, date: 1 }, { unique: true });
+
+const Metric = mongoose.model('Metric', MetricSchema);
 
 const Post = mongoose.model('Post', new mongoose.Schema({
   userId: String, userFullName: String, userAvatar: String, userBadges: [String],
@@ -520,9 +525,31 @@ app.post('/api/metrics', async (req, res) => {
 app.post('/api/metrics/bulk', async (req, res) => {
   try {
     const metrics = req.body;
-    const saved = await Metric.insertMany(metrics);
-    res.json(saved);
-  } catch (err) { res.status(500).json({ message: 'Lỗi lưu dữ liệu hàng loạt' }); }
+    if (!Array.isArray(metrics)) return res.status(400).json({ message: 'Dữ liệu không hợp lệ' });
+
+    console.log(`📊 [Metrics] Bắt đầu xử lý bulk upsert cho ${metrics.length} bản ghi...`);
+
+    // Sử dụng bulkWrite để tối ưu hiệu năng và xử lý logic Upsert (Cập nhật nếu có, thêm mới nếu chưa)
+    const operations = metrics.map(m => ({
+      updateOne: {
+        filter: { userId: m.userId, date: m.date },
+        update: { $set: m },
+        upsert: true
+      }
+    }));
+
+    const result = await Metric.bulkWrite(operations);
+    console.log(`✅ [Metrics] Hoàn tất bulk upsert: Created: ${result.upsertedCount}, Modified: ${result.modifiedCount}`);
+    
+    res.json({ 
+      success: true, 
+      upsertedCount: result.upsertedCount, 
+      modifiedCount: result.modifiedCount 
+    });
+  } catch (err: any) { 
+    console.error('❌ [Metrics] Lỗi lưu dữ liệu hàng loạt:', err.message);
+    res.status(500).json({ message: 'Lỗi lưu dữ liệu hàng loạt: ' + err.message }); 
+  }
 });
 
 app.get('/api/knowledge', async (req, res) => res.json((await Knowledge.find()).map(i => ({...i.toObject(), id: i._id}))));
