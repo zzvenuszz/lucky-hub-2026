@@ -233,31 +233,49 @@ app.post('/api/ai/coach', async (req, res) => {
 
 /**
  * HÀM TIỆN ÍCH UPLOAD ẢNH LÊN IMGBB
+ * PHÂN TÍCH: Sử dụng URLSearchParams thay cho FormData để tránh lỗi typing 'Blob' 
+ * và đảm bảo tương thích tốt hơn với fetch của Node.js khi gửi dữ liệu base64.
  */
 async function uploadToImgBB(base64Data: string | undefined): Promise<{url: string, deleteUrl: string} | null> {
   if (!base64Data || !base64Data.startsWith('data:image')) return null;
   try {
     const apiKey = process.env.IMGBB_API_KEY;
-    if (!apiKey) return null;
+    if (!apiKey) {
+      console.error('❌ [ImgBB] Missing API Key in Environment');
+      return null;
+    }
     const base64Image = base64Data.split(',')[1];
-    const formData = new URLSearchParams();
-    formData.append('image', base64Image);
+    if (!base64Image) return null;
+    
+    // Sử dụng URLSearchParams thay vì FormData để gửi dữ liệu dạng form-urlencoded
+    const params = new URLSearchParams();
+    params.append('image', base64Image);
+
     const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
       method: 'POST',
-      body: formData,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params,
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ [ImgBB] Upload failed with status ${response.status}:`, errorText.substring(0, 200));
+      return null;
+    }
+
     const result = await response.json();
     if (result.success) return { url: result.data.url, deleteUrl: result.data.delete_url };
+    
+    console.error('❌ [ImgBB] API returned success false:', result);
     return null;
   } catch (error: any) {
-    console.error('❌ [ImgBB] Error:', error.message);
+    console.error('❌ [ImgBB] Fatal Error:', error.message);
     return null;
   }
 }
 
 /**
  * HÀM THỰC THI XÓA ẢNH TRÊN CDN
+ * PHÂN TÍCH: Sử dụng URLSearchParams để gửi yêu cầu xóa ảnh tới ibb.co (JSON endpoint).
  */
 async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolean> {
   if (!deleteUrl || !deleteUrl.includes('ibb.co')) return false;
@@ -266,27 +284,33 @@ async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolea
     const imageHash = urlParts.pop();
     const imageId = urlParts.pop();
     if (!imageId || !imageHash) return false;
-    const formData = new URLSearchParams();
-    formData.append('pathname', `/${imageId}/${imageHash}`);
-    formData.append('action', 'delete');
-    formData.append('delete', 'image');
-    formData.append('from', 'resource');
-    formData.append('deleting[id]', imageId);
-    formData.append('deleting[hash]', imageHash);
+
+    // Sử dụng URLSearchParams thay cho FormData để tránh lỗi 'Blob' typing trong Node.js
+    const params = new URLSearchParams();
+    params.append('pathname', `/${imageId}/${imageHash}`);
+    params.append('action', 'delete');
+    params.append('delete', 'image');
+    params.append('from', 'resource');
+    params.append('deleting[id]', imageId);
+    params.append('deleting[hash]', imageHash);
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     const response = await fetch('https://ibb.co/json', {
       method: 'POST',
-      body: formData,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+      body: params,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
       signal: controller.signal
     });
+    
     clearTimeout(timeoutId);
+
     if (response.ok) {
       const result = await response.json();
       if (result.status_code === 200) return true;
     }
-    throw new Error(`ImgBB API error ${response.status}`);
+    throw new Error(`ImgBB Purge API error ${response.status}`);
   } catch (e: any) {
     if (retries > 1) {
       await new Promise(res => setTimeout(res, 2000));
