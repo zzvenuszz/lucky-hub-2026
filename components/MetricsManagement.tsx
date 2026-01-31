@@ -93,8 +93,15 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                     <td className="p-5 font-bold text-rose-500">
                       {m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}
                     </td>
-                    <td className="p-5 font-bold text-blue-600">
-                      {m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass, false)}
+                    <td className="p-5">
+                      <div className="font-bold text-blue-600">
+                        {m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass, false)}
+                      </div>
+                      {m.weight > 0 && (
+                        <div className="text-[9px] font-black text-blue-400/70 uppercase tracking-tighter mt-0.5">
+                          ({((m.muscleMass / m.weight) * 100).toFixed(1)}%)
+                        </div>
+                      )}
                     </td>
                     <td className="p-5 font-black text-indigo-600">
                       {m.balanceIndex ?? 0} {renderTrendIcon(m.balanceIndex ?? 0, prev?.balanceIndex, false)}

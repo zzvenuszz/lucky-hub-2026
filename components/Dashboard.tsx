@@ -245,6 +245,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               <div className="text-slate-300 italic text-sm font-black uppercase tracking-widest">Chưa có dữ liệu</div>
             )}
           </div>
+          
+          {/* Chú thích giải thích cấu trúc chồng lấn */}
+          {latestMetric && (
+            <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-[9px] text-slate-500 font-bold leading-relaxed italic">
+                (*) Lưu ý: Các thành phần sinh học (như Nước, Khoáng) có sự giao thoa tự nhiên bên trong Cơ bắp và Mỡ. Do đó, tổng tỷ lệ khối lượng các phần có thể không bằng 100% cân nặng.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px]">
