@@ -223,14 +223,21 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
     setEditNewImages([]);
   };
 
+  /**
+   * PHÂN TÍCH: TypeScript báo lỗi 'unknown' không thể gán cho 'Blob' tại dòng reader.readAsDataURL(file).
+   * NGUYÊN NHÂN: Array.from từ FileList trả về mảng có các phần tử bị trình biên dịch coi là unknown trong một số môi trường, 
+   * trong khi reader.readAsDataURL yêu cầu kiểu Blob (hoặc File kế thừa từ Blob).
+   * GIẢI QUYẾT: Ép kiểu tường minh cho biến 'file' thành 'any' để trình biên dịch chấp nhận tham số.
+   */
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit = false) => {
     const files = Array.from(e.target.files || []);
-    files.forEach(file => {
+    files.forEach((file: any) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         if (isEdit) setEditNewImages(prev => [...prev, reader.result as string]);
         else setSelectedImages(prev => [...prev, reader.result as string]);
       };
+      // file ở đây có thể bị suy luận là unknown, ép kiểu any để đảm bảo tính tương thích với readAsDataURL(Blob)
       reader.readAsDataURL(file);
     });
   };

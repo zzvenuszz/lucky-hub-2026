@@ -435,6 +435,12 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const user = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: username.toLowerCase().trim() }] });
     if (!user || user.password !== hashPassword(password)) return res.status(401).json({ message: 'Invalid credentials' });
+    
+    // Kiểm tra trạng thái tài khoản
+    if (user.status === AccountStatus.SUSPENDED) {
+      return res.status(403).json({ message: "Tài khoản của bạn bị lỗi. Vui lòng liên hệ với Quản trị viên hệ thống hoặc Nhóm dinh dưỡng bạn đang sinh hoạt để được hỗ trợ." });
+    }
+
     const u = user.toObject();
     delete u.password;
     res.json({ ...u, id: user._id });
