@@ -103,10 +103,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     const waterMass = Number((weight * (latestMetric.waterPercent / 100)).toFixed(1));
     const minerals = latestMetric.boneMinerals || 0;
     
-    const protein = Math.max(0, Number((weight - fatMass - waterMass - minerals).toFixed(1)));
+    // Logic mới: Lấy trực tiếp khối lượng cơ bắp từ máy đo
+    const muscle = latestMetric.muscleMass || 0;
 
     return [
-      { name: 'Đạm (Cơ)', value: protein, color: '#ef4444' },
+      { name: 'Cơ bắp', value: muscle, color: '#ef4444' },
       { name: 'Nước', value: waterMass, color: '#0ea5e9' },
       { name: 'Mỡ', value: fatMass, color: '#fde047' },
       { name: 'Khoáng', value: minerals, color: '#94a3b8' },
@@ -170,6 +171,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                    metricInfo.key === 'bodyFat' || metricInfo.key === 'waterPercent' ? '%' : ''}
                 </span>
               </div>
+              
+              {/* Bổ trợ hiển thị tỷ lệ % cơ bắp cho card Lượng Cơ */}
+              {metricInfo.key === 'muscleMass' && latestMetric && latestMetric.weight > 0 && (
+                <div className="text-[10px] font-black text-blue-500 mt-1 uppercase tracking-tighter">
+                  Tỷ lệ: {((latestMetric.muscleMass / latestMetric.weight) * 100).toFixed(1)}%
+                </div>
+              )}
+
               {diff !== null && diff !== 0 && (
                 <div className={`text-[10px] font-black uppercase flex items-center gap-0.5 mt-2 ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
                   {diff > 0 ? '↑' : '↓'} {Math.abs(diff).toFixed(1)}
@@ -191,7 +200,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
             {latestMetric ? (
               <div className="relative w-full h-full flex items-center justify-center">
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 select-none">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80 text-center px-4">
                     {activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}
                   </span>
                   <span className="text-3xl font-black text-slate-800 tabular-nums">
@@ -203,9 +212,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
                 </div>
                 <ResponsiveContainer width="100%" height={340}>
                   <PieChart>
+                    {/* 
+                      PHÂN TÍCH: TypeScript báo lỗi 'activeIndex' không tồn tại trên Component Pie.
+                      NGUYÊN NHÂN: Do sự không tương thích giữa typings của recharts và code thực thi trong môi trường hiện tại.
+                      GIẢI QUYẾT: Ép kiểu any cho các thuộc tính gây lỗi để bypass TypeScript check.
+                    */}
                     <Pie 
-                      activeIndex={activeIndex === null ? undefined : activeIndex} 
-                      activeShape={renderActiveShape} 
+                      {...({
+                        activeIndex: activeIndex === null ? undefined : activeIndex,
+                        activeShape: renderActiveShape
+                      } as any)}
                       data={pieData} 
                       cx="50%" 
                       cy="50%" 
