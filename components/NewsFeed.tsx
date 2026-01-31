@@ -32,6 +32,37 @@ const formatTimeAgo = (timestamp: string) => {
   return date.toLocaleDateString('vi-VN');
 };
 
+/**
+ * Hàm nén ảnh phía Client
+ */
+const compressImage = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 1024;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > MAX_WIDTH) {
+        height = Math.round((height * MAX_WIDTH) / width);
+        width = MAX_WIDTH;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(base64Str);
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      // Nén ảnh về định dạng JPEG với chất lượng 0.7
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
+
 const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
   if (!images || images.length === 0) return null;
   const count = images.length;
@@ -84,6 +115,7 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessingImages, setIsProcessingImages] = useState(false);
   
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -109,7 +141,6 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // Xử lý đóng menu reaction khi nhấn ra ngoài (quan trọng cho mobile)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (reactionMenuRef.current && !reactionMenuRef.current.contains(event.target as Node)) {
@@ -123,43 +154,66 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const handleCreatePost = async () => {
     if (!inputText.trim() && selectedImages.length === 0) return;
     setIsLoading(true);
-    const newPostData = {
-      userId: currentUserId,
-      userFullName: currentUser.fullName,
-      userAvatar: currentUser.avatar,
-      userBadges: currentUser.badges || [],
-      content: inputText,
-      imageUrls: selectedImages,
-      timestamp: new Date().toISOString(),
-      reactions: []
-    };
-    const saved = await Database.createPost(newPostData as any);
-    if (saved) {
-      setPosts([saved, ...posts]);
-      setInputText('');
-      setSelectedImages([]);
+    setIsProcessingImages(true);
+    
+    try {
+      // Thực hiện nén tất cả ảnh đã chọn
+      const compressedImages = await Promise.all(selectedImages.map(img => compressImage(img)));
+      
+      const newPostData = {
+        userId: currentUserId,
+        userFullName: currentUser.fullName,
+        userAvatar: currentUser.avatar,
+        userBadges: currentUser.badges || [],
+        content: inputText,
+        imageUrls: compressedImages,
+        timestamp: new Date().toISOString(),
+        reactions: []
+      };
+      
+      const saved = await Database.createPost(newPostData as any);
+      if (saved) {
+        setPosts([saved, ...posts]);
+        setInputText('');
+        setSelectedImages([]);
+      }
+    } catch (err) {
+      console.error("Lỗi khi đăng bài:", err);
+    } finally {
+      setIsProcessingImages(false);
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleUpdatePost = async () => {
     if (!editingPost) return;
     setIsLoading(true);
-    const postId = editingPost.id || (editingPost as any)._id;
-    const updated = await Database.updatePost(postId, {
-      content: editContent,
-      existingImages: editExistingImages,
-      newImages: editNewImages
-    });
-    if (updated) {
-      setPosts(prev => prev.map(p => {
-        const pId = p.id || (p as any)._id;
-        const uId = updated.id || (updated as any)._id;
-        return pId === uId ? { ...updated, id: uId } : p;
-      }));
-      setEditingPost(null);
+    setIsProcessingImages(true);
+
+    try {
+      const postId = editingPost.id || (editingPost as any)._id;
+      // Nén các ảnh mới được thêm vào
+      const compressedNewImages = await Promise.all(editNewImages.map(img => compressImage(img)));
+      
+      const updated = await Database.updatePost(postId, {
+        content: editContent,
+        existingImages: editExistingImages,
+        newImages: compressedNewImages
+      });
+      if (updated) {
+        setPosts(prev => prev.map(p => {
+          const pId = p.id || (p as any)._id;
+          const uId = updated.id || (updated as any)._id;
+          return pId === uId ? { ...updated, id: uId } : p;
+        }));
+        setEditingPost(null);
+      }
+    } catch (err) {
+      console.error("Lỗi khi cập nhật bài viết:", err);
+    } finally {
+      setIsProcessingImages(false);
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const openEditModal = (post: Post) => {
@@ -184,14 +238,12 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const handleReaction = async (postId: string, type: string) => {
     const updatedPost = await Database.reactToPost(postId, currentUserId, type, currentUser.fullName, currentUser.avatar);
     if (updatedPost) {
-      // CHUẨN HÓA SO SÁNH ID ĐỂ CẬP NHẬT TRẠNG THÁI NGAY LẬP TỨC
       setPosts(prev => prev.map(p => {
         const pId = p.id || (p as any)._id;
         const uId = updatedPost.id || (updatedPost as any)._id;
         return pId === uId ? { ...updatedPost, id: uId } : p;
       }));
     }
-    // LUÔN ĐÓNG MENU SAU KHI TƯƠNG TÁC XONG
     setShowReactionsFor(null);
   };
 
@@ -228,9 +280,12 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
               </div>
             )}
             <div className="flex items-center justify-between pt-2 border-t border-slate-50">
-              <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-all">📸 Đăng ảnh</button>
+              <div className="flex items-center gap-4">
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-all">📸 Đăng ảnh</button>
+                {isProcessingImages && <span className="text-[10px] font-black text-emerald-600 animate-pulse uppercase tracking-widest">⚡ Đang tối ưu ảnh...</span>}
+              </div>
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={(e) => handleImageChange(e, false)} />
-              <button onClick={handleCreatePost} disabled={isLoading || (!inputText.trim() && selectedImages.length === 0)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50">
+              <button onClick={handleCreatePost} disabled={isLoading || isProcessingImages || (!inputText.trim() && selectedImages.length === 0)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50">
                 {isLoading ? 'Đang đăng...' : 'Chia sẻ'}
               </button>
             </div>
@@ -326,6 +381,12 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
               <button onClick={() => setEditingPost(null)} className="text-2xl hover:scale-110">×</button>
             </div>
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto no-scrollbar">
+              {isProcessingImages && (
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100 flex items-center justify-center gap-3 animate-pulse">
+                   <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+                   <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Lucky AI đang tối ưu hóa hình ảnh của bạn...</span>
+                </div>
+              )}
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nội dung</label>
                 <textarea 
@@ -367,7 +428,7 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
               <button onClick={() => setEditingPost(null)} className="flex-1 py-3 bg-white border border-slate-200 text-slate-500 rounded-xl font-black uppercase text-[10px] tracking-widest">Hủy</button>
               <button 
                 onClick={handleUpdatePost} 
-                disabled={isLoading || (!editContent.trim() && editExistingImages.length === 0 && editNewImages.length === 0)}
+                disabled={isLoading || isProcessingImages || (!editContent.trim() && editExistingImages.length === 0 && editNewImages.length === 0)}
                 className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-100 disabled:opacity-50"
               >
                 {isLoading ? 'Đang lưu...' : 'Lưu thay đổi'}

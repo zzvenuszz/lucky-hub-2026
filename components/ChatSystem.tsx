@@ -14,11 +14,42 @@ interface ChatSystemProps {
 
 const AI_PROMPT_TEXT = "Trợ lý Lucky AI có thông tin về vấn đề bạn đang đề cập, bạn có muốn tham khảo không?";
 
+/**
+ * Hàm nén ảnh phía Client
+ */
+const compressImage = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 1024;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > MAX_WIDTH) {
+        height = Math.round((height * MAX_WIDTH) / width);
+        width = MAX_WIDTH;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(base64Str);
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => resolve(base64Str);
+  });
+};
+
 const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, rules, onClose }) => {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
   
   // States cho cơ chế phản hồi AI chia nhỏ
   const [isTypingAI, setIsTypingAI] = useState(false);
@@ -160,72 +191,78 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   const handleSendMessage = async () => {
-    // 1. Kiểm tra tính hợp lệ của nội dung gửi
     const trimmedText = inputText.trim();
     if ((!trimmedText && !selectedImage) || !selectedChat) return;
 
-    // 2. Lưu lại giá trị hiện tại để xử lý và XÓA NGAY nội dung trên UI
-    const sentText = trimmedText;
-    const sentImage = selectedImage;
-    setInputText('');
-    setSelectedImage(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-
-    const base64Data = sentImage ? sentImage.split(',')[1] : undefined;
-    const isTargetAI = selectedChat.coachId === 'ai_coach';
+    setIsProcessingImage(true);
     
-    const newMessage: Message = {
-      id: `msg_${Date.now()}`, 
-      senderId: currentUid, 
-      senderName: currentUser.fullName, 
-      senderRole: currentUser.role,
-      content: sentText || (sentImage ? "[Đã gửi một hình ảnh]" : ""), 
-      imageUrl: sentImage || undefined,
-      timestamp: new Date().toISOString()
-    };
-
-    let updatedMessages = [...selectedChat.messages, newMessage];
-    
-    // KIỂM TRA TỪ KHÓA TRONG CHAT 1-ON-1
-    if (!isTargetAI) {
-      const lowerText = sentText.toLowerCase();
-      const matchedKnowledge = knowledge.find(k => lowerText.includes(k.keyword.toLowerCase()));
+    try {
+      const sentText = trimmedText;
+      // Thực hiện nén ảnh trước khi xử lý tiếp
+      const sentImage = selectedImage ? await compressImage(selectedImage) : null;
       
-      if (matchedKnowledge) {
-        const aiPrompt: Message = {
-          id: `msg_prompt_${Date.now()}`,
-          senderId: 'ai_coach',
-          senderName: '🍀Trợ lý Lucky',
-          senderRole: 'AI' as any,
-          content: AI_PROMPT_TEXT,
-          timestamp: new Date().toISOString()
-        };
-        updatedMessages.push(aiPrompt);
-      }
-    }
+      setInputText('');
+      setSelectedImage(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
 
-    const updatedChat = { ...selectedChat, messages: updatedMessages };
-    setSelectedChat(updatedChat);
-    await Database.saveChat(updatedChat);
-    
-    // Xử lý AI chat riêng tư
-    if (isTargetAI) {
-      setIsTypingAI(true);
-      try {
-        const aiResponse = await getAICoachResponse(
-          updatedChat.messages, knowledge, rules, 
-          sentText || "Phân tích hình ảnh này cho tôi",
-          currentUser.healthGoal, latestMetric, base64Data
-        );
+      const base64Data = sentImage ? sentImage.split(',')[1] : undefined;
+      const isTargetAI = selectedChat.coachId === 'ai_coach';
+      
+      const newMessage: Message = {
+        id: `msg_${Date.now()}`, 
+        senderId: currentUid, 
+        senderName: currentUser.fullName, 
+        senderRole: currentUser.role,
+        content: sentText || (sentImage ? "[Đã gửi một hình ảnh]" : ""), 
+        imageUrl: sentImage || undefined,
+        timestamp: new Date().toISOString()
+      };
+
+      let updatedMessages = [...selectedChat.messages, newMessage];
+      
+      if (!isTargetAI) {
+        const lowerText = sentText.toLowerCase();
+        const matchedKnowledge = knowledge.find(k => lowerText.includes(k.keyword.toLowerCase()));
         
-        if (aiResponse) {
-          const chunks = aiResponse.split(/\n\n+/).map(c => c.trim()).filter(c => c.length > 0);
-          setPendingQueue(prev => [...prev, ...chunks]);
+        if (matchedKnowledge) {
+          const aiPrompt: Message = {
+            id: `msg_prompt_${Date.now()}`,
+            senderId: 'ai_coach',
+            senderName: '🍀Trợ lý Lucky',
+            senderRole: 'AI' as any,
+            content: AI_PROMPT_TEXT,
+            timestamp: new Date().toISOString()
+          };
+          updatedMessages.push(aiPrompt);
         }
-      } catch (e) {
-        setIsTypingAI(false);
-        setPendingQueue(prev => [...prev, "Hệ thống AI đang quá tải, tôi sẽ phản hồi lại sau ít phút."]);
       }
+
+      const updatedChat = { ...selectedChat, messages: updatedMessages };
+      setSelectedChat(updatedChat);
+      await Database.saveChat(updatedChat);
+      
+      if (isTargetAI) {
+        setIsTypingAI(true);
+        try {
+          const aiResponse = await getAICoachResponse(
+            updatedChat.messages, knowledge, rules, 
+            sentText || "Phân tích hình ảnh này cho tôi",
+            currentUser.healthGoal, latestMetric, base64Data
+          );
+          
+          if (aiResponse) {
+            const chunks = aiResponse.split(/\n\n+/).map(c => c.trim()).filter(c => c.length > 0);
+            setPendingQueue(prev => [...prev, ...chunks]);
+          }
+        } catch (e) {
+          setIsTypingAI(false);
+          setPendingQueue(prev => [...prev, "Hệ thống AI đang quá tải, tôi sẽ phản hồi lại sau ít phút."]);
+        }
+      }
+    } catch (err) {
+      console.error("Lỗi gửi tin nhắn:", err);
+    } finally {
+      setIsProcessingImage(false);
     }
   };
 
@@ -247,7 +284,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
     if (choice === 'tham khảo') {
       setIsTypingAI(true);
-      // Tìm lại nội dung trước tin nhắn nhắc lựa chọn để AI tư vấn
       const lastUserMsg = [...chat.messages].reverse().find(m => 
         m.senderRole !== 'AI' && 
         !m.content.includes('lựa chọn') && 
@@ -398,7 +434,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
               )}
             </div>
             
-            {/* Nút cuộn xuống tin nhắn mới nhất */}
             {showScrollButton && (
               <button 
                 onClick={scrollToBottom}
@@ -410,6 +445,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
             )}
 
             <div className="p-4 bg-white border-t border-slate-50 shrink-0">
+              {isProcessingImage && <div className="text-[9px] font-black text-emerald-600 animate-pulse mb-1 uppercase tracking-widest">🍀 Lucky AI đang tối ưu ảnh...</div>}
               {selectedImage && (
                 <div className="relative w-16 h-16 mb-2">
                   <img src={selectedImage} alt="Preview" className="w-full h-full object-cover rounded-xl border-2 border-emerald-500" />
@@ -436,8 +472,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
                 />
                 <button 
                   onClick={handleSendMessage} 
-                  disabled={!inputText.trim() && !selectedImage}
-                  className={`bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-lg ${(!inputText.trim() && !selectedImage) ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:bg-emerald-700 shadow-emerald-100 active:scale-95'}`}
+                  disabled={isProcessingImage || (!inputText.trim() && !selectedImage)}
+                  className={`bg-emerald-600 text-white w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-lg ${(isProcessingImage || (!inputText.trim() && !selectedImage)) ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:bg-emerald-700 shadow-emerald-100 active:scale-95'}`}
                 >
                   🚀
                 </button>
