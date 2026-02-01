@@ -1,12 +1,8 @@
 
-import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge } from '../types.ts';
+import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog } from '../types.ts';
 
 const API_BASE = '/api';
 let isOfflineMode = false;
-
-const logSystem = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
-  if (window.debugLog) window.debugLog(`[Hệ thống] ${msg}`, type);
-};
 
 async function request<T>(url: string, method = 'GET', body?: any, timeout = 15000): Promise<T | null> {
   if (isOfflineMode) return null;
@@ -44,7 +40,7 @@ export const Database = {
   saveMetric: (data: any) => request<HealthMetric>(`${API_BASE}/metrics`, 'POST', data),
   updateMetric: (id: string, data: any) => request<HealthMetric>(`${API_BASE}/metrics/${id}`, 'PUT', data),
   deleteMetric: (id: string) => request(`${API_BASE}/metrics/${id}`, 'DELETE'),
-  saveMetricsBulk: (data: any[]) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
+  saveMetricsBulk: (data: any) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
   deleteMetricsBulk: (ids: string[]) => request(`${API_BASE}/metrics/delete-bulk`, 'POST', { ids }),
   deleteAllUserMetrics: (userId: string) => request(`${API_BASE}/metrics/all/${userId}`, 'DELETE'),
   getKnowledge: async () => (await request<AIKnowledge[]>(`${API_BASE}/knowledge`)) ?? [],
@@ -62,4 +58,5 @@ export const Database = {
   deletePost: (id: string) => request(`${API_BASE}/posts/${id}`, 'DELETE'),
   reactToPost: (postId: string, userId: string, type: string, userName?: string, userAvatar?: string) => 
     request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type, userName, userAvatar }),
+  getAuditLogs: async () => (await request<AuditLog[]>(`${API_BASE}/audit-logs`)) ?? [],
 };
