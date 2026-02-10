@@ -30,25 +30,6 @@ export enum HealthGoal {
   OTHER = 'Khác'
 }
 
-export enum AuditLogType {
-  REGISTER = 'REGISTER',
-  POST_CREATE = 'POST_CREATE',
-  METRIC_UPDATE = 'METRIC_UPDATE',
-  METRIC_HELP_UPDATE = 'METRIC_HELP_UPDATE'
-}
-
-export interface AuditLog {
-  id?: string;
-  _id?: string;
-  actorId: string;
-  actorName: string;
-  targetId?: string;
-  targetName?: string;
-  type: AuditLogType;
-  details: string;
-  timestamp: string;
-}
-
 export interface Badge {
   id: string;
   name: string;
@@ -78,8 +59,8 @@ export interface Post {
   userAvatar?: string;
   userBadges: string[];
   content: string;
-  imageUrls: string[]; 
-  images?: PostImage[]; 
+  imageUrls: string[]; // Giữ lại để tương thích ngược nếu cần, nhưng sẽ dùng images chủ yếu
+  images?: PostImage[]; // Cấu trúc mới hỗ trợ xóa ảnh từ CDN
   timestamp: string;
   reactions?: PostReaction[];
 }

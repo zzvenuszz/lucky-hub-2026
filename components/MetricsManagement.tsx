@@ -6,7 +6,7 @@ import { Database } from '../services/database.ts';
 interface MetricsManagementProps {
   user: User;
   users: User[];
-  onAddMetric: (targetId: string) => void;
+  onAddMetric: () => void;
   refreshTrigger?: number;
 }
 
@@ -40,6 +40,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
 
   useEffect(() => {
     const load = async () => {
+      // RÀNG BUỘC PHÂN QUYỀN: Nếu là MEMBER, luôn chỉ lấy ID của chính mình
       const targetId = user.role === UserRole.MEMBER ? currentUid : selectedUserId;
       const data = await Database.getMetrics(targetId);
       setMetrics(data || []);
@@ -57,6 +58,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           <p className="text-slate-400 text-xs font-medium mt-1 uppercase tracking-widest">Lịch sử đo lường chi tiết</p>
         </div>
         <div className="flex items-center gap-4">
+          {/* Chỉ Admin và Coach mới thấy thanh chọn hội viên */}
           {user.role !== UserRole.MEMBER && (
             <select 
               value={selectedUserId} 
@@ -70,7 +72,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
               ))}
             </select>
           )}
-          <button onClick={() => onAddMetric(selectedUserId)} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">+ Thêm mới</button>
+          <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">+ Thêm mới</button>
         </div>
       </div>
 
