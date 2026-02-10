@@ -253,6 +253,12 @@ initDB();
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok', database: 'connected' }));
 
+app.post('/api/check-email', async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  res.json({ exists: !!user });
+});
+
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, avatar, ...rest } = req.body;

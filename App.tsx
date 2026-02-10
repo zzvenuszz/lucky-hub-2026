@@ -227,17 +227,58 @@ const App: React.FC = () => {
     setIsAddingMetric(true);
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-slate-100 animate-in zoom-in-95 duration-500">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-4 shadow-lg shadow-emerald-100 animate-bounce">🍀</div>
+            <h1 className="text-3xl font-black text-slate-800 tracking-tight">Lucky Hub</h1>
+            <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em] mt-2">Nền tảng Quản lý Sức khỏe</p>
+          </div>
+
+          {isRegistering ? (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <input required placeholder="Họ và tên" value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
+              <input required placeholder="Tên đăng nhập" value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
+              <input required type="email" placeholder="Email" value={regData.email} onBlur={() => checkEmailExists(regData.email)} onChange={e => setRegData({...regData, email: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
+              {emailError && <p className="text-[10px] text-rose-500 font-black ml-2 uppercase">{emailError}</p>}
+              <div className="relative">
+                <input required type={showRegPass ? "text" : "password"} placeholder="Mật khẩu" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
+                <button type="button" onClick={() => setShowRegPass(!showRegPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-emerald-600">{showRegPass ? '👁️' : '🙈'}</button>
+              </div>
+              <button type="submit" disabled={isLoading} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">{isLoading ? 'ĐANG ĐĂNG KÝ...' : 'TẠO TÀI KHOẢN'}</button>
+              <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-center text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Đã có tài khoản? Đăng nhập</button>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <input required placeholder="Email hoặc Tên đăng nhập" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
+              <div className="relative">
+                <input required type={showLoginPass ? "text" : "password"} placeholder="Mật khẩu" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
+                <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-emerald-600">{showLoginPass ? '👁️' : '🙈'}</button>
+              </div>
+              <div className="flex items-center gap-2 px-2">
+                <input type="checkbox" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} className="w-4 h-4 accent-emerald-600 rounded" />
+                <span className="text-[10px] font-black text-slate-400 uppercase">Duy trì đăng nhập</span>
+              </div>
+              <button type="submit" disabled={isLoading} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">{isLoading ? 'ĐANG XỬ LÝ...' : 'ĐĂNG NHẬP NGAY'}</button>
+              <div className="flex justify-between px-2">
+                <button type="button" onClick={() => setIsRegistering(true)} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Đăng ký mới</button>
+                <button type="button" className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Quên mật khẩu?</button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
       {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
       {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
       {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
       {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { const uid = (currentUser as any).id || (currentUser as any)._id; const u = await Database.updateUser(uid, d); if(u) { setCurrentUser(u); localStorage.setItem('lucky_hub_user', JSON.stringify(u)); } }} />}
-      {/* 
-          PHÂN TÍCH: TypeScript báo lỗi tại onRefresh do thuộc tính đang được gán giá trị 'fetch fetchData'. 
-          NGUYÊN NHÂN: Đây là lỗi đánh máy (typo), hệ thống đang hiểu nhầm là truyền hàm toàn cục 'fetch'.
-          GIẢI QUYẾT: Sửa lại thành 'fetchData' để truyền đúng hàm callback cập nhật dữ liệu.
-      */}
       {activeTab === 'admin' && currentUser!.role === UserRole.ADMIN && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       {!isChatOpen && <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>}
