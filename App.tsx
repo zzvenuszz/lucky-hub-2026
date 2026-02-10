@@ -233,6 +233,11 @@ const App: React.FC = () => {
       {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
       {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
       {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { const uid = (currentUser as any).id || (currentUser as any)._id; const u = await Database.updateUser(uid, d); if(u) { setCurrentUser(u); localStorage.setItem('lucky_hub_user', JSON.stringify(u)); } }} />}
+      {/* 
+          PHÂN TÍCH: TypeScript báo lỗi tại onRefresh do thuộc tính đang được gán giá trị 'fetch fetchData'. 
+          NGUYÊN NHÂN: Đây là lỗi đánh máy (typo), hệ thống đang hiểu nhầm là truyền hàm toàn cục 'fetch'.
+          GIẢI QUYẾT: Sửa lại thành 'fetchData' để truyền đúng hàm callback cập nhật dữ liệu.
+      */}
       {activeTab === 'admin' && currentUser!.role === UserRole.ADMIN && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       {!isChatOpen && <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>}
