@@ -1,11 +1,10 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, PieChart, Pie, Cell, Legend, Sector
-} from 'recharts';
-import { HealthMetric, User, UserRole, HealthGoal } from '../types.ts';
+import { HealthMetric, User, UserRole } from '../types.ts';
 import { Database } from '../services/database.ts';
+import StatCards from './dashboard/StatCards.tsx';
+import BodyCompositionPie from './dashboard/BodyCompositionPie.tsx';
+import TrendChart from './dashboard/TrendChart.tsx';
 
 interface DashboardProps {
   user: User;
@@ -26,100 +25,22 @@ const AVAILABLE_METRICS = [
   { key: 'energy', label: 'Năng Lượng (kcal)', color: '#f97316', inverse: false, icon: '⚡' },
 ];
 
-const TIME_RANGES = [
-  { key: '7d', label: '7 ngày' },
-  { key: '14d', label: '2 tuần' },
-  { key: '1m', label: '1 tháng' },
-  { key: 'all', label: 'Tất cả' },
-];
-
-const formatDateVN = (dateStr: string) => {
-  if (!dateStr) return '--/--/----';
-  try {
-    const parts = dateStr.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return dateStr;
-  } catch {
-    return dateStr;
-  }
-};
-
-const renderActiveShape = (props: any) => {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-  return (
-    <g>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 10}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        style={{ cursor: 'pointer' }}
-      />
-    </g>
-  );
-};
-
 const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'muscleMass']);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    const load = async () => {
-      const data = await Database.getMetrics(selectedUserId);
-      setMetrics(data || []);
-    };
-    load();
+    Database.getMetrics(selectedUserId).then(data => setMetrics(data || []));
   }, [selectedUserId, refreshTrigger]);
 
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
   const latestMetric = sortedMetrics[0] || null;
   const prevMetric = sortedMetrics[1] || null;
 
-  const toggleMetric = (key: string) => {
-    setSelectedMetricKeys(prev => 
-      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
-    );
-  };
-
-  const getDiff = (key: keyof HealthMetric) => {
-    if (!latestMetric || !prevMetric) return null;
-    const current = latestMetric[key] as number;
-    const previous = prevMetric[key] as number;
-    if (typeof current !== 'number' || typeof previous !== 'number') return null;
-    return current - previous;
-  };
-
-  const pieData = useMemo(() => {
-    if (!latestMetric || !latestMetric.weight) return [];
-    
-    const weight = latestMetric.weight;
-    const fatMass = Number((weight * (latestMetric.bodyFat / 100)).toFixed(1));
-    const waterMass = Number((weight * (latestMetric.waterPercent / 100)).toFixed(1));
-    const minerals = latestMetric.boneMinerals || 0;
-    
-    // Logic mới: Lấy trực tiếp khối lượng cơ bắp từ máy đo
-    const muscle = latestMetric.muscleMass || 0;
-
-    return [
-      { name: 'Cơ bắp', value: muscle, color: '#ef4444' },
-      { name: 'Nước', value: waterMass, color: '#0ea5e9' },
-      { name: 'Mỡ', value: fatMass, color: '#fde047' },
-      { name: 'Khoáng', value: minerals, color: '#94a3b8' },
-    ];
-  }, [latestMetric]);
-
-  const onPieEnter = useCallback((_: any, index: number) => {
-    setActiveIndex(index);
-  }, []);
-
-  const onPieLeave = useCallback(() => {
-    setActiveIndex(null);
+  const toggleMetric = useCallback((key: string) => {
+    setSelectedMetricKeys(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
   }, []);
 
   const filteredMetrics = useMemo(() => {
@@ -127,7 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
     if (timeRange === '7d') cutoff.setDate(cutoff.getDate() - 7);
     else if (timeRange === '14d') cutoff.setDate(cutoff.getDate() - 14);
     else if (timeRange === '1m') cutoff.setMonth(cutoff.getMonth() - 1);
-    else return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
+    else return [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     return metrics.filter(m => new Date(m.date) >= cutoff).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [metrics, timeRange]);
 
@@ -150,154 +71,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
         <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {AVAILABLE_METRICS.map((metricInfo, i) => {
-          const diff = getDiff(metricInfo.key as keyof HealthMetric);
-          const isGood = diff !== null ? (metricInfo.inverse ? diff < 0 : diff > 0) : null;
-          
-          return (
-            <div key={i} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm group hover:border-emerald-200 transition-all">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{metricInfo.label}</span>
-                <span className="text-xl group-hover:scale-125 transition-transform">
-                  {metricInfo.icon}
-                </span>
-              </div>
-              <div className="text-2xl font-black flex items-baseline text-slate-800">
-                {latestMetric ? latestMetric[metricInfo.key as keyof HealthMetric] : '--'} 
-                <span className="text-[10px] font-bold text-slate-400 ml-1">
-                  {metricInfo.key === 'energy' ? 'kcal' : 
-                   metricInfo.key === 'weight' || metricInfo.key === 'muscleMass' || metricInfo.key === 'boneMinerals' ? 'kg' :
-                   metricInfo.key === 'bodyFat' || metricInfo.key === 'waterPercent' ? '%' : ''}
-                </span>
-              </div>
-              
-              {/* Bổ trợ hiển thị tỷ lệ % cơ bắp cho card Lượng Cơ */}
-              {metricInfo.key === 'muscleMass' && latestMetric && latestMetric.weight > 0 && (
-                <div className="text-[10px] font-black text-blue-500 mt-1 uppercase tracking-tighter">
-                  Tỷ lệ: {((latestMetric.muscleMass / latestMetric.weight) * 100).toFixed(1)}%
-                </div>
-              )}
-
-              {diff !== null && diff !== 0 && (
-                <div className={`text-[10px] font-black uppercase flex items-center gap-0.5 mt-2 ${isGood ? 'text-emerald-500' : 'text-rose-500'}`}>
-                  {diff > 0 ? '↑' : '↓'} {Math.abs(diff).toFixed(1)}
-                  <span className="ml-1 opacity-60">so với lần trước</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <StatCards latestMetric={latestMetric} prevMetric={prevMetric} configs={AVAILABLE_METRICS} />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px] relative">
-          <div className="mb-2">
-            <h3 className="font-black text-slate-800 text-lg tracking-tight">Cấu trúc cơ thể</h3>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">🍀Trợ lý Lucky phân tích: Cơ, Nước, Mỡ, Khoáng</p>
-          </div>
-          <div className="flex-grow flex items-center justify-center relative">
-            {latestMetric ? (
-              <div className="relative w-full h-full flex items-center justify-center">
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 select-none">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80 text-center px-4">
-                    {activeIndex !== null ? pieData[activeIndex].name : 'Tổng cân'}
-                  </span>
-                  <span className="text-3xl font-black text-slate-800 tabular-nums">
-                    {activeIndex !== null 
-                      ? `${((pieData[activeIndex].value / latestMetric.weight) * 100).toFixed(1)}%` 
-                      : `${latestMetric.weight}kg`
-                    }
-                  </span>
-                </div>
-                <ResponsiveContainer width="100%" height={340}>
-                  <PieChart>
-                    {/* 
-                      PHÂN TÍCH: TypeScript báo lỗi 'activeIndex' không tồn tại trên Component Pie.
-                      NGUYÊN NHÂN: Do sự không tương thích giữa typings của recharts và code thực thi trong môi trường hiện tại.
-                      GIẢI QUYẾT: Ép kiểu any cho các thuộc tính gây lỗi để bypass TypeScript check.
-                    */}
-                    <Pie 
-                      {...({
-                        activeIndex: activeIndex === null ? undefined : activeIndex,
-                        activeShape: renderActiveShape
-                      } as any)}
-                      data={pieData} 
-                      cx="50%" 
-                      cy="50%" 
-                      innerRadius={80} 
-                      outerRadius={100} 
-                      paddingAngle={5} 
-                      dataKey="value" 
-                      onMouseEnter={onPieEnter} 
-                      onMouseLeave={onPieLeave} 
-                      stroke="none" 
-                      animationBegin={0} 
-                      animationDuration={1500}
-                    >
-                      {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                    </Pie>
-                    <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '20px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="text-slate-300 italic text-sm font-black uppercase tracking-widest">Chưa có dữ liệu</div>
-            )}
-          </div>
-          
-          {/* Chú thích giải thích cấu trúc chồng lấn */}
-          {latestMetric && (
-            <div className="mt-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-              <p className="text-[9px] text-slate-500 font-bold leading-relaxed italic">
-                (*) Giải thích: Tổng tỷ lệ có thể khác 100% do sự giao thoa tự nhiên (ví dụ: Nước và Khoáng chất tồn tại bên trong tế bào Cơ và Mỡ). Đây là cấu trúc cơ thể sinh học bình thường.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="lg:col-span-7 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col min-h-[440px]">
-          <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-8">
-            <div>
-              <h3 className="font-black text-slate-800 text-lg tracking-tight">Biểu đồ xu hướng</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Sự thay đổi theo thời gian</p>
-            </div>
-            <div className="flex gap-1 overflow-x-auto no-scrollbar pb-2 sm:pb-0">
-              {TIME_RANGES.map(range => (
-                <button key={range.key} onClick={() => setTimeRange(range.key)} className={`px-3 py-1 text-[9px] font-black rounded-xl border transition-all ${timeRange === range.key ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-slate-50 text-slate-400 border-transparent'}`}>{range.label}</button>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-6">
-            {AVAILABLE_METRICS.map(m => (
-              <button
-                key={m.key}
-                onClick={() => toggleMetric(m.key)}
-                className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-2 border ${
-                  selectedMetricKeys.includes(m.key) 
-                  ? 'bg-white border-slate-200 text-slate-800 shadow-sm' 
-                  : 'bg-slate-50 border-transparent text-slate-300 opacity-60'
-                }`}
-              >
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: m.color }}></span>
-                {m.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex-grow w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={filteredMetrics} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} tickFormatter={(v) => { const parts = v.split('-'); return `${parts[2]}/${parts[1]}`; }} axisLine={false} tickLine={false} />
-                <YAxis fontSize={9} tick={{ fill: '#94a3b8', fontWeight: 700 }} axisLine={false} tickLine={false} />
-                <Tooltip labelFormatter={(v) => formatDateVN(v)} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }} />
-                {AVAILABLE_METRICS.filter(m => selectedMetricKeys.includes(m.key)).map(m => (
-                  <Line key={m.key} type="monotone" dataKey={m.key} name={m.label} stroke={m.color} strokeWidth={3} dot={{ r: 3 }} animationDuration={1000} />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <BodyCompositionPie latestMetric={latestMetric} />
+        <TrendChart 
+          metrics={filteredMetrics} 
+          timeRange={timeRange} 
+          setTimeRange={setTimeRange} 
+          selectedMetricKeys={selectedMetricKeys} 
+          toggleMetric={toggleMetric} 
+          configs={AVAILABLE_METRICS} 
+        />
       </div>
     </div>
   );
