@@ -152,9 +152,9 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-slate-100">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-4 shadow-lg animate-bounce">🍀</div>
-            <h1 className="text-3xl font-black text-slate-800 tracking-tight">Lucky Hub</h1>
-            <p className="text-slate-400 text-xs font-black uppercase tracking-widest mt-2">Nền tảng Sức khỏe</p>
+            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-4 shadow-lg">🍀</div>
+            <h1 className="text-4xl font-black text-slate-800 tracking-tight uppercase" style={{ fontFamily: "'Tilt Prism', cursive" }}>LUCKY HUB</h1>
+            <p className="text-slate-400 text-xs font-black uppercase tracking-[0.3em] mt-2">Nền tảng Sức khỏe</p>
           </div>
           {isRegistering ? (
             <Register onRegister={handleRegister} onSwitchLogin={() => setIsRegistering(false)} isLoading={isLoading} emailError={emailError} onCheckEmail={checkEmailExists} />
