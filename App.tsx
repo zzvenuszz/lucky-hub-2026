@@ -9,7 +9,9 @@ import Profile from './components/Profile.tsx';
 import MetricsManagement from './components/MetricsManagement.tsx';
 import NewsFeed from './components/NewsFeed.tsx';
 import BadgeCongratulation from './components/BadgeCongratulation.tsx';
-import { User, HealthGoal, UserRole, AccountStatus, AIRule, HealthMetric, Badge } from './types.ts';
+import Login from './components/auth/Login.tsx';
+import Register from './components/auth/Register.tsx';
+import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 
 const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
@@ -18,13 +20,6 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isRegistering, setIsRegistering] = useState(false);
-  const [isForgotPassword, setIsForgotPassword] = useState(false);
-  const [forgotPasswordStep, setForgotPasswordStep] = useState(1); 
-  
-  const [showLoginPass, setShowLoginPass] = useState(false);
-  const [showRegPass, setShowRegPass] = useState(false);
-  const [showForgotPass, setShowForgotPass] = useState(false);
-
   const [users, setUsers] = useState<User[]>([]);
   const [knowledge, setKnowledge] = useState<any[]>([]);
   const [rules, setRules] = useState<AIRule[]>([]);
@@ -34,80 +29,14 @@ const App: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
   const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
-  
-  const [loginData, setLoginData] = useState({ username: '', password: '' });
-  const [forgotData, setForgotData] = useState({ username: '', token: '', newPassword: '', confirmPassword: '' });
-  const [rememberMe, setRememberMe] = useState(false);
-  const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
-
-  const [regData, setRegData] = useState({
-    username: '', email: '', password: '', fullName: '', phoneNumber: '',
-    birthDate: '', height: 170, weight: 65,
-    gender: 'Nam' as 'Nam'|'Nữ', healthGoal: HealthGoal.BODY_RECOMP
-  });
-  
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
     localStorage.removeItem('lucky_hub_user');
     setActiveTab('dashboard');
     setIsChatOpen(false);
-  }, []);
-
-  const validateEmail = (email: string) => {
-    return String(email)
-      .toLowerCase()
-      .match(
-        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
-      );
-  };
-
-  const checkEmailExists = async (email: string) => {
-    if (!email || !validateEmail(email)) {
-      setEmailError(email ? 'Email không đúng định dạng' : 'Email là bắt buộc');
-      return;
-    }
-    try {
-      const res = await fetch('/api/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (data.exists) setEmailError('Email này đã được sử dụng');
-      else setEmailError(null);
-    } catch (e) {
-      console.error('Lỗi check email');
-    }
-  };
-
-  const checkBadges = useCallback((metrics: HealthMetric[], user: User): string[] => {
-    const currentBadges = new Set(user.badges || []);
-    if (metrics.length === 0) return Array.from(currentBadges);
-    const sorted = [...metrics].sort((a, b) => new Date(a.date).getTime() - new Date(a.date).getTime());
-    const firstMetric = sorted[0];
-    const latestMetric = sorted[sorted.length - 1];
-    for (let i = 0; i < sorted.length; i++) {
-      const dateI = new Date(sorted[i].date);
-      for (let j = i + 1; j < sorted.length; j++) {
-        const dateJ = new Date(sorted[j].date);
-        const daysDiff = (dateJ.getTime() - dateI.getTime()) / (1000 * 3600 * 24);
-        if (daysDiff <= 31 && sorted[i].weight - sorted[j].weight >= 3) {
-          currentBadges.add('b_weight_loss_god');
-          break;
-        }
-      }
-    }
-    const week1Metric = sorted.find(m => {
-      const diff = (new Date(m.date).getTime() - new Date(firstMetric.date).getTime()) / (1000 * 3600 * 24);
-      return diff >= 5 && diff <= 10;
-    });
-    if (week1Metric && firstMetric.weight - week1Metric.weight >= 1) currentBadges.add('b_7_golden_days');
-    const maxFat = Math.max(...sorted.map(m => m.bodyFat));
-    if (maxFat - latestMetric.bodyFat >= 3) currentBadges.add('b_fat_destroyer');
-    if (sorted.length >= 10) currentBadges.add('b_dedicated');
-    return Array.from(currentBadges);
   }, []);
 
   useEffect(() => {
@@ -120,8 +49,7 @@ const App: React.FC = () => {
     if (remembered) {
       try {
         const decoded = JSON.parse(atob(remembered));
-        setLoginData(decoded);
-        setRememberMe(true);
+        // Tự động load login data cho form
       } catch (e) {}
     }
   }, []);
@@ -154,71 +82,63 @@ const App: React.FC = () => {
       setRules(r || []);
       if (currentUser) {
         const uid = (currentUser as any).id || (currentUser as any)._id;
-        const metrics = await Database.getMetrics(uid);
-        setExistingMetrics(metrics || []);
-        const updatedBadges = checkBadges(metrics || [], currentUser);
-        const oldBadges = currentUser.badges || [];
-        const newlyEarnedIds = updatedBadges.filter(id => !oldBadges.includes(id));
-        if (newlyEarnedIds.length > 0) {
-           const badgeInfo = BADGES_DB.find(b => b.id === newlyEarnedIds[0]);
-           if (badgeInfo) setNewEarnedBadge(badgeInfo);
-           const u = await Database.updateUser(uid, { badges: updatedBadges });
-           if(u) { 
-             setCurrentUser(u); 
-             localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
-           }
-        } else if (JSON.stringify(updatedBadges) !== JSON.stringify(currentUser.badges)) {
-           const u = await Database.updateUser(uid, { badges: updatedBadges });
-           if(u) { 
-             setCurrentUser(u); 
-             localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
-           }
-        }
+        const m = await Database.getMetrics(uid);
+        setExistingMetrics(m || []);
       }
     } catch (err) {}
   };
 
   useEffect(() => { if (currentUser) fetchData(); }, [currentUser, refreshTrigger]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (data: any) => {
     setIsLoading(true);
     try {
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          username: loginData.username.toLowerCase().trim(), 
-          password: loginData.password 
-        })
+        body: JSON.stringify({ username: data.username.toLowerCase().trim(), password: data.password })
       });
       const result = await response.json();
       if (response.ok) {
         setCurrentUser(result);
         localStorage.setItem('lucky_hub_user', JSON.stringify(result));
-        if (rememberMe) localStorage.setItem('remembered_login', btoa(JSON.stringify(loginData)));
+        if (data.rememberMe) localStorage.setItem('remembered_login', btoa(JSON.stringify({username: data.username, password: data.password})));
         else localStorage.removeItem('remembered_login');
       } else alert(result.message || 'Sai thông tin');
-    } catch (error) { alert('Lỗi kết nối Server'); } finally { setIsLoading(false); }
+    } catch { alert('Lỗi kết nối Server'); } finally { setIsLoading(false); }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (emailError) return alert('Vui lòng sửa lỗi email trước khi đăng ký');
+  const handleRegister = async (data: any) => {
+    if (emailError) return alert('Email không hợp lệ');
     setIsLoading(true);
     try {
       const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...regData, username: regData.username.toLowerCase().trim() })
+        body: JSON.stringify({ ...data, username: data.username.toLowerCase().trim() })
       });
-      const result = await response.json();
       if (response.ok) {
         alert('Đăng ký thành công!');
         setIsRegistering(false);
-        setLoginData({ username: regData.username, password: regData.password });
-      } else alert(result.message || 'Lỗi đăng ký');
-    } catch (error) { alert('Lỗi kết nối'); } finally { setIsLoading(false); }
+      } else {
+        const res = await response.json();
+        alert(res.message || 'Lỗi đăng ký');
+      }
+    } catch { alert('Lỗi kết nối'); } finally { setIsLoading(false); }
+  };
+
+  const checkEmailExists = async (email: string) => {
+    if (!email) { setEmailError('Email là bắt buộc'); return; }
+    try {
+      const res = await fetch('/api/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase().trim() })
+      });
+      const data = await res.json();
+      if (data.exists) setEmailError('Email này đã được sử dụng');
+      else setEmailError(null);
+    } catch { console.error('Lỗi check email'); }
   };
 
   const handleOpenMetricForm = (targetId?: string) => {
@@ -230,43 +150,16 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-slate-100 animate-in zoom-in-95 duration-500">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-slate-100">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-4 shadow-lg shadow-emerald-100 animate-bounce">🍀</div>
+            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-4 shadow-lg animate-bounce">🍀</div>
             <h1 className="text-3xl font-black text-slate-800 tracking-tight">Lucky Hub</h1>
-            <p className="text-slate-400 text-xs font-black uppercase tracking-[0.2em] mt-2">Nền tảng Quản lý Sức khỏe</p>
+            <p className="text-slate-400 text-xs font-black uppercase tracking-widest mt-2">Nền tảng Sức khỏe</p>
           </div>
-
           {isRegistering ? (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <input required placeholder="Họ và tên" value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
-              <input required placeholder="Tên đăng nhập" value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
-              <input required type="email" placeholder="Email" value={regData.email} onBlur={() => checkEmailExists(regData.email)} onChange={e => setRegData({...regData, email: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
-              {emailError && <p className="text-[10px] text-rose-500 font-black ml-2 uppercase">{emailError}</p>}
-              <div className="relative">
-                <input required type={showRegPass ? "text" : "password"} placeholder="Mật khẩu" value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
-                <button type="button" onClick={() => setShowRegPass(!showRegPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-emerald-600">{showRegPass ? '👁️' : '🙈'}</button>
-              </div>
-              <button type="submit" disabled={isLoading} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">{isLoading ? 'ĐANG ĐĂNG KÝ...' : 'TẠO TÀI KHOẢN'}</button>
-              <button type="button" onClick={() => setIsRegistering(false)} className="w-full text-center text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Đã có tài khoản? Đăng nhập</button>
-            </form>
+            <Register onRegister={handleRegister} onSwitchLogin={() => setIsRegistering(false)} isLoading={isLoading} emailError={emailError} onCheckEmail={checkEmailExists} />
           ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <input required placeholder="Email hoặc Tên đăng nhập" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
-              <div className="relative">
-                <input required type={showLoginPass ? "text" : "password"} placeholder="Mật khẩu" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
-                <button type="button" onClick={() => setShowLoginPass(!showLoginPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-emerald-600">{showLoginPass ? '👁️' : '🙈'}</button>
-              </div>
-              <div className="flex items-center gap-2 px-2">
-                <input type="checkbox" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} className="w-4 h-4 accent-emerald-600 rounded" />
-                <span className="text-[10px] font-black text-slate-400 uppercase">Duy trì đăng nhập</span>
-              </div>
-              <button type="submit" disabled={isLoading} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95">{isLoading ? 'ĐANG XỬ LÝ...' : 'ĐĂNG NHẬP NGAY'}</button>
-              <div className="flex justify-between px-2">
-                <button type="button" onClick={() => setIsRegistering(true)} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Đăng ký mới</button>
-                <button type="button" className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Quên mật khẩu?</button>
-              </div>
-            </form>
+            <Login onLogin={handleLogin} onSwitchRegister={() => setIsRegistering(true)} isLoading={isLoading} />
           )}
         </div>
       </div>
