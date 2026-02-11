@@ -37,6 +37,15 @@ export enum AuditLogType {
   METRIC_HELP_UPDATE = 'METRIC_HELP_UPDATE'
 }
 
+export interface GeminiKey {
+  id?: string;
+  _id?: string;
+  key: string;
+  name: string;
+  status: 'active' | 'error' | 'cooldown';
+  lastUsed?: string;
+}
+
 export interface AuditLog {
   id?: string;
   _id?: string;
