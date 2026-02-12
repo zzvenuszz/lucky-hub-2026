@@ -407,7 +407,8 @@ async function initDB() {
 initDB();
 
 app.use(express.static('.') as any);
-app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
+// SỬA LỖI: Express 5 Catch-all route sử dụng định dạng Regex (.*) thay vì * để tránh PathError
+app.get('(.*)', (req, res) => res.sendFile(path.resolve('index.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
