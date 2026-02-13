@@ -393,8 +393,8 @@ initDB();
 
 app.use(express.static('.') as any);
 
-// Catch-all route cho Express 5: Phải có tên tham số hoặc sử dụng dấu ngoặc
-app.get('/*', (req, res) => {
+// Catch-all route cho Express 5: Phải đặt tên cho tham số (ví dụ :splat*)
+app.get('/:splat*', (req, res) => {
     if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'API Not Found' });
     res.sendFile(path.resolve('index.html'));
 });
