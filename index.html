@@ -33,7 +33,6 @@
         const consoleEl = document.getElementById('debug-console');
         if (!consoleEl) return;
 
-        // Kiểm tra filter
         const isAI = type === 'ai' || msg.includes('Gemini') || msg.includes('AI');
         if (isAI && !window.logFilters.ai) return;
         if (!isAI && !window.logFilters.system) return;
@@ -48,7 +47,6 @@
         consoleEl.appendChild(div);
         consoleEl.scrollTop = consoleEl.scrollHeight;
         
-        // Giới hạn số lượng log để tránh lag
         if (consoleEl.children.length > 100) consoleEl.removeChild(consoleEl.firstChild);
       };
 
@@ -68,14 +66,14 @@
     "react-easy-crop": "https://esm.sh/react-easy-crop@5.2.0?external=react,react-dom",
     "react-dom/": "https://esm.sh/react-dom@19.0.0/",
     "react/": "https://esm.sh/react@19.0.0/",
-    "mongoose": "https://esm.sh/mongoose@^9.2.1",
-    "cors": "https://esm.sh/cors@^2.8.6",
     "dotenv": "https://esm.sh/dotenv@^17.3.1",
     "path": "https://esm.sh/path@^0.12.7",
     "fs": "https://esm.sh/fs@^0.0.1-security",
     "crypto": "https://esm.sh/crypto@^1.0.1",
+    "sucrase": "https://esm.sh/sucrase@^3.35.1",
     "express": "https://esm.sh/express@^5.2.1",
-    "sucrase": "https://esm.sh/sucrase@^3.35.1"
+    "mongoose": "https://esm.sh/mongoose@^9.2.1",
+    "cors": "https://esm.sh/cors@^2.8.6"
   }
 }
 </script>

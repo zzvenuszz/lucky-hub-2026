@@ -439,5 +439,7 @@ app.post('/api/chats', async (req, res) => {
 });
 
 app.use(express.static('.') as any);
-app.get('/:path*', (req, res) => res.sendFile(path.resolve('index.html')));
+// SỬA LỖI TẠI ĐÂY: Dùng '*' là chuẩn an toàn nhất cho catch-all trong Express 5 / path-to-regexp v8
+app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
+
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
