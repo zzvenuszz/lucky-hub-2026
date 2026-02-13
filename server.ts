@@ -359,7 +359,7 @@ app.post('/api/ai/bulk-extract', async (req, res) => {
 
 // --- 5. SERVER STATICS & COMPILER ---
 app.use((req, res, next) => {
-  // QUAN TRỌNG: Không biên dịch trang chủ (/) hoặc các API (/api/)
+  // QUAN TRỌNG: Tuyệt đối không biên dịch trang chủ (/) hoặc các API (/api/)
   if (req.path === '/' || req.path.startsWith('/api/')) return next();
   
   const rootDir = path.resolve();
@@ -393,9 +393,8 @@ initDB();
 
 app.use(express.static('.') as any);
 
-// Catch-all route chuẩn xác cho Single Page Application (SPA)
-app.get('*', (req, res) => {
-    // Nếu là yêu cầu API không tồn tại, trả về 404 thay vì index.html
+// Catch-all route cho Express 5: Phải có tên tham số hoặc sử dụng dấu ngoặc
+app.get('/*', (req, res) => {
     if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'API Not Found' });
     res.sendFile(path.resolve('index.html'));
 });
