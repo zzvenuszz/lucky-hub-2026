@@ -439,5 +439,5 @@ app.post('/api/chats', async (req, res) => {
 });
 
 app.use(express.static('.') as any);
-app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
+app.get('/:path*', (req, res) => res.sendFile(path.resolve('index.html')));
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
