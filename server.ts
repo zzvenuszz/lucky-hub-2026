@@ -98,8 +98,6 @@ async function validateGeminiKeys() {
     try {
       const ai = new GoogleGenAI({ apiKey: key });
       await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: 'ping' });
-      // PHÂN TÍCH: TypeScript gặp lỗi overload với findOneAndUpdate.
-      // GIẢI QUYẾT: Ép kiểu model sang any để bỏ qua kiểm tra type nghiêm ngặt của Mongoose version hiện tại.
       await (GeminiKey as any).findOneAndUpdate({ key }, { status: 'active' }, {});
     } catch (err) {
       await (GeminiKey as any).findOneAndUpdate({ key }, { status: 'error' }, {});
@@ -142,7 +140,6 @@ async function logAudit(data: any) {
 
 // --- 4. ENDPOINTS ---
 
-// AUTH & USERS
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 app.post('/api/login', async (req, res) => {
@@ -393,9 +390,10 @@ async function initDB() {
 initDB();
 
 app.use(express.static('.') as any);
-// GIẢI PHÁP TRIỆT ĐỂ CHO EXPRESS 5: Sử dụng named parameter /:path* để bắt mọi đường dẫn
-// Đây là cú pháp duy nhất của path-to-regexp v8 cho phép catch-all không gây lỗi Missing parameter name.
-app.get('/:path*', (req, res) => res.sendFile(path.resolve('index.html')));
+
+// GIẢI PHÁP TRIỆT ĐỂ: Sử dụng Regex Object trực tiếp cho Express 5 để tránh lỗi Path-to-RegExp String Parser
+// Regex /.*/ sẽ khớp với mọi đường dẫn và không bị coi là thiếu tham số vì nó không đi qua parser chuỗi.
+app.get(/.*/, (req, res) => res.sendFile(path.resolve('index.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
