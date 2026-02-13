@@ -13,19 +13,186 @@ import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from '.
 dotenv.config();
 
 const app = express();
+
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '50mb' }) as any);
 
-// --- 1. ĐỊNH NGHĨA MODELS ---
-const GeminiKeySchema = new mongoose.Schema({
-  key: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  status: { type: String, enum: ['active', 'error', 'cooldown'], default: 'active' },
-  lastUsed: Date
-}, { timestamps: true });
-const GeminiKey = mongoose.models.GeminiKey || mongoose.model('GeminiKey', GeminiKeySchema);
+const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
+const healthyKeys: string[] = [];
+const keyCooldowns = new Map<string, number>(); 
 
-const AuditLogSchema = new mongoose.Schema({
+async function validateGeminiKeys() {
+  console.log('🔍 [Gemini] Đang kiểm tra trạng thái các API Keys khởi động...');
+  healthyKeys.length = 0;
+  for (let i = 0; i < API_KEYS.length; i++) {
+    const key = API_KEYS[i]!;
+    try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: 'ping',
+      });
+      if (response && response.text) {
+        console.log(`✅ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): HOẠT ĐỘNG`);
+        healthyKeys.push(key);
+      }
+    } catch (err: any) {
+      console.error(`❌ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): LỖI BAN ĐẦU - ${err.message}`);
+    }
+  }
+}
+
+async function callAIWithRetry(
+  requestId: string,
+  modelName: string,
+  payload: any,
+  retries = 3
+): Promise<any> {
+  let attempt = 0;
+  while (attempt < retries) {
+    attempt++;
+    const now = Date.now();
+    const availableKeys = API_KEYS.filter(k => {
+      const cooldownUntil = keyCooldowns.get(k) || 0;
+      return now > cooldownUntil;
+    });
+    if (availableKeys.length === 0) {
+      throw new Error("Tất cả API Keys hiện đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau 30 giây.");
+    }
+    const selectedKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+    try {
+      const ai = new GoogleGenAI({ apiKey: selectedKey });
+      const response = await ai.models.generateContent({ model: modelName, ...payload });
+      return response;
+    } catch (err: any) {
+      const isOverloaded = err.message?.includes('503') || err.message?.includes('overloaded');
+      const isRateLimited = err.message?.includes('429') || err.message?.includes('quota');
+      if (isOverloaded || isRateLimited) {
+        keyCooldowns.set(selectedKey, now + 30000);
+        if (attempt < retries) continue; 
+      }
+      throw err;
+    }
+  }
+}
+
+app.post('/api/ai/extract', async (req, res) => {
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+    const payload = {
+      contents: [{ parts: [{ text: "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON." }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: { weight: { type: Type.NUMBER }, bodyFat: { type: Type.NUMBER }, muscleMass: { type: Type.NUMBER }, waterPercent: { type: Type.NUMBER }, boneMinerals: { type: Type.NUMBER }, visceralFat: { type: Type.NUMBER }, energy: { type: Type.NUMBER }, bioAge: { type: Type.NUMBER }, balanceIndex: { type: Type.NUMBER }, date: { type: Type.STRING } }
+        }
+      }
+    };
+    const response = await callAIWithRetry(requestId, 'gemini-3-flash-preview', payload);
+    res.json(JSON.parse(response.text));
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+app.post('/api/ai/bulk-extract', async (req, res) => {
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+    const payload = {
+      contents: [{ parts: [{ text: "Trích xuất danh sách JSON nhiều dòng kết quả sức khỏe." }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: { date: { type: Type.STRING }, weight: { type: Type.NUMBER }, bodyFat: { type: Type.NUMBER }, muscleMass: { type: Type.NUMBER }, waterPercent: { type: Type.NUMBER }, boneMinerals: { type: Type.NUMBER }, visceralFat: { type: Type.NUMBER }, energy: { type: Type.NUMBER }, bioAge: { type: Type.NUMBER }, balanceIndex: { type: Type.NUMBER } }
+          }
+        }
+      }
+    };
+    const response = await callAIWithRetry(requestId, 'gemini-3-flash-preview', payload);
+    res.json(JSON.parse(response.text));
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+app.post('/api/ai/coach', async (req, res) => {
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  try {
+    const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
+    const parts: any[] = [{ text: latestUserMessage }];
+    if (imageBase64) parts.push({ inlineData: { data: imageBase64, mimeType: 'image/jpeg' } });
+    const payload = { contents: [...history, { role: 'user', parts }], config: { systemInstruction } };
+    const response = await callAIWithRetry(requestId, 'gemini-3-flash-preview', payload);
+    res.json({ text: response.text });
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+async function uploadToImgBB(base64Data: string | undefined): Promise<{url: string, deleteUrl: string} | null> {
+  if (!base64Data || !base64Data.startsWith('data:image')) return null;
+  try {
+    const apiKey = process.env.IMGBB_API_KEY;
+    const base64Image = base64Data.split(',')[1];
+    const params = new URLSearchParams();
+    params.append('image', base64Image);
+    const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, { method: 'POST', body: params });
+    const result = await response.json();
+    return result.success ? { url: result.data.url, deleteUrl: result.data.delete_url } : null;
+  } catch (error: any) { return null; }
+}
+
+async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolean> {
+  if (!deleteUrl || !deleteUrl.includes('ibb.co')) return false;
+  try {
+    const urlParts = deleteUrl.split('/').filter(p => p.length > 0);
+    const imageHash = urlParts.pop();
+    const imageId = urlParts.pop();
+    const params = new URLSearchParams();
+    params.append('pathname', `/${imageId}/${imageHash}`);
+    params.append('action', 'delete');
+    params.append('delete', 'image');
+    params.append('from', 'resource');
+    params.append('deleting[id]', imageId!);
+    params.append('deleting[hash]', imageHash!);
+    const response = await fetch('https://ibb.co/json', { method: 'POST', body: params, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const result = await response.json();
+    return result.status_code === 200;
+  } catch (e: any) {
+    if (retries > 1) return purgeImageFromCDN(deleteUrl, retries - 1);
+    return false;
+  }
+}
+
+function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  const rootDir = path.resolve();
+  let filePath = path.join(rootDir, req.path);
+  let targetFile = null;
+  if (fs.existsSync(filePath) && !fs.lstatSync(filePath).isDirectory()) targetFile = filePath;
+  else if (fs.existsSync(filePath + '.ts')) targetFile = filePath + '.ts';
+  else if (fs.existsSync(filePath + '.tsx')) targetFile = filePath + '.tsx';
+  if (targetFile && (targetFile.endsWith('.ts') || targetFile.endsWith('.tsx'))) {
+    try {
+      const content = fs.readFileSync(targetFile, 'utf-8');
+      const result = transform(content, { transforms: ['typescript', 'jsx'], production: false, jsxRuntime: 'automatic' });
+      res.type('application/javascript').send(result.code);
+      return;
+    } catch (err) { return res.status(500).send('Error compiling file'); }
+  }
+  next();
+});
+
+const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
+
+const AuditLog = mongoose.model('AuditLog', new mongoose.Schema({
   actorId: { type: String, required: true },
   actorName: { type: String, required: true },
   targetId: String,
@@ -33,10 +200,9 @@ const AuditLogSchema = new mongoose.Schema({
   type: { type: String, required: true },
   details: { type: String, required: true },
   timestamp: { type: String, required: true }
-}, { timestamps: true });
-const AuditLog = mongoose.models.AuditLog || mongoose.model('AuditLog', AuditLogSchema);
+}, { timestamps: true }));
 
-const UserSchema = new mongoose.Schema({
+const User = mongoose.model('User', new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
@@ -53,351 +219,225 @@ const UserSchema = new mongoose.Schema({
   avatar: String,
   isPasswordEncrypted: { type: Boolean, default: false },
   badges: { type: [String], default: [] }
-}, { timestamps: true });
-const User = mongoose.models.User || mongoose.model('User', UserSchema);
+}, { timestamps: true }));
 
-const MetricSchema = new mongoose.Schema({
+const Metric = mongoose.model('Metric', new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   date: { type: String, required: true },
   weight: Number, bodyFat: Number, boneMinerals: Number, waterPercent: Number, muscleMass: Number,
   balanceIndex: { type: Number, default: 0 }, energy: Number, bioAge: Number, visceralFat: Number
-}, { timestamps: true });
-const Metric = mongoose.models.Metric || mongoose.model('Metric', MetricSchema);
+}, { timestamps: true }));
 
-const PostSchema = new mongoose.Schema({
+const Post = mongoose.model('Post', new mongoose.Schema({
   userId: String, userFullName: String, userAvatar: String, userBadges: [String],
   content: String, imageUrls: [String], images: [{ url: String, deleteUrl: String }],
   timestamp: String, reactions: [{ userId: String, userName: String, userAvatar: String, type: { type: String }, count: { type: Number, default: 0 } }]
-}, { timestamps: true });
-const Post = mongoose.models.Post || mongoose.model('Post', PostSchema);
+}, { timestamps: true }));
 
-const ChatSchema = new mongoose.Schema({
+const Chat = mongoose.model('Chat', new mongoose.Schema({
   id: { type: String, required: true, unique: true }, memberId: { type: String, required: true }, coachId: { type: String, required: true },
   messages: [{ id: String, senderId: String, senderName: String, senderRole: String, content: String, timestamp: String, imageUrl: String }]
-}, { timestamps: true });
-const Chat = mongoose.models.Chat || mongoose.model('Chat', ChatSchema);
+}, { timestamps: true }));
 
-const Knowledge = mongoose.models.Knowledge || mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
-const Rule = mongoose.models.Rule || mongoose.model('Rule', new mongoose.Schema({ content: String }));
-
-// --- 2. LOGIC GEMINI KEYS ---
-const ENV_API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
-const keyCooldowns = new Map<string, number>(); 
-
-async function getActiveGeminiKeys(): Promise<string[]> {
-  try {
-    const dbKeys = await GeminiKey.find({ status: { $ne: 'error' } } as any);
-    if (dbKeys && dbKeys.length > 0) return dbKeys.map(k => k.key);
-  } catch (err) { console.error('❌ DB Keys Error:', err); }
-  return ENV_API_KEYS as string[];
-}
-
-async function validateGeminiKeys() {
-  const keysToTest = await getActiveGeminiKeys();
-  for (const key of keysToTest) {
-    try {
-      const ai = new GoogleGenAI({ apiKey: key });
-      await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: 'ping' });
-      await (GeminiKey as any).findOneAndUpdate({ key }, { status: 'active' }, {});
-    } catch (err) {
-      await (GeminiKey as any).findOneAndUpdate({ key }, { status: 'error' }, {});
-    }
-  }
-}
-
-async function callAIWithRetry(modelName: string, contents: any, config?: any, retries = 3): Promise<any> {
-  let attempt = 0;
-  while (attempt < retries) {
-    attempt++;
-    const allKeys = await getActiveGeminiKeys();
-    const availableKeys = allKeys.filter(k => (keyCooldowns.get(k) || 0) < Date.now());
-    if (availableKeys.length === 0) {
-      if (attempt === retries) throw new Error("Tất cả Keys đang bận.");
-      await new Promise(r => setTimeout(r, 2000)); continue;
-    }
-    const selectedKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
-    try {
-      const ai = new GoogleGenAI({ apiKey: selectedKey });
-      return await ai.models.generateContent({ model: modelName, contents, config });
-    } catch (err: any) {
-      keyCooldowns.set(selectedKey, Date.now() + 30000);
-      if (attempt < retries) continue; throw err;
-    }
-  }
-}
-
-// --- 3. UTILS ---
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
-}
-
-async function logAudit(data: any) {
-  try {
-    const log = new AuditLog({ ...data, timestamp: new Date().toISOString() });
-    await log.save();
-  } catch (e) { console.error('Audit Log Error:', e); }
-}
-
-// --- 4. ENDPOINTS ---
-
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
-
-app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ $or: [{ username: username.toLowerCase() }, { email: username.toLowerCase() }] } as any);
-  if (!user || user.password !== hashPassword(password)) return res.status(401).json({ message: 'Sai thông tin đăng nhập' });
-  const u = user.toObject(); delete u.password; res.json({ ...u, id: user._id });
-});
-
-app.post('/api/register', async (req, res) => {
-  try {
-    const data = req.body;
-    const exists = await User.findOne({ $or: [{ username: data.username.toLowerCase() }, { email: data.email.toLowerCase() }] } as any);
-    if (exists) return res.status(400).json({ message: 'Username hoặc Email đã tồn tại' });
-    const user = new User({ ...data, password: hashPassword(data.password), username: data.username.toLowerCase(), email: data.email.toLowerCase() });
-    await user.save();
-    await logAudit({ actorId: user._id.toString(), actorName: user.fullName, type: AuditLogType.REGISTER, details: 'Đăng ký tài khoản mới' });
-    res.json({ message: 'Đăng ký thành công' });
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
-});
-
-app.post('/api/check-email', async (req, res) => {
-  const { email, excludeUserId } = req.body;
-  const query: any = { email: email.toLowerCase() };
-  if (excludeUserId) query._id = { $ne: excludeUserId };
-  const user = await User.findOne(query);
-  res.json({ exists: !!user });
-});
-
-app.get('/api/users', async (req, res) => {
-  const users = await User.find();
-  res.json(users.map(u => ({ ...u.toObject(), id: u._id })));
-});
-
-app.put('/api/users/:id', async (req, res) => {
-  const user = await (User as any).findByIdAndUpdate(req.params.id, req.body, { new: true } as any);
-  if (!user) return res.status(404).send();
-  const u = (user as any).toObject(); delete u.password; res.json({ ...u, id: (user as any)._id });
-});
-
-app.delete('/api/users/:id', async (req, res) => {
-  await (User as any).findByIdAndDelete(req.params.id);
-  await Metric.deleteMany({ userId: req.params.id } as any);
-  res.json({ success: true });
-});
-
-// METRICS
-app.get('/api/metrics/:userId', async (req, res) => {
-  const metrics = await Metric.find({ userId: req.params.userId } as any).sort({ date: -1 });
-  res.json(metrics.map(m => ({ ...m.toObject(), id: m._id })));
-});
-
-app.get('/api/all-metrics', async (req, res) => {
-  const metrics = await Metric.find().sort({ date: -1 });
-  res.json(metrics.map(m => ({ ...m.toObject(), id: m._id })));
-});
-
-app.post('/api/metrics', async (req, res) => {
-  const { userId, actorId, actorName, ...data } = req.body;
-  const metric = new Metric({ ...data, userId });
-  await metric.save();
-  const isSelf = userId === actorId;
-  await logAudit({
-    actorId, actorName, targetId: userId, type: isSelf ? AuditLogType.METRIC_UPDATE : AuditLogType.METRIC_HELP_UPDATE,
-    details: `${isSelf ? 'Cập nhật' : 'Cập nhật giúp'} chỉ số ngày ${data.date}`
-  });
-  res.json({ ...metric.toObject(), id: metric._id });
-});
-
-app.put('/api/metrics/:id', async (req, res) => {
-  const metric = await (Metric as any).findByIdAndUpdate(req.params.id, req.body, { new: true } as any);
-  res.json({ ...(metric as any)?.toObject(), id: (metric as any)?._id });
-});
-
-app.delete('/api/metrics/:id', async (req, res) => {
-  await (Metric as any).findByIdAndDelete(req.params.id);
-  res.json({ success: true });
-});
-
-app.post('/api/metrics/bulk', async (req, res) => {
-  const { metrics, actorId, actorName } = req.body;
-  const inserted = await Metric.insertMany(metrics);
-  await logAudit({ actorId, actorName, type: AuditLogType.METRIC_UPDATE, details: `Nhập hàng loạt ${metrics.length} chỉ số` });
-  res.json(inserted.map(m => ({ ...m.toObject(), id: m._id })));
-});
-
-// POSTS
-app.get('/api/posts', async (req, res) => {
-  const posts = await Post.find().sort({ createdAt: -1 });
-  res.json(posts.map(p => ({ ...p.toObject(), id: p._id })));
-});
-
-app.post('/api/posts', async (req, res) => {
-  const post = new Post(req.body);
-  await post.save();
-  await logAudit({ actorId: post.userId, actorName: post.userFullName, type: AuditLogType.POST_CREATE, details: 'Đăng bài viết mới' });
-  res.json({ ...post.toObject(), id: post._id });
-});
-
-app.put('/api/posts/:id', async (req, res) => {
-  const post = await (Post as any).findByIdAndUpdate(req.params.id, req.body, { new: true } as any);
-  res.json({ ...(post as any)?.toObject(), id: (post as any)?._id });
-});
-
-app.delete('/api/posts/:id', async (req, res) => {
-  await (Post as any).findByIdAndDelete(req.params.id);
-  res.json({ success: true });
-});
-
-app.put('/api/posts/:postId/react', async (req, res) => {
-  const { userId, type, userName, userAvatar } = req.body;
-  const post = await (Post as any).findById(req.params.postId);
-  if (!post) return res.status(404).send();
-  const reactions = post.reactions || [];
-  const existingIdx = reactions.findIndex((r: any) => r.userId === userId);
-  if (existingIdx > -1) {
-    if (reactions[existingIdx].type === type) reactions.splice(existingIdx, 1);
-    else reactions[existingIdx].type = type;
-  } else {
-    reactions.push({ userId, type, userName, userAvatar, count: 1 });
-  }
-  post.reactions = reactions;
-  await post.save();
-  res.json({ ...post.toObject(), id: post._id });
-});
-
-// CHATS & AI TRAINING
-app.get('/api/chats', async (req, res) => {
-  const chats = await Chat.find();
-  res.json(chats.map(c => ({ ...c.toObject(), id: c.id })));
-});
-
-app.post('/api/chats', async (req, res) => {
-  const { id, ...data } = req.body;
-  const chat = await (Chat as any).findOneAndUpdate({ id } as any, data, { upsert: true, new: true } as any);
-  res.json({ ...(chat as any).toObject(), id: (chat as any).id });
-});
-
-app.get('/api/knowledge', async (req, res) => {
-  const k = await Knowledge.find();
-  res.json(k.map(i => ({ ...i.toObject(), id: i._id })));
-});
-
-app.post('/api/knowledge', async (req, res) => {
-  const k = new Knowledge(req.body); await k.save();
-  res.json({ ...k.toObject(), id: k._id });
-});
-
-app.delete('/api/knowledge/:id', async (req, res) => {
-  await (Knowledge as any).findByIdAndDelete(req.params.id); res.json({ success: true });
-});
-
-app.get('/api/rules', async (req, res) => {
-  const r = await Rule.find();
-  res.json(r.map(i => ({ ...i.toObject(), id: i._id })));
-});
-
-app.post('/api/rules', async (req, res) => {
-  const r = new Rule(req.body); await r.save();
-  res.json({ ...r.toObject(), id: r._id });
-});
-
-app.delete('/api/rules/:id', async (req, res) => {
-  await (Rule as any).findByIdAndDelete(req.params.id); res.json({ success: true });
-});
-
-app.get('/api/audit-logs', async (req, res) => {
-  const logs = await AuditLog.find().sort({ createdAt: -1 }).limit(100);
-  res.json(logs.map(l => ({ ...l.toObject(), id: l._id })));
-});
-
-// GEMINI KEYS
-app.get('/api/config/gemini-keys', async (req, res) => res.json(await GeminiKey.find().sort({ createdAt: -1 })));
-app.post('/api/config/gemini-keys', async (req, res) => {
-  const { key, name } = req.body;
-  const newKey = new GeminiKey({ key, name, status: 'active' });
-  await newKey.save(); res.json(newKey);
-});
-app.delete('/api/config/gemini-keys/:id', async (req, res) => {
-  await (GeminiKey as any).findByIdAndDelete(req.params.id); res.json({ success: true });
-});
-
-// AI LOGIC
-app.post('/api/ai/extract', async (req, res) => {
-  try {
-    const { imageBase64 } = req.body;
-    const prompt = `Trích xuất các chỉ số sức khỏe từ ảnh InBody này. Trả về JSON theo mẫu: {"weight": 0, "bodyFat": 0, "muscleMass": 0, "waterPercent": 0, "boneMinerals": 0, "visceralFat": 0, "energy": 0, "bioAge": 0, "balanceIndex": 0, "date": "DD/MM"}. Nếu không thấy chỉ số nào, hãy trả về 0.`;
-    const response = await callAIWithRetry('gemini-3-flash-preview', {
-      parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }]
-    }, { responseMimeType: "application/json" });
-    res.json(JSON.parse(response.text || '{}'));
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
-});
-
-app.post('/api/ai/coach', async (req, res) => {
-  try {
-    const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
-    const parts: any[] = [{ text: latestUserMessage }];
-    if (imageBase64) parts.push({ inlineData: { mimeType: 'image/jpeg', data: imageBase64 } });
-    const response = await callAIWithRetry('gemini-3-flash-preview', 
-      [{ role: 'user', parts: [{ text: systemInstruction }] }, ...history, { role: 'user', parts }]
-    );
-    res.json({ text: response.text });
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
-});
-
-app.post('/api/ai/bulk-extract', async (req, res) => {
-  try {
-    const { imageBase64 } = req.body;
-    const prompt = `Đây là ảnh chụp sổ tay ghi chép chỉ số sức khỏe hàng ngày. Hãy trích xuất danh sách tất cả các ngày có dữ liệu. Trả về mảng JSON: [{"date": "DD/MM", "weight": 0, "bodyFat": 0, "muscleMass": 0, ...}].`;
-    const response = await callAIWithRetry('gemini-3-flash-preview', {
-      parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: imageBase64 } }]
-    }, { responseMimeType: "application/json" });
-    res.json(JSON.parse(response.text || '[]'));
-  } catch (e: any) { res.status(500).json({ message: e.message }); }
-});
-
-// --- 5. SERVER STATICS & COMPILER ---
-app.use((req, res, next) => {
-  // QUAN TRỌNG: Tuyệt đối không biên dịch trang chủ (/) hoặc các API (/api/)
-  if (req.path === '/' || req.path.startsWith('/api/')) return next();
-  
-  const rootDir = path.resolve();
-  let targetFile = null;
-  const extensions = ['.tsx', '.ts', '.jsx', '.js'];
-  for (const ext of extensions) {
-    const p = path.join(rootDir, req.path.endsWith('/') ? req.path + 'index' + ext : req.path + ext);
-    if (fs.existsSync(p) && fs.lstatSync(p).isFile()) { targetFile = p; break; }
-    const pDirect = path.join(rootDir, req.path);
-    if (fs.existsSync(pDirect) && fs.lstatSync(pDirect).isFile()) { targetFile = pDirect; break; }
-  }
-
-  if (targetFile && (targetFile.endsWith('.ts') || targetFile.endsWith('.tsx'))) {
-    try {
-      const content = fs.readFileSync(targetFile, 'utf-8');
-      const result = transform(content, { transforms: ['typescript', 'jsx'], production: false, jsxRuntime: 'classic' });
-      res.type('application/javascript').send(result.code); return;
-    } catch (err) { return res.status(500).send(`Error compiling ${path.basename(targetFile)}`); }
-  }
-  next();
-});
+const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
+const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 
 async function initDB() {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub');
+    await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected to MongoDB');
     await validateGeminiKeys();
   } catch (err: any) { console.error('❌ DB Error:', err.message); }
 }
 initDB();
 
-app.use(express.static('.') as any);
+app.get('/api/health', (req, res) => res.json({ status: 'ok', database: 'connected' }));
 
-// Catch-all route cho Express 5: Phải đặt tên cho tham số (ví dụ :splat*)
-app.get('/:splat*', (req, res) => {
-    if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'API Not Found' });
-    res.sendFile(path.resolve('index.html'));
+app.post('/api/check-email', async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email: email.toLowerCase().trim() });
+  res.json({ exists: !!user });
 });
 
-const PORT = process.env.PORT || 3000;
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, email, password, avatar, ...rest } = req.body;
+    const imgData = await uploadToImgBB(avatar);
+    const newUser = new User({ ...rest, username: username.toLowerCase().trim(), email: email.toLowerCase().trim(), password: hashPassword(password), isPasswordEncrypted: true, avatar: imgData?.url || avatar });
+    await newUser.save();
+    
+    // Audit Log
+    const log = new AuditLog({
+      actorId: newUser._id, actorName: newUser.fullName, type: AuditLogType.REGISTER,
+      details: `Đăng ký tài khoản mới: @${newUser.username}`, timestamp: new Date().toISOString()
+    });
+    await log.save();
+    console.log(`📝 [Audit] @${newUser.username} vừa đăng ký tài khoản mới.`);
+
+    res.json({ message: 'Success' });
+  } catch (err) { res.status(500).json({ message: 'Error' }); }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: username.toLowerCase().trim() }] });
+    if (!user || user.password !== hashPassword(password)) return res.status(401).json({ message: 'Invalid credentials' });
+    if (user.status === AccountStatus.SUSPENDED) return res.status(403).json({ message: "Tài khoản của bạn bị lỗi. Vui lòng liên hệ với Quản trị viên hệ thống hoặc Nhóm dinh dưỡng bạn đang sinh hoạt để được hỗ trợ." });
+    const u = user.toObject();
+    delete u.password;
+    res.json({ ...u, id: user._id });
+  } catch (err) { res.status(500).json({ message: 'Error' }); }
+});
+
+app.get('/api/audit-logs', async (req, res) => {
+  const logs = await AuditLog.find().sort({ createdAt: -1 }).limit(500);
+  res.json(logs);
+});
+
+app.get('/api/users', async (req, res) => {
+  const u = await User.find();
+  res.json(u.map(item => ({ ...item.toObject(), id: item._id })));
+});
+
+app.put('/api/users/:id', async (req, res) => {
+  const data = req.body;
+  if (data.avatar && data.avatar.startsWith('data:image')) {
+    const imgData = await uploadToImgBB(data.avatar);
+    if (imgData) data.avatar = imgData.url;
+  }
+  const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
+  res.json({ ...u?.toObject(), id: u?._id });
+});
+
+app.get('/api/posts', async (req, res) => {
+  const p = await Post.find().sort({ createdAt: -1 });
+  res.json(p.map(i => ({ ...i.toObject(), id: i._id })));
+});
+
+app.post('/api/posts', async (req, res) => {
+  const { imageUrls, ...data } = req.body;
+  const uploadedImages = [];
+  if (imageUrls && Array.isArray(imageUrls)) {
+    for (const img of imageUrls) {
+      if (img.startsWith('data:image')) {
+        const imgData = await uploadToImgBB(img);
+        if (imgData) uploadedImages.push(imgData);
+      }
+    }
+  }
+  const p = new Post({ ...data, images: uploadedImages, imageUrls: uploadedImages.map(i => i.url) });
+  await p.save();
+
+  // Audit Log
+  const log = new AuditLog({
+    actorId: p.userId, actorName: p.userFullName, type: AuditLogType.POST_CREATE,
+    details: `Đăng bài viết mới: "${p.content?.substring(0, 50)}..."`, timestamp: new Date().toISOString()
+  });
+  await log.save();
+  console.log(`📝 [Audit] ${p.userFullName} vừa đăng một bài viết mới.`);
+
+  res.json({ ...p.toObject(), id: p._id });
+});
+
+app.get('/api/metrics/:userId', async (req, res) => {
+  const m = await Metric.find({ userId: req.params.userId }).sort({ date: -1 });
+  res.json(m.map(item => ({ ...item.toObject(), id: item._id })));
+});
+
+app.post('/api/metrics', async (req, res) => {
+  const { actorId, actorName, ...metricData } = req.body;
+  const m = new Metric(metricData);
+  await m.save();
+
+  // Xác định Target
+  const target = await User.findById(metricData.userId);
+  const isHelp = actorId && actorId !== metricData.userId.toString();
+  
+  const logType = isHelp ? AuditLogType.METRIC_HELP_UPDATE : AuditLogType.METRIC_UPDATE;
+  const details = isHelp 
+    ? `Cập nhật chỉ số giúp hội viên ${target?.fullName}`
+    : `Tự cập nhật chỉ số cá nhân`;
+
+  const log = new AuditLog({
+    actorId: actorId || metricData.userId, actorName: actorName || target?.fullName || 'Hội viên',
+    targetId: metricData.userId, targetName: target?.fullName,
+    type: logType, details, timestamp: new Date().toISOString()
+  });
+  await log.save();
+
+  if (isHelp) {
+    console.log(`📝 [Audit] ${actorName} vừa cập nhật chỉ số giúp hội viên ${target?.fullName}.`);
+  } else {
+    console.log(`📝 [Audit] ${target?.fullName} vừa tự cập nhật chỉ số.`);
+  }
+
+  res.json({ ...m.toObject(), id: m._id });
+});
+
+app.post('/api/metrics/bulk', async (req, res) => {
+  try {
+    const { metrics, actorId, actorName } = req.body;
+    if (!Array.isArray(metrics) || metrics.length === 0) return res.status(400).json({ message: 'Dữ liệu không hợp lệ' });
+
+    const targetUserId = metrics[0].userId;
+    const target = await User.findById(targetUserId);
+
+    const operations = metrics.map(m => ({
+      updateOne: { filter: { userId: m.userId, date: m.date }, update: { $set: m }, upsert: true }
+    }));
+    const result = await Metric.bulkWrite(operations);
+
+    // Audit Log
+    const isHelp = actorId && actorId !== targetUserId.toString();
+    const logType = isHelp ? AuditLogType.METRIC_HELP_UPDATE : AuditLogType.METRIC_UPDATE;
+    const details = isHelp 
+      ? `Cập nhật hàng loạt ${metrics.length} chỉ số giúp hội viên ${target?.fullName}`
+      : `Tự cập nhật hàng loạt ${metrics.length} chỉ số cá nhân`;
+
+    const log = new AuditLog({
+      actorId: actorId || targetUserId, actorName: actorName || target?.fullName || 'Hội viên',
+      targetId: targetUserId, targetName: target?.fullName,
+      type: logType, details, timestamp: new Date().toISOString()
+    });
+    await log.save();
+
+    if (isHelp) {
+      console.log(`📝 [Audit] ${actorName} vừa cập nhật hàng loạt ${metrics.length} chỉ số giúp ${target?.fullName}.`);
+    } else {
+      console.log(`📝 [Audit] ${target?.fullName} vừa tự cập nhật hàng loạt ${metrics.length} chỉ số.`);
+    }
+
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+app.get('/api/knowledge', async (req, res) => res.json((await Knowledge.find()).map(i => ({...i.toObject(), id: i._id}))));
+app.post('/api/knowledge', async (req, res) => {
+  const k = new Knowledge(req.body); await k.save();
+  res.json({ ...k.toObject(), id: k._id });
+});
+app.delete('/api/knowledge/:id', async (req, res) => {
+  await Knowledge.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/rules', async (req, res) => res.json((await Rule.find()).map(i => ({...i.toObject(), id: i._id}))));
+app.post('/api/rules', async (req, res) => {
+  const r = new Rule(req.body); await r.save();
+  res.json({ ...r.toObject(), id: r._id });
+});
+app.delete('/api/rules/:id', async (req, res) => {
+  await Rule.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
+app.post('/api/chats', async (req, res) => {
+  const { id, ...data } = req.body;
+  res.json(await Chat.findOneAndUpdate({ id }, { ...data, id }, { upsert: true, new: true }));
+});
+
+app.use(express.static('.') as any);
+app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

@@ -1,5 +1,5 @@
 
-import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog, GeminiKey } from '../types.ts';
+import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog } from '../types.ts';
 
 const API_BASE = '/api';
 let isOfflineMode = false;
@@ -59,9 +59,4 @@ export const Database = {
   reactToPost: (postId: string, userId: string, type: string, userName?: string, userAvatar?: string) => 
     request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type, userName, userAvatar }),
   getAuditLogs: async () => (await request<AuditLog[]>(`${API_BASE}/audit-logs`)) ?? [],
-  
-  // Gemini Keys Management
-  getGeminiKeys: async () => (await request<GeminiKey[]>(`${API_BASE}/config/gemini-keys`)) ?? [],
-  addGeminiKey: (data: Omit<GeminiKey, 'id' | '_id'>) => request<GeminiKey>(`${API_BASE}/config/gemini-keys`, 'POST', data),
-  deleteGeminiKey: (id: string) => request(`${API_BASE}/config/gemini-keys/${id}`, 'DELETE'),
 };

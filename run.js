@@ -10,8 +10,7 @@ console.log('🚀 Đang khởi chạy hệ thống Lucky Hub...');
 // Khởi chạy tsx thông qua npx để đảm bảo môi trường sạch
 const server = spawn('npx', ['tsx', 'server.ts'], {
   stdio: 'inherit',
-  env: process.env,
-  shell: true // Thêm shell: true để npx hoạt động ổn định hơn trên Linux
+  env: process.env
 });
 
 server.on('error', (err) => {
