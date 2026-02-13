@@ -178,16 +178,12 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.put('/api/users/:id', async (req, res) => {
-  // PHÂN TÍCH: Lỗi overload findByIdAndUpdate do options.
-  // GIẢI QUYẾT: Ép kiểu any cho model và options để đảm bảo TS không bắt bẻ cấu trúc options.
   const user = await (User as any).findByIdAndUpdate(req.params.id, req.body, { new: true } as any);
   if (!user) return res.status(404).send();
-  // GIẢI QUYẾT: Ép kiểu any cho kết quả trả về để truy cập toObject() và _id.
   const u = (user as any).toObject(); delete u.password; res.json({ ...u, id: (user as any)._id });
 });
 
 app.delete('/api/users/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any để gọi findByIdAndDelete.
   await (User as any).findByIdAndDelete(req.params.id);
   await Metric.deleteMany({ userId: req.params.id } as any);
   res.json({ success: true });
@@ -195,7 +191,6 @@ app.delete('/api/users/:id', async (req, res) => {
 
 // METRICS
 app.get('/api/metrics/:userId', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any cho filter userId.
   const metrics = await Metric.find({ userId: req.params.userId } as any).sort({ date: -1 });
   res.json(metrics.map(m => ({ ...m.toObject(), id: m._id })));
 });
@@ -218,13 +213,11 @@ app.post('/api/metrics', async (req, res) => {
 });
 
 app.put('/api/metrics/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any cho model, options và kết quả trả về.
   const metric = await (Metric as any).findByIdAndUpdate(req.params.id, req.body, { new: true } as any);
   res.json({ ...(metric as any)?.toObject(), id: (metric as any)?._id });
 });
 
 app.delete('/api/metrics/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any để gọi findByIdAndDelete.
   await (Metric as any).findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
@@ -250,20 +243,17 @@ app.post('/api/posts', async (req, res) => {
 });
 
 app.put('/api/posts/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any cho model, options và kết quả trả về.
   const post = await (Post as any).findByIdAndUpdate(req.params.id, req.body, { new: true } as any);
   res.json({ ...(post as any)?.toObject(), id: (post as any)?._id });
 });
 
 app.delete('/api/posts/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any để gọi findByIdAndDelete.
   await (Post as any).findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
 
 app.put('/api/posts/:postId/react', async (req, res) => {
   const { userId, type, userName, userAvatar } = req.body;
-  // GIẢI QUYẾT: Ép kiểu any để gọi findById.
   const post = await (Post as any).findById(req.params.postId);
   if (!post) return res.status(404).send();
   const reactions = post.reactions || [];
@@ -287,7 +277,6 @@ app.get('/api/chats', async (req, res) => {
 
 app.post('/api/chats', async (req, res) => {
   const { id, ...data } = req.body;
-  // GIẢI QUYẾT: Ép kiểu any cho filter id và options.
   const chat = await (Chat as any).findOneAndUpdate({ id } as any, data, { upsert: true, new: true } as any);
   res.json({ ...(chat as any).toObject(), id: (chat as any).id });
 });
@@ -303,7 +292,6 @@ app.post('/api/knowledge', async (req, res) => {
 });
 
 app.delete('/api/knowledge/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any để gọi findByIdAndDelete.
   await (Knowledge as any).findByIdAndDelete(req.params.id); res.json({ success: true });
 });
 
@@ -318,7 +306,6 @@ app.post('/api/rules', async (req, res) => {
 });
 
 app.delete('/api/rules/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any để gọi findByIdAndDelete.
   await (Rule as any).findByIdAndDelete(req.params.id); res.json({ success: true });
 });
 
@@ -335,7 +322,6 @@ app.post('/api/config/gemini-keys', async (req, res) => {
   await newKey.save(); res.json(newKey);
 });
 app.delete('/api/config/gemini-keys/:id', async (req, res) => {
-  // GIẢI QUYẾT: Ép kiểu any để gọi findByIdAndDelete.
   await (GeminiKey as any).findByIdAndDelete(req.params.id); res.json({ success: true });
 });
 
@@ -407,8 +393,9 @@ async function initDB() {
 initDB();
 
 app.use(express.static('.') as any);
-// SỬA LỖI: Express 5 Catch-all route sử dụng định dạng Regex (.*) thay vì * để tránh PathError
-app.get('(.*)', (req, res) => res.sendFile(path.resolve('index.html')));
+// GIẢI PHÁP TRIỆT ĐỂ CHO EXPRESS 5: Sử dụng named parameter /:path* để bắt mọi đường dẫn
+// Đây là cú pháp duy nhất của path-to-regexp v8 cho phép catch-all không gây lỗi Missing parameter name.
+app.get('/:path*', (req, res) => res.sendFile(path.resolve('index.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
