@@ -359,7 +359,9 @@ app.post('/api/ai/bulk-extract', async (req, res) => {
 
 // --- 5. SERVER STATICS & COMPILER ---
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
+  // QUAN TRỌNG: Không biên dịch trang chủ (/) hoặc các API (/api/)
+  if (req.path === '/' || req.path.startsWith('/api/')) return next();
+  
   const rootDir = path.resolve();
   let targetFile = null;
   const extensions = ['.tsx', '.ts', '.jsx', '.js'];
@@ -391,9 +393,12 @@ initDB();
 
 app.use(express.static('.') as any);
 
-// GIẢI PHÁP TRIỆT ĐỂ: Sử dụng Regex Object trực tiếp cho Express 5 để tránh lỗi Path-to-RegExp String Parser
-// Regex /.*/ sẽ khớp với mọi đường dẫn và không bị coi là thiếu tham số vì nó không đi qua parser chuỗi.
-app.get(/.*/, (req, res) => res.sendFile(path.resolve('index.html')));
+// Catch-all route chuẩn xác cho Single Page Application (SPA)
+app.get('*', (req, res) => {
+    // Nếu là yêu cầu API không tồn tại, trả về 404 thay vì index.html
+    if (req.path.startsWith('/api/')) return res.status(404).json({ message: 'API Not Found' });
+    res.sendFile(path.resolve('index.html'));
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
