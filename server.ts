@@ -109,7 +109,7 @@ app.post('/api/ai/extract', async (req, res) => {
     const { imageBase64 } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
     const payload = {
-      contents: [{ parts: [{ text: "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON." }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
+      contents: [{ parts: [{ text: "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON." }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }] ,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -159,6 +159,19 @@ app.post('/api/ai/coach', async (req, res) => {
 });
 
 // Admin Gemini Key Endpoints
+app.get('/api/admin/env-keys', (req, res) => {
+  const keys = [
+    { label: 'API_KEY (Primary)', key: process.env.API_KEY },
+    { label: 'API_KEY_2 (Backup)', key: process.env.API_KEY_2 },
+    { label: 'API_KEY_3 (Backup)', key: process.env.API_KEY_3 }
+  ].filter(k => !!k.key).map(k => ({
+    label: k.label,
+    key: k.key, // Chúng ta vẫn trả về key full để frontend check trùng lặp (Admin only)
+    display: `${k.key!.substring(0, 6)}••••${k.key!.substring(k.key!.length - 4)}`
+  }));
+  res.json(keys);
+});
+
 app.get('/api/admin/gemini-keys', async (req, res) => {
   try {
     const keys = await GeminiKey.find().sort({ createdAt: -1 });
@@ -169,10 +182,18 @@ app.get('/api/admin/gemini-keys', async (req, res) => {
 app.post('/api/admin/gemini-keys', async (req, res) => {
   try {
     const { key, label } = req.body;
+    
+    // Check trùng lặp với ENV
+    if (ENV_API_KEYS.includes(key)) {
+      return res.status(400).json({ message: "KEY ĐÃ TỒN TẠI TRONG DANH SÁCH ENV" });
+    }
+
     const newKey = new GeminiKey({ key, label });
     await newKey.save();
     res.json({ ...newKey.toObject(), id: newKey._id });
-  } catch (err: any) { res.status(500).json({ message: "Key đã tồn tại hoặc không hợp lệ" }); }
+  } catch (err: any) { 
+    res.status(400).json({ message: "KEY ĐÃ TỒN TẠI HOẶC KHÔNG HỢP LỆ" }); 
+  }
 });
 
 app.delete('/api/admin/gemini-keys/:id', async (req, res) => {

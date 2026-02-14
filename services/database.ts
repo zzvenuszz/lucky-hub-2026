@@ -66,6 +66,7 @@ export const Database = {
   
   // Gemini Keys Management
   getGeminiKeys: async () => (await request<GeminiKey[]>(`${API_BASE}/admin/gemini-keys`)) ?? [],
+  getEnvKeys: async () => (await request<{ label: string, key: string, display: string }[]>(`${API_BASE}/admin/env-keys`)) ?? [],
   addGeminiKey: (data: { key: string, label: string }) => request<GeminiKey>(`${API_BASE}/admin/gemini-keys`, 'POST', data),
   deleteGeminiKey: (id: string) => request(`${API_BASE}/admin/gemini-keys/${id}`, 'DELETE'),
   toggleGeminiKey: (id: string, isActive: boolean) => request(`${API_BASE}/admin/gemini-keys/${id}/toggle`, 'PUT', { isActive }),
