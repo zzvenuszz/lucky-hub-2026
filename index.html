@@ -9,54 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Tilt+Prism&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
-        #debug-console {
-            position: fixed; bottom: 85px; left: 24px; width: 350px; max-height: 300px;
-            background: rgba(15, 23, 42, 0.98); color: #10b981; font-family: 'Fira Code', monospace; font-size: 10px;
-            padding: 15px; border-radius: 20px; overflow-y: auto; z-index: 9998;
-            pointer-events: auto; border: 1px solid rgba(255,255,255,0.1);
-            display: none; flex-direction: column; gap: 4px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(10px);
-        }
-        .error-log { color: #fb7185; }
-        .ai-log { color: #a78bfa; }
-        .success-log { color: #34d399; }
-        .info-log { color: #60a5fa; }
-        .system-log { color: #94a3b8; font-style: italic; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
-    <script>
-      window.logFilters = { system: true, ai: true };
-      
-      window.debugLog = function(msg, type = 'info') {
-        const consoleEl = document.getElementById('debug-console');
-        if (!consoleEl) return;
-
-        // Kiểm tra filter
-        const isAI = type === 'ai' || msg.includes('Gemini') || msg.includes('AI');
-        if (isAI && !window.logFilters.ai) return;
-        if (!isAI && !window.logFilters.system) return;
-
-        const div = document.createElement('div');
-        div.className = type === 'error' ? 'error-log' : 
-                        type === 'ai' ? 'ai-log' :
-                        type === 'success' ? 'success-log' : 
-                        type === 'system' ? 'system-log' : 'info-log';
-        
-        div.innerHTML = `<span style="opacity:0.4">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
-        consoleEl.appendChild(div);
-        consoleEl.scrollTop = consoleEl.scrollHeight;
-        
-        // Giới hạn số lượng log để tránh lag
-        if (consoleEl.children.length > 100) consoleEl.removeChild(consoleEl.firstChild);
-      };
-
-      window.onerror = (m, s, l) => {
-        if (String(m).includes('DarkReader') || String(m).includes('ethereum')) return true;
-        debugLog(`Lỗi hệ thống: ${m}`, 'error');
-      };
-    </script>
     <script type="importmap">
 {
   "imports": {
@@ -80,14 +35,8 @@
 }
 </script>
 </head>
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-50 text-slate-900 overflow-x-hidden">
     <div id="root"></div>
-    <div id="debug-console" class="no-scrollbar">
-        <div style="border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-bottom: 5px; font-weight: bold; display: flex; justify-content: space-between;">
-            <span>TERMINAL LOGS</span>
-            <button onclick="this.parentElement.parentElement.style.display='none'" style="color: #fb7185">HIDE</button>
-        </div>
-    </div>
     <script type="module" src="./index.tsx"></script>
 </body>
 </html>

@@ -8,6 +8,8 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
   if (isOfflineMode) return null;
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
+  const startTime = Date.now();
+  
   try {
     const res = await fetch(url, {
       method,
@@ -15,15 +17,23 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal
     });
+    
+    const duration = Date.now() - startTime;
     clearTimeout(id);
+    
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.message || `Request failed with status ${res.status}`);
+      const msg = errorData.message || `Lỗi API ${res.status}`;
+      if (window.debugLog) window.debugLog(`[DB] FAIL ${method} ${url}: ${msg}`, "error", duration);
+      throw new Error(msg);
     }
+    
+    if (window.debugLog) window.debugLog(`[DB] OK ${method} ${url}`, "database", duration);
     return await res.json();
   } catch (e: any) {
+    const duration = Date.now() - startTime;
     clearTimeout(id);
-    console.error(`API Request Error [${url}]:`, e.message);
+    if (window.debugLog) window.debugLog(`[DB] ERROR ${url}: ${e.message}`, "error", duration);
     throw e;
   }
 }

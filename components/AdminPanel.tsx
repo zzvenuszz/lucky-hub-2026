@@ -21,13 +21,6 @@ interface AdminPanelProps {
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, rules, onRefresh }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai' | 'audit' | 'config'>('users');
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [showConsole, setShowConsole] = useState(false);
-  
-  // Điều khiển Console debug log của hệ thống
-  useEffect(() => {
-    const consoleEl = document.getElementById('debug-console');
-    if (consoleEl) consoleEl.style.display = showConsole ? 'flex' : 'none';
-  }, [showConsole]);
 
   // Tải nhật ký hệ thống khi chuyển sang tab Audit
   useEffect(() => {
@@ -70,17 +63,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             className={`flex-1 min-w-[100px] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === 'audit' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}
           >
             Nhật ký
-          </button>
-        </div>
-        
-        {/* Toggle Debug Console */}
-        <div className="flex items-center gap-2 bg-white/50 p-1 rounded-2xl px-4">
-          <button 
-            onClick={() => setShowConsole(!showConsole)} 
-            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${showConsole ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-100' : 'bg-slate-100 text-slate-400'}`}
-            title="Bật/Tắt Terminal Debug"
-          >
-            📟
           </button>
         </div>
       </div>

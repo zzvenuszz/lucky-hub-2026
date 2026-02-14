@@ -21,14 +21,15 @@ const processYearLogic = (extractedDate: string) => {
 };
 
 export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric> | null> => {
-  const log = (msg: string, type: string = 'ai') => {
-    if (window.debugLog) window.debugLog(`[Gemini OCR Proxy] ${msg}`, type);
+  const startTime = Date.now();
+  const log = (msg: string, type: string = 'ai', duration?: number) => {
+    if (window.debugLog) window.debugLog(`[AI OCR] ${msg}`, type, duration);
   };
 
-  log("Gửi yêu cầu trích xuất chỉ số tới Server...");
+  log("Bắt đầu trích xuất chỉ số...");
   
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), 30000); // 30s timeout cho AI
+  const id = setTimeout(() => controller.abort(), 30000);
 
   try {
     const res = await fetch('/api/ai/extract', {
@@ -38,25 +39,28 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
       signal: controller.signal
     });
 
+    const duration = Date.now() - startTime;
     clearTimeout(id);
 
     if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || `Server trả về lỗi ${res.status}`);
+        log(`Lỗi Server: ${errData.message}`, "error", duration);
+        return null;
     }
     
     const result = await res.json();
     if (!result.weight || result.weight <= 0) {
-      log("Không tìm thấy chỉ số hợp lệ.", "error");
+      log("Không nhận diện được số liệu.", "error", duration);
       return null;
     }
 
     result.date = processYearLogic(result.date);
-    log(`Trích xuất thành công: ${result.weight}kg cho ngày ${result.date}`, "success");
+    log(`Trích xuất thành công ngày ${result.date}`, "ai", duration);
     return result;
   } catch (e: any) {
+    const duration = Date.now() - startTime;
     clearTimeout(id);
-    log(`LỖI: ${e.message}`, "error");
+    log(`LỖI: ${e.message}`, "error", duration);
     return null;
   }
 };
@@ -70,14 +74,15 @@ export const getAICoachResponse = async (
   latestMetric?: HealthMetric,
   base64Image?: string
 ): Promise<string | null> => {
-  const log = (msg: string, type: string = 'ai') => {
-    if (window.debugLog) window.debugLog(`[Gemini Coach Proxy] ${msg}`, type);
+  const startTime = Date.now();
+  const log = (msg: string, type: string = 'ai', duration?: number) => {
+    if (window.debugLog) window.debugLog(`[AI Coach] ${msg}`, type, duration);
   };
 
-  log("🚀 Bắt đầu gọi API tư vấn AI...");
+  log("Đang khởi tạo phiên tư vấn...");
 
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), 45000); // Tăng lên 45s cho an toàn
+  const id = setTimeout(() => controller.abort(), 45000);
 
   try {
     const systemRules = rules.map((r, i) => `${i+1}. ${r.content}`).join("\n");
@@ -95,16 +100,12 @@ KIẾN THỨC:
 ${contextKnowledge}
 
 PHONG CÁCH:
-- Bạn là một trợ lý sức khỏe thông minh, chuyên nghiệp và tận tâm.
-- Trả lời ngắn gọn, đi thẳng vào vấn đề kiến thức.
-- Nếu bạn tham gia vào cuộc hội thoại giữa 2 người, hãy đóng vai trò là chuyên gia tư vấn trung lập cung cấp dữ liệu khoa học.`;
+- Trả lời ngắn gọn, chuyên nghiệp.`;
 
     const formattedHistory = history.slice(-6).map(m => ({
       role: (m.senderId === 'ai_coach' || m.senderRole === 'AI') ? 'model' : 'user',
       parts: [{ text: m.content }]
     }));
-
-    log("📡 Đang gửi dữ liệu lên Server...");
 
     const res = await fetch('/api/ai/coach', {
       method: 'POST',
@@ -118,24 +119,22 @@ PHONG CÁCH:
       signal: controller.signal
     });
 
+    const duration = Date.now() - startTime;
     clearTimeout(id);
 
     if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        log(`❌ Server báo lỗi HTTP ${res.status}: ${errData.message || 'Không xác định'}`, "error");
-        throw new Error(errData.message || "AI Server Error");
+        log(`Lỗi API: ${errData.message}`, "error", duration);
+        return null;
     }
 
     const data = await res.json();
-    log("✅ Nhận được phản hồi từ AI.", "success");
+    log("Đã phản hồi", "ai", duration);
     return data.text;
   } catch (e: any) {
+    const duration = Date.now() - startTime;
     clearTimeout(id);
-    if (e.name === 'AbortError') {
-      log("⏳ Yêu cầu tư vấn quá hạn (45s). Vui lòng thử lại.", "error");
-    } else {
-      log(`❌ Lỗi API Coach: ${e.message}`, "error");
-    }
-    return null; // Trả về null để ChatSystem xử lý thông báo lỗi thay vì fallback cứng
+    log(`Lỗi Coach: ${e.message}`, "error", duration);
+    return null;
   }
 };

@@ -11,6 +11,7 @@ import NewsFeed from './components/NewsFeed.tsx';
 import BadgeCongratulation from './components/BadgeCongratulation.tsx';
 import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
+import SystemLog from './components/system/SystemLog.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 
@@ -37,6 +38,7 @@ const App: React.FC = () => {
     localStorage.removeItem('lucky_hub_user');
     setActiveTab('dashboard');
     setIsChatOpen(false);
+    if (window.debugLog) window.debugLog(`Người dùng đã đăng xuất`, "auth");
   }, []);
 
   useEffect(() => {
@@ -44,13 +46,6 @@ const App: React.FC = () => {
     const savedUser = localStorage.getItem('lucky_hub_user');
     if (savedUser) {
       try { setCurrentUser(JSON.parse(savedUser)); } catch (e) { localStorage.removeItem('lucky_hub_user'); }
-    }
-    const remembered = localStorage.getItem('remembered_login');
-    if (remembered) {
-      try {
-        const decoded = JSON.parse(atob(remembered));
-        // Tự động load login data cho form
-      } catch (e) {}
     }
   }, []);
 
@@ -102,10 +97,15 @@ const App: React.FC = () => {
       if (response.ok) {
         setCurrentUser(result);
         localStorage.setItem('lucky_hub_user', JSON.stringify(result));
-        if (data.rememberMe) localStorage.setItem('remembered_login', btoa(JSON.stringify({username: data.username, password: data.password})));
-        else localStorage.removeItem('remembered_login');
-      } else alert(result.message || 'Sai thông tin');
-    } catch { alert('Lỗi kết nối Server'); } finally { setIsLoading(false); }
+        if (window.debugLog) window.debugLog(`Đăng nhập thành công: @${result.username}`, "auth");
+      } else {
+        if (window.debugLog) window.debugLog(`Đăng nhập thất bại: ${result.message}`, "error");
+        alert(result.message || 'Sai thông tin');
+      }
+    } catch (err: any) { 
+      if (window.debugLog) window.debugLog(`Lỗi kết nối Login: ${err.message}`, "error");
+      alert('Lỗi kết nối Server'); 
+    } finally { setIsLoading(false); }
   };
 
   const handleRegister = async (data: any) => {
@@ -118,27 +118,18 @@ const App: React.FC = () => {
         body: JSON.stringify({ ...data, username: data.username.toLowerCase().trim() })
       });
       if (response.ok) {
+        if (window.debugLog) window.debugLog(`Đăng ký tài khoản mới thành công: @${data.username}`, "auth");
         alert('Đăng ký thành công!');
         setIsRegistering(false);
       } else {
         const res = await response.json();
+        if (window.debugLog) window.debugLog(`Lỗi đăng ký: ${res.message}`, "error");
         alert(res.message || 'Lỗi đăng ký');
       }
-    } catch { alert('Lỗi kết nối'); } finally { setIsLoading(false); }
-  };
-
-  const checkEmailExists = async (email: string) => {
-    if (!email) { setEmailError('Email là bắt buộc'); return; }
-    try {
-      const res = await fetch('/api/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase().trim() })
-      });
-      const data = await res.json();
-      if (data.exists) setEmailError('Email này đã được sử dụng');
-      else setEmailError(null);
-    } catch { console.error('Lỗi check email'); }
+    } catch (err: any) { 
+      if (window.debugLog) window.debugLog(`Lỗi mạng khi đăng ký: ${err.message}`, "error");
+      alert('Lỗi kết nối'); 
+    } finally { setIsLoading(false); }
   };
 
   const handleOpenMetricForm = (targetId?: string) => {
@@ -150,18 +141,19 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-slate-100">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-slate-100 relative">
           <div className="text-center mb-8">
             <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-4 shadow-lg">🍀</div>
             <h1 className="text-4xl font-black text-slate-800 tracking-tight uppercase" style={{ fontFamily: "'Tilt Prism', cursive" }}>LUCKY HUB</h1>
             <p className="text-slate-400 text-xs font-black uppercase tracking-[0.3em] mt-2">Nền tảng Sức khỏe</p>
           </div>
           {isRegistering ? (
-            <Register onRegister={handleRegister} onSwitchLogin={() => setIsRegistering(false)} isLoading={isLoading} emailError={emailError} onCheckEmail={checkEmailExists} />
+            <Register onRegister={handleRegister} onSwitchLogin={() => setIsRegistering(false)} isLoading={isLoading} emailError={emailError} onCheckEmail={(e) => {}} />
           ) : (
             <Login onLogin={handleLogin} onSwitchRegister={() => setIsRegistering(true)} isLoading={isLoading} />
           )}
         </div>
+        <SystemLog />
       </div>
     );
   }
@@ -173,8 +165,22 @@ const App: React.FC = () => {
       {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
       {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { const uid = (currentUser as any).id || (currentUser as any)._id; const u = await Database.updateUser(uid, d); if(u) { setCurrentUser(u); localStorage.setItem('lucky_hub_user', JSON.stringify(u)); } }} />}
       {activeTab === 'admin' && currentUser!.role === UserRole.ADMIN && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
+      
       {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
-      {!isChatOpen && <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-[1000] border-4 border-white">💬</button>}
+      
+      <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-[1000]">
+        {!isChatOpen && (
+          <button 
+            onClick={() => setIsChatOpen(true)} 
+            className="w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all border-4 border-white"
+          >
+            💬
+          </button>
+        )}
+      </div>
+
+      <SystemLog />
+
       {isAddingMetric && <MetricForm onSave={async (m) => { 
         const actorId = (currentUser as any).id || (currentUser as any)._id;
         await Database.saveMetric({ ...m, userId: metricTargetUserId, actorId, actorName: currentUser?.fullName }); 
@@ -189,7 +195,7 @@ const App: React.FC = () => {
         }); 
         setRefreshTrigger(t => t+1); 
         setIsAddingMetric(false); 
-      }} existingDates={existingMetrics.map(m => m.date)} onClose={() => setIsAddingMetric(false)} />}
+      }} onClose={() => setIsAddingMetric(false)} />}
       {newEarnedBadge && <BadgeCongratulation badge={newEarnedBadge} onClose={() => setNewEarnedBadge(null)} />}
     </Layout>
   );
