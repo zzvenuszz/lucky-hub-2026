@@ -1,5 +1,5 @@
 
-import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog } from '../types.ts';
+import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog, GeminiKey } from '../types.ts';
 
 const API_BASE = '/api';
 let isOfflineMode = false;
@@ -16,11 +16,15 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
       signal: controller.signal
     });
     clearTimeout(id);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.message || `Request failed with status ${res.status}`);
+    }
     return await res.json();
   } catch (e: any) {
     clearTimeout(id);
-    return null;
+    console.error(`API Request Error [${url}]:`, e.message);
+    throw e;
   }
 }
 
@@ -59,4 +63,11 @@ export const Database = {
   reactToPost: (postId: string, userId: string, type: string, userName?: string, userAvatar?: string) => 
     request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type, userName, userAvatar }),
   getAuditLogs: async () => (await request<AuditLog[]>(`${API_BASE}/audit-logs`)) ?? [],
+  
+  // Gemini Keys Management
+  getGeminiKeys: async () => (await request<GeminiKey[]>(`${API_BASE}/admin/gemini-keys`)) ?? [],
+  addGeminiKey: (data: { key: string, label: string }) => request<GeminiKey>(`${API_BASE}/admin/gemini-keys`, 'POST', data),
+  deleteGeminiKey: (id: string) => request(`${API_BASE}/admin/gemini-keys/${id}`, 'DELETE'),
+  toggleGeminiKey: (id: string, isActive: boolean) => request(`${API_BASE}/admin/gemini-keys/${id}/toggle`, 'PUT', { isActive }),
+  checkKeyHealth: (key: string) => request<{ status: string }>(`${API_BASE}/admin/gemini-keys/check`, 'POST', { key }),
 };

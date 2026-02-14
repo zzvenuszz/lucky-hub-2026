@@ -34,7 +34,19 @@ export enum AuditLogType {
   REGISTER = 'REGISTER',
   POST_CREATE = 'POST_CREATE',
   METRIC_UPDATE = 'METRIC_UPDATE',
-  METRIC_HELP_UPDATE = 'METRIC_HELP_UPDATE'
+  METRIC_HELP_UPDATE = 'METRIC_HELP_UPDATE',
+  AI_KEY_UPDATE = 'AI_KEY_UPDATE'
+}
+
+export interface GeminiKey {
+  id?: string;
+  _id?: string;
+  key: string;
+  label: string;
+  isActive: boolean;
+  failCount: number;
+  cooldownUntil: string | null;
+  lastUsed?: string;
 }
 
 export interface AuditLog {

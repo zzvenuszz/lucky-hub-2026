@@ -17,30 +17,18 @@ const app = express();
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '50mb' }) as any);
 
-const API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
-const healthyKeys: string[] = [];
+const ENV_API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
 const keyCooldowns = new Map<string, number>(); 
 
-async function validateGeminiKeys() {
-  console.log('🔍 [Gemini] Đang kiểm tra trạng thái các API Keys khởi động...');
-  healthyKeys.length = 0;
-  for (let i = 0; i < API_KEYS.length; i++) {
-    const key = API_KEYS[i]!;
-    try {
-      const ai = new GoogleGenAI({ apiKey: key });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: 'ping',
-      });
-      if (response && response.text) {
-        console.log(`✅ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): HOẠT ĐỘNG`);
-        healthyKeys.push(key);
-      }
-    } catch (err: any) {
-      console.error(`❌ [Gemini] Key #${i + 1} (${key.substring(0, 6)}...): LỖI BAN ĐẦU - ${err.message}`);
-    }
-  }
-}
+// Models
+const GeminiKey = mongoose.model('GeminiKey', new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  label: { type: String, default: 'Unnamed Key' },
+  isActive: { type: Boolean, default: true },
+  failCount: { type: Number, default: 0 },
+  cooldownUntil: { type: Date, default: null },
+  lastUsed: { type: Date, default: null }
+}, { timestamps: true }));
 
 async function callAIWithRetry(
   requestId: string,
@@ -52,23 +40,61 @@ async function callAIWithRetry(
   while (attempt < retries) {
     attempt++;
     const now = Date.now();
-    const availableKeys = API_KEYS.filter(k => {
-      const cooldownUntil = keyCooldowns.get(k) || 0;
-      return now > cooldownUntil;
-    });
-    if (availableKeys.length === 0) {
-      throw new Error("Tất cả API Keys hiện đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau 30 giây.");
+    
+    // 1. Lấy tất cả key từ Database có isActive = true
+    let dbKeys = await GeminiKey.find({ isActive: true });
+    
+    // 2. Lọc bỏ các key đang cooldown
+    let availableKeys = dbKeys.filter(k => !k.cooldownUntil || new Date(k.cooldownUntil).getTime() < now);
+    
+    let selectedKeyString = '';
+    let isFromDb = false;
+    let dbKeyObj: any = null;
+
+    if (availableKeys.length > 0) {
+      // Chọn ngẫu nhiên từ DB
+      dbKeyObj = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+      selectedKeyString = dbKeyObj.key;
+      isFromDb = true;
+    } else {
+      // 3. Fallback sang ENV keys nếu DB không có key nào khả dụng
+      const fallbackKeys = ENV_API_KEYS.filter(k => {
+        const cooldownUntil = keyCooldowns.get(k) || 0;
+        return now > cooldownUntil;
+      });
+
+      if (fallbackKeys.length === 0) {
+        throw new Error("Tất cả API Keys (DB & ENV) hiện đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.");
+      }
+      selectedKeyString = fallbackKeys[Math.floor(Math.random() * fallbackKeys.length)]!;
+      isFromDb = false;
     }
-    const selectedKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+
     try {
-      const ai = new GoogleGenAI({ apiKey: selectedKey });
+      const ai = new GoogleGenAI({ apiKey: selectedKeyString });
       const response = await ai.models.generateContent({ model: modelName, ...payload });
+      
+      // Update last used if from DB
+      if (isFromDb && dbKeyObj) {
+        await GeminiKey.findByIdAndUpdate(dbKeyObj._id, { lastUsed: new Date(), failCount: 0 });
+      }
+      
       return response;
     } catch (err: any) {
       const isOverloaded = err.message?.includes('503') || err.message?.includes('overloaded');
       const isRateLimited = err.message?.includes('429') || err.message?.includes('quota');
+      
       if (isOverloaded || isRateLimited) {
-        keyCooldowns.set(selectedKey, now + 30000);
+        const cooldownTime = now + 60000; // Phạt 1 phút
+        if (isFromDb && dbKeyObj) {
+          await GeminiKey.findByIdAndUpdate(dbKeyObj._id, { 
+            cooldownUntil: new Date(cooldownTime),
+            $inc: { failCount: 1 }
+          });
+        } else {
+          keyCooldowns.set(selectedKeyString, cooldownTime);
+        }
+        
         if (attempt < retries) continue; 
       }
       throw err;
@@ -76,6 +102,7 @@ async function callAIWithRetry(
   }
 }
 
+// AI API Endpoints
 app.post('/api/ai/extract', async (req, res) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
   try {
@@ -131,6 +158,53 @@ app.post('/api/ai/coach', async (req, res) => {
   } catch (err: any) { res.status(500).json({ message: err.message }); }
 });
 
+// Admin Gemini Key Endpoints
+app.get('/api/admin/gemini-keys', async (req, res) => {
+  try {
+    const keys = await GeminiKey.find().sort({ createdAt: -1 });
+    res.json(keys.map(k => ({ ...k.toObject(), id: k._id })));
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+app.post('/api/admin/gemini-keys', async (req, res) => {
+  try {
+    const { key, label } = req.body;
+    const newKey = new GeminiKey({ key, label });
+    await newKey.save();
+    res.json({ ...newKey.toObject(), id: newKey._id });
+  } catch (err: any) { res.status(500).json({ message: "Key đã tồn tại hoặc không hợp lệ" }); }
+});
+
+app.delete('/api/admin/gemini-keys/:id', async (req, res) => {
+  try {
+    await GeminiKey.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+app.put('/api/admin/gemini-keys/:id/toggle', async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    await GeminiKey.findByIdAndUpdate(req.params.id, { isActive });
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+app.post('/api/admin/gemini-keys/check', async (req, res) => {
+  try {
+    const { key } = req.body;
+    const ai = new GoogleGenAI({ apiKey: key });
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: 'ping',
+    });
+    if (response && response.text) res.json({ status: 'ok' });
+    else throw new Error("No response");
+  } catch (err: any) {
+    res.status(400).json({ message: "Key không hoạt động: " + err.message });
+  }
+});
+
 async function uploadToImgBB(base64Data: string | undefined): Promise<{url: string, deleteUrl: string} | null> {
   if (!base64Data || !base64Data.startsWith('data:image')) return null;
   try {
@@ -142,28 +216,6 @@ async function uploadToImgBB(base64Data: string | undefined): Promise<{url: stri
     const result = await response.json();
     return result.success ? { url: result.data.url, deleteUrl: result.data.delete_url } : null;
   } catch (error: any) { return null; }
-}
-
-async function purgeImageFromCDN(deleteUrl: string, retries = 3): Promise<boolean> {
-  if (!deleteUrl || !deleteUrl.includes('ibb.co')) return false;
-  try {
-    const urlParts = deleteUrl.split('/').filter(p => p.length > 0);
-    const imageHash = urlParts.pop();
-    const imageId = urlParts.pop();
-    const params = new URLSearchParams();
-    params.append('pathname', `/${imageId}/${imageHash}`);
-    params.append('action', 'delete');
-    params.append('delete', 'image');
-    params.append('from', 'resource');
-    params.append('deleting[id]', imageId!);
-    params.append('deleting[hash]', imageHash!);
-    const response = await fetch('https://ibb.co/json', { method: 'POST', body: params, headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-    const result = await response.json();
-    return result.status_code === 200;
-  } catch (e: any) {
-    if (retries > 1) return purgeImageFromCDN(deleteUrl, retries - 1);
-    return false;
-  }
 }
 
 function hashPassword(password: string): string {
@@ -246,7 +298,6 @@ async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI);
     console.log('✅ Connected to MongoDB');
-    await validateGeminiKeys();
   } catch (err: any) { console.error('❌ DB Error:', err.message); }
 }
 initDB();
@@ -272,7 +323,6 @@ app.post('/api/register', async (req, res) => {
       details: `Đăng ký tài khoản mới: @${newUser.username}`, timestamp: new Date().toISOString()
     });
     await log.save();
-    console.log(`📝 [Audit] @${newUser.username} vừa đăng ký tài khoản mới.`);
 
     res.json({ message: 'Success' });
   } catch (err) { res.status(500).json({ message: 'Error' }); }
@@ -335,7 +385,6 @@ app.post('/api/posts', async (req, res) => {
     details: `Đăng bài viết mới: "${p.content?.substring(0, 50)}..."`, timestamp: new Date().toISOString()
   });
   await log.save();
-  console.log(`📝 [Audit] ${p.userFullName} vừa đăng một bài viết mới.`);
 
   res.json({ ...p.toObject(), id: p._id });
 });
@@ -366,12 +415,6 @@ app.post('/api/metrics', async (req, res) => {
   });
   await log.save();
 
-  if (isHelp) {
-    console.log(`📝 [Audit] ${actorName} vừa cập nhật chỉ số giúp hội viên ${target?.fullName}.`);
-  } else {
-    console.log(`📝 [Audit] ${target?.fullName} vừa tự cập nhật chỉ số.`);
-  }
-
   res.json({ ...m.toObject(), id: m._id });
 });
 
@@ -401,12 +444,6 @@ app.post('/api/metrics/bulk', async (req, res) => {
       type: logType, details, timestamp: new Date().toISOString()
     });
     await log.save();
-
-    if (isHelp) {
-      console.log(`📝 [Audit] ${actorName} vừa cập nhật hàng loạt ${metrics.length} chỉ số giúp ${target?.fullName}.`);
-    } else {
-      console.log(`📝 [Audit] ${target?.fullName} vừa tự cập nhật hàng loạt ${metrics.length} chỉ số.`);
-    }
 
     res.json({ success: true });
   } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -439,5 +476,6 @@ app.post('/api/chats', async (req, res) => {
 });
 
 app.use(express.static('.') as any);
-app.get(/^[^\.]*$/, (req, res) => res.sendFile(path.resolve('index.html')));
+app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
+
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
