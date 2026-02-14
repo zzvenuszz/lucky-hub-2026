@@ -8,6 +8,7 @@ import UserManagement from './admin/UserManagement.tsx';
 import MetricAdmin from './admin/MetricAdmin.tsx';
 import AITraining from './admin/AITraining.tsx';
 import AuditLogs from './admin/AuditLogs.tsx';
+import GeminiKeyManager from './admin/ai/GeminiKeyManager.tsx';
 
 interface AdminPanelProps {
   currentUser: User;
@@ -18,7 +19,7 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, rules, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai' | 'audit'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai' | 'audit' | 'config'>('users');
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [showConsole, setShowConsole] = useState(false);
   
@@ -59,6 +60,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             Huấn luyện AI
           </button>
           <button 
+            onClick={() => setActiveTab('config')} 
+            className={`flex-1 min-w-[100px] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === 'config' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}
+          >
+            Cấu hình
+          </button>
+          <button 
             onClick={() => setActiveTab('audit')} 
             className={`flex-1 min-w-[100px] py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${activeTab === 'audit' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400'}`}
           >
@@ -90,6 +97,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
 
         {activeTab === 'ai' && (
           <AITraining knowledge={knowledge} rules={rules} onRefresh={onRefresh} />
+        )}
+
+        {activeTab === 'config' && (
+          <div className="animate-in fade-in">
+            <GeminiKeyManager />
+          </div>
         )}
 
         {activeTab === 'audit' && (

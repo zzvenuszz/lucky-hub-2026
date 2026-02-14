@@ -13,6 +13,7 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
   const [isChecking, setIsChecking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ status: 'none' | 'active' | 'error' }>({ status: 'none' });
 
   const fetchKeys = async () => {
     setIsLoading(true);
@@ -30,6 +31,31 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
     fetchKeys();
   }, []);
 
+  const handleTestKey = async () => {
+    if (!newKey.key) {
+      setError("Vui lòng nhập API Key để kiểm tra.");
+      return;
+    }
+    
+    setIsChecking(true);
+    setError(null);
+    setTestResult({ status: 'none' });
+    
+    try {
+      const health = await Database.checkKeyHealth(newKey.key);
+      if (health?.status === 'ok') {
+        setTestResult({ status: 'active' });
+      } else {
+        setTestResult({ status: 'error' });
+      }
+    } catch (err: any) {
+      setTestResult({ status: 'error' });
+      setError(err.message || "Key không hợp lệ hoặc không hoạt động.");
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
   const handleAddKey = async () => {
     if (!newKey.key || !newKey.label) {
       setError("Vui lòng nhập đầy đủ nhãn và API Key.");
@@ -45,6 +71,7 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
         // 2. Lưu vào DB
         await Database.addGeminiKey(newKey);
         setNewKey({ key: '', label: '' });
+        setTestResult({ status: 'none' });
         fetchKeys();
       }
     } catch (err: any) {
@@ -94,18 +121,43 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
             type="password"
             placeholder="Dán API Key vào đây..." 
             value={newKey.key} 
-            onChange={e => setNewKey({...newKey, key: e.target.value})} 
+            onChange={e => {
+              setNewKey({...newKey, key: e.target.value});
+              setTestResult({ status: 'none' });
+            }} 
             className="px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-amber-500 font-mono" 
           />
         </div>
+
+        {testResult.status !== 'none' && (
+          <div className="flex items-center gap-2 px-2">
+             <span className="text-[10px] font-black uppercase">Trạng thái: </span>
+             {testResult.status === 'active' ? (
+               <span className="text-emerald-600 font-black text-[10px] animate-pulse">HOẠT ĐỘNG</span>
+             ) : (
+               <span className="text-rose-600 font-black text-[10px]">KEY LỖI</span>
+             )}
+          </div>
+        )}
+
         {error && <p className="text-[10px] text-rose-500 font-black uppercase px-2">{error}</p>}
-        <button 
-          onClick={handleAddKey} 
-          disabled={isChecking}
-          className="w-full py-4 bg-amber-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all disabled:opacity-50"
-        >
-          {isChecking ? '⏳ ĐANG KIỂM TRA & LƯU...' : 'XÁC NHẬN THÊM KEY'}
-        </button>
+        
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button 
+            onClick={handleTestKey} 
+            disabled={isChecking || !newKey.key}
+            className="flex-1 py-4 bg-white border-2 border-amber-200 text-amber-600 rounded-2xl font-black uppercase text-[10px] shadow-sm active:scale-95 transition-all disabled:opacity-50"
+          >
+            {isChecking ? '⏳ ĐANG TEST...' : 'KIỂM TRA KEY'}
+          </button>
+          <button 
+            onClick={handleAddKey} 
+            disabled={isChecking}
+            className="flex-[2] py-4 bg-amber-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all disabled:opacity-50"
+          >
+            {isChecking ? '⏳ ĐANG XỬ LÝ...' : 'XÁC NHẬN THÊM KEY'}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-4">
