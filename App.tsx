@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [metricTargetUserId, setMetricTargetUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isLogOpen, setIsLogOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
   const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ const App: React.FC = () => {
     localStorage.removeItem('lucky_hub_user');
     setActiveTab('dashboard');
     setIsChatOpen(false);
+    setIsLogOpen(false);
     if (window.debugLog) window.debugLog(`Người dùng đã đăng xuất`, "auth");
   }, []);
 
@@ -153,7 +155,7 @@ const App: React.FC = () => {
             <Login onLogin={handleLogin} onSwitchRegister={() => setIsRegistering(true)} isLoading={isLoading} />
           )}
         </div>
-        <SystemLog />
+        <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />
       </div>
     );
   }
@@ -168,18 +170,26 @@ const App: React.FC = () => {
       
       {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       
+      {/* Floating Action Buttons Stack */}
       <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-[1000]">
-        {!isChatOpen && (
-          <button 
-            onClick={() => setIsChatOpen(true)} 
-            className="w-14 h-14 bg-emerald-600 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all border-4 border-white"
-          >
-            💬
-          </button>
-        )}
+        {/* Nút System Log */}
+        <button 
+          onClick={() => setIsLogOpen(!isLogOpen)}
+          className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all border-4 border-white ${isLogOpen ? 'bg-slate-800 rotate-180' : 'bg-slate-700 hover:scale-110 active:scale-95'}`}
+        >
+          <span className="text-xl">{isLogOpen ? '❌' : '📟'}</span>
+        </button>
+
+        {/* Nút Chat Toggle */}
+        <button 
+          onClick={() => setIsChatOpen(!isChatOpen)} 
+          className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all border-4 border-white ${isChatOpen ? 'bg-slate-800' : 'bg-emerald-600 text-white'}`}
+        >
+          <span className="text-xl">{isChatOpen ? '❌' : '💬'}</span>
+        </button>
       </div>
 
-      <SystemLog />
+      <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />
 
       {isAddingMetric && <MetricForm onSave={async (m) => { 
         const actorId = (currentUser as any).id || (currentUser as any)._id;
