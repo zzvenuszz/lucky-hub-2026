@@ -521,6 +521,18 @@ app.get('/MM/:username/metrics/:n', async (req, res) => {
   } catch (err: any) { res.status(500).json({ message: err.message }); }
 });
 
+app.get('/MM/users/sync', async (req, res) => {
+  try {
+    const users = await User.find({}, 'username fullName avatar updatedAt');
+    res.json(users.map(u => ({
+      username: u.username,
+      fullName: u.fullName,
+      avatar: u.avatar,
+      updatedAt: (u as any).updatedAt
+    })));
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
 app.use(express.static('.') as any);
 app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 

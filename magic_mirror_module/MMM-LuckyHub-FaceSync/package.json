@@ -1,0 +1,13 @@
+
+{
+  "name": "MMM-LuckyHub-FaceSync",
+  "version": "1.0.0",
+  "description": "Magic Mirror module to sync avatars from Lucky Hub and perform face recognition",
+  "main": "MMM-LuckyHub-FaceSync.js",
+  "author": "Lucky Hub Team",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "fs-extra": "^11.1.0"
+  }
+}
