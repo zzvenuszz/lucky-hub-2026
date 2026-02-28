@@ -155,10 +155,12 @@ const App: React.FC = () => {
             <Login onLogin={handleLogin} onSwitchRegister={() => setIsRegistering(true)} isLoading={isLoading} />
           )}
         </div>
-        <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />
+        {/* Không hiển thị log khi chưa đăng nhập (hoặc bạn có thể cho phép Admin xem log lỗi khởi động nếu cần, nhưng an toàn nhất là ẩn) */}
       </div>
     );
   }
+
+  const isAdmin = currentUser.role === UserRole.ADMIN;
 
   return (
     <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
@@ -166,19 +168,22 @@ const App: React.FC = () => {
       {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
       {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
       {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { const uid = (currentUser as any).id || (currentUser as any)._id; const u = await Database.updateUser(uid, d); if(u) { setCurrentUser(u); localStorage.setItem('lucky_hub_user', JSON.stringify(u)); } }} />}
-      {activeTab === 'admin' && currentUser!.role === UserRole.ADMIN && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
+      {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       
       {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       
       {/* Floating Action Buttons Stack */}
       <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-[1000]">
-        {/* Nút System Log */}
-        <button 
-          onClick={() => setIsLogOpen(!isLogOpen)}
-          className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all border-4 border-white ${isLogOpen ? 'bg-slate-800 rotate-180' : 'bg-slate-700 hover:scale-110 active:scale-95'}`}
-        >
-          <span className="text-xl">{isLogOpen ? '❌' : '📟'}</span>
-        </button>
+        {/* Nút System Log - CHỈ HIỂN THỊ CHO ADMIN */}
+        {isAdmin && (
+          <button 
+            onClick={() => setIsLogOpen(!isLogOpen)}
+            className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all border-4 border-white ${isLogOpen ? 'bg-slate-800 rotate-180' : 'bg-slate-700 hover:scale-110 active:scale-95'}`}
+            title="Hệ thống Log (Admin only)"
+          >
+            <span className="text-xl">{isLogOpen ? '❌' : '📟'}</span>
+          </button>
+        )}
 
         {/* Nút Chat Toggle */}
         <button 
@@ -189,7 +194,8 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />
+      {/* Cửa sổ Log - CHỈ RENDER CHO ADMIN */}
+      {isAdmin && <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />}
 
       {isAddingMetric && <MetricForm onSave={async (m) => { 
         const actorId = (currentUser as any).id || (currentUser as any)._id;

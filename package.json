@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "node run.js",
-    "dev": "tsx watch server.ts"
+    "dev": "tsx watch server.ts",
+    "build": "echo 'No build step needed'"
   },
   "dependencies": {
     "@google/genai": "^1.37.0",

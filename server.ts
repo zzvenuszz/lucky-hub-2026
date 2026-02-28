@@ -496,6 +496,31 @@ app.post('/api/chats', async (req, res) => {
   res.json(await Chat.findOneAndUpdate({ id }, { ...data, id }, { upsert: true, new: true }));
 });
 
+// Magic Mirror (MM) Integration Endpoints
+app.get('/MM/:username/info', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username.toLowerCase().trim() });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const u = user.toObject();
+    delete u.password;
+    res.json({ ...u, id: user._id });
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
+app.get('/MM/:username/metrics/:n', async (req, res) => {
+  try {
+    const n = parseInt(req.params.n) || 1;
+    const user = await User.findOne({ username: req.params.username.toLowerCase().trim() });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    
+    const metrics = await Metric.find({ userId: user._id })
+      .sort({ date: -1 })
+      .limit(n);
+      
+    res.json(metrics.map(m => ({ ...m.toObject(), id: m._id })));
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+});
+
 app.use(express.static('.') as any);
 app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 

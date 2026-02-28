@@ -75,7 +75,15 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     const metrics = await Database.getMetrics(currentUid);
     if (metrics?.length) setLatestMetric([...metrics].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]);
     const allChats = await Database.getChats() || [];
-    let contacts = users.filter(u => ((u as any).id || (u as any)._id) !== currentUid);
+    let contacts = users.filter(u => {
+      const uId = (u as any).id || (u as any)._id;
+      if (uId === currentUid) return false;
+      // Nếu là MEMBER, chỉ được nhắn cho ADMIN và COACH
+      if (currentUser.role === UserRole.MEMBER) {
+        return u.role === UserRole.ADMIN || u.role === UserRole.COACH;
+      }
+      return true;
+    });
     const activeChats = contacts.map(contact => {
       const cId = (contact as any).id || (contact as any)._id;
       return allChats.find(c => (c.memberId === currentUid && c.coachId === cId) || (c.memberId === cId && c.coachId === currentUid)) 
