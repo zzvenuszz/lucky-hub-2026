@@ -1,16 +1,29 @@
 
-import cv2
-import face_recognition
 import os
 import sys
 import time
 
-# Lấy đường dẫn thư mục chứa ảnh từ tham số dòng lệnh
-if len(sys.argv) < 2:
-    print("Error: Missing faces directory path")
-    sys.exit(1)
+# In log ngay lập tức để Node Helper biết Python đã sống
+print("Python: Script started, initializing libraries...")
+sys.stdout.flush()
 
-FACES_DIR = sys.argv[1]
+# Ép Python tìm thư viện ở các thư mục chuẩn của Raspberry Pi (Phải đặt trước khi import cv2/face_recognition)
+sys.path.append('/usr/lib/python3/dist-packages')
+sys.path.append('/home/admin/.local/lib/python3.13/site-packages')
+
+import cv2
+import face_recognition
+
+# Lấy đường dẫn thư mục chứa ảnh từ tham số dòng lệnh
+if len(sys.argv) < 3: # Thay đổi vì có thêm tham số -u
+    # Nếu chạy bằng -u, sys.argv[0] là -u, sys.argv[1] là recognize.py, sys.argv[2] là faces_dir
+    # Nhưng thực tế spawn("python3", ["-u", script, dir]) thì sys.argv[1] là faces_dir
+    FACES_DIR = sys.argv[1] if len(sys.argv) > 1 else "./faces"
+else:
+    FACES_DIR = sys.argv[2]
+
+print(f"Python: Using faces directory: {FACES_DIR}")
+sys.stdout.flush()
 
 # Danh sách chứa encoding và tên tương ứng
 known_face_encodings = []

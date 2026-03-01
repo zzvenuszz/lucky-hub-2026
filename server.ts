@@ -497,6 +497,42 @@ app.post('/api/chats', async (req, res) => {
 });
 
 // Magic Mirror (MM) Integration Endpoints
+import { GoogleGenAI, Modality } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+app.get('/api/tts/greeting/:name', async (req, res) => {
+  try {
+    const name = req.params.name;
+    const prompt = `Nói một cách thân thiện và ấm áp: Xin chào ${name}, chúc bạn một ngày vui vẻ.`;
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' }, // 'Kore' is good for Vietnamese
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (base64Audio) {
+      const audioBuffer = Buffer.from(base64Audio, 'base64');
+      res.set('Content-Type', 'audio/wav'); // Gemini TTS returns WAV by default
+      res.send(audioBuffer);
+    } else {
+      res.status(500).json({ message: 'Failed to generate audio' });
+    }
+  } catch (err: any) {
+    console.error('TTS Error:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 app.get('/MM/:username/info', async (req, res) => {
   try {
     const user = await User.findOne({ username: req.params.username.toLowerCase().trim() });
@@ -523,6 +559,7 @@ app.get('/MM/:username/metrics/:n', async (req, res) => {
 
 app.get('/MM/users/sync', async (req, res) => {
   try {
+    console.log(`[MM] Request sync from: ${req.ip} at ${new Date().toISOString()}`);
     const users = await User.find({}, 'username fullName avatar updatedAt');
     res.json(users.map(u => ({
       username: u.username,
@@ -530,7 +567,10 @@ app.get('/MM/users/sync', async (req, res) => {
       avatar: u.avatar,
       updatedAt: (u as any).updatedAt
     })));
-  } catch (err: any) { res.status(500).json({ message: err.message }); }
+  } catch (err: any) { 
+    console.error(`[MM] Sync error: ${err.message}`);
+    res.status(500).json({ message: err.message }); 
+  }
 });
 
 app.use(express.static('.') as any);

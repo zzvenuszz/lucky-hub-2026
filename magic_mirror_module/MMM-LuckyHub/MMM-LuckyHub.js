@@ -26,75 +26,95 @@ Module.register("MMM-LuckyHub", {
     return ["MMM-LuckyHub.css"];
   },
 
-  // Override dom generator.
   getDom: function() {
     const wrapper = document.createElement("div");
-    wrapper.className = "lucky-hub-wrapper";
+    wrapper.classList.add("lucky-hub-root");
 
     if (!this.config.username) {
-      wrapper.innerHTML = "Đang chờ nhận diện khuôn mặt...";
-      wrapper.className = "dimmed light small";
+      wrapper.innerHTML = "<div class='lucky-status dimmed'>Đang chờ nhận diện khuôn mặt...</div>";
       return wrapper;
     }
 
     if (this.error) {
-      wrapper.innerHTML = "Lỗi: " + this.error;
-      wrapper.className = "dimmed light small";
+      wrapper.innerHTML = `<div class='lucky-error'>Lỗi: ${this.error}</div>`;
       return wrapper;
     }
 
     if (!this.loaded) {
-      wrapper.innerHTML = "Đang tải dữ liệu Lucky Hub...";
-      wrapper.className = "dimmed light small";
+      wrapper.innerHTML = "<div class='lucky-status animate-pulse'>Đang tải dữ liệu Lucky Hub...</div>";
       return wrapper;
     }
 
-    // Render User Info
-    const header = document.createElement("div");
-    header.className = "module-header";
-    header.innerHTML = "🍀 Lucky Hub: " + (this.userInfo ? this.userInfo.fullName : this.config.username);
-    wrapper.appendChild(header);
+    // Main Container
+    const container = document.createElement("div");
+    container.classList.add("lucky-container");
 
+    // Header
+    const header = document.createElement("div");
+    header.className = "lucky-header";
+    header.innerHTML = `🍀 Lucky Hub: ${this.userInfo ? this.userInfo.fullName : this.config.username}`;
+    container.appendChild(header);
+
+    // Avatar
     if (this.userInfo && this.userInfo.avatar) {
+      const avatarContainer = document.createElement("div");
+      avatarContainer.className = "lucky-avatar-container";
+      avatarContainer.style.margin = "10px auto";
+      avatarContainer.style.width = "120px";
+      avatarContainer.style.height = "120px";
+      
       const avatar = document.createElement("img");
       avatar.src = this.userInfo.avatar;
-      avatar.className = "user-avatar";
-      wrapper.appendChild(avatar);
+      avatar.className = "lucky-avatar";
+      
+      // Ép kích thước cố định bằng inline style
+      avatar.style.width = "120px";
+      avatar.style.height = "120px";
+      avatar.style.borderRadius = "50%";
+      avatar.style.objectFit = "cover";
+      avatar.style.border = "3px solid #10b981";
+      avatar.style.display = "block";
+      
+      avatar.onerror = () => { avatar.style.display = 'none'; };
+      
+      avatarContainer.appendChild(avatar);
+      container.appendChild(avatarContainer);
     }
 
-    // Render Latest Metrics
+    // Metrics
+    const metricsWrapper = document.createElement("div");
+    metricsWrapper.className = "lucky-metrics";
+
     if (this.metrics && this.metrics.length > 0) {
       const latest = this.metrics[0];
-      const statsGrid = document.createElement("div");
-      statsGrid.className = "stats-grid";
+      
+      const stats = [
+        { label: "Cân nặng", value: latest.weight, unit: "kg" },
+        { label: "Tỉ lệ mỡ", value: latest.bodyFat, unit: "%" },
+        { label: "Cơ bắp", value: latest.muscleMass, unit: "kg" },
+        { label: "Mỡ nội tạng", value: latest.visceralFat, unit: "" },
+        { label: "Tuổi sinh học", value: latest.bioAge, unit: " tuổi" }
+      ];
 
-      const createStat = (label, value, unit) => {
-        const div = document.createElement("div");
-        div.className = "stat-item";
-        div.innerHTML = `<span class="stat-label">${label}:</span> <span class="stat-value">${value}${unit}</span>`;
-        return div;
-      };
+      stats.forEach(s => {
+        const item = document.createElement("div");
+        item.className = "lucky-metric-item";
+        item.innerHTML = `<span class="label">${s.label}:</span> <span class="value">${s.value}${s.unit}</span>`;
+        metricsWrapper.appendChild(item);
+      });
 
-      statsGrid.appendChild(createStat("Cân nặng", latest.weight, "kg"));
-      statsGrid.appendChild(createStat("Tỉ lệ mỡ", latest.bodyFat, "%"));
-      statsGrid.appendChild(createStat("Cơ bắp", latest.muscleMass, "kg"));
-      statsGrid.appendChild(createStat("Mỡ nội tạng", latest.visceralFat, ""));
-      statsGrid.appendChild(createStat("Tuổi sinh học", latest.bioAge, " tuổi"));
+      container.appendChild(metricsWrapper);
 
-      wrapper.appendChild(statsGrid);
-
-      const dateDiv = document.createElement("div");
-      dateDiv.className = "dimmed xsmall";
-      dateDiv.style.marginTop = "10px";
-      dateDiv.innerHTML = "Cập nhật lúc: " + latest.date;
-      wrapper.appendChild(dateDiv);
+      const footer = document.createElement("div");
+      footer.className = "lucky-footer dimmed xsmall";
+      footer.innerHTML = "Cập nhật: " + latest.date;
+      container.appendChild(footer);
     } else {
-      const noData = document.createElement("div");
-      noData.className = "dimmed small";
-      noData.innerHTML = "Chưa có dữ liệu chỉ số.";
-      wrapper.appendChild(noData);
+      metricsWrapper.innerHTML = "<div class='dimmed small'>Chưa có dữ liệu chỉ số.</div>";
+      container.appendChild(metricsWrapper);
     }
 
+    wrapper.appendChild(container);
     return wrapper;
   },
 
@@ -122,18 +142,21 @@ Module.register("MMM-LuckyHub", {
   },
 
   notificationReceived: function(notification, payload, sender) {
-    // Lắng nghe notification từ module nhận diện khuôn mặt
-    // Ví dụ: MMM-Face-Reco-DNN gửi notification 'USER_FOUND' với payload là username
+    Log.info(`MMM-LuckyHub: Received ${notification} from ${sender ? sender.name : 'system'}`);
+    
     if (notification === "USER_DETECTED" || notification === "CURRENT_USER") {
       if (this.config.username !== payload) {
+        Log.info(`MMM-LuckyHub: Switching to user ${payload}`);
         this.config.username = payload;
         this.loaded = false;
         this.getData();
       }
     } else if (notification === "USER_LOST") {
+      Log.info("MMM-LuckyHub: User lost, resetting UI");
       this.config.username = null;
       this.userInfo = null;
       this.metrics = [];
+      this.loaded = false;
       this.updateDom(this.config.animationSpeed);
     }
   },

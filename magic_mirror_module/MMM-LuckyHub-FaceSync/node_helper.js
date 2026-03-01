@@ -4,22 +4,30 @@ const axios = require("axios");
 const fs = require("fs-extra");
 const path = require("path");
 const { spawn } = require("child_process");
+const https = require("https");
+
+// Bỏ qua kiểm tra SSL nếu Raspberry Pi gặp lỗi chứng chỉ
+const axiosInstance = axios.create({
+  httpsAgent: new https.Agent({  
+    rejectUnauthorized: false
+  })
+});
 
 module.exports = NodeHelper.create({
   start: function() {
+    console.log("MMM-LuckyHub-FaceSync: Helper started.");
     this.config = null;
-    this.users = [];
     this.faceDir = path.resolve(__dirname, "faces");
     this.isSyncing = false;
     this.pythonProcess = null;
-    
-    // Đảm bảo thư mục chứa ảnh tồn tại
     fs.ensureDirSync(this.faceDir);
   },
 
   socketNotificationReceived: function(notification, payload) {
+    console.log("MMM-LuckyHub-FaceSync: Received socket notification: " + notification);
     if (notification === "CONFIG") {
       this.config = payload;
+      console.log("MMM-LuckyHub-FaceSync: Config received. BaseURL: " + this.config.baseUrl);
       this.startSyncLoop();
       this.startRecognition();
     }
@@ -30,11 +38,14 @@ module.exports = NodeHelper.create({
     const sync = async () => {
       if (this.isSyncing) return;
       this.isSyncing = true;
-      this.sendSocketNotification("LOG", "Đang đồng bộ danh sách hội viên...");
+      console.log("MMM-LuckyHub-FaceSync: Starting sync...");
       
       try {
-        const response = await axios.get(this.config.baseUrl + "/MM/users/sync");
+        const url = this.config.baseUrl + "/MM/users/sync";
+        console.log("MMM-LuckyHub-FaceSync: Fetching users from " + url);
+        const response = await axiosInstance.get(url);
         const remoteUsers = response.data;
+        console.log(`MMM-LuckyHub-FaceSync: Found ${remoteUsers.length} users on server.`);
         
         let hasChanges = false;
         for (const user of remoteUsers) {
@@ -53,24 +64,21 @@ module.exports = NodeHelper.create({
           }
           
           if (shouldDownload) {
-            this.sendSocketNotification("LOG", `Đang tải avatar mới cho @${user.username}...`);
-            const imgRes = await axios.get(user.avatar, { responseType: 'arraybuffer' });
+            console.log(`MMM-LuckyHub-FaceSync: Downloading avatar for @${user.username}...`);
+            const imgRes = await axiosInstance.get(user.avatar, { responseType: 'arraybuffer' });
             await fs.writeFile(filePath, imgRes.data);
             await fs.writeJson(metaPath, { username: user.username, updatedAt: user.updatedAt });
             hasChanges = true;
           }
         }
         
-        this.users = remoteUsers;
-        this.sendSocketNotification("LOG", "Đồng bộ hoàn tất.");
-        
-        // Nếu có thay đổi ảnh, khởi động lại tiến trình nhận diện để load lại ảnh
+        console.log("MMM-LuckyHub-FaceSync: Sync completed.");
         if (hasChanges && this.pythonProcess) {
-          this.sendSocketNotification("LOG", "Phát hiện ảnh mới, đang khởi động lại nhận diện...");
+          console.log("MMM-LuckyHub-FaceSync: New photos detected, restarting recognition...");
           this.startRecognition();
         }
       } catch (err) {
-        this.sendSocketNotification("LOG", "Lỗi đồng bộ: " + err.message);
+        console.error("MMM-LuckyHub-FaceSync: Sync error: " + err.message);
       } finally {
         this.isSyncing = false;
       }
@@ -81,50 +89,101 @@ module.exports = NodeHelper.create({
   },
 
   startRecognition: function() {
-    const self = this;
-    
-    // Dừng tiến trình cũ nếu đang chạy
     if (this.pythonProcess) {
       this.pythonProcess.kill();
       this.pythonProcess = null;
     }
 
     const scriptPath = path.resolve(__dirname, "recognize.py");
-    
-    // Kiểm tra xem file python có tồn tại không
     if (!fs.existsSync(scriptPath)) {
-      this.sendSocketNotification("LOG", "Lỗi: Không tìm thấy file recognize.py");
+      console.error("MMM-LuckyHub-FaceSync: recognize.py not found at " + scriptPath);
       return;
     }
 
-    this.sendSocketNotification("LOG", "Đang khởi động tiến trình nhận diện khuôn mặt...");
+    console.log("MMM-LuckyHub-FaceSync: Spawning Python process...");
     
-    // Khởi chạy script Python
-    this.pythonProcess = spawn("python3", [scriptPath, this.faceDir]);
+    // Thử dùng đường dẫn tuyệt đối để tránh nhầm lẫn phiên bản Python
+    const pythonPath = "/usr/bin/python3"; 
+    
+    // Ép đường dẫn thư viện vào môi trường của tiến trình Python
+    const pythonEnv = { 
+      ...process.env, 
+      PYTHONPATH: [
+        "/usr/lib/python3/dist-packages",
+        "/home/admin/.local/lib/python3.13/site-packages",
+        process.env.PYTHONPATH
+      ].filter(Boolean).join(":")
+    };
+
+    // Thêm cờ -u để Python không đệm output (unbuffered)
+    this.pythonProcess = spawn(pythonPath, ["-u", scriptPath, this.faceDir], { env: pythonEnv });
 
     this.pythonProcess.stdout.on("data", (data) => {
       const output = data.toString().trim();
+      console.log("MMM-LuckyHub-FaceSync (Python): " + output);
       if (output === "UNKNOWN") {
         this.sendSocketNotification("USER_LOST");
+        this.lastGreetedUser = null;
       } else if (output.startsWith("DETECTED:")) {
         const username = output.replace("DETECTED:", "");
         this.sendSocketNotification("USER_DETECTED", username);
-      } else {
-        this.sendSocketNotification("LOG", "Python: " + output);
+        this.playGreeting(username);
       }
     });
 
     this.pythonProcess.stderr.on("data", (data) => {
-      this.sendSocketNotification("LOG", "Python Error: " + data.toString());
+      const errorMsg = data.toString();
+      console.error("MMM-LuckyHub-FaceSync (Python Error): " + errorMsg);
+      
+      // Nếu vẫn thiếu cv2, gợi ý log đường dẫn hệ thống
+      if (errorMsg.includes("ModuleNotFoundError: No module named 'cv2'")) {
+        console.log("MMM-LuckyHub-FaceSync: Đang kiểm tra PYTHONPATH...");
+      }
     });
 
     this.pythonProcess.on("close", (code) => {
-      this.sendSocketNotification("LOG", "Tiến trình nhận diện đã dừng với mã: " + code);
-      // Tự động khởi động lại sau 5 giây nếu bị crash
+      console.log("MMM-LuckyHub-FaceSync: Python process exited with code " + code);
       if (code !== 0) {
         setTimeout(() => this.startRecognition(), 5000);
       }
     });
+  },
+
+  playGreeting: async function(username) {
+    // Tránh chào lặp lại liên tục trong cùng một phiên
+    if (this.lastGreetedUser === username) return;
+    this.lastGreetedUser = username;
+
+    try {
+      console.log(`MMM-LuckyHub-FaceSync: Đang chuẩn bị lời chào cho ${username}...`);
+      
+      // Lấy thông tin đầy đủ để chào bằng tên thật
+      const infoUrl = `${this.config.baseUrl}/MM/${username}/info`;
+      const infoRes = await axiosInstance.get(infoUrl);
+      const fullName = infoRes.data.fullName || username;
+
+      // Tải file âm thanh từ server
+      const ttsUrl = `${this.config.baseUrl}/api/tts/greeting/${encodeURIComponent(fullName)}`;
+      const audioPath = path.resolve(__dirname, "greeting.wav");
+      
+      const response = await axiosInstance.get(ttsUrl, { responseType: 'arraybuffer' });
+      await fs.writeFile(audioPath, response.data);
+
+      // Phát âm thanh qua HDMI (plughw:1,0)
+      // Sử dụng aplay cho file WAV (Gemini TTS trả về WAV)
+      const playCmd = `aplay -D plughw:1,0 ${audioPath}`;
+      console.log(`MMM-LuckyHub-FaceSync: Đang phát lời chào: ${playCmd}`);
+      
+      const { exec } = require("child_process");
+      exec(playCmd, (error, stdout, stderr) => {
+        if (error) {
+          console.error(`MMM-LuckyHub-FaceSync: Lỗi phát âm thanh: ${error.message}`);
+          return;
+        }
+      });
+    } catch (err) {
+      console.error("MMM-LuckyHub-FaceSync: Lỗi xử lý lời chào: " + err.message);
+    }
   },
 
   stop: function() {

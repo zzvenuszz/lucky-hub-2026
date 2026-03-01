@@ -1,46 +1,96 @@
 
-.lucky-hub-wrapper {
+.lucky-hub-root {
+  padding: 0;
+  margin: 0;
+  text-align: center;
+}
+
+.lucky-container {
   padding: 20px;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  text-align: left;
-  min-width: 250px;
+  background: rgba(0, 0, 0, 0.9);
+  border-radius: 30px;
+  border: 2px solid #10b981;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+  width: 320px;
+  margin: 10px auto;
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  animation: lucky-fade-in 0.5s ease-out;
 }
 
-.module-header {
-  font-weight: bold;
+@keyframes lucky-fade-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.lucky-header {
+  font-weight: 900;
   font-size: 1.2em;
-  margin-bottom: 10px;
-  color: #4ade80; /* Emerald 400 */
-}
-
-.user-avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  border: 2px solid #4ade80;
   margin-bottom: 15px;
+  color: #10b981;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.lucky-avatar-container {
+  width: 120px;
+  height: 120px;
+  margin: 10px auto 20px auto;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+}
+
+.lucky-avatar {
+  width: 120px !important;
+  height: 120px !important;
+  border-radius: 50% !important;
+  border: 3px solid #fff !important;
+  object-fit: cover !important;
   display: block;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+.lucky-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
-.stat-item {
+.lucky-metric-item {
   display: flex;
   justify-content: space-between;
-  font-size: 0.9em;
+  align-items: center;
+  padding: 10px 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 15px;
+  font-size: 1.1em;
 }
 
-.stat-label {
-  color: #94a3b8; /* Slate 400 */
+.lucky-metric-item .label {
+  color: #94a3b8;
+  font-weight: 500;
 }
 
-.stat-value {
-  font-weight: bold;
+.lucky-metric-item .value {
+  font-weight: 800;
   color: #fff;
+}
+
+.lucky-footer {
+  margin-top: 15px;
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.lucky-status {
+  padding: 20px;
+  font-weight: 500;
+}
+
+.lucky-error {
+  color: #ef4444;
+  padding: 20px;
+  font-weight: bold;
 }
