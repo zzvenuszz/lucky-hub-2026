@@ -82,17 +82,22 @@ while True:
 
     current_detected = None
 
-    for face_encoding in face_encodings:
-        # So sánh với danh sách đã biết
-        matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.6)
-        name = "UNKNOWN"
-
-        if True in matches:
-            first_match_index = matches.index(True)
-            name = known_face_names[first_match_index]
-            current_detected = name
-            break # Chỉ lấy người đầu tiên nhận diện được
-
+    if len(face_encodings) > 0:
+        # Mặc định là UNKNOWN nếu có mặt nhưng không khớp
+        current_detected = "UNKNOWN"
+        
+        for face_encoding in face_encodings:
+            # So sánh với danh sách đã biết
+            matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.5) # Giảm tolerance để chính xác hơn
+            
+            if True in matches:
+                # Tìm khoảng cách nhỏ nhất để lấy người giống nhất
+                face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+                best_match_index = face_distances.argmin()
+                if matches[best_match_index]:
+                    current_detected = known_face_names[best_match_index]
+                    break # Chỉ lấy người đầu tiên nhận diện được
+    
     # Logic gửi kết quả về Magic Mirror
     now = time.time()
     if current_detected:

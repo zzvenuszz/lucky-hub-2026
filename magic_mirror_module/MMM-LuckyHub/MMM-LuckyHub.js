@@ -55,6 +55,20 @@ Module.register("MMM-LuckyHub", {
     header.innerHTML = `🍀 Lucky Hub: ${this.userInfo ? this.userInfo.fullName : this.config.username}`;
     container.appendChild(header);
 
+    if (this.config.username === "UNKNOWN") {
+      const welcome = document.createElement("div");
+      welcome.className = "lucky-welcome animate-pulse";
+      welcome.style.textAlign = "center";
+      welcome.style.padding = "20px";
+      welcome.style.fontSize = "18px";
+      welcome.style.color = "#10b981";
+      welcome.style.fontWeight = "bold";
+      welcome.innerHTML = "Chào mừng bạn đến với Lucky Hub!<br><br>Hãy đăng ký thông tin của bạn để theo dõi sức khỏe nhé.";
+      container.appendChild(welcome);
+      wrapper.appendChild(container);
+      return wrapper;
+    }
+
     // Avatar
     if (this.userInfo && this.userInfo.avatar) {
       const avatarContainer = document.createElement("div");
@@ -148,8 +162,17 @@ Module.register("MMM-LuckyHub", {
       if (this.config.username !== payload) {
         Log.info(`MMM-LuckyHub: Switching to user ${payload}`);
         this.config.username = payload;
-        this.loaded = false;
-        this.getData();
+        
+        if (payload === "UNKNOWN") {
+          this.userInfo = { fullName: "Anh Chị" };
+          this.metrics = [];
+          this.loaded = true;
+          this.error = null;
+          this.updateDom(this.config.animationSpeed);
+        } else {
+          this.loaded = false;
+          this.getData();
+        }
       }
     } else if (notification === "USER_LOST") {
       Log.info("MMM-LuckyHub: User lost, resetting UI");

@@ -134,11 +134,6 @@ module.exports = NodeHelper.create({
     this.pythonProcess.stderr.on("data", (data) => {
       const errorMsg = data.toString();
       console.error("MMM-LuckyHub-FaceSync (Python Error): " + errorMsg);
-      
-      // Nếu vẫn thiếu cv2, gợi ý log đường dẫn hệ thống
-      if (errorMsg.includes("ModuleNotFoundError: No module named 'cv2'")) {
-        console.log("MMM-LuckyHub-FaceSync: Đang kiểm tra PYTHONPATH...");
-      }
     });
 
     this.pythonProcess.on("close", (code) => {
@@ -155,17 +150,29 @@ module.exports = NodeHelper.create({
     this.lastGreetedUser = username;
 
     try {
-      console.log(`MMM-LuckyHub-FaceSync: [TTS] Đang chuẩn bị lời chào cho ${username}...`);
+      let fullName = "";
       
-      // Lấy thông tin đầy đủ để chào bằng tên thật
-      const infoUrl = `${this.config.baseUrl}/MM/${username}/info`;
-      console.log(`MMM-LuckyHub-FaceSync: [API] Requesting user info from: ${infoUrl}`);
-      const infoRes = await axiosInstance.get(infoUrl);
-      const fullName = infoRes.data.fullName || username;
-      console.log(`MMM-LuckyHub-FaceSync: [API] User info received: ${fullName}`);
+      if (username === "UNKNOWN") {
+        fullName = "anh chị";
+        console.log(`MMM-LuckyHub-FaceSync: [TTS] Đang chuẩn bị lời chào cho người lạ...`);
+      } else {
+        console.log(`MMM-LuckyHub-FaceSync: [TTS] Đang chuẩn bị lời chào cho ${username}...`);
+        // Lấy thông tin đầy đủ để chào bằng tên thật
+        const infoUrl = `${this.config.baseUrl}/MM/${username}/info`;
+        console.log(`MMM-LuckyHub-FaceSync: [API] Requesting user info from: ${infoUrl}`);
+        const infoRes = await axiosInstance.get(infoUrl);
+        fullName = infoRes.data.fullName || username;
+        console.log(`MMM-LuckyHub-FaceSync: [API] User info received: ${fullName}`);
+      }
 
       // Tải file âm thanh từ server
-      const ttsUrl = `${this.config.baseUrl}/api/tts/greeting/${encodeURIComponent(fullName)}`;
+      // Nếu là người lạ, dùng prompt đặc biệt
+      let prompt = `Nói một cách thân thiện và ấm áp: Xin chào ${fullName}, chúc bạn một ngày vui vẻ.`;
+      if (username === "UNKNOWN") {
+        prompt = "Nói một cách thân thiện và ấm áp: Xin chào anh chị, chúc anh chị một ngày vui vẻ, hãy đăng ký thông tin của anh chị tại Lucky Hub nhé.";
+      }
+
+      const ttsUrl = `${this.config.baseUrl}/api/tts/greeting/${encodeURIComponent(fullName)}?prompt=${encodeURIComponent(prompt)}`;
       const audioPath = path.resolve(__dirname, "greeting.wav");
       
       console.log(`MMM-LuckyHub-FaceSync: [TTS] Requesting audio from: ${ttsUrl}`);

@@ -518,11 +518,12 @@ import { GoogleGenAI, Modality } from "@google/genai";
 
 app.get('/api/tts/greeting/:name', async (req, res) => {
   const name = req.params.name;
+  const customPrompt = req.query.prompt as string;
   const requestId = `TTS-${Math.random().toString(36).substring(7).toUpperCase()}`;
-  console.log(`[TTS] Request greeting for: ${name} from ${req.ip} (ID: ${requestId})`);
+  console.log(`[TTS] Request greeting for: ${name} from ${req.ip} (ID: ${requestId})${customPrompt ? ' with custom prompt' : ''}`);
   
   try {
-    const prompt = `Nói một cách thân thiện và ấm áp: Xin chào ${name}, chúc bạn một ngày vui vẻ.`;
+    const prompt = customPrompt || `Nói một cách thân thiện và ấm áp: Xin chào ${name}, chúc bạn một ngày vui vẻ.`;
     
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
