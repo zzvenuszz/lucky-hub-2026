@@ -155,34 +155,40 @@ module.exports = NodeHelper.create({
     this.lastGreetedUser = username;
 
     try {
-      console.log(`MMM-LuckyHub-FaceSync: Đang chuẩn bị lời chào cho ${username}...`);
+      console.log(`MMM-LuckyHub-FaceSync: [TTS] Đang chuẩn bị lời chào cho ${username}...`);
       
       // Lấy thông tin đầy đủ để chào bằng tên thật
       const infoUrl = `${this.config.baseUrl}/MM/${username}/info`;
+      console.log(`MMM-LuckyHub-FaceSync: [API] Requesting user info from: ${infoUrl}`);
       const infoRes = await axiosInstance.get(infoUrl);
       const fullName = infoRes.data.fullName || username;
+      console.log(`MMM-LuckyHub-FaceSync: [API] User info received: ${fullName}`);
 
       // Tải file âm thanh từ server
       const ttsUrl = `${this.config.baseUrl}/api/tts/greeting/${encodeURIComponent(fullName)}`;
       const audioPath = path.resolve(__dirname, "greeting.wav");
       
+      console.log(`MMM-LuckyHub-FaceSync: [TTS] Requesting audio from: ${ttsUrl}`);
       const response = await axiosInstance.get(ttsUrl, { responseType: 'arraybuffer' });
+      console.log(`MMM-LuckyHub-FaceSync: [TTS] Audio received (${response.data.byteLength} bytes)`);
+      
       await fs.writeFile(audioPath, response.data);
+      console.log(`MMM-LuckyHub-FaceSync: [TTS] Audio saved to: ${audioPath}`);
 
       // Phát âm thanh qua HDMI (plughw:1,0)
-      // Sử dụng aplay cho file WAV (Gemini TTS trả về WAV)
       const playCmd = `aplay -D plughw:1,0 ${audioPath}`;
-      console.log(`MMM-LuckyHub-FaceSync: Đang phát lời chào: ${playCmd}`);
+      console.log(`MMM-LuckyHub-FaceSync: [AUDIO] Executing play command: ${playCmd}`);
       
       const { exec } = require("child_process");
       exec(playCmd, (error, stdout, stderr) => {
         if (error) {
-          console.error(`MMM-LuckyHub-FaceSync: Lỗi phát âm thanh: ${error.message}`);
+          console.error(`MMM-LuckyHub-FaceSync: [AUDIO] Error playing sound: ${error.message}`);
           return;
         }
+        console.log(`MMM-LuckyHub-FaceSync: [AUDIO] Playback finished successfully`);
       });
     } catch (err) {
-      console.error("MMM-LuckyHub-FaceSync: Lỗi xử lý lời chào: " + err.message);
+      console.error("MMM-LuckyHub-FaceSync: [ERROR] Lỗi xử lý lời chào: " + err.message);
     }
   },
 

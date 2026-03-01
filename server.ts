@@ -499,11 +499,16 @@ app.post('/api/chats', async (req, res) => {
 // Magic Mirror (MM) Integration Endpoints
 import { GoogleGenAI, Modality } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 app.get('/api/tts/greeting/:name', async (req, res) => {
+  const name = req.params.name;
+  console.log(`[TTS] Request greeting for: ${name} from ${req.ip}`);
   try {
-    const name = req.params.name;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not set in environment variables');
+    }
+    const ai = new GoogleGenAI({ apiKey });
+    
     const prompt = `Nói một cách thân thiện và ấm áp: Xin chào ${name}, chúc bạn một ngày vui vẻ.`;
     
     const response = await ai.models.generateContent({
@@ -522,39 +527,59 @@ app.get('/api/tts/greeting/:name', async (req, res) => {
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       const audioBuffer = Buffer.from(base64Audio, 'base64');
+      console.log(`[TTS] Successfully generated audio for: ${name} (${audioBuffer.length} bytes)`);
       res.set('Content-Type', 'audio/wav'); // Gemini TTS returns WAV by default
       res.send(audioBuffer);
     } else {
+      console.error(`[TTS] Failed to generate audio for: ${name}`);
       res.status(500).json({ message: 'Failed to generate audio' });
     }
   } catch (err: any) {
-    console.error('TTS Error:', err);
+    console.error(`[TTS] Error for ${name}:`, err.message);
     res.status(500).json({ message: err.message });
   }
 });
 
 app.get('/MM/:username/info', async (req, res) => {
+  const username = req.params.username.toLowerCase().trim();
+  console.log(`[MM] Request info for user: ${username} from ${req.ip}`);
   try {
-    const user = await User.findOne({ username: req.params.username.toLowerCase().trim() });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = await User.findOne({ username });
+    if (!user) {
+      console.warn(`[MM] User not found: ${username}`);
+      return res.status(404).json({ message: 'User not found' });
+    }
     const u = user.toObject();
     delete u.password;
+    console.log(`[MM] Successfully returned info for: ${username}`);
     res.json({ ...u, id: user._id });
-  } catch (err: any) { res.status(500).json({ message: err.message }); }
+  } catch (err: any) { 
+    console.error(`[MM] Info error for ${username}:`, err.message);
+    res.status(500).json({ message: err.message }); 
+  }
 });
 
 app.get('/MM/:username/metrics/:n', async (req, res) => {
+  const username = req.params.username.toLowerCase().trim();
+  const n = parseInt(req.params.n) || 1;
+  console.log(`[MM] Request metrics for user: ${username} (limit: ${n}) from ${req.ip}`);
   try {
-    const n = parseInt(req.params.n) || 1;
-    const user = await User.findOne({ username: req.params.username.toLowerCase().trim() });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const user = await User.findOne({ username });
+    if (!user) {
+      console.warn(`[MM] User not found for metrics: ${username}`);
+      return res.status(404).json({ message: 'User not found' });
+    }
     
     const metrics = await Metric.find({ userId: user._id })
       .sort({ date: -1 })
       .limit(n);
-      
+    
+    console.log(`[MM] Successfully returned ${metrics.length} metrics for: ${username}`);
     res.json(metrics.map(m => ({ ...m.toObject(), id: m._id })));
-  } catch (err: any) { res.status(500).json({ message: err.message }); }
+  } catch (err: any) { 
+    console.error(`[MM] Metrics error for ${username}:`, err.message);
+    res.status(500).json({ message: err.message }); 
+  }
 });
 
 app.get('/MM/users/sync', async (req, res) => {
