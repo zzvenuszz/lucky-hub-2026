@@ -16,6 +16,11 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
   const [formData, setFormData] = useState(initialData);
   const [emailError, setEmailError] = useState<string | null>(null);
 
+  // Đồng bộ formData khi initialData thay đổi (ví dụ khi AvatarEditor cập nhật avatar)
+  React.useEffect(() => {
+    setFormData(initialData);
+  }, [initialData]);
+
   const checkEmailExists = async (email: string) => {
     if (email === user.email) { setEmailError(null); return; }
     try {

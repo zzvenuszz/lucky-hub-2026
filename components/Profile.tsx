@@ -23,6 +23,20 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
     gender: user.gender
   });
 
+  // Đồng bộ localData khi user prop thay đổi (ví dụ sau khi cập nhật thành công từ server)
+  React.useEffect(() => {
+    setLocalData({
+      fullName: user.fullName,
+      email: user.email || '',
+      height: user.height,
+      weight: user.weight || 0,
+      phoneNumber: user.phoneNumber || '',
+      healthGoal: user.healthGoal,
+      avatar: user.avatar || '',
+      gender: user.gender
+    });
+  }, [user]);
+
   const handleDataUpdate = (newData: any, shouldSubmit: boolean = true) => {
     setLocalData(prev => ({ ...prev, ...newData }));
     if (shouldSubmit) onUpdate(newData);

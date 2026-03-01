@@ -377,13 +377,25 @@ app.get('/api/users', async (req, res) => {
 });
 
 app.put('/api/users/:id', async (req, res) => {
-  const data = req.body;
-  if (data.avatar && data.avatar.startsWith('data:image')) {
-    const imgData = await uploadToImgBB(data.avatar);
-    if (imgData) data.avatar = imgData.url;
+  try {
+    const data = req.body;
+    if (data.avatar && data.avatar.startsWith('data:image')) {
+      const imgData = await uploadToImgBB(data.avatar);
+      if (imgData) {
+        data.avatar = imgData.url;
+        console.log(`[USER] Avatar uploaded to ImgBB: ${imgData.url}`);
+      }
+    }
+    const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
+    if (!u) return res.status(404).json({ message: 'User not found' });
+    
+    const result = u.toObject();
+    delete result.password;
+    res.json({ ...result, id: u._id });
+  } catch (err: any) {
+    console.error(`[USER] Update error: ${err.message}`);
+    res.status(500).json({ message: err.message });
   }
-  const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
-  res.json({ ...u?.toObject(), id: u?._id });
 });
 
 app.get('/api/posts', async (req, res) => {

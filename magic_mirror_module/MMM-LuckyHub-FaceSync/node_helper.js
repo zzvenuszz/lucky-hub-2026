@@ -176,7 +176,8 @@ module.exports = NodeHelper.create({
       console.log(`MMM-LuckyHub-FaceSync: [TTS] Audio saved to: ${audioPath}`);
 
       // Phát âm thanh qua HDMI (plughw:1,0)
-      const playCmd = `aplay -D plughw:1,0 ${audioPath}`;
+      // Ép định dạng 24kHz, 16-bit, Mono để khớp với chuẩn Gemini TTS
+      const playCmd = `aplay -D plughw:1,0 -r 24000 -f S16_LE -c 1 ${audioPath}`;
       console.log(`MMM-LuckyHub-FaceSync: [AUDIO] Executing play command: ${playCmd}`);
       
       const { exec } = require("child_process");
