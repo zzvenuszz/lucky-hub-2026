@@ -17,7 +17,12 @@ const app = express();
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '50mb' }) as any);
 
-const ENV_API_KEYS = [process.env.API_KEY, process.env.API_KEY_2, process.env.API_KEY_3].filter(k => !!k);
+const ENV_API_KEYS = [
+  process.env.API_KEY, 
+  process.env.API_KEY_2, 
+  process.env.API_KEY_3,
+  process.env.GEMINI_API_KEY
+].filter(k => !!k);
 const keyCooldowns = new Map<string, number>(); 
 
 // Models
@@ -501,18 +506,13 @@ import { GoogleGenAI, Modality } from "@google/genai";
 
 app.get('/api/tts/greeting/:name', async (req, res) => {
   const name = req.params.name;
-  console.log(`[TTS] Request greeting for: ${name} from ${req.ip}`);
+  const requestId = `TTS-${Math.random().toString(36).substring(7).toUpperCase()}`;
+  console.log(`[TTS] Request greeting for: ${name} from ${req.ip} (ID: ${requestId})`);
+  
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not set in environment variables');
-    }
-    const ai = new GoogleGenAI({ apiKey });
-    
     const prompt = `Nói một cách thân thiện và ấm áp: Xin chào ${name}, chúc bạn một ngày vui vẻ.`;
     
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
+    const payload = {
       contents: [{ parts: [{ text: prompt }] }],
       config: {
         responseModalities: [Modality.AUDIO],
@@ -522,20 +522,22 @@ app.get('/api/tts/greeting/:name', async (req, res) => {
           },
         },
       },
-    });
+    };
+
+    const response = await callAIWithRetry(requestId, "gemini-2.5-flash-preview-tts", payload);
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (base64Audio) {
       const audioBuffer = Buffer.from(base64Audio, 'base64');
-      console.log(`[TTS] Successfully generated audio for: ${name} (${audioBuffer.length} bytes)`);
+      console.log(`[TTS] Successfully generated audio for: ${name} (${audioBuffer.length} bytes) using rotated keys`);
       res.set('Content-Type', 'audio/wav'); // Gemini TTS returns WAV by default
       res.send(audioBuffer);
     } else {
-      console.error(`[TTS] Failed to generate audio for: ${name}`);
+      console.error(`[TTS] Failed to generate audio for: ${name} - No audio data in response`);
       res.status(500).json({ message: 'Failed to generate audio' });
     }
   } catch (err: any) {
-    console.error(`[TTS] Error for ${name}:`, err.message);
+    console.error(`[TTS] Error for ${name} (ID: ${requestId}):`, err.message);
     res.status(500).json({ message: err.message });
   }
 });
