@@ -125,7 +125,7 @@ export interface User {
   weight: number;
   phoneNumber: string;
   gender: 'Nam' | 'Nữ';
-  healthGoal: HealthGoal;
+  healthGoals: HealthGoal[];
   role: UserRole;
   status: AccountStatus;
   permissions: Permission[];

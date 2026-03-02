@@ -18,7 +18,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
     height: user.height,
     weight: user.weight || 0,
     phoneNumber: user.phoneNumber || '',
-    healthGoal: user.healthGoal,
+    healthGoals: user.healthGoals || [],
     avatar: user.avatar || '',
     gender: user.gender
   });
@@ -31,7 +31,7 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
       height: user.height,
       weight: user.weight || 0,
       phoneNumber: user.phoneNumber || '',
-      healthGoal: user.healthGoal,
+      healthGoals: user.healthGoals || [],
       avatar: user.avatar || '',
       gender: user.gender
     });

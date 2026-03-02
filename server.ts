@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { transform } from 'sucrase';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from './types.ts';
 
 dotenv.config();
@@ -290,7 +290,7 @@ const User = mongoose.model('User', new mongoose.Schema({
   height: { type: Number, default: 0 },
   weight: { type: Number, default: 0 },
   gender: { type: String, default: 'Nam' },
-  healthGoal: String,
+  healthGoals: { type: [String], default: [] },
   role: { type: String, enum: Object.values(UserRole), default: UserRole.MEMBER },
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
   permissions: { type: [String], default: [] },
@@ -386,6 +386,16 @@ app.put('/api/users/:id', async (req, res) => {
         console.log(`[USER] Avatar uploaded to ImgBB: ${imgData.url}`);
       }
     }
+    
+    // Nếu có mật khẩu mới, thực hiện hash
+    if (data.password && data.password.trim() !== '') {
+      data.password = hashPassword(data.password);
+      data.isPasswordEncrypted = true;
+    } else {
+      // Nếu password gửi lên là rỗng hoặc không có, xóa khỏi data để tránh ghi đè mật khẩu cũ bằng rỗng
+      delete data.password;
+    }
+
     const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
     if (!u) return res.status(404).json({ message: 'User not found' });
     
@@ -514,7 +524,6 @@ app.post('/api/chats', async (req, res) => {
 });
 
 // Magic Mirror (MM) Integration Endpoints
-import { GoogleGenAI, Modality } from "@google/genai";
 
 app.get('/api/tts/greeting/:name', async (req, res) => {
   const name = req.params.name;

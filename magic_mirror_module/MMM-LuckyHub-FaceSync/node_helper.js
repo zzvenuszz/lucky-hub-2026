@@ -15,25 +15,48 @@ const axiosInstance = axios.create({
 
 module.exports = NodeHelper.create({
   start: function() {
-    console.log("MMM-LuckyHub-FaceSync: Helper started.");
+    console.log("MMM-LuckyHub-FaceSync: Helper started. Waiting for CONFIG notification from frontend...");
     this.config = null;
     this.faceDir = path.resolve(__dirname, "faces");
     this.isSyncing = false;
     this.pythonProcess = null;
     fs.ensureDirSync(this.faceDir);
+
+    // Fallback: Nếu sau 10 giây không nhận được CONFIG, tự chạy với cấu hình mặc định
+    setTimeout(() => {
+      if (!this.config) {
+        console.log("MMM-LuckyHub-FaceSync: No CONFIG received after 10s. Starting with default settings...");
+        this.config = {
+          baseUrl: "https://ais-dev-rk6e4t6ryqfyczqrnteuxj-275449668179.asia-east1.run.app",
+          syncInterval: 30 * 60 * 1000
+        };
+        this.startSyncLoop();
+        this.startRecognition();
+      }
+    }, 10000);
   },
 
   socketNotificationReceived: function(notification, payload) {
     console.log("MMM-LuckyHub-FaceSync: Received socket notification: " + notification);
     if (notification === "CONFIG") {
+      // Nếu đã có config (từ fallback hoặc lần nhận trước), chỉ cập nhật nếu có thay đổi lớn
+      const isFirstConfig = !this.config;
       this.config = payload;
       console.log("MMM-LuckyHub-FaceSync: Config received. BaseURL: " + this.config.baseUrl);
-      this.startSyncLoop();
-      this.startRecognition();
+      
+      if (isFirstConfig) {
+        this.startSyncLoop();
+        this.startRecognition();
+      } else {
+        // Nếu config thay đổi khi đang chạy, restart lại nhận diện
+        console.log("MMM-LuckyHub-FaceSync: Config updated, restarting recognition...");
+        this.startRecognition();
+      }
     }
   },
 
   startSyncLoop: function() {
+    if (this.syncTimer) clearInterval(this.syncTimer);
     const self = this;
     const sync = async () => {
       if (this.isSyncing) return;
@@ -85,11 +108,17 @@ module.exports = NodeHelper.create({
     };
 
     sync();
-    setInterval(sync, this.config.syncInterval);
+    this.syncTimer = setInterval(sync, this.config.syncInterval);
   },
 
   startRecognition: function() {
+    // Nếu đang trong quá trình khởi động lại, bỏ qua để tránh lặp
+    if (this.isStartingProcess) return;
+    this.isStartingProcess = true;
+
     if (this.pythonProcess) {
+      console.log("MMM-LuckyHub-FaceSync: Killing existing Python process...");
+      this.pythonProcess.removeAllListeners("close"); // Quan trọng: Gỡ bỏ listener cũ để không bị restart lặp
       this.pythonProcess.kill();
       this.pythonProcess = null;
     }
@@ -97,6 +126,7 @@ module.exports = NodeHelper.create({
     const scriptPath = path.resolve(__dirname, "recognize.py");
     if (!fs.existsSync(scriptPath)) {
       console.error("MMM-LuckyHub-FaceSync: recognize.py not found at " + scriptPath);
+      this.isStartingProcess = false;
       return;
     }
 
@@ -118,6 +148,10 @@ module.exports = NodeHelper.create({
     // Thêm cờ -u để Python không đệm output (unbuffered)
     this.pythonProcess = spawn(pythonPath, ["-u", scriptPath, this.faceDir], { env: pythonEnv });
 
+    this.pythonProcess.on("error", (err) => {
+      console.error("MMM-LuckyHub-FaceSync: Failed to start Python process: " + err.message);
+    });
+
     this.pythonProcess.stdout.on("data", (data) => {
       const output = data.toString().trim();
       console.log("MMM-LuckyHub-FaceSync (Python): " + output);
@@ -138,10 +172,16 @@ module.exports = NodeHelper.create({
 
     this.pythonProcess.on("close", (code) => {
       console.log("MMM-LuckyHub-FaceSync: Python process exited with code " + code);
-      if (code !== 0) {
+      this.pythonProcess = null;
+      // Chỉ tự động restart nếu tiến trình bị crash (code != 0 và không phải bị kill - null)
+      if (code !== 0 && code !== null) {
+        console.log("MMM-LuckyHub-FaceSync: Process crashed, restarting in 5s...");
         setTimeout(() => this.startRecognition(), 5000);
       }
     });
+
+    // Reset cờ sau khi spawn xong
+    setTimeout(() => { this.isStartingProcess = false; }, 1000);
   },
 
   playGreeting: async function(username) {

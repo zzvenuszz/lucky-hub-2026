@@ -61,15 +61,38 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
         </div>
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Chiều cao (CM)</label>
-          {/* SỬA LỖI: Truyền false cho shouldSubmit */}
           <input required type="number" value={formData.height} onChange={e => { const d = {...formData, height: Number(e.target.value)}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
         </div>
-        <div className="space-y-1 md:col-span-2">
-          <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mục tiêu sức khỏe</label>
-          {/* SỬA LỖI: Truyền false cho shouldSubmit */}
-          <select value={formData.healthGoal} onChange={e => { const d = {...formData, healthGoal: e.target.value as HealthGoal}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium">
-            {Object.values(HealthGoal).map(goal => <option key={goal} value={goal}>{goal}</option>)}
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Giới tính</label>
+          <select value={formData.gender} onChange={e => { const d = {...formData, gender: e.target.value as 'Nam'|'Nữ'}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium">
+            <option value="Nam">Nam</option>
+            <option value="Nữ">Nữ</option>
           </select>
+        </div>
+        <div className="space-y-1 md:col-span-2">
+          <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mục tiêu sức khỏe (Chọn nhiều mục)</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-4 bg-slate-50 rounded-xl">
+            {Object.values(HealthGoal).map(goal => (
+              <label key={goal} className="flex items-center space-x-3 cursor-pointer hover:bg-white/50 p-2 rounded-lg transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={(formData.healthGoals || []).includes(goal)} 
+                  onChange={e => {
+                    const currentGoals = formData.healthGoals || [];
+                    const newGoals = e.target.checked 
+                      ? [...currentGoals, goal]
+                      : currentGoals.filter((g: string) => g !== goal);
+                    const d = {...formData, healthGoals: newGoals};
+                    setFormData(d);
+                    onUpdate(d, false);
+                  }}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                />
+                <span className="text-sm font-medium text-slate-700">{goal}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </div>
       <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all">

@@ -28,12 +28,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
 
   return (
     <div className="space-y-6 animate-in fade-in">
-      <input 
-        placeholder="Tìm hội viên..." 
-        value={searchTerm} 
-        onChange={e => setSearchTerm(e.target.value)} 
-        className="w-full px-5 py-3 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm shadow-inner font-medium" 
-      />
+      <div className="flex flex-col md:flex-row gap-4">
+        <input 
+          placeholder="Tìm hội viên..." 
+          value={searchTerm} 
+          onChange={e => setSearchTerm(e.target.value)} 
+          className="flex-1 px-5 py-3 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm shadow-inner font-medium" 
+        />
+      </div>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-slate-400 border-b border-slate-50 font-black uppercase text-[10px] tracking-widest">
@@ -90,6 +92,15 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
               <select value={editingUser.status} onChange={e => setEditingUser({...editingUser, status: e.target.value as AccountStatus})} className="w-full px-4 py-3 bg-slate-50 rounded-xl font-bold text-xs">
                 {Object.values(AccountStatus).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mật khẩu mới (Để trống nếu không đổi)</label>
+              <input 
+                type="text" 
+                placeholder="Nhập mật khẩu mới..."
+                onChange={e => setEditingUser({...editingUser, password: e.target.value})} 
+                className="w-full px-4 py-3 bg-rose-50/30 text-rose-700 rounded-xl outline-none font-bold text-xs border border-rose-100 focus:border-rose-300" 
+              />
             </div>
             <div className="flex gap-3 pt-4">
               <button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>

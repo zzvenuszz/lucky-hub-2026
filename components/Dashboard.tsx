@@ -65,7 +65,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
               </select>
             </div>
           ) : (
-            <p className="text-slate-500 font-medium">Chào {user.fullName}! Mục tiêu: <span className="text-emerald-600 font-bold">{user.healthGoal}</span></p>
+            <p className="text-slate-500 font-medium">Chào {user.fullName}! Mục tiêu: <span className="text-emerald-600 font-bold">{(user.healthGoals || []).join(', ') || 'Chưa đặt mục tiêu'}</span></p>
           )}
         </div>
         <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>

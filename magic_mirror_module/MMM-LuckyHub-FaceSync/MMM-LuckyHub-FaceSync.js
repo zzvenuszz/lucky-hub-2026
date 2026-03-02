@@ -8,7 +8,8 @@ Module.register("MMM-LuckyHub-FaceSync", {
   },
 
   start: function() {
-    Log.info("Starting module: " + this.name);
+    Log.info("MMM-LuckyHub-FaceSync: Starting module: " + this.name);
+    console.log("MMM-LuckyHub-FaceSync: Sending CONFIG to node_helper...");
     this.sendSocketNotification("CONFIG", this.config);
     this.lastDetectedUser = null;
   },
