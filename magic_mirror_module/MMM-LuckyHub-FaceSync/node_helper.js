@@ -115,7 +115,13 @@ module.exports = NodeHelper.create({
       const remoteUsers = response.data;
       console.log(`MMM-LuckyHub-FaceSync: Found ${remoteUsers.length} users on server.`);
       
+      const usersWithAvatar = remoteUsers.filter(u => !!u.avatar);
+      console.log(`MMM-LuckyHub-FaceSync: ${usersWithAvatar.length} users have avatars to sync.`);
+
       let hasChanges = false;
+      let downloadCount = 0;
+      let skipCount = 0;
+
       for (const user of remoteUsers) {
         if (!user.avatar) continue;
         
@@ -141,19 +147,26 @@ module.exports = NodeHelper.create({
         }
         
         if (shouldDownload) {
-          console.log(`MMM-LuckyHub-FaceSync: Downloading avatar for @${user.username} (Hash: ${user.avatarHash})...`);
-          const imgRes = await axiosInstance.get(user.avatar, { responseType: 'arraybuffer' });
-          await fs.writeFile(filePath, imgRes.data);
-          await fs.writeJson(metaPath, { 
-            username: user.username, 
-            updatedAt: user.updatedAt,
-            avatarHash: user.avatarHash 
-          });
-          hasChanges = true;
+          try {
+            console.log(`MMM-LuckyHub-FaceSync: Downloading avatar for @${user.username} (Hash: ${user.avatarHash || 'N/A'})...`);
+            const imgRes = await axiosInstance.get(user.avatar, { responseType: 'arraybuffer' });
+            await fs.writeFile(filePath, imgRes.data);
+            await fs.writeJson(metaPath, { 
+              username: user.username, 
+              updatedAt: user.updatedAt,
+              avatarHash: user.avatarHash 
+            });
+            hasChanges = true;
+            downloadCount++;
+          } catch (err) {
+            console.error(`MMM-LuckyHub-FaceSync: Failed to download avatar for @${user.username}: ${err.message}`);
+          }
+        } else {
+          skipCount++;
         }
       }
       
-      console.log("MMM-LuckyHub-FaceSync: Sync completed.");
+      console.log(`MMM-LuckyHub-FaceSync: Sync completed. Downloaded: ${downloadCount}, Skipped: ${skipCount}.`);
       if (hasChanges && this.pythonProcess) {
         console.log("MMM-LuckyHub-FaceSync: New photos detected, restarting recognition...");
         this.startRecognition();

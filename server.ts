@@ -689,8 +689,10 @@ app.get('/MM/:username/metrics/:n', async (req, res) => {
 
 app.get('/MM/users/sync', async (req, res) => {
   try {
-    console.log(`[MM] Request sync from: ${req.ip} at ${new Date().toISOString()}`);
     const users = await User.find({}, 'username fullName avatar avatarHash updatedAt');
+    const usersWithAvatar = users.filter(u => !!u.avatar);
+    console.log(`[MM] Sync request from ${req.ip}. Total users: ${users.length}, Users with avatar: ${usersWithAvatar.length}`);
+    
     res.json(users.map(u => ({
       username: u.username,
       fullName: u.fullName,
@@ -719,8 +721,9 @@ server.listen(PORT, async () => {
     if (usersToUpdate.length > 0) {
       console.log(`[MIGRATION] Found ${usersToUpdate.length} users needing avatarHash. Updating...`);
       for (const user of usersToUpdate) {
-        (user as any).avatarHash = generateAvatarHash(user.avatar);
-        await user.save();
+        const hash = generateAvatarHash(user.avatar);
+        // Use updateOne to bypass full document validation (avoids "email required" errors for legacy data)
+        await User.updateOne({ _id: user._id }, { $set: { avatarHash: hash } });
         console.log(`[MIGRATION] Updated user: @${user.username}`);
       }
       console.log(`[MIGRATION] Successfully updated ${usersToUpdate.length} users.`);
