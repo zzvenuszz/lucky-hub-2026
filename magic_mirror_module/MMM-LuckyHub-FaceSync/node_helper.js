@@ -49,17 +49,6 @@ module.exports = NodeHelper.create({
       if (isFirstConfig) {
         this.startSyncLoop();
         this.startRecognition();
-      } else {
-        // Nếu config thay đổi khi đang chạy, restart lại nhận diện
-        console.log("MMM-LuckyHub-FaceSync: Config updated, restarting recognition...");
-        this.startRecognition();
-      }
-    }
-  },
-
-      if (isFirstConfig) {
-        this.startSyncLoop();
-        this.startRecognition();
         this.connectToWebSocket();
       } else {
         // Nếu config thay đổi khi đang chạy, restart lại nhận diện
@@ -138,8 +127,12 @@ module.exports = NodeHelper.create({
         if (fs.existsSync(filePath) && fs.existsSync(metaPath)) {
           try {
             const localMeta = fs.readJsonSync(metaPath);
-            // Ưu tiên so sánh avatarHash để tối ưu tốc độ
-            if (localMeta.avatarHash === user.avatarHash) {
+            // Ưu tiên so sánh avatarHash, nếu không có thì dùng updatedAt
+            if (user.avatarHash) {
+              if (localMeta.avatarHash === user.avatarHash) {
+                shouldDownload = false;
+              }
+            } else if (localMeta.updatedAt === user.updatedAt) {
               shouldDownload = false;
             }
           } catch (e) {

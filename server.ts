@@ -18,18 +18,52 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+// WebSocket Server Logging
+wss.on('connection', (ws, req) => {
+  const ip = req.socket.remoteAddress;
+  console.log(`[WS] New connection from ${ip}. Total clients: ${wss.clients.size}`);
+  
+  ws.on('message', (data) => {
+    console.log(`[WS] Received message from ${ip}: ${data}`);
+  });
+
+  ws.on('close', () => {
+    console.log(`[WS] Connection closed for ${ip}. Remaining clients: ${wss.clients.size}`);
+  });
+
+  ws.on('error', (err) => {
+    console.error(`[WS] Error from ${ip}:`, err.message);
+  });
+});
+
 // Broadcast to all connected Magic Mirrors
 const broadcastToMirrors = (type: string, data: any) => {
+  console.log(`[WS] Broadcasting ${type} to ${wss.clients.size} mirrors...`);
   const message = JSON.stringify({ type, data });
+  let count = 0;
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(message);
+      count++;
     }
   });
+  console.log(`[WS] Successfully sent ${type} to ${count} active mirrors.`);
 };
 
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '50mb' }) as any);
+
+// Global Request Logger for API and MM endpoints
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/MM/')) {
+    const start = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - start;
+      console.log(`[HTTP] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms) from ${req.ip}`);
+    });
+  }
+  next();
+});
 
 const ENV_API_KEYS = [
   process.env.API_KEY, 
@@ -673,4 +707,27 @@ app.get('/MM/users/sync', async (req, res) => {
 app.use(express.static('.') as any);
 app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, async () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`[SYSTEM] Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`[SYSTEM] Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
+  
+  // Migration: Populate avatarHash for existing users
+  try {
+    console.log(`[MIGRATION] Checking for users without avatarHash...`);
+    const usersToUpdate = await User.find({ avatar: { $exists: true, $ne: '' }, avatarHash: { $exists: false } });
+    if (usersToUpdate.length > 0) {
+      console.log(`[MIGRATION] Found ${usersToUpdate.length} users needing avatarHash. Updating...`);
+      for (const user of usersToUpdate) {
+        (user as any).avatarHash = generateAvatarHash(user.avatar);
+        await user.save();
+        console.log(`[MIGRATION] Updated user: @${user.username}`);
+      }
+      console.log(`[MIGRATION] Successfully updated ${usersToUpdate.length} users.`);
+    } else {
+      console.log(`[MIGRATION] All users are up to date.`);
+    }
+  } catch (err: any) {
+    console.error(`[MIGRATION] Error during avatarHash migration: ${err.message}`);
+  }
+});
