@@ -5,6 +5,7 @@ const fs = require("fs-extra");
 const path = require("path");
 const { spawn } = require("child_process");
 const https = require("https");
+const WebSocket = require("ws");
 
 // Bỏ qua kiểm tra SSL nếu Raspberry Pi gặp lỗi chứng chỉ
 const axiosInstance = axios.create({
@@ -20,6 +21,7 @@ module.exports = NodeHelper.create({
     this.faceDir = path.resolve(__dirname, "faces");
     this.isSyncing = false;
     this.pythonProcess = null;
+    this.wsClient = null;
     fs.ensureDirSync(this.faceDir);
 
     // Fallback: Nếu sau 10 giây không nhận được CONFIG, tự chạy với cấu hình mặc định
@@ -55,60 +57,119 @@ module.exports = NodeHelper.create({
     }
   },
 
-  startSyncLoop: function() {
-    if (this.syncTimer) clearInterval(this.syncTimer);
-    const self = this;
-    const sync = async () => {
-      if (this.isSyncing) return;
-      this.isSyncing = true;
-      console.log("MMM-LuckyHub-FaceSync: Starting sync...");
-      
+      if (isFirstConfig) {
+        this.startSyncLoop();
+        this.startRecognition();
+        this.connectToWebSocket();
+      } else {
+        // Nếu config thay đổi khi đang chạy, restart lại nhận diện
+        console.log("MMM-LuckyHub-FaceSync: Config updated, restarting recognition...");
+        this.startRecognition();
+        this.connectToWebSocket(); // Reconnect if base URL changed
+      }
+    }
+  },
+
+  connectToWebSocket: function() {
+    if (this.wsClient) {
+      this.wsClient.terminate();
+      this.wsClient = null;
+    }
+
+    const wsUrl = this.config.baseUrl.replace(/^http/, "ws") + "/";
+    console.log("MMM-LuckyHub-FaceSync: Connecting to WebSocket at " + wsUrl);
+
+    this.wsClient = new WebSocket(wsUrl);
+
+    this.wsClient.on("open", () => {
+      console.log("MMM-LuckyHub-FaceSync: WebSocket connected.");
+    });
+
+    this.wsClient.on("message", (data) => {
       try {
-        const url = this.config.baseUrl + "/MM/users/sync";
-        console.log("MMM-LuckyHub-FaceSync: Fetching users from " + url);
-        const response = await axiosInstance.get(url);
-        const remoteUsers = response.data;
-        console.log(`MMM-LuckyHub-FaceSync: Found ${remoteUsers.length} users on server.`);
-        
-        let hasChanges = false;
-        for (const user of remoteUsers) {
-          if (!user.avatar) continue;
-          
-          const fileName = `${user.username}.jpg`;
-          const filePath = path.join(this.faceDir, fileName);
-          const metaPath = path.join(this.faceDir, `${user.username}.json`);
-          
-          let shouldDownload = true;
-          if (fs.existsSync(filePath) && fs.existsSync(metaPath)) {
-            const localMeta = fs.readJsonSync(metaPath);
-            if (localMeta.updatedAt === user.updatedAt) {
-              shouldDownload = false;
-            }
-          }
-          
-          if (shouldDownload) {
-            console.log(`MMM-LuckyHub-FaceSync: Downloading avatar for @${user.username}...`);
-            const imgRes = await axiosInstance.get(user.avatar, { responseType: 'arraybuffer' });
-            await fs.writeFile(filePath, imgRes.data);
-            await fs.writeJson(metaPath, { username: user.username, updatedAt: user.updatedAt });
-            hasChanges = true;
-          }
-        }
-        
-        console.log("MMM-LuckyHub-FaceSync: Sync completed.");
-        if (hasChanges && this.pythonProcess) {
-          console.log("MMM-LuckyHub-FaceSync: New photos detected, restarting recognition...");
-          this.startRecognition();
+        const message = JSON.parse(data);
+        console.log("MMM-LuckyHub-FaceSync: Received WebSocket message: " + message.type);
+        if (message.type === "user:created" || message.type === "user:updated") {
+          console.log("MMM-LuckyHub-FaceSync: Real-time update detected, triggering sync...");
+          this.sync(); // Trigger immediate sync
         }
       } catch (err) {
-        console.error("MMM-LuckyHub-FaceSync: Sync error: " + err.message);
-      } finally {
-        this.isSyncing = false;
+        console.error("MMM-LuckyHub-FaceSync: Error parsing WebSocket message: " + err.message);
       }
-    };
+    });
 
-    sync();
-    this.syncTimer = setInterval(sync, this.config.syncInterval);
+    this.wsClient.on("error", (err) => {
+      console.error("MMM-LuckyHub-FaceSync: WebSocket error: " + err.message);
+    });
+
+    this.wsClient.on("close", () => {
+      console.log("MMM-LuckyHub-FaceSync: WebSocket closed. Reconnecting in 10s...");
+      setTimeout(() => this.connectToWebSocket(), 10000);
+    });
+  },
+
+  startSyncLoop: function() {
+    if (this.syncTimer) clearInterval(this.syncTimer);
+    this.sync(); // Initial sync
+    this.syncTimer = setInterval(() => this.sync(), this.config.syncInterval);
+  },
+
+  sync: async function() {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+    console.log("MMM-LuckyHub-FaceSync: Starting sync...");
+    
+    try {
+      const url = this.config.baseUrl + "/MM/users/sync";
+      console.log("MMM-LuckyHub-FaceSync: Fetching users from " + url);
+      const response = await axiosInstance.get(url);
+      const remoteUsers = response.data;
+      console.log(`MMM-LuckyHub-FaceSync: Found ${remoteUsers.length} users on server.`);
+      
+      let hasChanges = false;
+      for (const user of remoteUsers) {
+        if (!user.avatar) continue;
+        
+        const fileName = `${user.username}.jpg`;
+        const filePath = path.join(this.faceDir, fileName);
+        const metaPath = path.join(this.faceDir, `${user.username}.json`);
+        
+        let shouldDownload = true;
+        if (fs.existsSync(filePath) && fs.existsSync(metaPath)) {
+          try {
+            const localMeta = fs.readJsonSync(metaPath);
+            // Ưu tiên so sánh avatarHash để tối ưu tốc độ
+            if (localMeta.avatarHash === user.avatarHash) {
+              shouldDownload = false;
+            }
+          } catch (e) {
+            console.warn(`MMM-LuckyHub-FaceSync: Error reading meta for ${user.username}, will re-download.`);
+          }
+        }
+        
+        if (shouldDownload) {
+          console.log(`MMM-LuckyHub-FaceSync: Downloading avatar for @${user.username} (Hash: ${user.avatarHash})...`);
+          const imgRes = await axiosInstance.get(user.avatar, { responseType: 'arraybuffer' });
+          await fs.writeFile(filePath, imgRes.data);
+          await fs.writeJson(metaPath, { 
+            username: user.username, 
+            updatedAt: user.updatedAt,
+            avatarHash: user.avatarHash 
+          });
+          hasChanges = true;
+        }
+      }
+      
+      console.log("MMM-LuckyHub-FaceSync: Sync completed.");
+      if (hasChanges && this.pythonProcess) {
+        console.log("MMM-LuckyHub-FaceSync: New photos detected, restarting recognition...");
+        this.startRecognition();
+      }
+    } catch (err) {
+      console.error("MMM-LuckyHub-FaceSync: Sync error: " + err.message);
+    } finally {
+      this.isSyncing = false;
+    }
   },
 
   startRecognition: function() {

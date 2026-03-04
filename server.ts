@@ -9,10 +9,24 @@ import crypto from 'crypto';
 import { transform } from 'sucrase';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from './types.ts';
+import { WebSocketServer, WebSocket } from 'ws';
+import http from 'http';
 
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
+
+// Broadcast to all connected Magic Mirrors
+const broadcastToMirrors = (type: string, data: any) => {
+  const message = JSON.stringify({ type, data });
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+};
 
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '50mb' }) as any);
@@ -248,6 +262,11 @@ function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
+function generateAvatarHash(avatar: string | undefined): string {
+  if (!avatar) return '';
+  return crypto.createHash('md5').update(avatar).digest('hex');
+}
+
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   const rootDir = path.resolve();
@@ -295,6 +314,7 @@ const User = mongoose.model('User', new mongoose.Schema({
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
   permissions: { type: [String], default: [] },
   avatar: String,
+  avatarHash: String,
   isPasswordEncrypted: { type: Boolean, default: false },
   badges: { type: [String], default: [] }
 }, { timestamps: true }));
@@ -340,9 +360,25 @@ app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, avatar, ...rest } = req.body;
     const imgData = await uploadToImgBB(avatar);
-    const newUser = new User({ ...rest, username: username.toLowerCase().trim(), email: email.toLowerCase().trim(), password: hashPassword(password), isPasswordEncrypted: true, avatar: imgData?.url || avatar });
+    const finalAvatar = imgData?.url || avatar;
+    const newUser = new User({ 
+      ...rest, 
+      username: username.toLowerCase().trim(), 
+      email: email.toLowerCase().trim(), 
+      password: hashPassword(password), 
+      isPasswordEncrypted: true, 
+      avatar: finalAvatar,
+      avatarHash: generateAvatarHash(finalAvatar)
+    });
     await newUser.save();
     
+    broadcastToMirrors('user:created', { 
+      username: newUser.username, 
+      fullName: newUser.fullName, 
+      avatar: newUser.avatar, 
+      avatarHash: (newUser as any).avatarHash 
+    });
+
     // Audit Log
     const log = new AuditLog({
       actorId: newUser._id, actorName: newUser.fullName, type: AuditLogType.REGISTER,
@@ -396,9 +432,20 @@ app.put('/api/users/:id', async (req, res) => {
       delete data.password;
     }
 
+    if (data.avatar) {
+      data.avatarHash = generateAvatarHash(data.avatar);
+    }
+
     const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
     if (!u) return res.status(404).json({ message: 'User not found' });
     
+    broadcastToMirrors('user:updated', { 
+      username: u.username, 
+      fullName: u.fullName, 
+      avatar: u.avatar, 
+      avatarHash: (u as any).avatarHash 
+    });
+
     const result = u.toObject();
     delete result.password;
     res.json({ ...result, id: u._id });
@@ -609,11 +656,12 @@ app.get('/MM/:username/metrics/:n', async (req, res) => {
 app.get('/MM/users/sync', async (req, res) => {
   try {
     console.log(`[MM] Request sync from: ${req.ip} at ${new Date().toISOString()}`);
-    const users = await User.find({}, 'username fullName avatar updatedAt');
+    const users = await User.find({}, 'username fullName avatar avatarHash updatedAt');
     res.json(users.map(u => ({
       username: u.username,
       fullName: u.fullName,
       avatar: u.avatar,
+      avatarHash: (u as any).avatarHash,
       updatedAt: (u as any).updatedAt
     })));
   } catch (err: any) { 
@@ -625,4 +673,4 @@ app.get('/MM/users/sync', async (req, res) => {
 app.use(express.static('.') as any);
 app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
