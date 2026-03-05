@@ -1,7 +1,7 @@
 
 Module.register("MMM-LuckyHub-FaceSync", {
   defaults: {
-    baseUrl: "https://ais-dev-rk6e4t6ryqfyczqrnteuxj-275449668179.asia-east1.run.app",
+    baseUrl: "https://lucky-hub-gx7s.onrender.com",
     syncInterval: 30 * 60 * 1000, // 30 phút đồng bộ 1 lần
     recognitionInterval: 2000, // 2 giây quét 1 lần
     confidenceThreshold: 0.6,

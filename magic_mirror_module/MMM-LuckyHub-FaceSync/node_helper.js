@@ -29,7 +29,7 @@ module.exports = NodeHelper.create({
       if (!this.config) {
         console.log("MMM-LuckyHub-FaceSync: No CONFIG received after 10s. Starting with default settings...");
         this.config = {
-          baseUrl: "https://ais-dev-rk6e4t6ryqfyczqrnteuxj-275449668179.asia-east1.run.app",
+          baseUrl: "https://lucky-hub-gx7s.onrender.com",
           syncInterval: 30 * 60 * 1000
         };
         this.startSyncLoop();
@@ -112,7 +112,19 @@ module.exports = NodeHelper.create({
       const url = this.config.baseUrl + "/MM/users/sync";
       console.log("MMM-LuckyHub-FaceSync: Fetching users from " + url);
       const response = await axiosInstance.get(url);
-      const remoteUsers = response.data;
+      
+      let remoteUsers = response.data;
+      // Đảm bảo remoteUsers là một mảng, hỗ trợ cả trường hợp server trả về { users: [...] }
+      if (remoteUsers && !Array.isArray(remoteUsers) && Array.isArray(remoteUsers.users)) {
+        remoteUsers = remoteUsers.users;
+      }
+
+      if (!Array.isArray(remoteUsers)) {
+        console.error("MMM-LuckyHub-FaceSync: Invalid response format from server. Expected an array.");
+        this.isSyncing = false;
+        return;
+      }
+
       console.log(`MMM-LuckyHub-FaceSync: Found ${remoteUsers.length} users on server.`);
       
       const usersWithAvatar = remoteUsers.filter(u => !!u.avatar);
@@ -123,32 +135,48 @@ module.exports = NodeHelper.create({
       let skipCount = 0;
 
       for (const user of remoteUsers) {
-        if (!user.avatar) continue;
+        if (!user.avatar) {
+          console.log(`MMM-LuckyHub-FaceSync: Skipping user @${user.username} because they have no avatar URL.`);
+          continue;
+        }
         
         const fileName = `${user.username}.jpg`;
         const filePath = path.join(this.faceDir, fileName);
         const metaPath = path.join(this.faceDir, `${user.username}.json`);
         
         let shouldDownload = true;
-        if (fs.existsSync(filePath) && fs.existsSync(metaPath)) {
+        const fileExists = fs.existsSync(filePath);
+        const metaExists = fs.existsSync(metaPath);
+
+        console.log(`MMM-LuckyHub-FaceSync: Checking user @${user.username} -> JPG: ${fileExists}, JSON: ${metaExists}`);
+
+        if (fileExists && metaExists) {
           try {
             const localMeta = fs.readJsonSync(metaPath);
             // Ưu tiên so sánh avatarHash, nếu không có thì dùng updatedAt
             if (user.avatarHash) {
               if (localMeta.avatarHash === user.avatarHash) {
+                console.log(`MMM-LuckyHub-FaceSync: @${user.username} - Hash matches (${user.avatarHash}). Skipping.`);
                 shouldDownload = false;
+              } else {
+                console.log(`MMM-LuckyHub-FaceSync: @${user.username} - Hash mismatch (Local: ${localMeta.avatarHash}, Remote: ${user.avatarHash}). Downloading...`);
               }
             } else if (localMeta.updatedAt === user.updatedAt) {
+              console.log(`MMM-LuckyHub-FaceSync: @${user.username} - Date matches (${user.updatedAt}). Skipping.`);
               shouldDownload = false;
+            } else {
+              console.log(`MMM-LuckyHub-FaceSync: @${user.username} - Date mismatch (Local: ${localMeta.updatedAt}, Remote: ${user.updatedAt}). Downloading...`);
             }
           } catch (e) {
             console.warn(`MMM-LuckyHub-FaceSync: Error reading meta for ${user.username}, will re-download.`);
           }
+        } else {
+          console.log(`MMM-LuckyHub-FaceSync: File missing for ${user.username}. Force download.`);
         }
         
         if (shouldDownload) {
           try {
-            console.log(`MMM-LuckyHub-FaceSync: Downloading avatar for @${user.username} (Hash: ${user.avatarHash || 'N/A'})...`);
+            console.log(`MMM-LuckyHub-FaceSync: >>> DOWNLOADING avatar for @${user.username}...`);
             const imgRes = await axiosInstance.get(user.avatar, { responseType: 'arraybuffer' });
             await fs.writeFile(filePath, imgRes.data);
             await fs.writeJson(metaPath, { 

@@ -11,6 +11,10 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from './types.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
+import { logger } from './src/utils/logger.ts';
+import { migrationService } from './src/services/migrationService.ts';
+import { ttsService } from './src/services/ttsService.ts';
+import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 
 dotenv.config();
 
@@ -20,25 +24,25 @@ const wss = new WebSocketServer({ server });
 
 // WebSocket Server Logging
 wss.on('connection', (ws, req) => {
-  const ip = req.socket.remoteAddress;
-  console.log(`[WS] New connection from ${ip}. Total clients: ${wss.clients.size}`);
+  const ip = req.socket.remoteAddress || 'unknown';
+  logger.ws(`New connection from ${ip}. Total clients: ${wss.clients.size}`);
   
   ws.on('message', (data) => {
-    console.log(`[WS] Received message from ${ip}: ${data}`);
+    logger.ws(`Received message from ${ip}: ${data}`);
   });
 
   ws.on('close', () => {
-    console.log(`[WS] Connection closed for ${ip}. Remaining clients: ${wss.clients.size}`);
+    logger.ws(`Connection closed for ${ip}. Remaining clients: ${wss.clients.size}`);
   });
 
   ws.on('error', (err) => {
-    console.error(`[WS] Error from ${ip}:`, err.message);
+    logger.error('WS', `Error from ${ip}: ${err.message}`);
   });
 });
 
 // Broadcast to all connected Magic Mirrors
 const broadcastToMirrors = (type: string, data: any) => {
-  console.log(`[WS] Broadcasting ${type} to ${wss.clients.size} mirrors...`);
+  logger.ws(`Broadcasting ${type} to ${wss.clients.size} mirrors...`);
   const message = JSON.stringify({ type, data });
   let count = 0;
   wss.clients.forEach(client => {
@@ -47,7 +51,7 @@ const broadcastToMirrors = (type: string, data: any) => {
       count++;
     }
   });
-  console.log(`[WS] Successfully sent ${type} to ${count} active mirrors.`);
+  logger.ws(`Successfully sent ${type} to ${count} active mirrors.`);
 };
 
 app.use(cors({ origin: '*' }) as any);
@@ -59,7 +63,7 @@ app.use((req, res, next) => {
     const start = Date.now();
     res.on('finish', () => {
       const duration = Date.now() - start;
-      console.log(`[HTTP] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms) from ${req.ip}`);
+      logger.http(req.method, req.path, res.statusCode, duration, req.ip || 'unknown');
     });
   }
   next();
@@ -296,11 +300,6 @@ function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-function generateAvatarHash(avatar: string | undefined): string {
-  if (!avatar) return '';
-  return crypto.createHash('md5').update(avatar).digest('hex');
-}
-
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   const rootDir = path.resolve();
@@ -402,7 +401,7 @@ app.post('/api/register', async (req, res) => {
       password: hashPassword(password), 
       isPasswordEncrypted: true, 
       avatar: finalAvatar,
-      avatarHash: generateAvatarHash(finalAvatar)
+      avatarHash: cryptoUtils.generateAvatarHash(finalAvatar)
     });
     await newUser.save();
     
@@ -467,7 +466,7 @@ app.put('/api/users/:id', async (req, res) => {
     }
 
     if (data.avatar) {
-      data.avatarHash = generateAvatarHash(data.avatar);
+      data.avatarHash = cryptoUtils.generateAvatarHash(data.avatar);
     }
 
     const u = await User.findByIdAndUpdate(req.params.id, data, { new: true });
@@ -609,38 +608,17 @@ app.post('/api/chats', async (req, res) => {
 app.get('/api/tts/greeting/:name', async (req, res) => {
   const name = req.params.name;
   const customPrompt = req.query.prompt as string;
-  const requestId = `TTS-${Math.random().toString(36).substring(7).toUpperCase()}`;
-  console.log(`[TTS] Request greeting for: ${name} from ${req.ip} (ID: ${requestId})${customPrompt ? ' with custom prompt' : ''}`);
   
   try {
-    const prompt = customPrompt || `Nói một cách thân thiện và ấm áp: Xin chào ${name}, chúc bạn một ngày vui vẻ.`;
+    const audioBuffer = await ttsService.generateGreeting(name, customPrompt, callAIWithRetry);
     
-    const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' }, // 'Kore' is good for Vietnamese
-          },
-        },
-      },
-    };
-
-    const response = await callAIWithRetry(requestId, "gemini-2.5-flash-preview-tts", payload);
-
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (base64Audio) {
-      const audioBuffer = Buffer.from(base64Audio, 'base64');
-      console.log(`[TTS] Successfully generated audio for: ${name} (${audioBuffer.length} bytes) using rotated keys`);
-      res.set('Content-Type', 'audio/wav'); // Gemini TTS returns WAV by default
+    if (audioBuffer) {
+      res.set('Content-Type', 'audio/wav');
       res.send(audioBuffer);
     } else {
-      console.error(`[TTS] Failed to generate audio for: ${name} - No audio data in response`);
       res.status(500).json({ message: 'Failed to generate audio' });
     }
   } catch (err: any) {
-    console.error(`[TTS] Error for ${name} (ID: ${requestId}):`, err.message);
     res.status(500).json({ message: err.message });
   }
 });
@@ -711,26 +689,9 @@ app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 
 server.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`[SYSTEM] Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`[SYSTEM] Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
+  logger.info('SYSTEM', `Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info('SYSTEM', `Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
   
   // Migration: Populate avatarHash for existing users
-  try {
-    console.log(`[MIGRATION] Checking for users without avatarHash...`);
-    const usersToUpdate = await User.find({ avatar: { $exists: true, $ne: '' }, avatarHash: { $exists: false } });
-    if (usersToUpdate.length > 0) {
-      console.log(`[MIGRATION] Found ${usersToUpdate.length} users needing avatarHash. Updating...`);
-      for (const user of usersToUpdate) {
-        const hash = generateAvatarHash(user.avatar);
-        // Use updateOne to bypass full document validation (avoids "email required" errors for legacy data)
-        await User.updateOne({ _id: user._id }, { $set: { avatarHash: hash } });
-        console.log(`[MIGRATION] Updated user: @${user.username}`);
-      }
-      console.log(`[MIGRATION] Successfully updated ${usersToUpdate.length} users.`);
-    } else {
-      console.log(`[MIGRATION] All users are up to date.`);
-    }
-  } catch (err: any) {
-    console.error(`[MIGRATION] Error during avatarHash migration: ${err.message}`);
-  }
+  await migrationService.runAvatarHashMigration(User);
 });
