@@ -350,10 +350,16 @@ async function checkGeminiHealth() {
 app.post('/api/ai/extract', async (req, res) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
   try {
-    const { imageBase64 } = req.body;
+    const { imageBase64, selectedYear } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+    
+    let prompt = "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON.";
+    if (selectedYear) {
+      prompt += ` Lưu ý: Nếu ngày đo không ghi rõ năm, hãy sử dụng năm ${selectedYear} cho kết quả (định dạng YYYY-MM-DD).`;
+    }
+
     const payload = {
-      contents: [{ parts: [{ text: "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON." }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }] ,
+      contents: [{ parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }] ,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -370,10 +376,16 @@ app.post('/api/ai/extract', async (req, res) => {
 app.post('/api/ai/bulk-extract', async (req, res) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
   try {
-    const { imageBase64 } = req.body;
+    const { imageBase64, selectedYear } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+
+    let prompt = "Trích xuất danh sách JSON nhiều dòng kết quả sức khỏe từ bảng viết tay.";
+    if (selectedYear) {
+      prompt += ` RẤT QUAN TRỌNG: Nếu ngày (ví dụ 10/05) không ghi rõ năm trong ảnh, hãy sử dụng năm ${selectedYear} để tạo ngày hoàn chỉnh dạng YYYY-MM-DD.`;
+    }
+
     const payload = {
-      contents: [{ parts: [{ text: "Trích xuất danh sách JSON nhiều dòng kết quả sức khỏe." }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
+      contents: [{ parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {

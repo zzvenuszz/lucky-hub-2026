@@ -20,7 +20,7 @@ const processYearLogic = (extractedDate: string) => {
   return now.toISOString().split('T')[0];
 };
 
-export const extractMetricsFromImage = async (base64Image: string): Promise<Partial<HealthMetric> | null> => {
+export const extractMetricsFromImage = async (base64Image: string, selectedYear?: string): Promise<Partial<HealthMetric> | null> => {
   const startTime = Date.now();
   const log = (msg: string, type: string = 'ai', duration?: number) => {
     if (window.debugLog) window.debugLog(`[AI OCR] ${msg}`, type, duration);
@@ -35,7 +35,10 @@ export const extractMetricsFromImage = async (base64Image: string): Promise<Part
     const res = await fetch('/api/ai/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: base64Image }),
+      body: JSON.stringify({ 
+        imageBase64: base64Image,
+        selectedYear: selectedYear && selectedYear !== 'auto' ? selectedYear : undefined
+      }),
       signal: controller.signal
     });
 

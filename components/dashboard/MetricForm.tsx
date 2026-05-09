@@ -39,6 +39,10 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
   const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const [selectedYearAI, setSelectedYearAI] = useState<string>('auto');
+  const [pendingBulk, setPendingBulk] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -65,10 +69,10 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     setLoadingAI(true);
     setBulkMode(isBulk);
     setStatusMsg(null);
-    log(`Bắt đầu xử lý file: ${file.name} (Chế độ: ${isBulk ? 'Hàng loạt' : 'Đơn lẻ'})`, 'system');
+    log(`Bắt đầu xử lý file: ${file.name} (Chế độ: ${isBulk ? 'Hàng loạt' : 'Đơn lẻ'}, Năm chọn: ${selectedYearAI})`, 'system');
 
     const now = new Date();
-    const currentYear = now.getFullYear();
+    const currentYear = selectedYearAI === 'auto' ? now.getFullYear() : parseInt(selectedYearAI);
 
     const reader = new FileReader();
     reader.onloadend = async () => {
@@ -88,7 +92,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
         if (!isBulk) {
           try {
-            const extracted = await extractMetricsFromImage(compressedBase64);
+            // Sử dụng service đã được cập nhật để gọi /api/ai/extract
+            const extracted = await extractMetricsFromImage(compressedBase64, selectedYearAI);
             setLoadingAI(false);
 
             if (extracted && extracted.weight && extracted.weight > 0) {
@@ -116,11 +121,14 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           }
         } else {
           try {
-            log("Đang gọi endpoint /api/ai/bulk-extract...", "ai");
+            log(`Đang gọi endpoint /api/ai/bulk-extract với năm: ${selectedYearAI}...`, "ai");
             const res = await fetch('/api/ai/bulk-extract', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ imageBase64: compressedBase64 })
+              body: JSON.stringify({ 
+                imageBase64: compressedBase64,
+                selectedYear: selectedYearAI !== 'auto' ? selectedYearAI : undefined
+              })
             });
 
             if (!res.ok) {
@@ -130,19 +138,23 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
             const data = await res.json();
             log(`AI đã phản hồi. Nhận được ${data.length} bản ghi thô.`, "ai");
-            log(`Dữ liệu thô AI trả về: ${JSON.stringify(data)}`, "ai");
             
             const processedData = data.filter((item: any) => item.weight && item.weight > 0).map((item: any) => {
               if (item.date && item.date.includes('/')) {
                 const parts = item.date.split('/');
                 const d = parseInt(parts[0]);
                 const m = parseInt(parts[1]);
-                const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
-                let finalYear = currentYear;
-                if (extractedDateThisYear > now) {
-                  finalYear = currentYear - 1;
+                
+                if (selectedYearAI !== 'auto') {
+                  item.date = `${selectedYearAI}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                } else {
+                  const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
+                  let finalYear = currentYear;
+                  if (extractedDateThisYear > now) {
+                    finalYear = currentYear - 1;
+                  }
+                  item.date = `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                 }
-                item.date = `${finalYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
               } else if (!item.date) {
                 item.date = now.toISOString().split('T')[0];
               }
@@ -151,7 +163,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             
             setLoadingAI(false);
             if (processedData.length > 0) {
-              log(`Xử lý thành công ${processedData.length} bản ghi sau khi chuẩn hóa ngày tháng.`, "success");
+              log(`Xử lý thành công ${processedData.length} bản ghi với năm ${selectedYearAI}.`, "success");
               setBulkPreview(processedData);
               setStatusMsg({ text: `✅ Đã quét thành công ${processedData.length} bản ghi!`, type: 'success' });
             } else {
@@ -223,16 +235,59 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button disabled={loadingAI} onClick={() => { setBulkMode(false); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
+            <button disabled={loadingAI} onClick={() => { setPendingBulk(false); setBulkMode(false); setShowYearPicker(true); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📸</span>
               <span className="font-black text-emerald-800 text-[10px] uppercase tracking-widest">Tải ảnh/Chụp InBody</span>
             </button>
-            <button disabled={loadingAI} onClick={() => { setBulkMode(true); fileInputRef.current?.click(); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-slate-200'}`}>
+            <button disabled={loadingAI} onClick={() => { setPendingBulk(true); setBulkMode(true); setShowYearPicker(true); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📝</span>
               <span className="font-black text-amber-800 text-[10px] uppercase tracking-widest">Quét sổ tay hàng loạt</span>
             </button>
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkMode)} />
           </div>
+
+          {showYearPicker && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm space-y-6 animate-in zoom-in-95 duration-200">
+                <div className="text-center space-y-2">
+                  <h3 className="text-xl font-black text-slate-800">Chọn năm quét dữ liệu</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mặc định AI sẽ tự nhận diện năm</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="relative">
+                    <select 
+                      value={selectedYearAI} 
+                      onChange={(e) => setSelectedYearAI(e.target.value)}
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 font-bold text-slate-700 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="auto">Tự nhận diện (Mặc định)</option>
+                      {[2023, 2024, 2025, 2026, 2027].map(y => (
+                        <option key={y} value={y.toString()}>Năm {y}</option>
+                      ))}
+                    </select>
+                    <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      setShowYearPicker(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest"
+                  >
+                    Xác nhận & Chọn ảnh
+                  </button>
+                  <button 
+                    onClick={() => setShowYearPicker(false)}
+                    className="w-full bg-slate-100 text-slate-400 font-bold py-3 rounded-2xl hover:bg-slate-200 transition-all uppercase text-[10px] tracking-widest"
+                  >
+                    Hủy bỏ
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {loadingAI && (
             <div className="flex flex-col items-center justify-center p-12 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
