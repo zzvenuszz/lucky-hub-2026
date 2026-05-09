@@ -78,6 +78,10 @@ const ENV_API_KEYS = [
   process.env.GEMINI_API_KEY
 ].filter(k => !!k);
 const keyCooldowns = new Map<string, number>(); 
+const GEMINI_PROXY_URL = process.env.GEMINI_PROXY_URL; // Cho phép bypass Location block
+if (GEMINI_PROXY_URL) {
+  logger.info('SYSTEM', `Gemini Proxy detected: ${GEMINI_PROXY_URL}`);
+}
 
 // Models
 const GeminiKey = mongoose.model('GeminiKey', new mongoose.Schema({
@@ -94,7 +98,7 @@ let discoveredModels: string[] = [];
 
 /**
  * Khám phá các model khả dụng cho API Key hiện tại
- * Logic được tối ưu hóa dựa trên script kiểm tra chuyên sâu
+ * Logic tối ưu hóa: Scan toàn bộ danh sách từ API và Ping kiểm tra thực tế
  */
 async function discoverAvailableModels() {
   const ANSI = {
@@ -110,9 +114,8 @@ async function discoverAvailableModels() {
 
   console.log(`\n${ANSI.cyan}========== GEMINI SYSTEM DISCOVERY ==========${ANSI.reset}\n`);
   
-  // Lấy tất cả key hiện có (ENV và DB)
   const dbKeys = await GeminiKey.find({ isActive: true });
-  const allKeys = [...new Set([...ENV_API_KEYS, ...dbKeys.map(k => k.key)])];
+  const allKeys = [...new Set([...ENV_API_KEYS, ...dbKeys.map(k => k.key as string)])];
   
   if (allKeys.length === 0) {
     console.log(`${ANSI.yellow}⚠️  CẢNH BÁO: Không tìm thấy bất kỳ API Key nào.${ANSI.reset}`);
@@ -120,41 +123,46 @@ async function discoverAvailableModels() {
   }
 
   discoveredModels = [];
-  let foundWorkingAny = false;
-
+  const baseEndpoint = (GEMINI_PROXY_URL || "https://generativelanguage.googleapis.com").replace(/\/$/, "");
+  
   for (let i = 0; i < allKeys.length; i++) {
     const key = allKeys[i];
     const keyLabel = i === 0 ? "ENV Primary" : `Key ${i+1}`;
-    console.log(`${ANSI.blue}Sàng lọc [${keyLabel}]: ${key.substring(0, 6)}••••${key.substring(key.length-4)}${ANSI.reset}`);
+    console.log(`${ANSI.blue}Kiểm tra [${keyLabel}]: ${key.substring(0, 6)}••••${key.substring(key.length-4)}${ANSI.reset}`);
 
     try {
-      // 1. Fetch danh sách model hỗ trợ generateContent
-      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`;
+      // 1. Lấy danh sách model mà Key này được phép truy cập
+      const listUrl = `${baseEndpoint}/v1beta/models?key=${key}`;
       const listResp = await fetch(listUrl);
       const listData: any = await listResp.json();
 
       if (listData.error) {
-        console.log(`    ${ANSI.red}✗ LỖI API KEY:${ANSI.reset} ${listData.error.message} (code: ${listData.error.code})`);
+        const msg = listData.error.message || "Unknown error";
+        const code = listData.error.code || "?";
+        let status = `${ANSI.red}[✗ LỖI KEY]${ANSI.reset}`;
+        if (msg.toLowerCase().includes('location')) status = `${ANSI.magenta}[⚠ LOCATION]${ANSI.reset}`;
+        console.log(`    ${status} ${msg} ${ANSI.gray}(code:${code})${ANSI.reset}`);
         continue;
       }
 
-      const availableCandidates = (listData.models || [])
+      const candidates = (listData.models || [])
         .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
-        .map((m: any) => m.name.replace('models/', ''));
+        .map((m: any) => m.name.replace('models/', ''))
+        .filter((m: string) => m.includes('gemini')); // Chỉ lấy dòng Gemini
 
-      if (availableCandidates.length === 0) {
-        console.log(`    ${ANSI.gray}↳ Không tìm thấy model hỗ trợ generateContent cho key này.${ANSI.reset}`);
+      if (candidates.length === 0) {
+        console.log(`    ${ANSI.gray}↳ Không có model generateContent nào.${ANSI.reset}`);
         continue;
       }
 
-      // 2. Test các model tiềm năng (Chọn lọc các model Flash và Pro bản mới)
-      const testModels = availableCandidates.filter((m: string) => 
-        m.includes('flash') || m.includes('pro') || m.includes('preview')
-      ).slice(0, 10); // Không test quá nhiều để tránh cạn rate limit discovery
+      // 2. Ping thử các model để xác định model nào thực sự dùng được (vùng/hạn mức)
+      // Ưu tiên các model phổ biến để test trước
+      const priorityTest = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash', 'gemini-3-flash-preview', 'gemini-1.5-pro'];
+      const testList = [...new Set([...priorityTest.filter(m => candidates.includes(m)), ...candidates.slice(0, 5)])];
 
-      for (const model of testModels) {
+      for (const model of testList) {
         try {
-          const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+          const testUrl = `${baseEndpoint}/v1beta/models/${model}:generateContent?key=${key}`;
           const testResp = await fetch(testUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -163,9 +171,8 @@ async function discoverAvailableModels() {
           const testResults: any = await testResp.json();
 
           if (testResults.candidates) {
-            console.log(`    ${ANSI.green}[✓ WORKING]${ANSI.reset} ${model.padEnd(45)}`);
+            console.log(`    ${ANSI.green}[✓ WORKING]${ANSI.reset} ${model.padEnd(40)}`);
             if (!discoveredModels.includes(model)) discoveredModels.push(model);
-            foundWorkingAny = true;
           } else if (testResults.error) {
             const msg = testResults.error.message || "Unknown error";
             const code = testResults.error.code || "?";
@@ -175,41 +182,42 @@ async function discoverAvailableModels() {
             else if (msg.toLowerCase().includes('location')) status = `${ANSI.magenta}[⚠ LOCATION]${ANSI.reset}`;
             else if (msg.toLowerCase().includes('permission')) status = `${ANSI.blue}[⚠ PERM]${ANSI.reset}`;
 
-            console.log(`    ${status} ${model.padEnd(45)} ${ANSI.gray}(code:${code})${ANSI.reset}`);
-            console.log(`        ${ANSI.gray}↳ ${msg}${ANSI.reset}`);
+            console.log(`    ${status} ${model.padEnd(40)} ${ANSI.gray}(code:${code})${ANSI.reset}`);
           }
         } catch (e: any) {
-          console.log(`    ${ANSI.red}[✗ FAIL]${ANSI.reset} ${model.padEnd(45)} ${ANSI.gray}(Internal system error)${ANSI.reset}`);
+          console.log(`    ${ANSI.red}[✗ FAIL]${ANSI.reset} ${model.padEnd(40)} ${ANSI.gray}(Connection Fail)${ANSI.reset}`);
         }
       }
+      
+      // Nếu đã tìm thấy ít nhất 1 model hoạt động, ta có thể dừng scan key nếu muốn, 
+      // nhưng tốt nhất là scan hết để có registry phong phú.
     } catch (err: any) {
-      console.log(`    ${ANSI.red}✗ LỖI KẾT NỐI:${ANSI.reset} ${err.message}`);
+      console.log(`    ${ANSI.red}✗ LỖI HỆ THỐNG:${ANSI.reset} ${err.message}`);
     }
-    
-    // Nếu key đầu tiên đã có model hoạt động, chúng ta có thể tiếp tục scan các key khác để làm dồi dào registry
-    // nhưng nếu quá nhiều key có thể dừng sớm nếu muốn tối ưu startup.
   }
 
   if (discoveredModels.length === 0) {
-    console.log(`\n${ANSI.red}🚨 [NGUY HIỂM]: Không tìm thấy bất kỳ model nào khả dụng từ server này!${ANSI.reset}`);
-    console.log(`${ANSI.gray}Gợi ý: Kiểm tra lại API Key hoặc cân nhắc sử dụng Proxy/VPN nếu Render bị chặn vùng toàn diện.${ANSI.reset}`);
+    console.log(`\n${ANSI.red}🚨 [BÁO ĐỘNG]: Server đang bị chặn toàn bộ bởi Google (Location/Keys).${ANSI.reset}`);
+    if (!GEMINI_PROXY_URL) {
+      console.log(`${ANSI.yellow}💡 Gợi ý: Hãy cấu hình GEMINI_PROXY_URL để vượt rào cản địa lý của Render.${ANSI.reset}`);
+    }
   } else {
-    // Sắp xếp lại discoveredModels: Ưu tiên Flash bản mới nhất
+    // Sắp xếp ưu tiên flash -> pro -> preview
     discoveredModels.sort((a, b) => {
-      const priority = (name: string) => {
-        if (name.includes('gemini-2.0-flash')) return 1;
-        if (name.includes('gemini-1.5-flash-latest')) return 2;
-        if (name.includes('gemini-1.5-flash')) return 3;
-        if (name.includes('flash')) return 4;
-        return 10;
+      const rank = (n: string) => {
+        if (n.includes('2.0-flash')) return 1;
+        if (n.includes('1.5-flash')) return 2;
+        if (n.includes('flash')) return 3;
+        if (n.includes('pro')) return 4;
+        return 5;
       };
-      return priority(a) - priority(b);
+      return rank(a) - rank(b);
     });
-    console.log(`\n${ANSI.green}✅ Hệ thống AI đã sẵn sàng. Registry: ${ANSI.reset}${discoveredModels.join(', ')}`);
+    console.log(`\n${ANSI.green}✅ AI DISCOVERY HOÀN TẤT. Sẵn sàng: ${ANSI.reset}${discoveredModels.join(', ')}`);
   }
-  
   console.log(`\n${ANSI.cyan}=============================================${ANSI.reset}\n`);
 }
+
 
 async function callAIWithRetry(
   requestId: string,
@@ -253,13 +261,48 @@ async function callAIWithRetry(
       let selectedKey = availableKeys[Math.floor(Math.random() * availableKeys.length)];
 
       try {
-        const ai = new GoogleGenAI({ apiKey: selectedKey.key });
-        const response = await ai.models.generateContent({ model: currentModel, ...payload });
+        let responseJson: any;
+        const proxyEnabled = !!GEMINI_PROXY_URL && GEMINI_PROXY_URL.trim() !== "";
         
-        if (selectedKey.isFromDb && selectedKey.id) {
-          await GeminiKey.findByIdAndUpdate(selectedKey.id, { lastUsed: new Date(), failCount: 0 });
+        if (proxyEnabled) {
+          // Sử dụng fetch thủ công nếu có Proxy để bypass SDK limitations hoặc Location block
+          const endpoint = `${GEMINI_PROXY_URL.replace(/\/$/, "")}/v1beta/models/${currentModel}:generateContent?key=${selectedKey.key}`;
+          const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          responseJson = await resp.json();
+          
+          if (responseJson.error) {
+            throw new Error(responseJson.error.message || "Proxy Error");
+          }
+          
+          // Giả lập cấu trúc trả về để các hàm phía sau không bị lỗi
+          const mockResponse = {
+            candidates: responseJson.candidates,
+            text: responseJson.candidates?.[0]?.content?.parts?.[0]?.text || ""
+          };
+          
+          if (selectedKey.isFromDb && selectedKey.id) {
+            await GeminiKey.findByIdAndUpdate(selectedKey.id, { lastUsed: new Date(), failCount: 0 });
+          }
+          return mockResponse;
+        } else {
+          // Sử dụng SDK gốc nếu không có Proxy
+          const ai = new GoogleGenAI({ apiKey: selectedKey.key });
+          const response = await ai.models.generateContent({ model: currentModel, ...payload });
+          
+          if (selectedKey.isFromDb && selectedKey.id) {
+            await GeminiKey.findByIdAndUpdate(selectedKey.id, { lastUsed: new Date(), failCount: 0 });
+          }
+          
+          // Trả về một object đồng nhất có thuộc tính .text là string
+          return {
+            candidates: response.candidates,
+            text: response.text 
+          };
         }
-        return response;
       } catch (err: any) {
         lastError = err;
         const errMsg = err.message?.toLowerCase() || '';
