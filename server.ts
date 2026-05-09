@@ -95,70 +95,130 @@ async function callAIWithRetry(
   payload: any,
   retries = 3
 ): Promise<any> {
-  let attempt = 0;
-  while (attempt < retries) {
-    attempt++;
-    const now = Date.now();
-    
-    // 1. Lấy tất cả key từ Database có isActive = true
-    let dbKeys = await GeminiKey.find({ isActive: true });
-    
-    // 2. Lọc bỏ các key đang cooldown
-    let availableKeys = dbKeys.filter(k => !k.cooldownUntil || new Date(k.cooldownUntil).getTime() < now);
-    
-    let selectedKeyString = '';
-    let isFromDb = false;
-    let dbKeyObj: any = null;
+  // Danh sách các model fallback theo thứ tự ưu tiên nếu model chính bị lỗi hoặc không hỗ trợ vùng
+  const modelRegistry = [
+    modelName,
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-2.0-flash'
+  ].filter((v, i, a) => a.indexOf(v) === i); // Remove duplicates
 
-    if (availableKeys.length > 0) {
-      // Chọn ngẫu nhiên từ DB
-      dbKeyObj = availableKeys[Math.floor(Math.random() * availableKeys.length)];
-      selectedKeyString = dbKeyObj.key;
-      isFromDb = true;
-    } else {
-      // 3. Fallback sang ENV keys nếu DB không có key nào khả dụng
-      const fallbackKeys = ENV_API_KEYS.filter(k => {
-        const cooldownUntil = keyCooldowns.get(k) || 0;
-        return now > cooldownUntil;
-      });
+  let lastError: any = null;
 
-      if (fallbackKeys.length === 0) {
-        throw new Error("Tất cả API Keys (DB & ENV) hiện đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.");
+  for (const currentModel of modelRegistry) {
+    let attempt = 0;
+    while (attempt < retries) {
+      attempt++;
+      const now = Date.now();
+      
+      let dbKeys = await GeminiKey.find({ isActive: true });
+      let availableKeys = dbKeys.filter(k => !k.cooldownUntil || new Date(k.cooldownUntil).getTime() < now);
+      
+      let selectedKeyString = '';
+      let isFromDb = false;
+      let dbKeyObj: any = null;
+
+      if (availableKeys.length > 0) {
+        dbKeyObj = availableKeys[Math.floor(Math.random() * availableKeys.length)];
+        selectedKeyString = dbKeyObj.key;
+        isFromDb = true;
+      } else {
+        const fallbackKeys = ENV_API_KEYS.filter(k => {
+          const cooldownUntil = keyCooldowns.get(k) || 0;
+          return now > cooldownUntil;
+        });
+
+        if (fallbackKeys.length === 0) {
+          throw new Error("Tất cả API Keys hiện đang quá tải. Vui lòng thử lại sau.");
+        }
+        selectedKeyString = fallbackKeys[Math.floor(Math.random() * fallbackKeys.length)]!;
+        isFromDb = false;
       }
-      selectedKeyString = fallbackKeys[Math.floor(Math.random() * fallbackKeys.length)]!;
-      isFromDb = false;
-    }
 
-    try {
-      const ai = new GoogleGenAI({ apiKey: selectedKeyString });
-      const response = await ai.models.generateContent({ model: modelName, ...payload });
-      
-      // Update last used if from DB
-      if (isFromDb && dbKeyObj) {
-        await GeminiKey.findByIdAndUpdate(dbKeyObj._id, { lastUsed: new Date(), failCount: 0 });
-      }
-      
-      return response;
-    } catch (err: any) {
-      const isOverloaded = err.message?.includes('503') || err.message?.includes('overloaded');
-      const isRateLimited = err.message?.includes('429') || err.message?.includes('quota');
-      
-      if (isOverloaded || isRateLimited) {
-        const cooldownTime = now + 60000; // Phạt 1 phút
+      try {
+        const ai = new GoogleGenAI({ apiKey: selectedKeyString });
+        const response = await ai.models.generateContent({ model: currentModel, ...payload });
+        
         if (isFromDb && dbKeyObj) {
-          await GeminiKey.findByIdAndUpdate(dbKeyObj._id, { 
-            cooldownUntil: new Date(cooldownTime),
-            $inc: { failCount: 1 }
-          });
-        } else {
-          keyCooldowns.set(selectedKeyString, cooldownTime);
+          await GeminiKey.findByIdAndUpdate(dbKeyObj._id, { lastUsed: new Date(), failCount: 0 });
+        }
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const errMsg = err.message?.toLowerCase() || '';
+        
+        const isLocationError = errMsg.includes('location is not supported');
+        const isVersionError = errMsg.includes('model not found') || errMsg.includes('404');
+        const isOverloaded = errMsg.includes('503') || errMsg.includes('overloaded');
+        const isRateLimited = errMsg.includes('429') || errMsg.includes('quota');
+
+        // Nếu lỗi do vị trí hoặc model không tồn tại, thử model tiếp theo trong registry
+        if (isLocationError || isVersionError) {
+          logger.warn('AI', `Model ${currentModel} không hỗ trợ tại vùng này hoặc không tồn tại. Thử model tiếp theo...`);
+          break; // Thoát vòng lặp retry của model này để sang model tiếp theo
         }
         
-        if (attempt < retries) continue; 
+        if (isOverloaded || isRateLimited) {
+          const cooldownTime = now + 60000;
+          if (isFromDb && dbKeyObj) {
+            await GeminiKey.findByIdAndUpdate(dbKeyObj._id, { 
+              cooldownUntil: new Date(cooldownTime),
+              $inc: { failCount: 1 }
+            });
+          } else {
+            keyCooldowns.set(selectedKeyString, cooldownTime);
+          }
+          if (attempt < retries) continue; 
+        }
+        
+        // Nếu là lỗi khác, throw ngay
+        if (!isOverloaded && !isRateLimited) throw err;
       }
-      throw err;
     }
   }
+  
+  throw lastError || new Error("Không thể kết nối với Gemini sau khi thử mọi model fallback.");
+}
+
+/**
+ * Kiểm tra sức khỏe Gemini khi khởi động server
+ */
+async function checkGeminiHealth() {
+  console.log('\n--- AI SYSTEM HEALTH CHECK ---');
+  const testKey = ENV_API_KEYS[0] || (await GeminiKey.findOne({ isActive: true }))?.key;
+  
+  if (!testKey) {
+    console.log('⚠️  CẢNH BÁO: Không có API Key nào để kiểm tra.');
+    return;
+  }
+
+  const modelsToTest = ['gemini-1.5-flash', 'gemini-3-flash-preview'];
+  
+  for (const model of modelsToTest) {
+    try {
+      const ai = new GoogleGenAI({ apiKey: testKey });
+      const startTime = Date.now();
+      const response = await ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: 'ping' }] }]
+      });
+      const duration = Date.now() - startTime;
+      
+      if (response && response.text) {
+        console.log(`✅ Model [${model}]: HOẠT ĐỘNG TỐT (${duration}ms)`);
+      }
+    } catch (err: any) {
+      const msg = err.message || '';
+      if (msg.includes('location is not supported')) {
+        console.log(`❌ Model [${model}]: BỊ CHẶN VÙNG (Location not supported)`);
+      } else if (msg.includes('quota') || msg.includes('429')) {
+        console.log(`⚠️  Model [${model}]: HẾT QUOTA`);
+      } else {
+        console.log(`❌ Model [${model}]: LỖI - ${msg.substring(0, 50)}...`);
+      }
+    }
+  }
+  console.log('------------------------------\n');
 }
 
 // AI API Endpoints
@@ -177,7 +237,7 @@ app.post('/api/ai/extract', async (req, res) => {
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'gemini-3-flash-preview', payload);
+    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
     res.json(JSON.parse(response.text));
   } catch (err: any) { res.status(500).json({ message: err.message }); }
 });
@@ -200,7 +260,7 @@ app.post('/api/ai/bulk-extract', async (req, res) => {
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'gemini-3-flash-preview', payload);
+    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
     res.json(JSON.parse(response.text));
   } catch (err: any) { res.status(500).json({ message: err.message }); }
 });
@@ -212,7 +272,7 @@ app.post('/api/ai/coach', async (req, res) => {
     const parts: any[] = [{ text: latestUserMessage }];
     if (imageBase64) parts.push({ inlineData: { data: imageBase64, mimeType: 'image/jpeg' } });
     const payload = { contents: [...history, { role: 'user', parts }], config: { systemInstruction } };
-    const response = await callAIWithRetry(requestId, 'gemini-3-flash-preview', payload);
+    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
     res.json({ text: response.text });
   } catch (err: any) { res.status(500).json({ message: err.message }); }
 });
@@ -275,7 +335,7 @@ app.post('/api/admin/gemini-keys/check', async (req, res) => {
     const { key } = req.body;
     const ai = new GoogleGenAI({ apiKey: key });
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-1.5-flash',
       contents: 'ping',
     });
     if (response && response.text) res.json({ status: 'ok' });
@@ -709,4 +769,7 @@ server.listen(PORT, async () => {
   
   // Migration: Populate avatarHash for existing users
   await migrationService.runAvatarHashMigration(User);
+
+  // Gemini Health Check
+  checkGeminiHealth();
 });
