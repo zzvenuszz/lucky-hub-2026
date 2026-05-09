@@ -7,10 +7,10 @@
 
 .lucky-container {
   padding: 20px;
-  background: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 1.0);
   border-radius: 30px;
-  border: 2px solid #10b981;
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+  border: 3px solid #FFFFFF;
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.2);
   width: 380px;
   margin: 10px auto;
   backdrop-filter: blur(10px);
@@ -24,12 +24,12 @@
 }
 
 .lucky-header {
-  font-weight: 900;
-  font-size: 1.2em;
+  font-weight: 950;
+  font-size: 1.3em;
   margin-bottom: 15px;
-  color: #10b981;
+  color: #FFFFFF;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
 }
 
 .lucky-avatar-container {
@@ -62,30 +62,34 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 15px;
-  background: rgba(255, 255, 255, 0.05);
+  padding: 12px 18px;
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 15px;
-  font-size: 1.1em;
+  font-size: 1.25em;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .lucky-metric-item .label {
-  color: #94a3b8;
-  font-weight: 500;
+  color: #FFFFFF;
+  font-weight: 900;
+  opacity: 1.0;
 }
 
 .lucky-metric-item .value {
-  font-weight: 800;
-  color: #fff;
+  font-weight: 900;
+  color: #FFFFFF;
 }
 
 .section-title {
-  font-size: 0.8em;
-  font-weight: 800;
-  color: #64748b;
+  font-size: 0.9em;
+  font-weight: 900;
+  color: #FFFFFF;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
   text-align: left;
+  border-left: 4px solid #FFFFFF;
+  padding-left: 8px;
 }
 
 .lucky-chart-section {
@@ -110,20 +114,23 @@
 .lucky-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.75em;
+  font-size: 0.85em;
 }
 
 .lucky-table th {
   text-align: left;
-  color: #64748b;
+  color: #FFFFFF;
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+  font-weight: 900;
 }
 
 .lucky-table td {
-  padding: 10px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  padding: 14px 10px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.15);
   white-space: nowrap;
+  color: #FFFFFF;
+  font-weight: 900;
 }
 
 .lucky-table tr:last-child td {
@@ -142,11 +149,13 @@
 }
 
 .trend-up {
-  color: #10b981 !important; /* Green */
+  color: #FFFFFF !important; /* Forces white for visibility */
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
 }
 
 .trend-down {
-  color: #ef4444 !important; /* Red */
+  color: #FFFFFF !important; /* Forces white for visibility */
+  opacity: 0.8;
 }
 
 .lucky-footer {

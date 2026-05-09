@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import Layout from './components/Layout.tsx';
-import Dashboard from './components/Dashboard.tsx';
-import ChatSystem from './components/ChatSystem.tsx';
-import AdminPanel from './components/AdminPanel.tsx';
-import MetricForm from './components/MetricForm.tsx';
-import Profile from './components/Profile.tsx';
-import MetricsManagement from './components/MetricsManagement.tsx';
-import NewsFeed from './components/NewsFeed.tsx';
-import BadgeCongratulation from './components/BadgeCongratulation.tsx';
+import Layout from './components/system/Layout.tsx';
+import Dashboard from './components/dashboard/Dashboard.tsx';
+import ChatSystem from './components/chat/ChatSystem.tsx';
+import AdminPanel from './components/admin/AdminPanel.tsx';
+import MetricForm from './components/dashboard/MetricForm.tsx';
+import Profile from './components/profile/Profile.tsx';
+import MetricsManagement from './components/dashboard/MetricsManagement.tsx';
+import NewsFeed from './components/newsfeed/NewsFeed.tsx';
+import BadgeCongratulation from './components/system/BadgeCongratulation.tsx';
 import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
 import SystemLog from './components/system/SystemLog.tsx';
@@ -167,7 +167,15 @@ const App: React.FC = () => {
       {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
       {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
       {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
-      {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { const uid = (currentUser as any).id || (currentUser as any)._id; const u = await Database.updateUser(uid, d); if(u) { setCurrentUser(u); localStorage.setItem('lucky_hub_user', JSON.stringify(u)); } }} />}
+      {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { 
+        const uid = (currentUser as any).id || (currentUser as any)._id; 
+        const u = await Database.updateUser(uid, d); 
+        if(u) { 
+          setCurrentUser(u); 
+          localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
+          if (window.debugLog) window.debugLog(`Cập nhật hồ sơ người dùng @${u.username} thành công`, "user");
+        } 
+      }} />}
       {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       
       {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}

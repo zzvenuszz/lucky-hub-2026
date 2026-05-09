@@ -68,7 +68,7 @@ Module.register("MMM-LuckyHub", {
       welcome.style.textAlign = "center";
       welcome.style.padding = "20px";
       welcome.style.fontSize = "18px";
-      welcome.style.color = "#10b981";
+      welcome.style.color = "#FFFFFF";
       welcome.style.fontWeight = "bold";
       welcome.innerHTML = "Chào mừng bạn đến với Lucky Hub!<br><br>Hãy đăng ký thông tin của bạn để theo dõi sức khỏe nhé.";
       container.appendChild(welcome);
@@ -90,7 +90,7 @@ Module.register("MMM-LuckyHub", {
       avatar.style.height = "120px";
       avatar.style.borderRadius = "50%";
       avatar.style.objectFit = "cover";
-      avatar.style.border = "3px solid #10b981";
+      avatar.style.border = "4px solid #FFFFFF";
       avatar.style.display = "block";
       avatar.style.margin = "0 auto";
       
@@ -143,7 +143,7 @@ Module.register("MMM-LuckyHub", {
       // Initialize chart after DOM is ready
       setTimeout(() => {
         self.renderPieChart(canvas.id, self.metrics[0]);
-      }, 500); // Tăng timeout để đảm bảo DOM đã sẵn sàng
+      }, 1000); 
     }
 
     // History Table Section
@@ -228,8 +228,9 @@ Module.register("MMM-LuckyHub", {
         labels: ['Cơ bắp', 'Nước', 'Mỡ', 'Khoáng'],
         datasets: [{
           data: [muscle, waterMass, fatMass, minerals],
-          backgroundColor: ['#ef4444', '#0ea5e9', '#fde047', '#94a3b8'],
-          borderWidth: 0
+          backgroundColor: ['#FFFFFF', '#EEEEEE', '#CCCCCC', '#AAAAAA'],
+          borderColor: '#000000',
+          borderWidth: 1.5
         }]
       },
       options: {
@@ -239,16 +240,20 @@ Module.register("MMM-LuckyHub", {
         legend: {
           position: 'bottom',
           labels: {
-            color: '#94a3b8',
-            fontColor: '#94a3b8',
-            fontSize: 10,
+            fontColor: '#FFFFFF',
+            fontSize: 12,
             fontStyle: 'bold',
-            padding: 10,
+            padding: 15,
             usePointStyle: true
           }
         },
         tooltips: {
           enabled: true,
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          titleFontColor: '#FFFFFF',
+          bodyFontColor: '#FFFFFF',
+          borderColor: '#FFFFFF',
+          borderWidth: 1,
           callbacks: {
             label: function(tooltipItem, data) {
               const label = data.labels[tooltipItem.index];

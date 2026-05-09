@@ -1,7 +1,7 @@
 
 import React, { memo } from 'react';
 import { Post, User, UserRole } from '../../types.ts';
-import BadgeDisplay from '../BadgeDisplay.tsx';
+import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import { formatTimeAgo } from '../../utils/formatters.ts';
 
 interface PostItemProps {
