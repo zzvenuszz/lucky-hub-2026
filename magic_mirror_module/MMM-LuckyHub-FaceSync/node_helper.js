@@ -6,6 +6,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const https = require("https");
 const WebSocket = require("ws");
+const ttsHelper = require("./tts_helper");
 
 // Bỏ qua kiểm tra SSL nếu Raspberry Pi gặp lỗi chứng chỉ
 const axiosInstance = axios.create({
@@ -18,6 +19,7 @@ module.exports = NodeHelper.create({
   start: function() {
     console.log("MMM-LuckyHub-FaceSync: Helper started. Waiting for CONFIG notification from frontend...");
     this.config = null;
+    this.serverConfig = null;
     this.faceDir = path.resolve(__dirname, "faces");
     this.isSyncing = false;
     this.pythonProcess = null;
@@ -32,30 +34,44 @@ module.exports = NodeHelper.create({
           baseUrl: "https://lucky-hub-gx7s.onrender.com",
           syncInterval: 30 * 60 * 1000
         };
-        this.startSyncLoop();
-        this.startRecognition();
+        this.fetchServerConfig().then(() => {
+          this.startSyncLoop();
+          this.startRecognition();
+        });
       }
     }, 10000);
+  },
+
+  fetchServerConfig: async function() {
+    try {
+      const url = this.config.baseUrl + "/MM/config";
+      console.log("MMM-LuckyHub-FaceSync: Fetching server config from " + url);
+      const response = await axiosInstance.get(url);
+      this.serverConfig = response.data;
+      console.log("MMM-LuckyHub-FaceSync: Server config received. Gemini API Key status: " + (this.serverConfig.geminiApiKey ? "Available" : "Missing"));
+    } catch (err) {
+      console.error("MMM-LuckyHub-FaceSync: Error fetching server config: " + err.message);
+    }
   },
 
   socketNotificationReceived: function(notification, payload) {
     console.log("MMM-LuckyHub-FaceSync: Received socket notification: " + notification);
     if (notification === "CONFIG") {
-      // Nếu đã có config (từ fallback hoặc lần nhận trước), chỉ cập nhật nếu có thay đổi lớn
       const isFirstConfig = !this.config;
       this.config = payload;
       console.log("MMM-LuckyHub-FaceSync: Config received. BaseURL: " + this.config.baseUrl);
       
-      if (isFirstConfig) {
-        this.startSyncLoop();
-        this.startRecognition();
-        this.connectToWebSocket();
-      } else {
-        // Nếu config thay đổi khi đang chạy, restart lại nhận diện
-        console.log("MMM-LuckyHub-FaceSync: Config updated, restarting recognition...");
-        this.startRecognition();
-        this.connectToWebSocket(); // Reconnect if base URL changed
-      }
+      this.fetchServerConfig().then(() => {
+        if (isFirstConfig) {
+          this.startSyncLoop();
+          this.startRecognition();
+          this.connectToWebSocket();
+        } else {
+          console.log("MMM-LuckyHub-FaceSync: Config updated, restarting recognition...");
+          this.startRecognition();
+          this.connectToWebSocket();
+        }
+      });
     }
   },
 
@@ -280,56 +296,68 @@ module.exports = NodeHelper.create({
   },
 
   playGreeting: async function(username) {
-    // Tránh chào lặp lại liên tục trong cùng một phiên
     if (this.lastGreetedUser === username) return;
     this.lastGreetedUser = username;
 
     try {
       let fullName = "";
+      let prompt = "";
       
       if (username === "UNKNOWN") {
         fullName = "anh chị";
+        prompt = "Nói một cách thân thiện và ấm áp: Xin chào anh chị, chúc anh chị một ngày vui vẻ, hãy đăng ký thông tin của anh chị tại Lucky Hub nhé.";
         console.log(`MMM-LuckyHub-FaceSync: [TTS] Đang chuẩn bị lời chào cho người lạ...`);
       } else {
         console.log(`MMM-LuckyHub-FaceSync: [TTS] Đang chuẩn bị lời chào cho ${username}...`);
-        // Lấy thông tin đầy đủ để chào bằng tên thật
         const infoUrl = `${this.config.baseUrl}/MM/${username}/info`;
-        console.log(`MMM-LuckyHub-FaceSync: [API] Requesting user info from: ${infoUrl}`);
         const infoRes = await axiosInstance.get(infoUrl);
         fullName = infoRes.data.fullName || username;
-        console.log(`MMM-LuckyHub-FaceSync: [API] User info received: ${fullName}`);
+        prompt = `Nói một cách thân thiện và ấm áp: Xin chào ${fullName}, chúc bạn một ngày vui vẻ.`;
       }
 
-      // Tải file âm thanh từ server
-      // Nếu là người lạ, dùng prompt đặc biệt
-      let prompt = `Nói một cách thân thiện và ấm áp: Xin chào ${fullName}, chúc bạn một ngày vui vẻ.`;
-      if (username === "UNKNOWN") {
-        prompt = "Nói một cách thân thiện và ấm áp: Xin chào anh chị, chúc anh chị một ngày vui vẻ, hãy đăng ký thông tin của anh chị tại Lucky Hub nhé.";
-      }
-
-      const ttsUrl = `${this.config.baseUrl}/api/tts/greeting/${encodeURIComponent(fullName)}?prompt=${encodeURIComponent(prompt)}`;
       const audioPath = path.resolve(__dirname, "greeting.wav");
-      
-      console.log(`MMM-LuckyHub-FaceSync: [TTS] Requesting audio from: ${ttsUrl}`);
-      const response = await axiosInstance.get(ttsUrl, { responseType: 'arraybuffer' });
-      console.log(`MMM-LuckyHub-FaceSync: [TTS] Audio received (${response.data.byteLength} bytes)`);
-      
-      await fs.writeFile(audioPath, response.data);
-      console.log(`MMM-LuckyHub-FaceSync: [TTS] Audio saved to: ${audioPath}`);
+      let audioBuffer = null;
 
-      // Phát âm thanh qua HDMI (plughw:1,0)
-      // Ép định dạng 24kHz, 16-bit, Mono để khớp với chuẩn Gemini TTS
-      const playCmd = `aplay -D plughw:1,0 -r 24000 -f S16_LE -c 1 ${audioPath}`;
-      console.log(`MMM-LuckyHub-FaceSync: [AUDIO] Executing play command: ${playCmd}`);
-      
-      const { exec } = require("child_process");
-      exec(playCmd, (error, stdout, stderr) => {
-        if (error) {
-          console.error(`MMM-LuckyHub-FaceSync: [AUDIO] Error playing sound: ${error.message}`);
-          return;
+      // Try direct generation first (Bypasses server regional restrictions)
+      if (this.serverConfig && this.serverConfig.geminiApiKey) {
+        try {
+          console.log(`MMM-LuckyHub-FaceSync: [TTS] Attempting direct generation for ${fullName}...`);
+          audioBuffer = await ttsHelper.generateTTS(prompt, this.serverConfig.geminiApiKey, this.serverConfig.voiceName);
+          console.log(`MMM-LuckyHub-FaceSync: [TTS] Direct generation successful (${audioBuffer.length} bytes)`);
+        } catch (ttsErr) {
+          console.error(`MMM-LuckyHub-FaceSync: [TTS] Direct generation failed: ${ttsErr.message}. Falling back to server.`);
         }
-        console.log(`MMM-LuckyHub-FaceSync: [AUDIO] Playback finished successfully`);
-      });
+      }
+
+      // Fallback to server if direct failed or not possible
+      if (!audioBuffer) {
+        const ttsUrl = `${this.config.baseUrl}/api/tts/greeting/${encodeURIComponent(fullName)}?prompt=${encodeURIComponent(prompt)}`;
+        console.log(`MMM-LuckyHub-FaceSync: [TTS] Requesting audio from server: ${ttsUrl}`);
+        const response = await axiosInstance.get(ttsUrl, { responseType: 'arraybuffer' });
+        
+        if (response.status === 200 && response.data.byteLength > 0) {
+          audioBuffer = Buffer.from(response.data);
+          console.log(`MMM-LuckyHub-FaceSync: [TTS] Server audio received (${audioBuffer.length} bytes)`);
+        } else {
+          console.warn(`MMM-LuckyHub-FaceSync: [TTS] Server returned status ${response.status} or empty data.`);
+        }
+      }
+
+      if (audioBuffer) {
+        await fs.writeFile(audioPath, audioBuffer);
+        
+        // Phát âm thanh qua HDMI
+        const playCmd = `aplay -D plughw:1,0 -r 24000 -f S16_LE -c 1 ${audioPath}`;
+        console.log(`MMM-LuckyHub-FaceSync: [AUDIO] Executing play command: ${playCmd}`);
+        
+        const { exec } = require("child_process");
+        exec(playCmd, (error) => {
+          if (error) console.error(`MMM-LuckyHub-FaceSync: [AUDIO] Error playing sound: ${error.message}`);
+          else console.log(`MMM-LuckyHub-FaceSync: [AUDIO] Playback finished`);
+        });
+      } else {
+        console.error("MMM-LuckyHub-FaceSync: [TTS] No audio data to play.");
+      }
     } catch (err) {
       console.error("MMM-LuckyHub-FaceSync: [ERROR] Lỗi xử lý lời chào: " + err.message);
     }

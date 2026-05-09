@@ -14,7 +14,9 @@ import http from 'http';
 import { logger } from './src/utils/logger.ts';
 import { migrationService } from './src/services/migrationService.ts';
 import { ttsService } from './src/services/ttsService.ts';
+import { configService } from './src/services/configService.ts';
 import { cryptoUtils } from './src/utils/cryptoUtils.ts';
+import { audioUtils } from './src/utils/audioUtils.ts';
 
 dotenv.config();
 
@@ -604,6 +606,15 @@ app.post('/api/chats', async (req, res) => {
 });
 
 // Magic Mirror (MM) Integration Endpoints
+
+app.get('/MM/config', async (req, res) => {
+  try {
+    const config = await configService.getMirrorConfig();
+    res.json(config);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 app.get('/api/tts/greeting/:name', async (req, res) => {
   const name = req.params.name;
