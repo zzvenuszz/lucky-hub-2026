@@ -37,16 +37,24 @@ export const ttsService = {
         },
       };
 
-      // Switch to gemini-1.5-flash which has broader regional support than preview-tts models
+      // Use 'gemini-3.1-flash-tts-preview' as recommended in SKILL.md for TTS tasks
       let response;
       try {
-        response = await callAIWithRetry(requestId, "gemini-1.5-flash", payload);
+        response = await callAIWithRetry(requestId, "gemini-3.1-flash-tts-preview", payload);
       } catch (innerErr: any) {
         if (innerErr.message?.includes("location is not supported")) {
-          logger.error('TTS', `Location blocked for gemini-1.5-flash. This usually happens when the server (e.g. Render.com) is in a restricted region.`);
+          logger.error('TTS', `Location blocked for gemini-3.1-flash-tts-preview. This usually happens when the server is in a restricted region.`);
           return null;
         }
-        throw innerErr;
+        // If the TTS model itself is not found or fails, try the latest flash model as a final fallback
+        // though standard flash might not support AUDIO modality in all regions/versions
+        try {
+          logger.warn('TTS', `Gemini-3.1-flash-tts-preview failed, attempting fallback to gemini-flash-latest`);
+          response = await callAIWithRetry(requestId, "gemini-flash-latest", payload);
+        } catch (finalErr: any) {
+          logger.error('TTS', `Final fallback failed: ${finalErr.message}`);
+          return null;
+        }
       }
       
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
