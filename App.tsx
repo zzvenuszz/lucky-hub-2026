@@ -75,6 +75,7 @@ const App: React.FC = () => {
         Database.getRules()
       ]);
       setUsers(u || []);
+      if (window.debugLog) window.debugLog(`[App] Nhận dữ liệu: ${u?.length || 0} users, ${k?.length || 0} kiến thức, ${r?.length || 0} quy tắc`, "system");
       setKnowledge(k || []);
       setRules(r || []);
       if (currentUser) {
@@ -85,7 +86,20 @@ const App: React.FC = () => {
     } catch (err) {}
   };
 
-  useEffect(() => { if (currentUser) fetchData(); }, [currentUser, refreshTrigger]);
+  useEffect(() => { 
+    if (currentUser) {
+      fetchData(); 
+      // Refresh dữ liệu mỗi 2 phút
+      const mainInterval = setInterval(fetchData, 120000);
+      return () => clearInterval(mainInterval);
+    }
+  }, [currentUser, refreshTrigger]);
+
+  useEffect(() => {
+    if (isChatOpen && currentUser) {
+      fetchData();
+    }
+  }, [isChatOpen, currentUser]);
 
   const handleLogin = async (data: any) => {
     setIsLoading(true);

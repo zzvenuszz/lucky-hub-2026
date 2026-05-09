@@ -593,11 +593,13 @@ app.post('/api/register', async (req, res) => {
     const { username, email, password, avatar, ...rest } = req.body;
     const imgData = await uploadToImgBB(avatar);
     const finalAvatar = imgData?.url || avatar;
+    const adminExists = await User.exists({ role: UserRole.ADMIN });
     const newUser = new User({ 
       ...rest, 
       username: username.toLowerCase().trim(), 
       email: email.toLowerCase().trim(), 
       password: hashPassword(password), 
+      role: !adminExists ? UserRole.ADMIN : (rest.role || UserRole.MEMBER),
       isPasswordEncrypted: true, 
       avatar: finalAvatar,
       avatarHash: cryptoUtils.generateAvatarHash(finalAvatar)

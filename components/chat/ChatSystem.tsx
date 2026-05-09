@@ -75,22 +75,35 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     const metrics = await Database.getMetrics(currentUid);
     if (metrics?.length) setLatestMetric([...metrics].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]);
     const allChats = await Database.getChats() || [];
+    
+    if (window.debugLog) window.debugLog(`[ChatSystem] Đang tải danh sách liên hệ. Tổng users: ${users.length}`, "system");
+
     let contacts = users.filter(u => {
-      const uId = (u as any).id || (u as any)._id;
-      if (uId === currentUid) return false;
+      const uId = String((u as any).id || (u as any)._id);
+      const myId = String(currentUid);
+      
+      if (uId === myId) return false;
+      
       // Nếu là MEMBER, chỉ được nhắn cho ADMIN và COACH
       if (currentUser.role === UserRole.MEMBER) {
-        return u.role === UserRole.ADMIN || u.role === UserRole.COACH;
+        const isStaff = u.role === UserRole.ADMIN || u.role === UserRole.COACH;
+        return isStaff;
       }
       return true;
     });
+
+    if (window.debugLog) window.debugLog(`[ChatSystem] Danh sách contacts lọc được: ${contacts.length}`, "system");
+
     const activeChats = contacts.map(contact => {
-      const cId = (contact as any).id || (contact as any)._id;
-      return allChats.find(c => (c.memberId === currentUid && c.coachId === cId) || (c.memberId === cId && c.coachId === currentUid)) 
-             || { id: `chat_${currentUid}_${cId}`, memberId: currentUid, coachId: cId, messages: [] };
+      const cId = String((contact as any).id || (contact as any)._id);
+      const myId = String(currentUid);
+      return allChats.find(c => 
+        (String(c.memberId) === myId && String(c.coachId) === cId) || 
+        (String(c.memberId) === cId && String(c.coachId) === myId)
+      ) || { id: `chat_${myId}_${cId}`, memberId: myId, coachId: cId, messages: [] };
     });
-    const aiChatId = `chat_ai_${currentUid}`;
-    const aiChat = allChats.find(c => c.id === aiChatId) || { id: aiChatId, memberId: currentUid, coachId: 'ai_coach', messages: [] };
+    const aiChatId = `chat_ai_${String(currentUid)}`;
+    const aiChat = allChats.find(c => c.id === aiChatId) || { id: aiChatId, memberId: String(currentUid), coachId: 'ai_coach', messages: [] };
     setChats([aiChat, ...activeChats]);
   }, [currentUid, users]);
 
@@ -129,8 +142,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
   const getOtherUser = useCallback((chat: ChatSession) => {
     if (chat.coachId === 'ai_coach') return { fullName: '🍀Trợ lý Lucky', role: 'AI', id: 'ai_coach' };
-    const otherId = currentUid === chat.memberId ? chat.coachId : chat.memberId;
-    return users.find(u => ((u as any).id || (u as any)._id) === otherId);
+    const otherId = String(currentUid) === String(chat.memberId) ? String(chat.coachId) : String(chat.memberId);
+    return users.find(u => String((u as any).id || (u as any)._id) === otherId);
   }, [currentUid, users]);
 
   return (

@@ -12,7 +12,14 @@ const ContactList: React.FC<ContactListProps> = ({ chats, onSelect, getOtherUser
   return (
     <div className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">Hội thoại của bạn</div>
-      {chats.map(chat => {
+      
+      {chats.length === 0 ? (
+        <div className="p-8 text-center space-y-4">
+          <div className="text-4xl">🏜️</div>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Chưa có ai để chat</p>
+          <p className="text-[10px] text-slate-300">Nếu bạn là thành viên, hãy chờ Admin hoặc Coach xuất hiện nhé!</p>
+        </div>
+      ) : chats.map(chat => {
         const other = getOtherUser(chat);
         if (!other) return null;
         return (
