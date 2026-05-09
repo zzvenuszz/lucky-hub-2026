@@ -151,14 +151,13 @@ async function discoverAvailableModels() {
         .filter((m: string) => m.includes('gemini')); // Chỉ lấy dòng Gemini
 
       if (candidates.length === 0) {
-        console.log(`    ${ANSI.gray}↳ Không có model generateContent nào.${ANSI.reset}`);
+        console.log(`    ${ANSI.gray}↳ Không tìm thấy model hỗ trợ generateContent cho key này.${ANSI.reset}`);
         continue;
       }
 
       // 2. Ping thử các model để xác định model nào thực sự dùng được (vùng/hạn mức)
-      // Ưu tiên các model phổ biến để test trước
-      const priorityTest = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash', 'gemini-3-flash-preview', 'gemini-1.5-pro'];
-      const testList = [...new Set([...priorityTest.filter(m => candidates.includes(m)), ...candidates.slice(0, 5)])];
+      // Test tối đa 10 model mỗi key để không bị nghẽn startup
+      const testList = candidates.slice(0, 10);
 
       for (const model of testList) {
         try {
@@ -171,7 +170,7 @@ async function discoverAvailableModels() {
           const testResults: any = await testResp.json();
 
           if (testResults.candidates) {
-            console.log(`    ${ANSI.green}[✓ WORKING]${ANSI.reset} ${model.padEnd(40)}`);
+            console.log(`    ${ANSI.green}[✓ WORKING]${ANSI.reset} ${model.padEnd(45)}`);
             if (!discoveredModels.includes(model)) discoveredModels.push(model);
           } else if (testResults.error) {
             const msg = testResults.error.message || "Unknown error";
@@ -182,10 +181,10 @@ async function discoverAvailableModels() {
             else if (msg.toLowerCase().includes('location')) status = `${ANSI.magenta}[⚠ LOCATION]${ANSI.reset}`;
             else if (msg.toLowerCase().includes('permission')) status = `${ANSI.blue}[⚠ PERM]${ANSI.reset}`;
 
-            console.log(`    ${status} ${model.padEnd(40)} ${ANSI.gray}(code:${code})${ANSI.reset}`);
+            console.log(`    ${status} ${model.padEnd(45)} ${ANSI.gray}(code:${code})${ANSI.reset}`);
           }
         } catch (e: any) {
-          console.log(`    ${ANSI.red}[✗ FAIL]${ANSI.reset} ${model.padEnd(40)} ${ANSI.gray}(Connection Fail)${ANSI.reset}`);
+          console.log(`    ${ANSI.red}[✗ FAIL]${ANSI.reset} ${model.padEnd(45)} ${ANSI.gray}(Connection Fail)${ANSI.reset}`);
         }
       }
       
