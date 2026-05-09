@@ -89,19 +89,75 @@ const GeminiKey = mongoose.model('GeminiKey', new mongoose.Schema({
   lastUsed: { type: Date, default: null }
 }, { timestamps: true }));
 
+// Biến lưu trữ danh sách model khả dụng sau khi scan
+let discoveredModels: string[] = [];
+
+/**
+ * Khám phá các model khả dụng cho API Key hiện tại
+ */
+async function discoverAvailableModels() {
+  console.log('\n--- AI MODEL DISCOVERY ---');
+  const testKey = ENV_API_KEYS[0] || (await GeminiKey.findOne({ isActive: true }))?.key;
+  
+  if (!testKey) {
+    console.log('⚠️  CẢNH BÁO: Không có API Key để khám phá model.');
+    return;
+  }
+
+  const candidates = [
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-pro',
+    'gemini-2.0-flash',
+    'gemini-3-flash-preview'
+  ];
+
+  const ai = new GoogleGenAI({ apiKey: testKey });
+  discoveredModels = [];
+
+  for (const model of candidates) {
+    try {
+      await ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text: 'p' }] }],
+        generationConfig: { maxOutputTokens: 1 }
+      });
+      discoveredModels.push(model);
+      console.log(`✅ Model khả dụng: [${model}]`);
+    } catch (err: any) {
+      const msg = err.message?.toLowerCase() || '';
+      if (msg.includes('location is not supported')) {
+        console.log(`❌ Model [${model}]: BỊ CHẶN VÙNG (Render Location)`);
+      } else if (msg.includes('not found') || msg.includes('404')) {
+        console.log(`❌ Model [${model}]: KHÔNG TỒN TẠI (404)`);
+      } else if (msg.includes('quota') || msg.includes('429')) {
+        discoveredModels.push(model);
+        console.log(`⚠️  Model [${model}]: HẾT QUOTA`);
+      } else {
+        console.log(`⚠️  Model [${model}]: LỖI KHÁC (${msg.substring(0, 30)}...)`);
+      }
+    }
+  }
+
+  if (discoveredModels.length === 0) {
+    console.log('🚨 CẢNH BÁO: Không tìm thấy model nào khả dụng từ server này!');
+  }
+  console.log('--------------------------\n');
+}
+
 async function callAIWithRetry(
   requestId: string,
   modelName: string,
   payload: any,
   retries = 3
 ): Promise<any> {
-  // Danh sách các model fallback theo thứ tự ưu tiên nếu model chính bị lỗi hoặc không hỗ trợ vùng
+  // Ưu tiên dùng model yêu cầu, sau đó là danh sách đã khám phá, cuối cùng là mặc định ổn định nhất
   const modelRegistry = [
     modelName,
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-    'gemini-2.0-flash'
-  ].filter((v, i, a) => a.indexOf(v) === i); // Remove duplicates
+    ...discoveredModels,
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash'
+  ].filter((v, i, a) => a.indexOf(v) === i); 
 
   let lastError: any = null;
 
@@ -152,10 +208,9 @@ async function callAIWithRetry(
         const isOverloaded = errMsg.includes('503') || errMsg.includes('overloaded');
         const isRateLimited = errMsg.includes('429') || errMsg.includes('quota');
 
-        // Nếu lỗi do vị trí hoặc model không tồn tại, thử model tiếp theo trong registry
         if (isLocationError || isVersionError) {
-          logger.warn('AI', `Model ${currentModel} không hỗ trợ tại vùng này hoặc không tồn tại. Thử model tiếp theo...`);
-          break; // Thoát vòng lặp retry của model này để sang model tiếp theo
+          logger.warn('AI', `Model ${currentModel} bị lỗi hệ thống/vùng. Thử model fallback... (ID: ${requestId})`);
+          break; 
         }
         
         if (isOverloaded || isRateLimited) {
@@ -171,54 +226,25 @@ async function callAIWithRetry(
           if (attempt < retries) continue; 
         }
         
-        // Nếu là lỗi khác, throw ngay
-        if (!isOverloaded && !isRateLimited) throw err;
+        if (!isLocationError && !isVersionError && !isOverloaded && !isRateLimited) throw err;
       }
     }
   }
   
-  throw lastError || new Error("Không thể kết nối với Gemini sau khi thử mọi model fallback.");
+  throw lastError || new Error("Không thể kết nối với bất kỳ model Gemini nào khả dụng.");
 }
 
 /**
  * Kiểm tra sức khỏe Gemini khi khởi động server
  */
 async function checkGeminiHealth() {
-  console.log('\n--- AI SYSTEM HEALTH CHECK ---');
-  const testKey = ENV_API_KEYS[0] || (await GeminiKey.findOne({ isActive: true }))?.key;
+  await discoverAvailableModels();
   
-  if (!testKey) {
-    console.log('⚠️  CẢNH BÁO: Không có API Key nào để kiểm tra.');
-    return;
+  if (discoveredModels.length > 0) {
+    console.log('✅ Hệ thống AI đã sẵn sàng với các model:', discoveredModels.join(', '));
+  } else {
+    console.log('⚠️  Hệ thống AI có thể gặp khó khăn khi hoạt động từ vùng này.');
   }
-
-  const modelsToTest = ['gemini-1.5-flash', 'gemini-3-flash-preview'];
-  
-  for (const model of modelsToTest) {
-    try {
-      const ai = new GoogleGenAI({ apiKey: testKey });
-      const startTime = Date.now();
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: 'ping' }] }]
-      });
-      const duration = Date.now() - startTime;
-      
-      if (response && response.text) {
-        console.log(`✅ Model [${model}]: HOẠT ĐỘNG TỐT (${duration}ms)`);
-      }
-    } catch (err: any) {
-      const msg = err.message || '';
-      if (msg.includes('location is not supported')) {
-        console.log(`❌ Model [${model}]: BỊ CHẶN VÙNG (Location not supported)`);
-      } else if (msg.includes('quota') || msg.includes('429')) {
-        console.log(`⚠️  Model [${model}]: HẾT QUOTA`);
-      } else {
-        console.log(`❌ Model [${model}]: LỖI - ${msg.substring(0, 50)}...`);
-      }
-    }
-  }
-  console.log('------------------------------\n');
 }
 
 // AI API Endpoints
