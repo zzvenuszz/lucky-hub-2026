@@ -616,7 +616,9 @@ app.get('/api/tts/greeting/:name', async (req, res) => {
       res.set('Content-Type', 'audio/wav');
       res.send(audioBuffer);
     } else {
-      res.status(500).json({ message: 'Failed to generate audio' });
+      // If audio generation fails (e.g. location blocked), return 204 No Content
+      // This prevents the Magic Mirror from throwing a network error
+      res.status(204).end();
     }
   } catch (err: any) {
     res.status(500).json({ message: err.message });

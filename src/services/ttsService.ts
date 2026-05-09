@@ -37,7 +37,18 @@ export const ttsService = {
         },
       };
 
-      const response = await callAIWithRetry(requestId, "gemini-2.5-flash-preview-tts", payload);
+      // Switch to gemini-1.5-flash which has broader regional support than preview-tts models
+      let response;
+      try {
+        response = await callAIWithRetry(requestId, "gemini-1.5-flash", payload);
+      } catch (innerErr: any) {
+        if (innerErr.message?.includes("location is not supported")) {
+          logger.error('TTS', `Location blocked for gemini-1.5-flash. This usually happens when the server (e.g. Render.com) is in a restricted region.`);
+          return null;
+        }
+        throw innerErr;
+      }
+      
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
       if (base64Audio) {

@@ -7,6 +7,7 @@ Module.register("MMM-LuckyHub", {
     updateInterval: 10 * 60 * 1000, // 10 phút
     retryDelay: 5000,
     animationSpeed: 1000,
+    metricsLimit: 7, // Hiển thị 7 ngày gần nhất
   },
 
   start: function() {
@@ -15,6 +16,7 @@ Module.register("MMM-LuckyHub", {
     this.metrics = [];
     this.loaded = false;
     this.error = null;
+    this.chart = null;
 
     if (this.config.username) {
       this.getData();
@@ -22,11 +24,16 @@ Module.register("MMM-LuckyHub", {
   },
 
   // Define required scripts.
+  getScripts: function() {
+    return ["https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.min.js"];
+  },
+
   getStyles: function() {
     return ["MMM-LuckyHub.css"];
   },
 
   getDom: function() {
+    const self = this;
     const wrapper = document.createElement("div");
     wrapper.classList.add("lucky-hub-root");
 
@@ -69,25 +76,23 @@ Module.register("MMM-LuckyHub", {
       return wrapper;
     }
 
-    // Avatar
+    // Avatar Section (Centered - Stable)
     if (this.userInfo && this.userInfo.avatar) {
       const avatarContainer = document.createElement("div");
       avatarContainer.className = "lucky-avatar-container";
-      avatarContainer.style.margin = "10px auto";
-      avatarContainer.style.width = "120px";
-      avatarContainer.style.height = "120px";
       
       const avatar = document.createElement("img");
       avatar.src = this.userInfo.avatar;
       avatar.className = "lucky-avatar";
       
-      // Ép kích thước cố định bằng inline style
+      // Force dimensions via inline style to prevent full-screen issues
       avatar.style.width = "120px";
       avatar.style.height = "120px";
       avatar.style.borderRadius = "50%";
       avatar.style.objectFit = "cover";
       avatar.style.border = "3px solid #10b981";
       avatar.style.display = "block";
+      avatar.style.margin = "0 auto";
       
       avatar.onerror = () => { avatar.style.display = 'none'; };
       
@@ -95,19 +100,16 @@ Module.register("MMM-LuckyHub", {
       container.appendChild(avatarContainer);
     }
 
-    // Metrics
-    const metricsWrapper = document.createElement("div");
-    metricsWrapper.className = "lucky-metrics";
-
+    // Metrics Summary (Vertical list like original)
     if (this.metrics && this.metrics.length > 0) {
       const latest = this.metrics[0];
+      const metricsWrapper = document.createElement("div");
+      metricsWrapper.className = "lucky-metrics";
       
       const stats = [
         { label: "Cân nặng", value: latest.weight, unit: "kg" },
         { label: "Tỉ lệ mỡ", value: latest.bodyFat, unit: "%" },
-        { label: "Cơ bắp", value: latest.muscleMass, unit: "kg" },
-        { label: "Mỡ nội tạng", value: latest.visceralFat, unit: "" },
-        { label: "Tuổi sinh học", value: latest.bioAge, unit: " tuổi" }
+        { label: "Cơ bắp", value: latest.muscleMass, unit: "kg" }
       ];
 
       stats.forEach(s => {
@@ -118,24 +120,151 @@ Module.register("MMM-LuckyHub", {
       });
 
       container.appendChild(metricsWrapper);
+    }
 
-      const footer = document.createElement("div");
-      footer.className = "lucky-footer dimmed xsmall";
-      footer.innerHTML = "Cập nhật: " + latest.date;
-      container.appendChild(footer);
-    } else {
-      metricsWrapper.innerHTML = "<div class='dimmed small'>Chưa có dữ liệu chỉ số.</div>";
-      container.appendChild(metricsWrapper);
+    // Pie Chart Section
+    if (this.metrics && this.metrics.length > 0) {
+      const chartSection = document.createElement("div");
+      chartSection.className = "lucky-chart-section";
+      chartSection.innerHTML = "<div class='section-title'>Cấu trúc cơ thể</div>";
+      
+      const chartWrapper = document.createElement("div");
+      chartWrapper.className = "lucky-chart-wrapper";
+      chartWrapper.style.height = "180px";
+      chartWrapper.style.width = "100%";
+      chartWrapper.style.position = "relative";
+
+      const canvas = document.createElement("canvas");
+      canvas.id = "lucky-pie-chart-" + this.identifier;
+      chartWrapper.appendChild(canvas);
+      chartSection.appendChild(chartWrapper);
+      container.appendChild(chartSection);
+
+      // Initialize chart after DOM is ready
+      setTimeout(() => {
+        self.renderPieChart(canvas.id, self.metrics[0]);
+      }, 500); // Tăng timeout để đảm bảo DOM đã sẵn sàng
+    }
+
+    // History Table Section
+    if (this.metrics && this.metrics.length > 0) {
+      const tableSection = document.createElement("div");
+      tableSection.className = "lucky-table-section";
+      tableSection.innerHTML = "<div class='section-title'>Lịch sử 7 ngày</div>";
+
+      const table = document.createElement("table");
+      table.className = "lucky-table";
+      
+      const getTrend = (current, previous, isPositiveGood = false) => {
+        if (previous === undefined || previous === null) return "";
+        const diff = Number((current - previous).toFixed(1));
+        if (diff === 0) return "";
+        
+        const isGood = isPositiveGood ? diff > 0 : diff < 0;
+        const colorClass = isGood ? "trend-up" : "trend-down";
+        const icon = diff > 0 ? "↑" : "↓";
+        return `<span class="trend ${colorClass}">${icon}${Math.abs(diff)}</span>`;
+      };
+
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Ngày</th>
+            <th>Cân</th>
+            <th>Mỡ</th>
+            <th>Cơ</th>
+            <th>Nước</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${this.metrics.map((m, i) => {
+            const prev = this.metrics[i + 1];
+            return `
+              <tr>
+                <td>${m.date.split('-').slice(1).reverse().join('/')}</td>
+                <td>${m.weight} ${getTrend(m.weight, prev?.weight, false)}</td>
+                <td>${m.bodyFat}% ${getTrend(m.bodyFat, prev?.bodyFat, false)}</td>
+                <td>${m.muscleMass} ${getTrend(m.muscleMass, prev?.muscleMass, true)}</td>
+                <td>${m.waterPercent}% ${getTrend(m.waterPercent, prev?.waterPercent, true)}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      `;
+      tableSection.appendChild(table);
+      container.appendChild(tableSection);
     }
 
     wrapper.appendChild(container);
     return wrapper;
   },
 
+  renderPieChart: function(canvasId, latest) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) {
+      Log.error("MMM-LuckyHub: Canvas element not found: " + canvasId);
+      return;
+    }
+
+    if (typeof Chart === "undefined") {
+      Log.error("MMM-LuckyHub: Chart.js is not loaded!");
+      return;
+    }
+
+    if (this.chart) {
+      this.chart.destroy();
+    }
+
+    const weight = latest.weight || 0;
+    const fatMass = Number((weight * ((latest.bodyFat || 0) / 100)).toFixed(1));
+    const waterMass = Number((weight * ((latest.waterPercent || 0) / 100)).toFixed(1));
+    const minerals = latest.boneMinerals || 0;
+    const muscle = latest.muscleMass || 0;
+
+    const ctx = canvas.getContext('2d');
+    this.chart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Cơ bắp', 'Nước', 'Mỡ', 'Khoáng'],
+        datasets: [{
+          data: [muscle, waterMass, fatMass, minerals],
+          backgroundColor: ['#ef4444', '#0ea5e9', '#fde047', '#94a3b8'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutoutPercentage: 70,
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: '#94a3b8',
+            fontColor: '#94a3b8',
+            fontSize: 10,
+            fontStyle: 'bold',
+            padding: 10,
+            usePointStyle: true
+          }
+        },
+        tooltips: {
+          enabled: true,
+          callbacks: {
+            label: function(tooltipItem, data) {
+              const label = data.labels[tooltipItem.index];
+              const value = data.datasets[0].data[tooltipItem.index];
+              return label + ': ' + value + ' kg';
+            }
+          }
+        }
+      }
+    });
+  },
+
   getData: function() {
     const self = this;
     const infoUrl = this.config.baseUrl + "/MM/" + this.config.username + "/info";
-    const metricsUrl = this.config.baseUrl + "/MM/" + this.config.username + "/metrics/1";
+    const metricsUrl = this.config.baseUrl + "/MM/" + this.config.username + "/metrics/" + this.config.metricsLimit;
 
     Promise.all([
       fetch(infoUrl).then(res => res.json()),
