@@ -2,7 +2,7 @@
 Module.register("MMM-LuckyHub", {
   // Default module config.
   defaults: {
-    baseUrl: "https://lucky-hub-gx7s.onrender.com", // Thay bằng URL của bạn
+    baseUrl: "https://lucky-hub-2026.onrender.com", // Thay bằng URL của bạn
     username: null, // Sẽ được cập nhật qua notification hoặc config
     updateInterval: 10 * 60 * 1000, // 10 phút
     retryDelay: 5000,

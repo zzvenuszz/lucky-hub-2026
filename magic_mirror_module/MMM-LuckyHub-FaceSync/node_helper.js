@@ -31,7 +31,7 @@ module.exports = NodeHelper.create({
       if (!this.config) {
         console.log("MMM-LuckyHub-FaceSync: No CONFIG received after 10s. Starting with default settings...");
         this.config = {
-          baseUrl: "https://lucky-hub-gx7s.onrender.com",
+          baseUrl: "https://lucky-hub-2026.onrender.com",
           syncInterval: 30 * 60 * 1000
         };
         this.fetchServerConfig().then(() => {
