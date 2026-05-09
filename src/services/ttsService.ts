@@ -37,31 +37,53 @@ export const ttsService = {
         },
       };
 
-      // Use 'gemini-3.1-flash-tts-preview' as recommended in SKILL.md for TTS tasks
-      let response;
-      try {
-        response = await callAIWithRetry(requestId, "gemini-3.1-flash-tts-preview", payload);
-      } catch (innerErr: any) {
-        if (innerErr.message?.includes("location is not supported")) {
-          logger.error('TTS', `Location blocked for gemini-3.1-flash-tts-preview. This usually happens when the server is in a restricted region.`);
-          return null;
-        }
-        // If the TTS model itself is not found or fails, try the latest flash model as a final fallback
-        // though standard flash might not support AUDIO modality in all regions/versions
+      // Try multiple models in sequence
+      const modelsToTry = [
+        "gemini-3.1-flash-tts-preview",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
+      ];
+
+      let response = null;
+      let lastError = null;
+
+      for (const model of modelsToTry) {
         try {
-          logger.warn('TTS', `Gemini-3.1-flash-tts-preview failed, attempting fallback to gemini-flash-latest`);
-          response = await callAIWithRetry(requestId, "gemini-flash-latest", payload);
-        } catch (finalErr: any) {
-          logger.error('TTS', `Final fallback failed: ${finalErr.message}`);
+          logger.info('TTS', `Trying to generate audio with model: ${model} (ID: ${requestId})`);
+          response = await callAIWithRetry(requestId, model, payload);
+          if (response) break;
+        } catch (innerErr: any) {
+          lastError = innerErr;
+          const isLocationError = innerErr.message?.toLowerCase().includes("location is not supported");
+          const isQuotaError = innerErr.message?.toLowerCase().includes("quota") || innerErr.message?.includes("429");
+          
+          logger.warn('TTS', `Model ${model} failed: ${innerErr.message} (ID: ${requestId})`);
+          
+          // If it's a quota error, we might want to try another key with the same model (handled by callAIWithRetry)
+          // or move to the next model. Location errors definitely mean we should try a different model/server.
+          continue;
+        }
+      }
+
+      if (!response) {
+        const errorMsg = lastError ? lastError.message : "All models failed to generate audio";
+        logger.error('TTS', `Final failure for ${name}: ${errorMsg} (ID: ${requestId})`);
+        
+        // If it's specifically a location error, we still return null to trigger 204
+        // because there's nothing we can do from this server region.
+        if (lastError?.message?.toLowerCase().includes("location is not supported")) {
           return null;
         }
+        
+        // For other errors (like Quota), we throw so the mirror knows IT IS an error, not just "not available"
+        throw new Error(errorMsg);
       }
       
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
       if (base64Audio) {
         const originalBuffer = Buffer.from(base64Audio, 'base64');
-        logger.info('TTS', `Successfully generated audio for: ${name} (${originalBuffer.length} bytes)`);
+        logger.info('TTS', `Successfully generated audio for: ${name} (${originalBuffer.length} bytes) using Gemini (ID: ${requestId})`);
 
         // Thêm 1 giây im lặng vào đầu lời chào để tránh lag
         const audioBuffer = audioUtils.addSilenceToWav(originalBuffer);
@@ -69,11 +91,11 @@ export const ttsService = {
 
         return audioBuffer;
       } else {
-        logger.error('TTS', `Failed to generate audio for: ${name} - No audio data in response`);
+        logger.error('TTS', `Failed to generate audio for: ${name} - No audio data in response (ID: ${requestId})`);
         return null;
       }
     } catch (err: any) {
-      logger.error('TTS', `Error for ${name} (ID: ${requestId}): ${err.message}`);
+      logger.error('TTS', `Unhandled error for ${name} (ID: ${requestId}): ${err.message}`);
       throw err;
     }
   }

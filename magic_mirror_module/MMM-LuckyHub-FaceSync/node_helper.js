@@ -333,13 +333,28 @@ module.exports = NodeHelper.create({
       if (!audioBuffer) {
         const ttsUrl = `${this.config.baseUrl}/api/tts/greeting/${encodeURIComponent(fullName)}?prompt=${encodeURIComponent(prompt)}`;
         console.log(`MMM-LuckyHub-FaceSync: [TTS] Requesting audio from server: ${ttsUrl}`);
-        const response = await axiosInstance.get(ttsUrl, { responseType: 'arraybuffer' });
         
-        if (response.status === 200 && response.data.byteLength > 0) {
-          audioBuffer = Buffer.from(response.data);
-          console.log(`MMM-LuckyHub-FaceSync: [TTS] Server audio received (${audioBuffer.length} bytes)`);
-        } else {
-          console.warn(`MMM-LuckyHub-FaceSync: [TTS] Server returned status ${response.status} or empty data.`);
+        try {
+          const response = await axiosInstance.get(ttsUrl, { responseType: 'arraybuffer' });
+          
+          if (response.status === 200 && response.data.byteLength > 0) {
+            audioBuffer = Buffer.from(response.data);
+            console.log(`MMM-LuckyHub-FaceSync: [TTS] Server audio received (${audioBuffer.length} bytes)`);
+          } else if (response.status === 204) {
+            console.warn(`MMM-LuckyHub-FaceSync: [TTS] Server returned 204 (No Content). Model might be unavailable in server's region.`);
+          } else {
+            console.warn(`MMM-LuckyHub-FaceSync: [TTS] Server returned status ${response.status} but no data.`);
+          }
+        } catch (serverErr) {
+          let msg = serverErr.message;
+          if (serverErr.response && serverErr.response.data) {
+            try {
+              // responseType 'arraybuffer' means we need to parse the JSON error from buffer
+              const errData = JSON.parse(Buffer.from(serverErr.response.data).toString());
+              msg = errData.message || msg;
+            } catch (e) {}
+          }
+          console.error(`MMM-LuckyHub-FaceSync: [TTS] Server-side fallback failed: ${msg}`);
         }
       }
 
