@@ -35,6 +35,15 @@ module.exports = NodeHelper.create({
       }
       
       const mirrorPuter = puter || global.puter;
+      
+      if (mirrorPuter) {
+        if (process.env.PUTER_AUTH_TOKEN) {
+          mirrorPuter.authToken = process.env.PUTER_AUTH_TOKEN;
+          if (typeof mirrorPuter.setToken === 'function') {
+            mirrorPuter.setToken(process.env.PUTER_AUTH_TOKEN);
+          }
+        }
+      }
 
       if (mirrorPuter && mirrorPuter.ai) {
         console.log("MMM-LuckyHub-FaceSync (Puter Check): 🚀 Puter.ai is SẴN SÀNG. Sending test request...");

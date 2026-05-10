@@ -3,6 +3,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
+dotenv.config();
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -22,12 +23,27 @@ try {
     
     if (puter && puter.ai) {
       logger.info('SYSTEM', 'Đã tải Puter SDK V2 từ file cục bộ (SRC).');
+      // Gán Auth Token nếu có
+      if (process.env.PUTER_AUTH_TOKEN) {
+        puter.authToken = process.env.PUTER_AUTH_TOKEN;
+        if (typeof puter.setToken === 'function') {
+           puter.setToken(process.env.PUTER_AUTH_TOKEN);
+        }
+        logger.info('SYSTEM', 'Đã gán PUTER_AUTH_TOKEN.');
+      }
     } else {
       logger.warn('SYSTEM', 'Đã nạp file puter.v2.js nhưng object .ai không khả dụng.');
     }
   } else {
     puter = require('puter');
     logger.info('SYSTEM', 'Đã tải Puter SDK từ node_modules.');
+    // Gán Auth Token nếu có cho node_modules version
+    if (process.env.PUTER_AUTH_TOKEN) {
+      if (typeof puter.setToken === 'function') {
+         puter.setToken(process.env.PUTER_AUTH_TOKEN);
+      }
+      logger.info('SYSTEM', 'Đã gán PUTER_AUTH_TOKEN cho Puter node_modules.');
+    }
   }
 } catch (e: any) {
   logger.warn('SYSTEM', `Khởi tạo Puter thất bại: ${e.message}. Sẽ dùng API Key làm mặc định.`);
@@ -41,8 +57,6 @@ import { ttsService } from './src/services/ttsService.ts';
 import { configService } from './src/services/configService.ts';
 import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
-
-dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -247,14 +261,29 @@ async function discoverAvailableModels() {
     try {
       logger.info('SYSTEM', '🚀 Đang thực hiện TEST REQUEST tới Puter AI (Brain Check)...');
       
-      // Test Chat
-      const response = await puterInstance.ai.chat('Say "BRAIN_OK"', { model: 'gemini-2.0-flash' });
-      const text = response?.message?.content || (typeof response === 'string' ? response : (response as any).text);
+      // Test Chat - Sử dụng model mặc định của Puter thay vì model Discovery của Google
+      const testModel = 'gemini-1.5-flash'; 
+      logger.info('SYSTEM', `🧠 Đang dùng model test cho Puter: ${testModel}`);
+      
+      const response = await puterInstance.ai.chat('Say "BRAIN_OK"', { model: testModel });
+      
+      // Cải tiến trích xuất text
+      let text = "";
+      if (typeof response === 'string') {
+        text = response;
+      } else if (response?.message?.content) {
+        text = response.message.content;
+      } else if (response?.text) {
+        text = response.text;
+      } else if (response?.content) {
+        text = response.content;
+      }
       
       if (text && text.includes('BRAIN_OK')) {
-        logger.info('SYSTEM', `✅ Puter AI Brain: HOẠT ĐỘNG TỐT (Response: ${text.trim()})`);
+        logger.info('SYSTEM', `✅ Puter AI Brain: HOẠT ĐỘNG TỐT (Model: ${testModel})`);
       } else {
-        logger.warn('SYSTEM', `⚠️ Puter AI phản hồi không như mong đợi: "${text}"`);
+        logger.warn('SYSTEM', `⚠️ Puter AI phản hồi không như mong đợi.`);
+        console.dir(response, { depth: 10 }); // Log chi tiết để debug
       }
 
       // Gán vào global để các service khác dễ truy cập
