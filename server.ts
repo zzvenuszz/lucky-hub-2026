@@ -180,6 +180,7 @@ async function discoverAvailableModels() {
             if (msg.toLowerCase().includes('quota')) status = `${ANSI.yellow}[⚠ QUOTA]${ANSI.reset}`;
             else if (msg.toLowerCase().includes('location')) status = `${ANSI.magenta}[⚠ LOCATION]${ANSI.reset}`;
             else if (msg.toLowerCase().includes('permission')) status = `${ANSI.blue}[⚠ PERM]${ANSI.reset}`;
+            else if (code === 400 || msg.toLowerCase().includes('not supported')) status = `${ANSI.gray}[✗ UNSUPPORTED]${ANSI.reset}`;
 
             console.log(`    ${status} ${model.padEnd(45)} ${ANSI.gray}(code:${code})${ANSI.reset}`);
           }
@@ -293,18 +294,24 @@ async function callAIWithRetry(
           return mockResponse;
         } else {
           // Sử dụng SDK gốc nếu không có Proxy
-          // Đảm bảo sử dụng v1beta cho các tính năng mới như AUDIO modality
-          const ai = new GoogleGenAI({ apiKey: selectedKey.key, apiVersion: 'v1beta' });
-          const response = await ai.models.generateContent({ model: currentModel, ...payload });
+          // Theo skill gemini-api, dùng GoogleGenAI({ apiKey })
+          const ai = new GoogleGenAI({ apiKey: selectedKey.key });
+          
+          // Trộn payload để truyền đúng định dạng cho SDK
+          // Skill yêu cầu dùng ai.models.generateContent
+          const response = await ai.models.generateContent({
+            model: currentModel,
+            ...payload
+          });
           
           if (selectedKey.isFromDb && selectedKey.id) {
             await GeminiKey.findByIdAndUpdate(selectedKey.id, { lastUsed: new Date(), failCount: 0 });
           }
           
-          // Trả về một object đồng nhất có thuộc tính .text là string
+          // Skill hướng dẫn text là property (không phải method)
           return {
             candidates: response.candidates,
-            text: response.text 
+            text: response.text || "" 
           };
         }
       } catch (err: any) {

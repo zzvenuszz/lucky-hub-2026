@@ -7,13 +7,13 @@ const axios = require("axios");
  */
 module.exports = {
   generateTTS: async (text, apiKey, voiceName = 'Kore') => {
-    // Danh sách các model hỗ trợ Audio hỗ trợ fallback ngay trên Mirror
+    // Danh sách các model hỗ trợ Audio (ưu tiên các model đời mới theo skill)
     const modelsToTry = [
-      'gemini-1.5-flash-latest',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash-8b-latest',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash-lite-preview-02-05'
+      'gemini-3.1-flash-tts-preview', // Model chuyên dụng cho TTS
+      'gemini-2.0-flash',            // Model mới cực nhanh
+      'gemini-3-flash-preview',      // Model mạnh
+      'gemini-3.1-flash-lite',       // Tiết kiệm nhất
+      'gemini-3.1-pro-preview'       // Model pro fallback
     ];
     
     let lastError = null;
