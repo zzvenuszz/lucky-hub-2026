@@ -321,8 +321,8 @@ module.exports = NodeHelper.create({
       // Try direct generation first (Bypasses server regional restrictions)
       if (this.serverConfig && this.serverConfig.geminiApiKey) {
         try {
-          console.log(`MMM-LuckyHub-FaceSync: [TTS] Attempting direct generation for ${fullName} using ${this.serverConfig.ttsModel || 'gemini-2.0-flash'}...`);
-          audioBuffer = await ttsHelper.generateTTS(prompt, this.serverConfig.geminiApiKey, this.serverConfig.ttsModel, this.serverConfig.voiceName);
+          console.log(`MMM-LuckyHub-FaceSync: [TTS] Attempting direct generation for ${fullName}...`);
+          audioBuffer = await ttsHelper.generateTTS(prompt, this.serverConfig.geminiApiKey, this.serverConfig.voiceName);
           console.log(`MMM-LuckyHub-FaceSync: [TTS] Direct generation successful (${audioBuffer.length} bytes)`);
         } catch (ttsErr) {
           console.error(`MMM-LuckyHub-FaceSync: [TTS] Direct generation failed: ${ttsErr.message}. Falling back to server.`);

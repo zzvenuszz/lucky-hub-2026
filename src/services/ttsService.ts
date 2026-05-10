@@ -39,11 +39,11 @@ export const ttsService = {
 
       // Try multiple models in sequence that support AUDIO modality
       const modelsToTry = [
-        "gemini-2.0-flash",
         "gemini-1.5-flash-latest",
+        "gemini-2.0-flash",
         "gemini-1.5-flash-8b-latest",
-        "gemini-2.0-flash-lite-preview-02-05",
-        "gemini-1.5-flash"
+        "gemini-1.5-flash",
+        "gemini-1.5-pro-latest"
       ];
 
       let response = null;
