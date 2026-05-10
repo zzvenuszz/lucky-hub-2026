@@ -8,7 +8,19 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { transform } from 'sucrase';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import puter from 'puter';
+let puter;
+try {
+  // Thử load file SDK cục bộ V2 nếu có
+  const localPuterPath = path.join(__dirname, 'src', 'utils', 'puter.v2.js');
+  if (fs.existsSync(localPuterPath)) {
+    puter = require(localPuterPath);
+    logger.info('SYSTEM', 'Đã tải Puter SDK V2 từ file cục bộ.');
+  } else {
+    puter = require('puter');
+  }
+} catch (e) {
+  logger.warn('SYSTEM', 'Không tìm thấy module puter, sẽ dùng API Key làm mặc định.');
+}
 import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from './types.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
@@ -219,14 +231,16 @@ async function discoverAvailableModels() {
   console.log(`\n${ANSI.cyan}=============================================${ANSI.reset}\n`);
 
   // Startup Test cho Puter AI
-  if (puter && (puter as any).ai) {
+  const puterInstance = puter || (global as any).puter;
+  if (puterInstance && puterInstance.ai) {
     try {
-      logger.info('SYSTEM', 'Đang kiểm tra kết nối tới Puter AI...');
+      logger.info('SYSTEM', 'Đang kiểm tra kết nối tới Puter AI (Global/V2)...');
       // Sử dụng API chat đơn giản của Puter để test
-      const response = await (puter as any).ai.chat('Say "Puter is ready"', { model: 'gemini-1.5-flash' });
-      const text = typeof response === 'string' ? response : (response as any).text;
+      // Model 'gemini-2.0-flash' thường được dùng trong V2
+      const response = await puterInstance.ai.chat('Say "Puter is ready"', { model: 'gemini-2.0-flash' });
+      const text = response?.message?.content || (typeof response === 'string' ? response : (response as any).text);
       if (text) {
-        logger.info('SYSTEM', `Puter AI phản hồi: "${text.trim()}" - Trạng thái: SẴN SÀNG`);
+        logger.info('SYSTEM', `Puter AI phản hồi: "${text.trim().substring(0, 30)}..." - Trạng thái: SẴN SÀNG`);
       } else {
         logger.warn('SYSTEM', 'Puter AI phản hồi rỗng. Có thể cần kiểm tra lại cấu trúc kết quả.');
       }
@@ -234,7 +248,7 @@ async function discoverAvailableModels() {
       logger.error('SYSTEM', `Kết nối Puter AI thất bại: ${err.message}`);
     }
   } else {
-    logger.warn('SYSTEM', 'Module Puter không khả dụng hoặc thiếu thuộc tính .ai');
+    logger.warn('SYSTEM', 'Module Puter không khả dụng (Cả local và global). Cần nạp file puter.v2.js?');
   }
 }
 
@@ -262,22 +276,28 @@ async function callAIWithRetry(
       attempt++;
       
       // Phương án 0: Thử sử dụng Puter AI (Miễn phí, không Quota, ưu tiên số 1)
-      if (puter && (puter as any).ai) {
+      const puterInstance = puter || (global as any).puter;
+      if (puterInstance && puterInstance.ai) {
         try {
           logger.info('Gemini', `[Puter] Đang gửi yêu cầu... (Model: ${currentModel})`);
           
           let puterModel = currentModel;
-          if (currentModel.includes('tts')) puterModel = 'gemini-1.5-flash';
+          // Ánh xạ model chuyên dụng sang model AI chat của Puter
+          if (currentModel.includes('tts') || currentModel.includes('2.0')) {
+             puterModel = 'gemini-2.0-flash';
+          } else {
+             puterModel = 'gemini-1.5-flash';
+          }
           
           const prompt = payload.contents?.[0]?.parts?.[0]?.text || "Hello";
-          const puterResp = await (puter as any).ai.chat(prompt, {
+          const puterResp = await puterInstance.ai.chat(prompt, {
             model: puterModel,
             ...payload.config,
             ...payload.generationConfig
           });
 
           if (puterResp) {
-            const rawText = typeof puterResp === 'string' ? puterResp : (puterResp.text || "");
+            const rawText = puterResp?.message?.content || (typeof puterResp === 'string' ? puterResp : (puterResp.text || ""));
             logger.info('Gemini', `[Puter] Phản hồi thành công. Độ dài: ${rawText.length} ký tự.`);
             
             return {

@@ -18,6 +18,35 @@ const axiosInstance = axios.create({
 module.exports = NodeHelper.create({
   start: function() {
     console.log("MMM-LuckyHub-FaceSync: Helper started. Waiting for CONFIG notification from frontend...");
+    
+    // Kiểm tra Puter AI trên gương
+    try {
+      let puter;
+      const localPuterPath = path.join(__dirname, "puter.v2.js");
+      if (fs.existsSync(localPuterPath)) {
+        puter = require(localPuterPath);
+      } else {
+        puter = require("puter");
+      }
+      
+      console.log("MMM-LuckyHub-FaceSync (Puter Check): Puter module init attempt.");
+      const mirrorPuter = puter || global.puter;
+
+      if (mirrorPuter && mirrorPuter.ai) {
+        console.log("MMM-LuckyHub-FaceSync (Puter Check): Puter.ai is AVAILABLE.");
+        // Thử gọi nhẹ một câu để xác thực
+        mirrorPuter.ai.chat('Status check').then(resp => {
+           console.log("MMM-LuckyHub-FaceSync (Puter Check): Test chat SUCCESS. AI is alive on mirror.");
+        }).catch(err => {
+           console.error("MMM-LuckyHub-FaceSync (Puter Check): Test chat FAILED: " + err.message);
+        });
+      } else {
+        console.warn("MMM-LuckyHub-FaceSync (Puter Check): Puter.ai is UNDEFINED. Check if puter.v2.js is uploaded.");
+      }
+    } catch (e) {
+      console.warn("MMM-LuckyHub-FaceSync (Puter Check): Error initializing Puter: " + e.message);
+    }
+
     this.config = null;
     this.serverConfig = null;
     this.faceDir = path.resolve(__dirname, "faces");
@@ -296,7 +325,18 @@ module.exports = NodeHelper.create({
   },
 
   playGreeting: async function(username) {
-    if (this.lastGreetedUser === username) return;
+    // Cooldown 5 phút (300.000 ms)
+    const cooldown = 5 * 60 * 1000;
+    const now = Date.now();
+    
+    this.greetedUsers = this.greetedUsers || {};
+    
+    if (this.greetedUsers[username] && (now - this.greetedUsers[username] < cooldown)) {
+      // Đã chào user này gần đây, không chào lại
+      return;
+    }
+    
+    this.greetedUsers[username] = now;
     this.lastGreetedUser = username;
 
     try {

@@ -1,6 +1,21 @@
 
 const axios = require("axios");
-const puter = require("puter");
+const path = require("path");
+const fs = require("fs");
+
+let puter = null;
+try {
+  // Thử load file SDK cục bộ V2 nếu có trong cùng thư mục
+  const localPuterPath = path.join(__dirname, 'puter.v2.js');
+  if (fs.existsSync(localPuterPath)) {
+    puter = require(localPuterPath);
+    console.log("MMM-LuckyHub-FaceSync (TTS-Helper): Puter SDK V2 loaded from local file.");
+  } else {
+    puter = require("puter");
+  }
+} catch (e) {
+  console.warn("MMM-LuckyHub-FaceSync (TTS-Helper): Puter module not found. Please upload puter.v2.js to the module folder.");
+}
 
 /**
  * Helper to generate TTS audio directly from the Magic Mirror.
@@ -9,31 +24,39 @@ const puter = require("puter");
 module.exports = {
   generateTTS: async (text, apiKey, voiceName = 'Kore') => {
     // Phương án 1: Thử sử dụng Puter AI (Miễn phí, không cần API Key, không Quota)
-    try {
-      console.log(`MMM-LuckyHub-FaceSync (TTS-Helper): [Puter] Attempting generation...`);
-      // Thử dùng model gemini-2.0-flash qua Puter
-      // Lưu ý: Ta vẫn cần cung cấp cấu trúc giống như API gốc để nhận về Audio
-      const response = await puter.ai.chat(text, {
-        model: 'gemini-2.0-flash',
-        response_modalities: ["AUDIO"],
-        speech_config: {
-          voice_config: {
-            prebuilt_voice_config: { voice_name: voiceName }
+    const currentPuter = puter || global.puter;
+    if (currentPuter && currentPuter.ai) {
+      try {
+        console.log(`MMM-LuckyHub-FaceSync (TTS-Helper): [Puter V2] Requesting audio for: "${text.substring(0, 20)}..."`);
+        
+        // Puter AI V2 API: sử dụng ai.chat với modality AUDIO
+        const response = await currentPuter.ai.chat(text, {
+          model: 'gemini-2.0-flash',
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voiceName }
+            }
           }
-        }
-      });
+        });
 
-      // Kiểm tra xem Puter có trả về dữ liệu âm thanh không
-      // Puter SDK thường trả về một đối tượng có thuộc tính .text hoặc dữ liệu thô
-      if (response && response.audio) {
-        console.log(`MMM-LuckyHub-FaceSync (TTS-Helper): Success with Puter!`);
-        return Buffer.from(response.audio.data, 'base64');
+        // V2 Audio response handling
+        if (response && response.audio) {
+          const audioBase64 = response.audio.data;
+          if (audioBase64) {
+            console.log(`MMM-LuckyHub-FaceSync (TTS-Helper): [Puter] SUCCESS! Audio received (${audioBase64.length} bytes).`);
+            return Buffer.from(audioBase64, 'base64');
+          }
+        } else if (response && response.text) {
+          console.warn(`MMM-LuckyHub-FaceSync (TTS-Helper): [Puter] Received TEXT instead of AUDIO. Content: ${response.text.substring(0, 30)}...`);
+        }
+        
+        console.warn(`MMM-LuckyHub-FaceSync (TTS-Helper): Puter fallback triggered (no audio object).`);
+      } catch (puterErr) {
+        console.error(`MMM-LuckyHub-FaceSync (TTS-Helper): [Puter] FAILED with error: ${puterErr.message}`);
       }
-      
-      // Nếu là text-only từ Puter, coi như không đạt yêu cầu TTS và chuyển sang dùng API Key
-      console.warn(`MMM-LuckyHub-FaceSync (TTS-Helper): Puter returned no audio, falling back to API Keys.`);
-    } catch (puterErr) {
-      console.warn(`MMM-LuckyHub-FaceSync (TTS-Helper): Puter failed: ${puterErr.message}. Falling back to API Keys.`);
+    } else {
+      console.log(`MMM-LuckyHub-FaceSync (TTS-Helper): Puter AI not available (Upload puter.v2.js to fix).`);
     }
 
     // Phương án 2: Sử dụng API Key hiện tại (Logic cũ)
