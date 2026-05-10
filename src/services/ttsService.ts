@@ -17,7 +17,7 @@ export const ttsService = {
   generateGreeting: async (
     name: string, 
     customPrompt: string | undefined, 
-    callAIWithRetry: (requestId: string, model: string, payload: any) => Promise<any>
+    callAIWithRetry: (requestId: string, model: string, payload: any, retries?: number, strictModel?: boolean) => Promise<any>
   ): Promise<Buffer | null> => {
     const requestId = `TTS-${Math.random().toString(36).substring(7).toUpperCase()}`;
     logger.info('TTS', `Request greeting for: ${name} (ID: ${requestId})${customPrompt ? ' with custom prompt' : ''}`);
@@ -27,7 +27,7 @@ export const ttsService = {
       
       const payload = {
         contents: [{ parts: [{ text: prompt }] }],
-        config: {
+        generationConfig: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
@@ -39,11 +39,11 @@ export const ttsService = {
 
       // Try multiple models in sequence that support AUDIO modality
       const modelsToTry = [
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash",
-        "gemini-3.1-flash-tts-preview",
         "gemini-2.0-flash",
-        "gemini-1.5-pro-latest"
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-flash-8b-latest",
+        "gemini-2.0-flash-lite-preview-02-05",
+        "gemini-1.5-flash"
       ];
 
       let response = null;
@@ -52,7 +52,8 @@ export const ttsService = {
       for (const model of modelsToTry) {
         try {
           logger.info('TTS', `Trying to generate audio with model: ${model} (ID: ${requestId})`);
-          response = await callAIWithRetry(requestId, model, payload);
+          // Use strictModel=true to ensure we only use the specified model for this audio task
+          response = await callAIWithRetry(requestId, model, payload, 3, true);
           if (response) break;
         } catch (innerErr: any) {
           lastError = innerErr;

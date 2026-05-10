@@ -222,14 +222,15 @@ async function callAIWithRetry(
   requestId: string,
   modelName: string,
   payload: any,
-  retries = 3
+  retries = 3,
+  strictModel = false // Thêm tham số để giới hạn chỉ dùng đúng model yêu cầu (dùng cho TTS/Modality đặc thù)
 ): Promise<any> {
-  // Ưu tiên dùng model yêu cầu, sau đó là danh sách đã khám phá, cuối cùng là mặc định ổn định nhất
-  const modelRegistry = [
+  // Ưu tiên dùng model yêu cầu
+  const modelRegistry = strictModel ? [modelName] : [
     modelName,
     ...discoveredModels,
     'gemini-1.5-flash-latest',
-    'gemini-1.5-flash'
+    'gemini-1.5-flash-8b'
   ].filter((v, i, a) => a.indexOf(v) === i); 
 
   let lastError: any = null;
@@ -242,8 +243,8 @@ async function callAIWithRetry(
       
       let dbKeys = await GeminiKey.find({ isActive: true });
       let allPotentialKeys = [
-        ...ENV_API_KEYS.map(k => ({ key: k, isFromDb: false, id: null })),
-        ...dbKeys.map(k => ({ key: k.key, isFromDb: true, id: k._id, cooldownUntil: k.cooldownUntil }))
+        ...ENV_API_KEYS.map(k => ({ key: k, isFromDb: false, id: null, label: 'ENV_KEY' })),
+        ...dbKeys.map(k => ({ key: k.key, isFromDb: true, id: k._id, label: k.label, cooldownUntil: k.cooldownUntil }))
       ];
 
       // Lọc bỏ key cooldown
@@ -274,7 +275,10 @@ async function callAIWithRetry(
           responseJson = await resp.json();
           
           if (responseJson.error) {
-            throw new Error(responseJson.error.message || "Proxy Error");
+            const errorMsg = responseJson.error.message || "Proxy Error";
+            const errorCode = responseJson.error.code || "unknown";
+            logger.error('Gemini', `[API ERROR] Model: ${currentModel}, Key: ${selectedKey.label || 'unknown'}, Code: ${errorCode}, Message: ${errorMsg}`);
+            throw new Error(errorMsg);
           }
           
           // Giả lập cấu trúc trả về để các hàm phía sau không bị lỗi
@@ -289,7 +293,8 @@ async function callAIWithRetry(
           return mockResponse;
         } else {
           // Sử dụng SDK gốc nếu không có Proxy
-          const ai = new GoogleGenAI({ apiKey: selectedKey.key });
+          // Đảm bảo sử dụng v1beta cho các tính năng mới như AUDIO modality
+          const ai = new GoogleGenAI({ apiKey: selectedKey.key, apiVersion: 'v1beta' });
           const response = await ai.models.generateContent({ model: currentModel, ...payload });
           
           if (selectedKey.isFromDb && selectedKey.id) {

@@ -6,9 +6,9 @@ const axios = require("axios");
  * This bypasses regional restrictions of the backend server.
  */
 module.exports = {
-  generateTTS: async (text, apiKey, voiceName = 'Kore') => {
+  generateTTS: async (text, apiKey, modelName = 'gemini-2.0-flash', voiceName = 'Kore') => {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
       
       const payload = {
         contents: [{ parts: [{ text: text }] }],

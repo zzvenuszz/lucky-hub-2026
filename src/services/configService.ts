@@ -18,7 +18,7 @@ export const configService = {
 
     return {
       geminiApiKey: apiKey,
-      ttsModel: 'gemini-3.1-flash-tts-preview',
+      ttsModel: 'gemini-2.0-flash',
       voiceName: 'Kore'
     };
   }
