@@ -217,6 +217,25 @@ async function discoverAvailableModels() {
     console.log(`\n${ANSI.green}✅ AI DISCOVERY HOÀN TẤT. Sẵn sàng: ${ANSI.reset}${discoveredModels.join(', ')}`);
   }
   console.log(`\n${ANSI.cyan}=============================================${ANSI.reset}\n`);
+
+  // Startup Test cho Puter AI
+  if (puter && (puter as any).ai) {
+    try {
+      logger.info('SYSTEM', 'Đang kiểm tra kết nối tới Puter AI...');
+      // Sử dụng API chat đơn giản của Puter để test
+      const response = await (puter as any).ai.chat('Say "Puter is ready"', { model: 'gemini-1.5-flash' });
+      const text = typeof response === 'string' ? response : (response as any).text;
+      if (text) {
+        logger.info('SYSTEM', `Puter AI phản hồi: "${text.trim()}" - Trạng thái: SẴN SÀNG`);
+      } else {
+        logger.warn('SYSTEM', 'Puter AI phản hồi rỗng. Có thể cần kiểm tra lại cấu trúc kết quả.');
+      }
+    } catch (err: any) {
+      logger.error('SYSTEM', `Kết nối Puter AI thất bại: ${err.message}`);
+    }
+  } else {
+    logger.warn('SYSTEM', 'Module Puter không khả dụng hoặc thiếu thuộc tính .ai');
+  }
 }
 
 
@@ -245,28 +264,32 @@ async function callAIWithRetry(
       // Phương án 0: Thử sử dụng Puter AI (Miễn phí, không Quota, ưu tiên số 1)
       if (puter && (puter as any).ai) {
         try {
-          logger.info('Gemini', `[Puter] Đang thử gọi AI (Model: ${currentModel}) cho Request ID: ${requestId}`);
+          logger.info('Gemini', `[Puter] Đang gửi yêu cầu... (Model: ${currentModel})`);
           
-          // Map sang model Puter hỗ trợ
           let puterModel = currentModel;
           if (currentModel.includes('tts')) puterModel = 'gemini-1.5-flash';
           
-          const puterResp = await (puter as any).ai.chat(payload.contents?.[0]?.parts?.[0]?.text || "Hello", {
+          const prompt = payload.contents?.[0]?.parts?.[0]?.text || "Hello";
+          const puterResp = await (puter as any).ai.chat(prompt, {
             model: puterModel,
             ...payload.config,
             ...payload.generationConfig
           });
 
           if (puterResp) {
-            logger.info('Gemini', `[Puter] Gọi AI thành công cho Request ID: ${requestId}`);
+            const rawText = typeof puterResp === 'string' ? puterResp : (puterResp.text || "");
+            logger.info('Gemini', `[Puter] Phản hồi thành công. Độ dài: ${rawText.length} ký tự.`);
+            
             return {
-              candidates: [{ content: { parts: [{ text: typeof puterResp === 'string' ? puterResp : puterResp.text }] } }],
-              text: typeof puterResp === 'string' ? puterResp : (puterResp.text || "")
+              candidates: [{ content: { parts: [{ text: rawText }] } }],
+              text: rawText
             };
           }
         } catch (puterErr: any) {
-          logger.warn('Gemini', `[Puter] Thất bại cho Request ID: ${requestId}: ${puterErr.message}. Chuyển sang API Keys...`);
+          logger.warn('Gemini', `[Puter] Thất bại: ${puterErr.message}. Chuyển sang API Keys...`);
         }
+      } else {
+        logger.warn('Gemini', '[Puter] Không khả dụng, bỏ qua bước gọi miễn phí.');
       }
 
       const now = Date.now();
