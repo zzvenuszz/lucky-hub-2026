@@ -25,26 +25,38 @@ module.exports = NodeHelper.create({
       const localPuterPath = path.join(__dirname, "puter.v2.js");
       if (fs.existsSync(localPuterPath)) {
         puter = require(localPuterPath);
+        if (!puter || !puter.ai) {
+           puter = global.puter;
+        }
+        console.log("MMM-LuckyHub-FaceSync (Puter Check): Loaded Puter SDK V2 from local file.");
       } else {
         puter = require("puter");
+        console.log("MMM-LuckyHub-FaceSync (Puter Check): Loaded Puter from node_modules.");
       }
       
-      console.log("MMM-LuckyHub-FaceSync (Puter Check): Puter module init attempt.");
       const mirrorPuter = puter || global.puter;
 
       if (mirrorPuter && mirrorPuter.ai) {
-        console.log("MMM-LuckyHub-FaceSync (Puter Check): Puter.ai is AVAILABLE.");
+        console.log("MMM-LuckyHub-FaceSync (Puter Check): 🚀 Puter.ai is SẴN SÀNG. Sending test request...");
         // Thử gọi nhẹ một câu để xác thực
-        mirrorPuter.ai.chat('Status check').then(resp => {
-           console.log("MMM-LuckyHub-FaceSync (Puter Check): Test chat SUCCESS. AI is alive on mirror.");
+        mirrorPuter.ai.chat('Say "MIRROR_OK"').then(resp => {
+           const text = resp?.message?.content || (typeof resp === 'string' ? resp : (resp && resp.text));
+           if (text && text.includes('MIRROR_OK')) {
+              console.log("MMM-LuckyHub-FaceSync (Puter Check): ✅ Test chat SUCCESS. Puter is alive on Mirror.");
+           } else {
+              console.warn("MMM-LuckyHub-FaceSync (Puter Check): ⚠️ Puter responded but content was unexpected: " + text);
+           }
         }).catch(err => {
-           console.error("MMM-LuckyHub-FaceSync (Puter Check): Test chat FAILED: " + err.message);
+           console.error("MMM-LuckyHub-FaceSync (Puter Check): ❌ Test chat FAILED: " + err.message);
         });
+        
+        // Gán vào global để các helper khác sử dụng
+        global.puter = mirrorPuter;
       } else {
-        console.warn("MMM-LuckyHub-FaceSync (Puter Check): Puter.ai is UNDEFINED. Check if puter.v2.js is uploaded.");
+        console.warn("MMM-LuckyHub-FaceSync (Puter Check): ❌ Puter.ai is UNDEFINED. AI features on Mirror might be limited.");
       }
     } catch (e) {
-      console.warn("MMM-LuckyHub-FaceSync (Puter Check): Error initializing Puter: " + e.message);
+      console.warn("MMM-LuckyHub-FaceSync (Puter Check): ❌ Error initializing Puter: " + e.message);
     }
 
     this.config = null;

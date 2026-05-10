@@ -8,18 +8,29 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { transform } from 'sucrase';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-let puter;
+let puter: any;
 try {
   // Thử load file SDK cục bộ V2 nếu có
   const localPuterPath = path.join(__dirname, 'src', 'utils', 'puter.v2.js');
   if (fs.existsSync(localPuterPath)) {
+    // Puter V2 local thường là một file IIFE, require có thể trả về object rỗng hoặc global puter
     puter = require(localPuterPath);
-    logger.info('SYSTEM', 'Đã tải Puter SDK V2 từ file cục bộ.');
+    // Kiểm tra nếu require không trả về đúng object mong muốn, thử lấy từ global
+    if (!puter || !puter.ai) {
+        puter = (global as any).puter;
+    }
+    
+    if (puter && puter.ai) {
+      logger.info('SYSTEM', 'Đã tải Puter SDK V2 từ file cục bộ (SRC).');
+    } else {
+      logger.warn('SYSTEM', 'Đã nạp file puter.v2.js nhưng object .ai không khả dụng.');
+    }
   } else {
     puter = require('puter');
+    logger.info('SYSTEM', 'Đã tải Puter SDK từ node_modules.');
   }
-} catch (e) {
-  logger.warn('SYSTEM', 'Không tìm thấy module puter, sẽ dùng API Key làm mặc định.');
+} catch (e: any) {
+  logger.warn('SYSTEM', `Khởi tạo Puter thất bại: ${e.message}. Sẽ dùng API Key làm mặc định.`);
 }
 import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from './types.ts';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -234,21 +245,26 @@ async function discoverAvailableModels() {
   const puterInstance = puter || (global as any).puter;
   if (puterInstance && puterInstance.ai) {
     try {
-      logger.info('SYSTEM', 'Đang kiểm tra kết nối tới Puter AI (Global/V2)...');
-      // Sử dụng API chat đơn giản của Puter để test
-      // Model 'gemini-2.0-flash' thường được dùng trong V2
-      const response = await puterInstance.ai.chat('Say "Puter is ready"', { model: 'gemini-2.0-flash' });
+      logger.info('SYSTEM', '🚀 Đang thực hiện TEST REQUEST tới Puter AI (Brain Check)...');
+      
+      // Test Chat
+      const response = await puterInstance.ai.chat('Say "BRAIN_OK"', { model: 'gemini-2.0-flash' });
       const text = response?.message?.content || (typeof response === 'string' ? response : (response as any).text);
-      if (text) {
-        logger.info('SYSTEM', `Puter AI phản hồi: "${text.trim().substring(0, 30)}..." - Trạng thái: SẴN SÀNG`);
+      
+      if (text && text.includes('BRAIN_OK')) {
+        logger.info('SYSTEM', `✅ Puter AI Brain: HOẠT ĐỘNG TỐT (Response: ${text.trim()})`);
       } else {
-        logger.warn('SYSTEM', 'Puter AI phản hồi rỗng. Có thể cần kiểm tra lại cấu trúc kết quả.');
+        logger.warn('SYSTEM', `⚠️ Puter AI phản hồi không như mong đợi: "${text}"`);
       }
+
+      // Gán vào global để các service khác dễ truy cập
+      (global as any).puterInstance = puterInstance;
     } catch (err: any) {
-      logger.error('SYSTEM', `Kết nối Puter AI thất bại: ${err.message}`);
+      logger.error('SYSTEM', `❌ Puter AI Test Request FAILED: ${err.message}`);
+      if (err.stack) console.error(err.stack);
     }
   } else {
-    logger.warn('SYSTEM', 'Module Puter không khả dụng (Cả local và global). Cần nạp file puter.v2.js?');
+    logger.error('SYSTEM', '❌ TRẠNG THÁI: Puter AI KHÔNG KHẢ DỤNG. Hệ thống sẽ chạy ở chế độ dự phòng (API Key).');
   }
 }
 

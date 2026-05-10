@@ -9,12 +9,17 @@ try {
   const localPuterPath = path.join(__dirname, 'puter.v2.js');
   if (fs.existsSync(localPuterPath)) {
     puter = require(localPuterPath);
-    console.log("MMM-LuckyHub-FaceSync (TTS-Helper): Puter SDK V2 loaded from local file.");
+    if (!puter || !puter.ai) {
+        puter = global.puter;
+    }
+    if (puter && puter.ai) {
+      console.log("MMM-LuckyHub-FaceSync (TTS-Helper): ✅ Puter SDK V2 loaded successfully.");
+    }
   } else {
     puter = require("puter");
   }
 } catch (e) {
-  console.warn("MMM-LuckyHub-FaceSync (TTS-Helper): Puter module not found. Please upload puter.v2.js to the module folder.");
+  console.warn("MMM-LuckyHub-FaceSync (TTS-Helper): Puter module not found or failed to load. Will try global.puter.");
 }
 
 /**
