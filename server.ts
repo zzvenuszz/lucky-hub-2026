@@ -243,28 +243,30 @@ async function callAIWithRetry(
       attempt++;
       
       // Phương án 0: Thử sử dụng Puter AI (Miễn phí, không Quota, ưu tiên số 1)
-      try {
-        logger.info('Gemini', `[Puter] Đang thử gọi AI (Model: ${currentModel}) cho Request ID: ${requestId}`);
-        
-        // Map sang model Puter hỗ trợ (Puter có thể chưa cập nhật model name mới nhất)
-        let puterModel = currentModel;
-        if (currentModel.includes('tts')) puterModel = 'gemini-1.5-flash';
-        
-        const puterResp = await (puter as any).ai.chat(payload.contents?.[0]?.parts?.[0]?.text || "Hello", {
-          model: puterModel,
-          ...payload.config,
-          ...payload.generationConfig
-        });
+      if (puter && (puter as any).ai) {
+        try {
+          logger.info('Gemini', `[Puter] Đang thử gọi AI (Model: ${currentModel}) cho Request ID: ${requestId}`);
+          
+          // Map sang model Puter hỗ trợ
+          let puterModel = currentModel;
+          if (currentModel.includes('tts')) puterModel = 'gemini-1.5-flash';
+          
+          const puterResp = await (puter as any).ai.chat(payload.contents?.[0]?.parts?.[0]?.text || "Hello", {
+            model: puterModel,
+            ...payload.config,
+            ...payload.generationConfig
+          });
 
-        if (puterResp) {
-          logger.info('Gemini', `[Puter] Gọi AI thành công cho Request ID: ${requestId}`);
-          return {
-            candidates: [{ content: { parts: [{ text: typeof puterResp === 'string' ? puterResp : puterResp.text }] } }],
-            text: typeof puterResp === 'string' ? puterResp : (puterResp.text || "")
-          };
+          if (puterResp) {
+            logger.info('Gemini', `[Puter] Gọi AI thành công cho Request ID: ${requestId}`);
+            return {
+              candidates: [{ content: { parts: [{ text: typeof puterResp === 'string' ? puterResp : puterResp.text }] } }],
+              text: typeof puterResp === 'string' ? puterResp : (puterResp.text || "")
+            };
+          }
+        } catch (puterErr: any) {
+          logger.warn('Gemini', `[Puter] Thất bại cho Request ID: ${requestId}: ${puterErr.message}. Chuyển sang API Keys...`);
         }
-      } catch (puterErr: any) {
-        logger.warn('Gemini', `[Puter] Thất bại cho Request ID: ${requestId}: ${puterErr.message}. Chuyển sang API Keys...`);
       }
 
       const now = Date.now();
