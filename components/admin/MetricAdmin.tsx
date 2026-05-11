@@ -2,20 +2,12 @@
 import React, { useState, useEffect, memo } from 'react';
 import { User, HealthMetric } from '../../types.ts';
 import { Database } from '../../services/database.ts';
+import { formatDateVN } from '../../utils/formatters.ts';
 
 interface MetricAdminProps {
   users: User[];
   onRefresh: () => void;
 }
-
-const formatDateVN = (dateStr: string) => {
-  if (!dateStr) return '';
-  try {
-    const parts = dateStr.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return dateStr;
-  } catch { return dateStr; }
-};
 
 const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
   const [selectedMetricUser, setSelectedMetricUser] = useState<User | null>(null);
@@ -23,10 +15,17 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
 
   const loadUserMetrics = async () => {
-    if (selectedMetricUser) {
-      const uid = (selectedMetricUser as any).id || (selectedMetricUser as any)._id;
-      const m = await Database.getMetrics(uid);
-      setUserMetrics(m || []);
+    try {
+      if (selectedMetricUser) {
+        const uid = (selectedMetricUser as any).id || (selectedMetricUser as any)._id;
+        console.log(`[MetricAdmin] Loading metrics for user: ${selectedMetricUser.fullName} (${uid})`);
+        const m = await Database.getMetrics(uid);
+        setUserMetrics(m || []);
+        console.log(`[MetricAdmin] Loaded ${m?.length || 0} metrics`);
+      }
+    } catch (error) {
+      console.error(`[MetricAdmin] Error loading user metrics:`, error);
+      setUserMetrics([]);
     }
   };
 
@@ -75,7 +74,15 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
                     <td className="p-3 font-bold text-indigo-600">{m.balanceIndex ?? 0}</td>
                     <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? 0}</td>
                     <td className="p-3 text-right">
-                       <button onClick={() => setEditingMetric(m)} className="text-emerald-600 font-black text-[9px] hover:underline uppercase">Sửa</button>
+                       <button 
+                         onClick={() => {
+                           setEditingMetric(m);
+                           console.log(`[MetricAdmin] Edit metric: ${m.date} (${m.id || (m as any)._id})`);
+                         }} 
+                         className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
+                       >
+                         Sửa
+                       </button>
                     </td>
                   </tr>
                 ))}

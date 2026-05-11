@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { User, UserRole } from '../../types.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
 
@@ -11,7 +11,7 @@ interface LayoutProps {
   setActiveTab: (tab: string) => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, setActiveTab }) => {
+const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTab, setActiveTab }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -127,6 +127,8 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
       </footer>
     </div>
   );
-};
+});
+
+Layout.displayName = 'Layout';
 
 export default Layout;

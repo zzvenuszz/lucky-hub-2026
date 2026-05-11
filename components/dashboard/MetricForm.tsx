@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { HealthMetric } from '../../types.ts';
 import { extractMetricsFromImage } from '../../services/gemini.ts';
+import { formatDateVN } from '../../utils/formatters.ts';
 
 interface MetricFormProps {
   onSave: (metric: Omit<HealthMetric, 'id' | 'userId'>) => void;
@@ -9,17 +10,6 @@ interface MetricFormProps {
   existingDates?: string[];
   onClose: () => void;
 }
-
-const formatDateVN = (dateStr: string) => {
-  if (!dateStr) return '';
-  try {
-    const parts = dateStr.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return dateStr;
-  } catch {
-    return dateStr;
-  }
-};
 
 const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose }) => {
   const getTodayISO = () => {

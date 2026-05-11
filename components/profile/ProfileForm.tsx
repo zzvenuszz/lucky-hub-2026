@@ -22,22 +22,38 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
   }, [initialData]);
 
   const checkEmailExists = async (email: string) => {
-    if (email === user.email) { setEmailError(null); return; }
+    if (email === user.email) { 
+      setEmailError(null); 
+      return; 
+    }
     try {
+      console.log(`[ProfileForm] Checking email availability: ${email}`);
       const res = await fetch('/api/check-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, excludeUserId: (user as any).id || (user as any)._id })
       });
       const data = await res.json();
-      if (data.exists) setEmailError('Email này đã được sử dụng');
-      else setEmailError(null);
-    } catch { console.error('Lỗi check email'); }
+      if (data.exists) {
+        console.warn(`[ProfileForm] Email already exists: ${email}`);
+        setEmailError('Email này đã được sử dụng');
+      } else {
+        console.log(`[ProfileForm] Email is available: ${email}`);
+        setEmailError(null);
+      }
+    } catch (error) {
+      console.error('[ProfileForm] Error checking email:', error);
+      setEmailError('Không thể kiểm tra email, vui lòng thử lại');
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (emailError) return;
+    if (emailError) {
+      console.warn('[ProfileForm] Cannot submit - email error exists');
+      return;
+    }
+    console.log('[ProfileForm] Submitting form with data:', { fullName: formData.fullName, email: formData.email });
     onUpdate(formData);
   };
 

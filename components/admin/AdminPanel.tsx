@@ -25,8 +25,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
 
   // Tải nhật ký hệ thống khi chuyển sang tab Audit
   useEffect(() => {
-    if (activeTab === 'audit') {
-      Database.getAuditLogs().then(setAuditLogs);
+    try {
+      if (activeTab === 'audit') {
+        console.log(`[AdminPanel] Loading audit logs`);
+        Database.getAuditLogs().then(logs => {
+          setAuditLogs(logs);
+          console.log(`[AdminPanel] Loaded ${logs.length} audit logs`);
+        });
+      } else {
+        console.log(`[AdminPanel] Switched to tab: ${activeTab}`);
+      }
+    } catch (error) {
+      console.error(`[AdminPanel] Error in useEffect:`, error);
     }
   }, [activeTab]);
 

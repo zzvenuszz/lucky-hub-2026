@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { User, UserRole } from '../../types.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import AvatarEditor from './AvatarEditor.tsx';
@@ -11,7 +11,7 @@ interface ProfileProps {
   onNavigateToAdmin?: () => void;
 }
 
-const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) => {
+const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmin }) => {
   const [localData, setLocalData] = useState({
     fullName: user.fullName,
     email: user.email || '',
@@ -85,6 +85,8 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdate, onNavigateToAdmin }) 
       </div>
     </div>
   );
-};
+});
+
+Profile.displayName = 'Profile';
 
 export default Profile;

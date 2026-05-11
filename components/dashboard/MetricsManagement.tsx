@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { HealthMetric, User, UserRole } from '../../types.ts';
 import { Database } from '../../services/database.ts';
+import { formatDateVN } from '../../utils/formatters.ts';
 
 interface MetricsManagementProps {
   user: User;
@@ -9,17 +10,6 @@ interface MetricsManagementProps {
   onAddMetric: (targetId: string) => void;
   refreshTrigger?: number;
 }
-
-const formatDateVN = (dateStr: string) => {
-  if (!dateStr) return '--/--/----';
-  try {
-    const parts = dateStr.split('-');
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return dateStr;
-  } catch {
-    return dateStr;
-  }
-};
 
 const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
   if (prev === undefined || current === prev) return null;

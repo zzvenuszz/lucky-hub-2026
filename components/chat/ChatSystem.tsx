@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule, HealthMetric } from '../../types.ts';
 import { getAICoachResponse } from '../../services/gemini.ts';
 import { Database } from '../../services/database.ts';
+import { compressImage } from '../../utils/imageUtils.ts';
 import ContactList from './ContactList.tsx';
 import ChatWindow from './ChatWindow.tsx';
 
@@ -16,27 +17,7 @@ interface ChatSystemProps {
 
 const AI_PROMPT_TEXT = "Trợ lý Lucky AI có thông tin về vấn đề bạn đang đề cập, bạn có muốn tham khảo không?";
 
-const compressImage = (base64Str: string): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64Str;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX_WIDTH = 1024;
-      let width = img.width;
-      let height = img.height;
-      if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
-      canvas.width = width; canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return resolve(base64Str);
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
-    };
-    img.onerror = () => resolve(base64Str);
-  });
-};
-
-const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, rules, onClose }) => {
+const ChatSystem: React.FC<ChatSystemProps> = memo(({ currentUser, users, knowledge, rules, onClose }) => {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
   const [inputText, setInputText] = useState('');
@@ -72,11 +53,44 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   const loadData = useCallback(async () => {
-    const metrics = await Database.getMetrics(currentUid);
-    if (metrics?.length) setLatestMetric([...metrics].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]);
-    const allChats = await Database.getChats() || [];
-    
-    if (window.debugLog) window.debugLog(`[ChatSystem] Đang tải danh sách liên hệ. Tổng users: ${users.length}`, "system");
+    try {
+      console.log(`[ChatSystem] Loading chat data for user ${currentUid}`);
+      const metrics = await Database.getMetrics(currentUid);
+      if (metrics?.length) setLatestMetric([...metrics].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]);
+      const allChats = await Database.getChats() || [];
+      
+      let contacts = users.filter(u => {
+        const uId = String((u as any).id || (u as any)._id);
+        const myId = String(currentUid);
+        
+        if (uId === myId) return false;
+        
+        // Nếu là MEMBER, chỉ được nhắn cho ADMIN và COACH
+        if (currentUser.role === UserRole.MEMBER) {
+          const isStaff = u.role === UserRole.ADMIN || u.role === UserRole.COACH;
+          return isStaff;
+        }
+        return true;
+      });
+
+      console.log(`[ChatSystem] Loaded contacts: ${contacts.length}, total chats: ${allChats.length}`);
+
+      const activeChats = contacts.map(contact => {
+        const cId = String((contact as any).id || (contact as any)._id);
+        const myId = String(currentUid);
+        return allChats.find(c => 
+          (String(c.memberId) === myId && String(c.coachId) === cId) || 
+          (String(c.memberId) === cId && String(c.coachId) === myId)
+        ) || { id: `chat_${myId}_${cId}`, memberId: myId, coachId: cId, messages: [] };
+      });
+      const aiChatId = `chat_ai_${String(currentUid)}`;
+      const aiChat = allChats.find(c => c.id === aiChatId) || { id: aiChatId, memberId: String(currentUid), coachId: 'ai_coach', messages: [] };
+      setChats([aiChat, ...activeChats]);
+    } catch (error) {
+      console.error(`[ChatSystem] Error loading chat data:`, error);
+      // Graceful fallback - maintain existing chat state
+    }
+  }, [currentUid, users, currentUser.role]);
 
     let contacts = users.filter(u => {
       const uId = String((u as any).id || (u as any)._id);
@@ -111,22 +125,60 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
 
   const handleSendMessage = async () => {
     if ((!inputText.trim() && !selectedImage) || !selectedChat) return;
-    setIsProcessingImage(true);
-    const sentText = inputText; const sentImg = selectedImage ? await compressImage(selectedImage) : null;
-    setInputText(''); setSelectedImage(null);
-    const msg: Message = { id: `m_${Date.now()}`, senderId: currentUid, senderName: currentUser.fullName, senderRole: currentUser.role, content: sentText || "[Hình ảnh]", imageUrl: sentImg || undefined, timestamp: new Date().toISOString() };
-    let updatedMsgs = [...selectedChat.messages, msg];
-    if (selectedChat.coachId !== 'ai_coach' && knowledge.some(k => sentText.toLowerCase().includes(k.keyword.toLowerCase()))) {
-      updatedMsgs.push({ id: `p_${Date.now()}`, senderId: 'ai_coach', senderName: '🍀Trợ lý Lucky', senderRole: 'AI' as any, content: AI_PROMPT_TEXT, timestamp: new Date().toISOString() });
+    
+    try {
+      setIsProcessingImage(true);
+      console.log(`[ChatSystem] Sending message to chat ${selectedChat.id}`);
+      
+      const sentText = inputText; 
+      const sentImg = selectedImage ? await compressImage(selectedImage) : null;
+      setInputText(''); 
+      setSelectedImage(null);
+      
+      const msg: Message = { 
+        id: `m_${Date.now()}`, 
+        senderId: currentUid, 
+        senderName: currentUser.fullName, 
+        senderRole: currentUser.role, 
+        content: sentText || "[Hình ảnh]", 
+        imageUrl: sentImg || undefined, 
+        timestamp: new Date().toISOString() 
+      };
+      
+      let updatedMsgs = [...selectedChat.messages, msg];
+      if (selectedChat.coachId !== 'ai_coach' && knowledge.some(k => sentText.toLowerCase().includes(k.keyword.toLowerCase()))) {
+        updatedMsgs.push({ 
+          id: `p_${Date.now()}`, 
+          senderId: 'ai_coach', 
+          senderName: '🍀Trợ lý Lucky', 
+          senderRole: 'AI' as any, 
+          content: AI_PROMPT_TEXT, 
+          timestamp: new Date().toISOString() 
+        });
+      }
+      
+      const updatedChat = { ...selectedChat, messages: updatedMsgs };
+      setSelectedChat(updatedChat); 
+      await Database.saveChat(updatedChat);
+      
+      if (selectedChat.coachId === 'ai_coach') {
+        setIsTypingAI(true);
+        const res = await getAICoachResponse(updatedChat.messages, knowledge, rules, sentText || "Phân tích ảnh", currentUser.healthGoal, latestMetric, sentImg?.split(',')[1]);
+        if (res) {
+          setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]);
+          console.log(`[ChatSystem] AI response generated with ${res.split(/\n\n+/).length} parts`);
+        } else {
+          setIsTypingAI(false);
+        }
+      }
+      
+      console.log(`[ChatSystem] Message sent successfully`);
+    } catch (error) {
+      console.error(`[ChatSystem] Error sending message:`, error);
+      // Graceful fallback - message may be partially saved
+    } finally {
+      setIsProcessingImage(false);
     }
-    const updatedChat = { ...selectedChat, messages: updatedMsgs };
-    setSelectedChat(updatedChat); await Database.saveChat(updatedChat);
-    if (selectedChat.coachId === 'ai_coach') {
-      setIsTypingAI(true);
-      const res = await getAICoachResponse(updatedChat.messages, knowledge, rules, sentText || "Phân tích ảnh", currentUser.healthGoal, latestMetric, sentImg?.split(',')[1]);
-      if (res) setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]); else setIsTypingAI(false);
-    }
-    setIsProcessingImage(false);
   };
 
   const handleAiChoice = useCallback(async (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => {
@@ -179,6 +231,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       )}
     </div>
   );
-};
+});
 
-export default memo(ChatSystem);
+ChatSystem.displayName = 'ChatSystem';
+
+export default ChatSystem;

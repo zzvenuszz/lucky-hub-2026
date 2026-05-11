@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { User, Post, UserRole } from '../../types.ts';
 import { Database } from '../../services/database.ts';
+import { compressImage } from '../../utils/imageUtils.ts';
 import PostCreator from './PostCreator.tsx';
 import PostItem from './PostItem.tsx';
 
@@ -14,22 +15,7 @@ const REACTION_TYPES = [
   { type: 'wow', icon: '😮' }, { type: 'sad', icon: '😢' }, { type: 'angry', icon: '😡' },
 ];
 
-const compressImage = (base64Str: string): Promise<string> => {
-  return new Promise((resolve) => {
-    const img = new Image(); img.src = base64Str;
-    img.onload = () => {
-      const canvas = document.createElement('canvas'); const MAX_WIDTH = 1024;
-      let width = img.width; let height = img.height;
-      if (width > MAX_WIDTH) { height = Math.round((height * MAX_WIDTH) / width); width = MAX_WIDTH; }
-      canvas.width = width; canvas.height = height; const ctx = canvas.getContext('2d');
-      if (!ctx) return resolve(base64Str); ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
-    };
-    img.onerror = () => resolve(base64Str);
-  });
-};
-
-const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
+const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
@@ -39,25 +25,53 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
 
   const fetchPosts = useCallback(async () => {
-    const data = await Database.getPosts();
-    if (data) setPosts(data);
-  }, []);
+    try {
+      console.log(`[NewsFeed] Fetching posts for user: ${currentUserId}`);
+      const data = await Database.getPosts();
+      if (data) {
+        setPosts(data);
+        console.log(`[NewsFeed] Successfully loaded ${data.length} posts`);
+      }
+    } catch (error) {
+      console.error(`[NewsFeed] Error fetching posts:`, error);
+      // Graceful fallback - maintain existing posts
+    }
+  }, [currentUserId]);
 
   useEffect(() => { fetchPosts(); const interval = setInterval(fetchPosts, 30000); return () => clearInterval(interval); }, [fetchPosts]);
 
   const handleCreatePost = async () => {
     if (!inputText.trim() && selectedImages.length === 0) return;
-    setIsLoading(true); setIsProcessingImages(true);
-    const compressedImages = await Promise.all(selectedImages.map(img => compressImage(img)));
-    const newPost = { userId: currentUserId, userFullName: currentUser.fullName, userAvatar: currentUser.avatar, userBadges: currentUser.badges || [], content: inputText, imageUrls: compressedImages, timestamp: new Date().toISOString(), reactions: [] };
-    const saved = await Database.createPost(newPost as any);
-    if (saved) { 
-      setPosts([saved, ...posts]); 
-      setInputText(''); 
-      setSelectedImages([]); 
-      if (window.debugLog) window.debugLog(`Người dùng @${currentUser.username} đã đăng bài viết mới`, "user");
+    setIsLoading(true); 
+    setIsProcessingImages(true);
+    
+    try {
+      console.log(`[NewsFeed] Creating post with ${selectedImages.length} images`);
+      const compressedImages = await Promise.all(selectedImages.map(img => compressImage(img)));
+      const newPost = { 
+        userId: currentUserId, 
+        userFullName: currentUser.fullName, 
+        userAvatar: currentUser.avatar, 
+        userBadges: currentUser.badges || [], 
+        content: inputText, 
+        imageUrls: compressedImages, 
+        timestamp: new Date().toISOString(), 
+        reactions: [] 
+      };
+      const saved = await Database.createPost(newPost as any);
+      if (saved) { 
+        setPosts([saved, ...posts]); 
+        setInputText(''); 
+        setSelectedImages([]);
+        console.log(`[NewsFeed] Post created successfully`);
+      }
+    } catch (error) {
+      console.error(`[NewsFeed] Error creating post:`, error);
+      // Show error state to user
+    } finally {
+      setIsLoading(false); 
+      setIsProcessingImages(false);
     }
-    setIsLoading(false); setIsProcessingImages(false);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,6 +119,8 @@ const NewsFeed: React.FC<NewsFeedProps> = ({ currentUser }) => {
       </div>
     </div>
   );
-};
+});
 
-export default memo(NewsFeed);
+NewsFeed.displayName = 'NewsFeed';
+
+export default NewsFeed;

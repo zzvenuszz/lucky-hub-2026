@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { HealthMetric, User, UserRole } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import StatCards from './StatCards.tsx';
@@ -25,7 +25,7 @@ const AVAILABLE_METRICS = [
   { key: 'energy', label: 'Năng Lượng (kcal)', color: '#f97316', inverse: false, icon: '⚡' },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
+const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, refreshTrigger }) => {
   const [selectedUserId, setSelectedUserId] = useState((user as any).id || (user as any)._id);
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
@@ -86,6 +86,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, users, onAddMetric, refresh
       </div>
     </div>
   );
-};
+});
+
+Dashboard.displayName = 'Dashboard';
 
 export default Dashboard;
