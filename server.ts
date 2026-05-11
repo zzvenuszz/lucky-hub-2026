@@ -3,51 +3,11 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
-dotenv.config();
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { transform } from 'sucrase';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-let puter: any;
-try {
-  // Thử load file SDK cục bộ V2 nếu có
-  const localPuterPath = path.join(__dirname, 'src', 'utils', 'puter.v2.js');
-  if (fs.existsSync(localPuterPath)) {
-    // Puter V2 local thường là một file IIFE, require có thể trả về object rỗng hoặc global puter
-    puter = require(localPuterPath);
-    // Kiểm tra nếu require không trả về đúng object mong muốn, thử lấy từ global
-    if (!puter || !puter.ai) {
-        puter = (global as any).puter;
-    }
-    
-    if (puter && puter.ai) {
-      logger.info('SYSTEM', 'Đã tải Puter SDK V2 từ file cục bộ (SRC).');
-      // Gán Auth Token nếu có
-      if (process.env.PUTER_AUTH_TOKEN) {
-        puter.authToken = process.env.PUTER_AUTH_TOKEN;
-        if (typeof puter.setToken === 'function') {
-           puter.setToken(process.env.PUTER_AUTH_TOKEN);
-        }
-        logger.info('SYSTEM', 'Đã gán PUTER_AUTH_TOKEN.');
-      }
-    } else {
-      logger.warn('SYSTEM', 'Đã nạp file puter.v2.js nhưng object .ai không khả dụng.');
-    }
-  } else {
-    puter = require('puter');
-    logger.info('SYSTEM', 'Đã tải Puter SDK từ node_modules.');
-    // Gán Auth Token nếu có cho node_modules version
-    if (process.env.PUTER_AUTH_TOKEN) {
-      if (typeof puter.setToken === 'function') {
-         puter.setToken(process.env.PUTER_AUTH_TOKEN);
-      }
-      logger.info('SYSTEM', 'Đã gán PUTER_AUTH_TOKEN cho Puter node_modules.');
-    }
-  }
-} catch (e: any) {
-  logger.warn('SYSTEM', `Khởi tạo Puter thất bại: ${e.message}. Sẽ dùng API Key làm mặc định.`);
-}
 import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from './types.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
@@ -57,6 +17,8 @@ import { ttsService } from './src/services/ttsService.ts';
 import { configService } from './src/services/configService.ts';
 import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
+
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -218,7 +180,6 @@ async function discoverAvailableModels() {
             if (msg.toLowerCase().includes('quota')) status = `${ANSI.yellow}[⚠ QUOTA]${ANSI.reset}`;
             else if (msg.toLowerCase().includes('location')) status = `${ANSI.magenta}[⚠ LOCATION]${ANSI.reset}`;
             else if (msg.toLowerCase().includes('permission')) status = `${ANSI.blue}[⚠ PERM]${ANSI.reset}`;
-            else if (code === 400 || msg.toLowerCase().includes('not supported')) status = `${ANSI.gray}[✗ UNSUPPORTED]${ANSI.reset}`;
 
             console.log(`    ${status} ${model.padEnd(45)} ${ANSI.gray}(code:${code})${ANSI.reset}`);
           }
@@ -254,47 +215,6 @@ async function discoverAvailableModels() {
     console.log(`\n${ANSI.green}✅ AI DISCOVERY HOÀN TẤT. Sẵn sàng: ${ANSI.reset}${discoveredModels.join(', ')}`);
   }
   console.log(`\n${ANSI.cyan}=============================================${ANSI.reset}\n`);
-
-  // Startup Test cho Puter AI
-  const puterInstance = puter || (global as any).puter;
-  if (puterInstance && puterInstance.ai) {
-    try {
-      logger.info('SYSTEM', '🚀 Đang thực hiện TEST REQUEST tới Puter AI (Brain Check)...');
-      
-      // Test Chat - Sử dụng model mặc định của Puter thay vì model Discovery của Google
-      const testModel = 'gemini-1.5-flash'; 
-      logger.info('SYSTEM', `🧠 Đang dùng model test cho Puter: ${testModel}`);
-      
-      const response = await puterInstance.ai.chat('Say "BRAIN_OK"', { model: testModel });
-      
-      // Cải tiến trích xuất text
-      let text = "";
-      if (typeof response === 'string') {
-        text = response;
-      } else if (response?.message?.content) {
-        text = response.message.content;
-      } else if (response?.text) {
-        text = response.text;
-      } else if (response?.content) {
-        text = response.content;
-      }
-      
-      if (text && text.includes('BRAIN_OK')) {
-        logger.info('SYSTEM', `✅ Puter AI Brain: HOẠT ĐỘNG TỐT (Model: ${testModel})`);
-      } else {
-        logger.warn('SYSTEM', `⚠️ Puter AI phản hồi không như mong đợi.`);
-        console.dir(response, { depth: 10 }); // Log chi tiết để debug
-      }
-
-      // Gán vào global để các service khác dễ truy cập
-      (global as any).puterInstance = puterInstance;
-    } catch (err: any) {
-      logger.error('SYSTEM', `❌ Puter AI Test Request FAILED: ${err.message}`);
-      if (err.stack) console.error(err.stack);
-    }
-  } else {
-    logger.error('SYSTEM', '❌ TRẠNG THÁI: Puter AI KHÔNG KHẢ DỤNG. Hệ thống sẽ chạy ở chế độ dự phòng (API Key).');
-  }
 }
 
 
@@ -302,15 +222,14 @@ async function callAIWithRetry(
   requestId: string,
   modelName: string,
   payload: any,
-  retries = 3,
-  strictModel = false // Thêm tham số để giới hạn chỉ dùng đúng model yêu cầu (dùng cho TTS/Modality đặc thù)
+  retries = 3
 ): Promise<any> {
-  // Ưu tiên dùng model yêu cầu
-  const modelRegistry = strictModel ? [modelName] : [
+  // Ưu tiên dùng model yêu cầu, sau đó là danh sách đã khám phá, cuối cùng là mặc định ổn định nhất
+  const modelRegistry = [
     modelName,
     ...discoveredModels,
     'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-8b'
+    'gemini-1.5-flash'
   ].filter((v, i, a) => a.indexOf(v) === i); 
 
   let lastError: any = null;
@@ -319,50 +238,12 @@ async function callAIWithRetry(
     let attempt = 0;
     while (attempt < retries) {
       attempt++;
-      
-      // Phương án 0: Thử sử dụng Puter AI (Miễn phí, không Quota, ưu tiên số 1)
-      const puterInstance = puter || (global as any).puter;
-      if (puterInstance && puterInstance.ai) {
-        try {
-          logger.info('Gemini', `[Puter] Đang gửi yêu cầu... (Model: ${currentModel})`);
-          
-          let puterModel = currentModel;
-          // Ánh xạ model chuyên dụng sang model AI chat của Puter
-          if (currentModel.includes('tts') || currentModel.includes('2.0')) {
-             puterModel = 'gemini-2.0-flash';
-          } else {
-             puterModel = 'gemini-1.5-flash';
-          }
-          
-          const prompt = payload.contents?.[0]?.parts?.[0]?.text || "Hello";
-          const puterResp = await puterInstance.ai.chat(prompt, {
-            model: puterModel,
-            ...payload.config,
-            ...payload.generationConfig
-          });
-
-          if (puterResp) {
-            const rawText = puterResp?.message?.content || (typeof puterResp === 'string' ? puterResp : (puterResp.text || ""));
-            logger.info('Gemini', `[Puter] Phản hồi thành công. Độ dài: ${rawText.length} ký tự.`);
-            
-            return {
-              candidates: [{ content: { parts: [{ text: rawText }] } }],
-              text: rawText
-            };
-          }
-        } catch (puterErr: any) {
-          logger.warn('Gemini', `[Puter] Thất bại: ${puterErr.message}. Chuyển sang API Keys...`);
-        }
-      } else {
-        logger.warn('Gemini', '[Puter] Không khả dụng, bỏ qua bước gọi miễn phí.');
-      }
-
       const now = Date.now();
       
       let dbKeys = await GeminiKey.find({ isActive: true });
       let allPotentialKeys = [
-        ...ENV_API_KEYS.map(k => ({ key: k, isFromDb: false, id: null, label: 'ENV_KEY' })),
-        ...dbKeys.map(k => ({ key: k.key, isFromDb: true, id: k._id, label: k.label, cooldownUntil: k.cooldownUntil }))
+        ...ENV_API_KEYS.map(k => ({ key: k, isFromDb: false, id: null })),
+        ...dbKeys.map(k => ({ key: k.key, isFromDb: true, id: k._id, cooldownUntil: k.cooldownUntil }))
       ];
 
       // Lọc bỏ key cooldown
@@ -393,10 +274,7 @@ async function callAIWithRetry(
           responseJson = await resp.json();
           
           if (responseJson.error) {
-            const errorMsg = responseJson.error.message || "Proxy Error";
-            const errorCode = responseJson.error.code || "unknown";
-            logger.error('Gemini', `[API ERROR] Model: ${currentModel}, Key: ${selectedKey.label || 'unknown'}, Code: ${errorCode}, Message: ${errorMsg}`);
-            throw new Error(errorMsg);
+            throw new Error(responseJson.error.message || "Proxy Error");
           }
           
           // Giả lập cấu trúc trả về để các hàm phía sau không bị lỗi
@@ -411,24 +289,17 @@ async function callAIWithRetry(
           return mockResponse;
         } else {
           // Sử dụng SDK gốc nếu không có Proxy
-          // Theo skill gemini-api, dùng GoogleGenAI({ apiKey })
           const ai = new GoogleGenAI({ apiKey: selectedKey.key });
-          
-          // Trộn payload để truyền đúng định dạng cho SDK
-          // Skill yêu cầu dùng ai.models.generateContent
-          const response = await ai.models.generateContent({
-            model: currentModel,
-            ...payload
-          });
+          const response = await ai.models.generateContent({ model: currentModel, ...payload });
           
           if (selectedKey.isFromDb && selectedKey.id) {
             await GeminiKey.findByIdAndUpdate(selectedKey.id, { lastUsed: new Date(), failCount: 0 });
           }
           
-          // Skill hướng dẫn text là property (không phải method)
+          // Trả về một object đồng nhất có thuộc tính .text là string
           return {
             candidates: response.candidates,
-            text: response.text || "" 
+            text: response.text 
           };
         }
       } catch (err: any) {

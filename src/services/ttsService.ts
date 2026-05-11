@@ -17,7 +17,7 @@ export const ttsService = {
   generateGreeting: async (
     name: string, 
     customPrompt: string | undefined, 
-    callAIWithRetry: (requestId: string, model: string, payload: any, retries?: number, strictModel?: boolean) => Promise<any>
+    callAIWithRetry: (requestId: string, model: string, payload: any) => Promise<any>
   ): Promise<Buffer | null> => {
     const requestId = `TTS-${Math.random().toString(36).substring(7).toUpperCase()}`;
     logger.info('TTS', `Request greeting for: ${name} (ID: ${requestId})${customPrompt ? ' with custom prompt' : ''}`);
@@ -28,7 +28,7 @@ export const ttsService = {
       const payload = {
         contents: [{ parts: [{ text: prompt }] }],
         config: {
-          responseModalities: ["AUDIO"],
+          responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: 'Kore' }, // 'Kore' is good for Vietnamese
@@ -39,11 +39,11 @@ export const ttsService = {
 
       // Try multiple models in sequence that support AUDIO modality
       const modelsToTry = [
-        "gemini-3.1-flash-tts-preview", // Dedicated TTS model
-        "gemini-2.0-flash",             // High quality
-        "gemini-3.1-flash-lite",        // Fast and efficient
-        "gemini-3-flash-preview",       // Latest flash
-        "gemini-3.1-pro-preview"        // High quality fallback
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-flash",
+        "gemini-3.1-flash-tts-preview",
+        "gemini-2.0-flash",
+        "gemini-1.5-pro-latest"
       ];
 
       let response = null;
@@ -52,8 +52,7 @@ export const ttsService = {
       for (const model of modelsToTry) {
         try {
           logger.info('TTS', `Trying to generate audio with model: ${model} (ID: ${requestId})`);
-          // Use strictModel=true to ensure we only use the specified model for this audio task
-          response = await callAIWithRetry(requestId, model, payload, 3, true);
+          response = await callAIWithRetry(requestId, model, payload);
           if (response) break;
         } catch (innerErr: any) {
           lastError = innerErr;

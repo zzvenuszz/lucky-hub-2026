@@ -18,56 +18,6 @@ const axiosInstance = axios.create({
 module.exports = NodeHelper.create({
   start: function() {
     console.log("MMM-LuckyHub-FaceSync: Helper started. Waiting for CONFIG notification from frontend...");
-    
-    // Kiểm tra Puter AI trên gương
-    try {
-      let puter;
-      const localPuterPath = path.join(__dirname, "puter.v2.js");
-      if (fs.existsSync(localPuterPath)) {
-        puter = require(localPuterPath);
-        if (!puter || !puter.ai) {
-           puter = global.puter;
-        }
-        console.log("MMM-LuckyHub-FaceSync (Puter Check): Loaded Puter SDK V2 from local file.");
-      } else {
-        puter = require("puter");
-        console.log("MMM-LuckyHub-FaceSync (Puter Check): Loaded Puter from node_modules.");
-      }
-      
-      const mirrorPuter = puter || global.puter;
-      
-      if (mirrorPuter) {
-        if (process.env.PUTER_AUTH_TOKEN) {
-          mirrorPuter.authToken = process.env.PUTER_AUTH_TOKEN;
-          if (typeof mirrorPuter.setToken === 'function') {
-            mirrorPuter.setToken(process.env.PUTER_AUTH_TOKEN);
-          }
-        }
-      }
-
-      if (mirrorPuter && mirrorPuter.ai) {
-        console.log("MMM-LuckyHub-FaceSync (Puter Check): 🚀 Puter.ai is SẴN SÀNG. Sending test request...");
-        // Thử gọi nhẹ một câu để xác thực
-        mirrorPuter.ai.chat('Say "MIRROR_OK"').then(resp => {
-           const text = resp?.message?.content || (typeof resp === 'string' ? resp : (resp && resp.text));
-           if (text && text.includes('MIRROR_OK')) {
-              console.log("MMM-LuckyHub-FaceSync (Puter Check): ✅ Test chat SUCCESS. Puter is alive on Mirror.");
-           } else {
-              console.warn("MMM-LuckyHub-FaceSync (Puter Check): ⚠️ Puter responded but content was unexpected: " + text);
-           }
-        }).catch(err => {
-           console.error("MMM-LuckyHub-FaceSync (Puter Check): ❌ Test chat FAILED: " + err.message);
-        });
-        
-        // Gán vào global để các helper khác sử dụng
-        global.puter = mirrorPuter;
-      } else {
-        console.warn("MMM-LuckyHub-FaceSync (Puter Check): ❌ Puter.ai is UNDEFINED. AI features on Mirror might be limited.");
-      }
-    } catch (e) {
-      console.warn("MMM-LuckyHub-FaceSync (Puter Check): ❌ Error initializing Puter: " + e.message);
-    }
-
     this.config = null;
     this.serverConfig = null;
     this.faceDir = path.resolve(__dirname, "faces");
@@ -346,18 +296,7 @@ module.exports = NodeHelper.create({
   },
 
   playGreeting: async function(username) {
-    // Cooldown 5 phút (300.000 ms)
-    const cooldown = 5 * 60 * 1000;
-    const now = Date.now();
-    
-    this.greetedUsers = this.greetedUsers || {};
-    
-    if (this.greetedUsers[username] && (now - this.greetedUsers[username] < cooldown)) {
-      // Đã chào user này gần đây, không chào lại
-      return;
-    }
-    
-    this.greetedUsers[username] = now;
+    if (this.lastGreetedUser === username) return;
     this.lastGreetedUser = username;
 
     try {
