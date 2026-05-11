@@ -17,7 +17,7 @@ interface ChatSystemProps {
 
 const AI_PROMPT_TEXT = "Trợ lý Lucky AI có thông tin về vấn đề bạn đang đề cập, bạn có muốn tham khảo không?";
 
-const ChatSystem: React.FC<ChatSystemProps> = memo(({ currentUser, users, knowledge, rules, onClose }) => {
+const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, rules, onClose }) => {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
   const [inputText, setInputText] = useState('');
@@ -91,35 +91,6 @@ const ChatSystem: React.FC<ChatSystemProps> = memo(({ currentUser, users, knowle
       // Graceful fallback - maintain existing chat state
     }
   }, [currentUid, users, currentUser.role]);
-
-    let contacts = users.filter(u => {
-      const uId = String((u as any).id || (u as any)._id);
-      const myId = String(currentUid);
-      
-      if (uId === myId) return false;
-      
-      // Nếu là MEMBER, chỉ được nhắn cho ADMIN và COACH
-      if (currentUser.role === UserRole.MEMBER) {
-        const isStaff = u.role === UserRole.ADMIN || u.role === UserRole.COACH;
-        return isStaff;
-      }
-      return true;
-    });
-
-    if (window.debugLog) window.debugLog(`[ChatSystem] Danh sách contacts lọc được: ${contacts.length}`, "system");
-
-    const activeChats = contacts.map(contact => {
-      const cId = String((contact as any).id || (contact as any)._id);
-      const myId = String(currentUid);
-      return allChats.find(c => 
-        (String(c.memberId) === myId && String(c.coachId) === cId) || 
-        (String(c.memberId) === cId && String(c.coachId) === myId)
-      ) || { id: `chat_${myId}_${cId}`, memberId: myId, coachId: cId, messages: [] };
-    });
-    const aiChatId = `chat_ai_${String(currentUid)}`;
-    const aiChat = allChats.find(c => c.id === aiChatId) || { id: aiChatId, memberId: String(currentUid), coachId: 'ai_coach', messages: [] };
-    setChats([aiChat, ...activeChats]);
-  }, [currentUid, users]);
 
   useEffect(() => { loadData(); const interval = setInterval(() => { if (!isTypingAI) loadData(); }, 5000); return () => clearInterval(interval); }, [loadData, isTypingAI]);
 
@@ -222,7 +193,7 @@ const ChatSystem: React.FC<ChatSystemProps> = memo(({ currentUser, users, knowle
             {selectedImage && <div className="relative w-12 h-12 mb-2"><img src={selectedImage} className="w-full h-full object-cover rounded-lg" /><button onClick={() => setSelectedImage(null)} className="absolute -top-1 -right-1 bg-red-500 text-white w-4 h-4 rounded-full text-[10px]">×</button></div>}
             <div className="flex gap-2">
               <button onClick={() => fileInputRef.current?.click()} className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center">📸</button>
-              <input type="file" ref={fileInputRef} className="hidden" onChange={e => { const f = e.target.files?.[0]; if(f){ const r = new FileReader(); r.onload = () => setSelectedImage(r.result as string); r.readAsDataURL(f); }}} />
+              <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f){ const r = new FileReader(); r.onload = () => setSelectedImage(r.result as string); r.readAsDataURL(f); }}} />
               <input placeholder="Gửi tin nhắn..." value={inputText} onChange={e => setInputText(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} className="flex-grow px-4 bg-slate-50 rounded-xl text-xs outline-none" />
               <button onClick={handleSendMessage} className="bg-emerald-600 text-white w-10 h-10 rounded-xl shadow-lg">🚀</button>
             </div>
@@ -231,8 +202,8 @@ const ChatSystem: React.FC<ChatSystemProps> = memo(({ currentUser, users, knowle
       )}
     </div>
   );
-});
+};
 
 ChatSystem.displayName = 'ChatSystem';
 
-export default ChatSystem;
+export default memo(ChatSystem);
