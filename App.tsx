@@ -89,8 +89,8 @@ const App: React.FC = () => {
   useEffect(() => { 
     if (currentUser) {
       fetchData(); 
-      // Refresh dữ liệu mỗi 2 phút
-      const mainInterval = setInterval(fetchData, 120000);
+      // Refresh dữ liệu mỗi 10 phút (tối ưu hóa performance)
+      const mainInterval = setInterval(fetchData, 600000);
       return () => clearInterval(mainInterval);
     }
   }, [currentUser, refreshTrigger]);

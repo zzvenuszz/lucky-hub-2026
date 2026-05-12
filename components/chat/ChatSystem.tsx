@@ -92,7 +92,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     }
   }, [currentUid, users, currentUser.role]);
 
-  useEffect(() => { loadData(); const interval = setInterval(() => { if (!isTypingAI) loadData(); }, 5000); return () => clearInterval(interval); }, [loadData, isTypingAI]);
+  useEffect(() => { loadData(); const interval = setInterval(() => { if (!isTypingAI) loadData(); }, 30000); return () => clearInterval(interval); }, [loadData, isTypingAI]);
 
   const handleSendMessage = async () => {
     if ((!inputText.trim() && !selectedImage) || !selectedChat) return;

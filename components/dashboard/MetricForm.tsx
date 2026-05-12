@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo, useMemo } from 'react';
 import { HealthMetric } from '../../types.ts';
 import { extractMetricsFromImage } from '../../services/gemini.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
@@ -118,7 +118,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               body: JSON.stringify({ 
                 imageBase64: compressedBase64,
                 selectedYear: selectedYearAI !== 'auto' ? selectedYearAI : undefined
-              })
+              }),
+              signal: AbortSignal.timeout(45000)
             });
 
             if (!res.ok) {
@@ -371,4 +372,4 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   );
 };
 
-export default MetricForm;
+export default memo(MetricForm);

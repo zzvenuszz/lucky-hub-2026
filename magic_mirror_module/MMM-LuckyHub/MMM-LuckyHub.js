@@ -228,7 +228,7 @@ Module.register("MMM-LuckyHub", {
         labels: ['Cơ bắp', 'Nước', 'Mỡ', 'Khoáng'],
         datasets: [{
           data: [muscle, waterMass, fatMass, minerals],
-          backgroundColor: ['#FFFFFF', '#EEEEEE', '#CCCCCC', '#AAAAAA'],
+          backgroundColor: ['#ef4444', '#0ea5e9', '#fde047', '#94a3b8'],
           borderColor: '#000000',
           borderWidth: 1.5
         }]

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { User, Post, UserRole } from '../../types.ts';
 import { Database } from '../../services/database.ts';
+import { cacheManager } from '../../utils/cacheManager.ts';
 import { compressImage } from '../../utils/imageUtils.ts';
 import PostCreator from './PostCreator.tsx';
 import PostItem from './PostItem.tsx';
@@ -27,8 +28,18 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
   const fetchPosts = useCallback(async () => {
     try {
       console.log(`[NewsFeed] Fetching posts for user: ${currentUserId}`);
+      
+      // Check cache first
+      const cachedPosts = cacheManager.get<Post[]>('posts');
+      if (cachedPosts) {
+        console.log(`[NewsFeed] Using cached posts: ${cachedPosts.length} posts`);
+        setPosts(cachedPosts);
+        return;
+      }
+
       const data = await Database.getPosts();
       if (data) {
+        cacheManager.set('posts', data, 3); // Cache for 3 minutes
         setPosts(data);
         console.log(`[NewsFeed] Successfully loaded ${data.length} posts`);
       }
@@ -38,7 +49,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
     }
   }, [currentUserId]);
 
-  useEffect(() => { fetchPosts(); const interval = setInterval(fetchPosts, 30000); return () => clearInterval(interval); }, [fetchPosts]);
+  useEffect(() => { fetchPosts(); const interval = setInterval(fetchPosts, 120000); return () => clearInterval(interval); }, [fetchPosts]);
 
   const handleCreatePost = async () => {
     if (!inputText.trim() && selectedImages.length === 0) return;

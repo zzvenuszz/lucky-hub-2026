@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useCallback, memo } from 'react';
 import { HealthMetric, User, UserRole } from '../../types.ts';
 import { Database } from '../../services/database.ts';
+import { cacheManager } from '../../utils/cacheManager.ts';
 import StatCards from './StatCards.tsx';
 import BodyCompositionPie from './BodyCompositionPie.tsx';
 import TrendChart from './TrendChart.tsx';
@@ -32,7 +33,23 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'muscleMass']);
 
   useEffect(() => {
-    Database.getMetrics(selectedUserId).then(data => setMetrics(data || []));
+    const cacheKey = `metrics_${selectedUserId}`;
+    
+    // Check cache first
+    const cachedMetrics = cacheManager.get<HealthMetric[]>(cacheKey);
+    if (cachedMetrics) {
+      console.log(`[Dashboard] Using cached metrics for ${selectedUserId}`);
+      setMetrics(cachedMetrics);
+      return;
+    }
+
+    // Fetch from DB if cache miss
+    Database.getMetrics(selectedUserId).then(data => {
+      if (data) {
+        cacheManager.set(cacheKey, data, 5); // Cache for 5 minutes
+        setMetrics(data);
+      }
+    });
   }, [selectedUserId, refreshTrigger]);
 
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);

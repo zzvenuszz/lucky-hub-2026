@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Badge } from '../../types.ts';
 import { BADGES_DB } from '../../services/database.ts';
 
@@ -96,4 +96,4 @@ const BadgeDisplay: React.FC<BadgeDisplayProps> = ({ badgeIds, size = 'sm', isCo
   );
 };
 
-export default BadgeDisplay;
+export default memo(BadgeDisplay);

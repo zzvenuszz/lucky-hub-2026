@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, memo } from 'react';
+import React, { useState, useRef, useEffect, memo, useMemo } from 'react';
 import { User, UserRole } from '../../types.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
 
@@ -15,12 +15,12 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const getAvatar = () => {
+  const avatarUrl = useMemo(() => {
     if (user.avatar) return user.avatar;
     return user.gender === 'Nữ'
       ? `https://api.dicebear.com/7.x/adventurer/svg?seed=Aneka&backgroundColor=f8fafc`
       : `https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=f8fafc`;
-  };
+  }, [user.avatar, user.gender]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -75,7 +75,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
                 className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl border-2 transition-all cursor-pointer overflow-hidden shadow-sm ${isMenuOpen ? 'border-emerald-500 scale-105 ring-4 ring-emerald-50' : 'border-slate-100 hover:border-emerald-300'}`}
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
               >
-                <img src={getAvatar()} alt={user.fullName} className="w-full h-full object-cover" />
+                <img src={avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
               </div>
 
               {isMenuOpen && (
