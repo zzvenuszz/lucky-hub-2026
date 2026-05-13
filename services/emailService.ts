@@ -1,14 +1,14 @@
 /**
  * Email Service for Lucky Hub
- * Sử dụng Resend API để gửi email (thay thế SMTP bị chặn trên Render)
+ * Sử dụng SendGrid API để gửi email (không cần verify domain, không bị chặn trên Render)
  */
 
-import { Resend } from 'resend';
+import sgMail from '@sendgrid/mail';
 import { logger } from './logger.ts';
 
 const DEFAULT_FRONTEND_URL = 'https://lucky-hub-2026.onrender.com';
-const DEFAULT_EMAIL_DISPLAY_NAME = 'Lucky Hub';
-const DEFAULT_EMAIL_FROM = '"Lucky Hub" <onboarding@resend.dev>';
+const DEFAULT_SENDER_EMAIL = 'luckyhubvn@gmail.com';
+const DEFAULT_SENDER_NAME = 'Lucky Hub';
 
 interface EmailOptions {
   to: string;
@@ -18,32 +18,32 @@ interface EmailOptions {
 }
 
 class EmailService {
-  private resend: Resend;
-  private emailFrom: string;
-  private appBaseUrl: string;
   private isEnabled: boolean = false;
+  private senderEmail: string;
+  private senderName: string;
+  private appBaseUrl: string;
 
   constructor() {
-    const apiKey = process.env.RESEND_API_KEY;
-    this.emailFrom = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
+    const apiKey = process.env.SENDGRID_API_KEY;
+    this.senderEmail = process.env.SENDGRID_SENDER || process.env.EMAIL_FROM || DEFAULT_SENDER_EMAIL;
+    this.senderName = process.env.EMAIL_FROM_NAME || DEFAULT_SENDER_NAME;
     this.appBaseUrl = (process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL).replace(/\/$/, '');
 
-    console.log('[EMAIL-SERVICE] Initializing with Resend API:', {
-      hasApiKey: !!apiKey,
-      from: this.emailFrom,
+    console.log('[EMAIL-SERVICE] Initializing with SendGrid:', {
+      hasApiKey: !!apiKey && apiKey !== 'your-sendgrid-api-key-here',
+      senderEmail: this.senderEmail,
+      senderName: this.senderName,
       appBaseUrl: this.appBaseUrl
     });
 
-    if (!apiKey || apiKey === 're_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx') {
-      console.warn('[EMAIL-SERVICE] RESEND_API_KEY not configured. Email sending will be disabled.');
-      console.warn('[EMAIL-SERVICE] Please get API key from: https://resend.com/api-keys');
+    if (!apiKey || apiKey === 'your-sendgrid-api-key-here') {
+      console.warn('[EMAIL-SERVICE] SENDGRID_API_KEY not configured. Email sending will be disabled.');
+      console.warn('[EMAIL-SERVICE] Get free API key at: https://signup.sendgrid.com');
       this.isEnabled = false;
-      // Create a dummy resend instance
-      this.resend = new Resend('dummy-key');
     } else {
-      this.resend = new Resend(apiKey);
+      sgMail.setApiKey(apiKey);
       this.isEnabled = true;
-      console.log('[EMAIL-SERVICE] Resend initialized successfully');
+      console.log('[EMAIL-SERVICE] SendGrid initialized successfully');
     }
   }
 
@@ -55,39 +55,41 @@ class EmailService {
   }
 
   /**
-   * Send email using Resend API
+   * Send email using SendGrid API
    */
   public async sendEmail(options: EmailOptions): Promise<boolean> {
     console.log('[EMAIL-SERVICE] sendEmail called with:', { to: options.to, subject: options.subject });
 
     if (!this.isEnabled) {
-      console.error('[EMAIL-SERVICE] Email service is not configured. Set RESEND_API_KEY to enable.');
+      console.error('[EMAIL-SERVICE] Email service is not configured. Set SENDGRID_API_KEY to enable.');
       return false;
     }
 
     try {
-      console.log('[EMAIL-SERVICE] About to call resend.emails.send...');
-
-      const { data, error } = await this.resend.emails.send({
-        from: this.emailFrom,
-        to: [options.to],
+      const msg = {
+        to: options.to,
+        from: {
+          email: this.senderEmail,
+          name: this.senderName
+        },
         subject: options.subject,
         html: options.html,
         text: options.text || this.stripHtml(options.html)
-      });
+      };
 
-      if (error) {
-        console.error('[EMAIL-SERVICE] Resend API error:', error);
-        logger.error('Email', `Failed to send email to ${options.to}: ${JSON.stringify(error)}`);
-        return false;
-      }
+      console.log('[EMAIL-SERVICE] About to call sgMail.send...');
+      await sgMail.send(msg);
 
-      console.log('[EMAIL-SERVICE] Email sent successfully:', { messageId: data?.id });
-      logger.info('Email', `Email sent successfully to ${options.to}: ${data?.id}`);
+      console.log('[EMAIL-SERVICE] Email sent successfully');
+      logger.info('Email', `Email sent successfully to ${options.to}`);
       return true;
-    } catch (error) {
-      console.error('[EMAIL-SERVICE] Unexpected error:', error);
-      logger.error('Email', `Unexpected error sending email to ${options.to}: ${error}`);
+    } catch (error: any) {
+      console.error('[EMAIL-SERVICE] SendGrid error:', {
+        message: error.message,
+        code: error.code,
+        response: error.response?.body
+      });
+      logger.error('Email', `Failed to send email to ${options.to}: ${error.message}`);
       return false;
     }
   }
