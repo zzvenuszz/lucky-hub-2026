@@ -25,7 +25,7 @@ class EmailService {
 
   constructor() {
     const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
     const smtpSecure = process.env.SMTP_SECURE === 'true';
     this.smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || 'luckysystem2026@gmail.com';
     this.smtpPass = process.env.SMTP_PASS || process.env.EMAIL_APP_PASSWORD || 'your-app-password-here';
@@ -50,9 +50,12 @@ class EmailService {
         user: this.smtpUser,
         pass: this.smtpPass
       },
-      connectionTimeout: 15000,
-      greetingTimeout: 10000,
-      socketTimeout: 30000
+      connectionTimeout: 20000,
+      greetingTimeout: 15000,
+      socketTimeout: 60000,
+      tls: {
+        rejectUnauthorized: false
+      }
     });
 
     // Verify connection
