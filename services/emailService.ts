@@ -6,6 +6,9 @@
 import nodemailer from 'nodemailer';
 import { logger } from './logger.ts';
 
+const DEFAULT_FRONTEND_URL = 'https://lucky-hub-2026.onrender.com';
+const DEFAULT_EMAIL_DISPLAY_NAME = 'Lucky Hub';
+
 interface EmailOptions {
   to: string;
   subject: string;
@@ -18,20 +21,23 @@ class EmailService {
   private smtpUser: string;
   private smtpPass: string;
   private emailFrom: string;
+  private appBaseUrl: string;
 
   constructor() {
     const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+    const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
     const smtpSecure = process.env.SMTP_SECURE === 'true';
     this.smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || 'luckysystem2026@gmail.com';
     this.smtpPass = process.env.SMTP_PASS || process.env.EMAIL_APP_PASSWORD || 'your-app-password-here';
     this.emailFrom = process.env.EMAIL_FROM || this.smtpUser;
+    this.appBaseUrl = (process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL).replace(/\/$/, '');
 
     console.log('[EMAIL-SERVICE] Initializing with config:', {
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
       user: this.smtpUser,
+      appBaseUrl: this.appBaseUrl,
       pass: this.smtpPass ? `${this.smtpPass.substring(0, 10)}...` : '<missing>'
     });
 
@@ -43,7 +49,10 @@ class EmailService {
       auth: {
         user: this.smtpUser,
         pass: this.smtpPass
-      }
+      },
+      connectionTimeout: 15000,
+      greetingTimeout: 10000,
+      socketTimeout: 30000
     });
 
     // Verify connection
@@ -67,7 +76,7 @@ class EmailService {
 
     try {
       const mailOptions = {
-        from: `"Lucky Hub" <${this.emailFrom}>`,
+        from: this.getFromAddress(),
         to: options.to,
         subject: options.subject,
         html: options.html,
@@ -95,7 +104,7 @@ class EmailService {
   public async sendPasswordResetEmail(email: string, resetToken: string, userName: string): Promise<boolean> {
     console.log('[EMAIL-SERVICE] sendPasswordResetEmail called:', { email, userName, tokenLength: resetToken.length });
 
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    const resetUrl = `${this.appBaseUrl}/reset-password?token=${resetToken}`;
     console.log('[EMAIL-SERVICE] Reset URL generated:', resetUrl);
 
     const html = `
@@ -176,9 +185,9 @@ class EmailService {
           <div class="footer">
             <p><strong>Lucky Hub</strong> - Chuyên gia sức khỏe của bạn</p>
             <div class="footer-links">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}">Website</a> |
+              <a href="${this.appBaseUrl}">Website</a> |
               <a href="mailto:support@luckyhub.com">Hỗ trợ</a> |
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/privacy">Bảo mật</a>
+              <a href="${this.appBaseUrl}/privacy">Bảo mật</a>
             </div>
             <p style="margin-top: 15px; font-size: 12px; color: #9ca3af;">
               © 2026 Lucky Hub. Tất cả quyền được bảo lưu.<br>
@@ -225,7 +234,7 @@ class EmailService {
    * Send welcome email for new users
    */
   public async sendWelcomeEmail(email: string, userName: string): Promise<boolean> {
-    const loginUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`;
+    const loginUrl = `${this.appBaseUrl}/login`;
 
     const html = `
       <!DOCTYPE html>
@@ -307,6 +316,15 @@ class EmailService {
    */
   private stripHtml(html: string): string {
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  private getFromAddress(): string {
+    const configuredFrom = this.emailFrom.trim();
+    if (configuredFrom.includes('<') && configuredFrom.includes('>')) {
+      return configuredFrom;
+    }
+
+    return `"${DEFAULT_EMAIL_DISPLAY_NAME}" <${configuredFrom}>`;
   }
 }
 
