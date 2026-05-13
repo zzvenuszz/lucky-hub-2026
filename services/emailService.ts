@@ -1,13 +1,14 @@
 /**
  * Email Service for Lucky Hub
- * Handles sending emails for password reset, notifications, etc.
+ * Sử dụng Resend API để gửi email (thay thế SMTP bị chặn trên Render)
  */
 
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { logger } from './logger.ts';
 
 const DEFAULT_FRONTEND_URL = 'https://lucky-hub-2026.onrender.com';
 const DEFAULT_EMAIL_DISPLAY_NAME = 'Lucky Hub';
+const DEFAULT_EMAIL_FROM = '"Lucky Hub" <onboarding@resend.dev>';
 
 interface EmailOptions {
   to: string;
@@ -17,86 +18,76 @@ interface EmailOptions {
 }
 
 class EmailService {
-  private transporter: nodemailer.Transporter;
-  private smtpUser: string;
-  private smtpPass: string;
+  private resend: Resend;
   private emailFrom: string;
   private appBaseUrl: string;
+  private isEnabled: boolean = false;
 
   constructor() {
-    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-    const smtpSecure = process.env.SMTP_SECURE === 'true';
-    this.smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || 'luckysystem2026@gmail.com';
-    this.smtpPass = process.env.SMTP_PASS || process.env.EMAIL_APP_PASSWORD || 'your-app-password-here';
-    this.emailFrom = process.env.EMAIL_FROM || this.smtpUser;
+    const apiKey = process.env.RESEND_API_KEY;
+    this.emailFrom = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
     this.appBaseUrl = (process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL).replace(/\/$/, '');
 
-    console.log('[EMAIL-SERVICE] Initializing with config:', {
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      user: this.smtpUser,
-      appBaseUrl: this.appBaseUrl,
-      pass: this.smtpPass ? `${this.smtpPass.substring(0, 10)}...` : '<missing>'
+    console.log('[EMAIL-SERVICE] Initializing with Resend API:', {
+      hasApiKey: !!apiKey,
+      from: this.emailFrom,
+      appBaseUrl: this.appBaseUrl
     });
 
-    // Create transporter with SMTP config
-    this.transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      auth: {
-        user: this.smtpUser,
-        pass: this.smtpPass
-      },
-      connectionTimeout: 20000,
-      greetingTimeout: 15000,
-      socketTimeout: 60000,
-      tls: {
-        rejectUnauthorized: false
-      }
-    });
-
-    // Verify connection
-    this.verifyConnection();
-  }
-
-  private async verifyConnection(): Promise<void> {
-    try {
-      await this.transporter.verify();
-      logger.info('Email', 'SMTP connection verified successfully');
-    } catch (error) {
-      logger.error('Email', `SMTP connection failed: ${error}`);
+    if (!apiKey || apiKey === 're_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx') {
+      console.warn('[EMAIL-SERVICE] RESEND_API_KEY not configured. Email sending will be disabled.');
+      console.warn('[EMAIL-SERVICE] Please get API key from: https://resend.com/api-keys');
+      this.isEnabled = false;
+      // Create a dummy resend instance
+      this.resend = new Resend('dummy-key');
+    } else {
+      this.resend = new Resend(apiKey);
+      this.isEnabled = true;
+      console.log('[EMAIL-SERVICE] Resend initialized successfully');
     }
   }
 
   /**
-   * Send email
+   * Kiểm tra email service có đang bật không
+   */
+  public isEmailEnabled(): boolean {
+    return this.isEnabled;
+  }
+
+  /**
+   * Send email using Resend API
    */
   public async sendEmail(options: EmailOptions): Promise<boolean> {
     console.log('[EMAIL-SERVICE] sendEmail called with:', { to: options.to, subject: options.subject });
 
+    if (!this.isEnabled) {
+      console.error('[EMAIL-SERVICE] Email service is not configured. Set RESEND_API_KEY to enable.');
+      return false;
+    }
+
     try {
-      const mailOptions = {
-        from: this.getFromAddress(),
-        to: options.to,
+      console.log('[EMAIL-SERVICE] About to call resend.emails.send...');
+
+      const { data, error } = await this.resend.emails.send({
+        from: this.emailFrom,
+        to: [options.to],
         subject: options.subject,
         html: options.html,
         text: options.text || this.stripHtml(options.html)
-      };
+      });
 
-      console.log('[EMAIL-SERVICE] Mail options prepared:', { from: mailOptions.from, to: mailOptions.to });
-      console.log('[EMAIL-SERVICE] About to call transporter.sendMail...');
+      if (error) {
+        console.error('[EMAIL-SERVICE] Resend API error:', error);
+        logger.error('Email', `Failed to send email to ${options.to}: ${JSON.stringify(error)}`);
+        return false;
+      }
 
-      const info = await this.transporter.sendMail(mailOptions);
-      console.log('[EMAIL-SERVICE] transporter.sendMail completed:', { messageId: info.messageId });
-
-      logger.info('Email', `Email sent successfully to ${options.to}: ${info.messageId}`);
+      console.log('[EMAIL-SERVICE] Email sent successfully:', { messageId: data?.id });
+      logger.info('Email', `Email sent successfully to ${options.to}: ${data?.id}`);
       return true;
     } catch (error) {
-      console.error('[EMAIL-SERVICE] transporter.sendMail failed:', error);
-      logger.error('Email', `Failed to send email to ${options.to}: ${error}`);
+      console.error('[EMAIL-SERVICE] Unexpected error:', error);
+      logger.error('Email', `Unexpected error sending email to ${options.to}: ${error}`);
       return false;
     }
   }
@@ -319,15 +310,6 @@ class EmailService {
    */
   private stripHtml(html: string): string {
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-  }
-
-  private getFromAddress(): string {
-    const configuredFrom = this.emailFrom.trim();
-    if (configuredFrom.includes('<') && configuredFrom.includes('>')) {
-      return configuredFrom;
-    }
-
-    return `"${DEFAULT_EMAIL_DISPLAY_NAME}" <${configuredFrom}>`;
   }
 }
 
