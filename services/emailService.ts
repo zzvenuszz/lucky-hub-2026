@@ -1,14 +1,18 @@
 /**
  * Email Service for Lucky Hub
- * Sử dụng SendGrid API để gửi email (không cần verify domain, không bị chặn trên Render)
+ * Dual-provider strategy:
+ * - Primary: Brevo (miễn phí 300 emails/ngày vĩnh viễn)
+ * - Fallback: SendGrid (miễn phí 100 emails/ngày)
+ * 
+ * Không cần verify domain, không bị chặn trên Render
  */
 
 import sgMail from '@sendgrid/mail';
 import { logger } from './logger.ts';
 
 const DEFAULT_FRONTEND_URL = 'https://lucky-hub-2026.onrender.com';
-const DEFAULT_SENDER_EMAIL = 'luckyhubvn@gmail.com';
-const DEFAULT_SENDER_NAME = 'Lucky Hub';
+
+const API_BREVO = 'https://api.brevo.com/v3/smtp/email';
 
 interface EmailOptions {
   to: string;
@@ -17,55 +21,98 @@ interface EmailOptions {
   text?: string;
 }
 
+interface SendResult {
+  success: boolean;
+  provider: string;
+  error?: string;
+}
+
 class EmailService {
-  private isEnabled: boolean = false;
-  private senderEmail: string;
-  private senderName: string;
+  private brevoApiKey: string = '';
+  private sgApiKey: string = '';
+  private senderEmail: string = 'luckyhubvn@gmail.com';
+  private senderName: string = 'Lucky Hub';
   private appBaseUrl: string;
 
   constructor() {
-    const apiKey = process.env.SENDGRID_API_KEY;
-    this.senderEmail = process.env.SENDGRID_SENDER || process.env.EMAIL_FROM || DEFAULT_SENDER_EMAIL;
-    this.senderName = process.env.EMAIL_FROM_NAME || DEFAULT_SENDER_NAME;
+    this.brevoApiKey = process.env.BREVO_API_KEY || '';
+    this.sgApiKey = process.env.SENDGRID_API_KEY || '';
+    this.senderEmail = process.env.EMAIL_FROM || 'luckyhubvn@gmail.com';
+    // EMAIL_FROM_NAME có dấu ngoặc kép "Lucky Hub", cần strip để dùng trong code
+    const rawName = process.env.EMAIL_FROM_NAME || 'Lucky Hub';
+    this.senderName = rawName.replace(/^"|"$/g, '');
     this.appBaseUrl = (process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL).replace(/\/$/, '');
 
-    console.log('[EMAIL-SERVICE] Initializing with SendGrid:', {
-      hasApiKey: !!apiKey && apiKey !== 'your-sendgrid-api-key-here',
+    // Khởi tạo SendGrid nếu có key
+    if (this.sgApiKey && this.sgApiKey !== 'your-sendgrid-api-key-here') {
+      sgMail.setApiKey(this.sgApiKey);
+    }
+
+    console.log('[EMAIL-SERVICE] Initialized:', {
+      brevo: this.brevoApiKey ? '✅ configured' : '❌ not configured',
+      sendgrid: this.sgApiKey && this.sgApiKey !== 'your-sendgrid-api-key-here' ? '✅ configured' : '❌ not configured',
       senderEmail: this.senderEmail,
       senderName: this.senderName,
       appBaseUrl: this.appBaseUrl
     });
-
-    if (!apiKey || apiKey === 'your-sendgrid-api-key-here') {
-      console.warn('[EMAIL-SERVICE] SENDGRID_API_KEY not configured. Email sending will be disabled.');
-      console.warn('[EMAIL-SERVICE] Get free API key at: https://signup.sendgrid.com');
-      this.isEnabled = false;
-    } else {
-      sgMail.setApiKey(apiKey);
-      this.isEnabled = true;
-      console.log('[EMAIL-SERVICE] SendGrid initialized successfully');
-    }
   }
 
   /**
-   * Kiểm tra email service có đang bật không
+   * Gửi email qua Brevo API (primary)
    */
-  public isEmailEnabled(): boolean {
-    return this.isEnabled;
-  }
-
-  /**
-   * Send email using SendGrid API
-   */
-  public async sendEmail(options: EmailOptions): Promise<boolean> {
-    console.log('[EMAIL-SERVICE] sendEmail called with:', { to: options.to, subject: options.subject });
-
-    if (!this.isEnabled) {
-      console.error('[EMAIL-SERVICE] Email service is not configured. Set SENDGRID_API_KEY to enable.');
-      return false;
+  private async sendViaBrevo(options: EmailOptions): Promise<SendResult> {
+    if (!this.brevoApiKey || this.brevoApiKey === 'your-brevo-api-key-here') {
+      return { success: false, provider: 'brevo', error: 'API key not configured' };
     }
 
     try {
+      console.log('[EMAIL-SERVICE] Sending via Brevo...');
+
+      const response = await fetch(API_BREVO, {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': this.brevoApiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: {
+            name: this.senderName,
+            email: this.senderEmail
+          },
+          to: [{ email: options.to }],
+          subject: options.subject,
+          htmlContent: options.html,
+          textContent: options.text || this.stripHtml(options.html)
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error('[EMAIL-SERVICE] Brevo API error:', { status: response.status, body: errorBody });
+        return { success: false, provider: 'brevo', error: `HTTP ${response.status}: ${errorBody}` };
+      }
+
+      const result = await response.json();
+      console.log('[EMAIL-SERVICE] Brevo sent successfully:', { messageId: result.messageId });
+      return { success: true, provider: 'brevo' };
+    } catch (error: any) {
+      console.error('[EMAIL-SERVICE] Brevo send failed:', error.message);
+      return { success: false, provider: 'brevo', error: error.message };
+    }
+  }
+
+  /**
+   * Gửi email qua SendGrid API (fallback)
+   */
+  private async sendViaSendGrid(options: EmailOptions): Promise<SendResult> {
+    if (!this.sgApiKey || this.sgApiKey === 'your-sendgrid-api-key-here') {
+      return { success: false, provider: 'sendgrid', error: 'API key not configured' };
+    }
+
+    try {
+      console.log('[EMAIL-SERVICE] Sending via SendGrid (fallback)...');
+
       const msg = {
         to: options.to,
         from: {
@@ -77,21 +124,46 @@ class EmailService {
         text: options.text || this.stripHtml(options.html)
       };
 
-      console.log('[EMAIL-SERVICE] About to call sgMail.send...');
       await sgMail.send(msg);
 
-      console.log('[EMAIL-SERVICE] Email sent successfully');
-      logger.info('Email', `Email sent successfully to ${options.to}`);
-      return true;
+      console.log('[EMAIL-SERVICE] SendGrid sent successfully');
+      return { success: true, provider: 'sendgrid' };
     } catch (error: any) {
       console.error('[EMAIL-SERVICE] SendGrid error:', {
         message: error.message,
         code: error.code,
         response: error.response?.body
       });
-      logger.error('Email', `Failed to send email to ${options.to}: ${error.message}`);
-      return false;
+      return { success: false, provider: 'sendgrid', error: error.message };
     }
+  }
+
+  /**
+   * Send email - thử Brevo trước, fallback SendGrid nếu lỗi
+   */
+  public async sendEmail(options: EmailOptions): Promise<boolean> {
+    console.log('[EMAIL-SERVICE] sendEmail called with:', { to: options.to, subject: options.subject });
+
+    // 1. Thử Brevo trước
+    const brevoResult = await this.sendViaBrevo(options);
+    if (brevoResult.success) {
+      logger.info('Email', `Sent via Brevo to ${options.to}`);
+      return true;
+    }
+
+    console.log('[EMAIL-SERVICE] Brevo failed, trying SendGrid fallback...', brevoResult.error);
+
+    // 2. Fallback sang SendGrid
+    const sgResult = await this.sendViaSendGrid(options);
+    if (sgResult.success) {
+      logger.info('Email', `Sent via SendGrid (fallback) to ${options.to}`);
+      return true;
+    }
+
+    // 3. Cả 2 đều fail
+    console.error('[EMAIL-SERVICE] Both providers failed:', { brevo: brevoResult.error, sendgrid: sgResult.error });
+    logger.error('Email', `Both providers failed for ${options.to}. Brevo: ${brevoResult.error}. SendGrid: ${sgResult.error}`);
+    return false;
   }
 
   /**
@@ -103,116 +175,8 @@ class EmailService {
     const resetUrl = `${this.appBaseUrl}/reset-password?token=${resetToken}`;
     console.log('[EMAIL-SERVICE] Reset URL generated:', resetUrl);
 
-    const html = `
-      <!DOCTYPE html>
-      <html lang="vi">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Đặt lại mật khẩu - Lucky Hub</title>
-        <style>
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
-          .container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-          .header { background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 40px 30px; text-align: center; }
-          .logo { font-size: 32px; margin-bottom: 10px; }
-          .title { font-size: 24px; font-weight: bold; margin: 0; }
-          .content { padding: 40px 30px; color: #374151; line-height: 1.6; }
-          .greeting { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #059669; }
-          .message { margin-bottom: 30px; }
-          .reset-button { display: inline-block; background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; }
-          .reset-button:hover { background: linear-gradient(135deg, #047857, #059669); }
-          .warning { background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0; }
-          .warning-title { font-weight: bold; color: #92400e; margin-bottom: 5px; }
-          .warning-text { color: #78350f; font-size: 14px; }
-          .footer { background-color: #f9fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
-          .footer-links { margin-top: 15px; }
-          .footer-links a { color: #059669; text-decoration: none; margin: 0 10px; }
-          .footer-links a:hover { text-decoration: underline; }
-          .security-note { background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 15px; margin: 20px 0; }
-          .security-note-title { font-weight: bold; color: #065f46; margin-bottom: 5px; }
-          .security-note-text { color: #047857; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <div class="logo">🍀</div>
-            <h1 class="title">Lucky Hub</h1>
-            <p>Nền tảng Sức khỏe của bạn</p>
-          </div>
-
-          <div class="content">
-            <div class="greeting">Xin chào ${userName}!</div>
-
-            <div class="message">
-              <p>Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản Lucky Hub của mình. Để đặt lại mật khẩu, vui lòng nhấp vào nút bên dưới:</p>
-            </div>
-
-            <div style="text-align: center;">
-              <a href="${resetUrl}" class="reset-button">ĐẶT LẠI MẬT KHẨU</a>
-            </div>
-
-            <div class="warning">
-              <div class="warning-title">⚠️ Lưu ý quan trọng</div>
-              <div class="warning-text">
-                • Liên kết này sẽ hết hạn sau 1 giờ<br>
-                • Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này<br>
-                • Liên kết chỉ có thể sử dụng một lần
-              </div>
-            </div>
-
-            <div class="security-note">
-              <div class="security-note-title">🔒 Thông tin bảo mật</div>
-              <div class="security-note-text">
-                • Lucky Hub cam kết bảo vệ thông tin cá nhân của bạn<br>
-                • Mật khẩu mới sẽ được mã hóa an toàn<br>
-                • Chúng tôi không bao giờ yêu cầu mật khẩu qua email
-              </div>
-            </div>
-
-            <p>Nếu nút trên không hoạt động, bạn có thể sao chép và dán liên kết sau vào trình duyệt:</p>
-            <p style="word-break: break-all; background-color: #f3f4f6; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px;">${resetUrl}</p>
-
-            <p>Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với đội ngũ hỗ trợ của chúng tôi.</p>
-
-            <p>Trân trọng,<br><strong>Đội ngũ Lucky Hub</strong></p>
-          </div>
-
-          <div class="footer">
-            <p><strong>Lucky Hub</strong> - Chuyên gia sức khỏe của bạn</p>
-            <div class="footer-links">
-              <a href="${this.appBaseUrl}">Website</a> |
-              <a href="mailto:support@luckyhub.com">Hỗ trợ</a> |
-              <a href="${this.appBaseUrl}/privacy">Bảo mật</a>
-            </div>
-            <p style="margin-top: 15px; font-size: 12px; color: #9ca3af;">
-              © 2026 Lucky Hub. Tất cả quyền được bảo lưu.<br>
-              Email này được gửi tự động, vui lòng không trả lời.
-            </p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const text = `
-      Xin chào ${userName}!
-
-      Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản Lucky Hub.
-
-      Để đặt lại mật khẩu, vui lòng truy cập liên kết sau trong vòng 1 giờ:
-      ${resetUrl}
-
-      Lưu ý:
-      - Liên kết này sẽ hết hạn sau 1 giờ
-      - Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này
-      - Liên kết chỉ có thể sử dụng một lần
-
-      Nếu bạn có câu hỏi, vui lòng liên hệ đội ngũ hỗ trợ.
-
-      Trân trọng,
-      Đội ngũ Lucky Hub
-    `;
+    const html = this.getResetEmailHtml(resetUrl, userName);
+    const text = this.getResetEmailText(resetUrl, userName);
 
     console.log('[EMAIL-SERVICE] About to call sendEmail with:', { to: email, subject: 'Đặt lại mật khẩu - Lucky Hub' });
     const result = await this.sendEmail({
@@ -307,9 +271,74 @@ class EmailService {
     });
   }
 
-  /**
-   * Strip HTML tags for text version
-   */
+  private getResetEmailHtml(resetUrl: string, userName: string): string {
+    return `
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Đặt lại mật khẩu - Lucky Hub</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
+          .container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+          .header { background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 40px 30px; text-align: center; }
+          .logo { font-size: 32px; margin-bottom: 10px; }
+          .title { font-size: 24px; font-weight: bold; margin: 0; }
+          .content { padding: 40px 30px; color: #374151; line-height: 1.6; }
+          .greeting { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #059669; }
+          .message { margin-bottom: 30px; }
+          .reset-button { display: inline-block; background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; }
+          .reset-button:hover { background: linear-gradient(135deg, #047857, #059669); }
+          .warning { background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0; }
+          .warning-title { font-weight: bold; color: #92400e; margin-bottom: 5px; }
+          .warning-text { color: #78350f; font-size: 14px; }
+          .footer { background-color: #f9fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
+          .footer-links { margin-top: 15px; }
+          .footer-links a { color: #059669; text-decoration: none; margin: 0 10px; }
+          .footer-links a:hover { text-decoration: underline; }
+          .security-note { background-color: #ecfdf5; border: 1px solid #10b981; border-radius: 8px; padding: 15px; margin: 20px 0; }
+          .security-note-title { font-weight: bold; color: #065f46; margin-bottom: 5px; }
+          .security-note-text { color: #047857; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">🍀</div>
+            <h1 class="title">Lucky Hub</h1>
+            <p>Nền tảng Sức khỏe của bạn</p>
+          </div>
+          <div class="content">
+            <div class="greeting">Xin chào ${userName}!</div>
+            <div class="message">
+              <p>Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản Lucky Hub của mình.</p>
+            </div>
+            <div style="text-align: center;">
+              <a href="${resetUrl}" class="reset-button">ĐẶT LẠI MẬT KHẨU</a>
+            </div>
+            <div class="warning">
+              <div class="warning-title">⚠️ Lưu ý quan trọng</div>
+              <div class="warning-text">• Liên kết sẽ hết hạn sau 1 giờ<br>• Nếu không yêu cầu, vui lòng bỏ qua email</div>
+            </div>
+            <p>Nếu nút không hoạt động, sao chép: ${resetUrl}</p>
+            <p>Trân trọng,<br><strong>Đội ngũ Lucky Hub</strong></p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  }
+
+  private getResetEmailText(resetUrl: string, userName: string): string {
+    return `
+      Xin chào ${userName}!
+      Bạn đã yêu cầu đặt lại mật khẩu.
+      Truy cập trong 1 giờ: ${resetUrl}
+      Trân trọng, Đội ngũ Lucky Hub
+    `;
+  }
+
   private stripHtml(html: string): string {
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }
