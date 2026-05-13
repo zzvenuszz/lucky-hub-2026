@@ -17,9 +17,23 @@ import { ttsService } from './src/services/ttsService.ts';
 import { configService } from './src/services/configService.ts';
 import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
-import { emailService } from './services/emailService.ts';
 
 dotenv.config();
+
+// Import services after dotenv config
+// import { emailService } from './services/emailService.ts';
+
+// Create email service instance after dotenv config
+let emailService: any;
+async function initEmailService() {
+  try {
+    const { emailService: service } = await import('./services/emailService.ts');
+    emailService = service;
+    console.log('[SYSTEM] Email service initialized.');
+  } catch (err: any) {
+    console.error('[SYSTEM] Failed to initialize email service:', err?.message || err);
+  }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -115,7 +129,13 @@ async function discoverAvailableModels() {
 
   console.log(`\n${ANSI.cyan}========== GEMINI SYSTEM DISCOVERY ==========${ANSI.reset}\n`);
   
-  const dbKeys = await GeminiKey.find({ isActive: true });
+  let dbKeys: any[] = [];
+  try {
+    dbKeys = await GeminiKey.find({ isActive: true });
+  } catch (err: any) {
+    console.error('[GEMINI] Failed to load API keys from DB:', err?.message || err);
+  }
+
   const allKeys = [...new Set([...ENV_API_KEYS, ...dbKeys.map(k => k.key as string)])];
   
   if (allKeys.length === 0) {
@@ -584,13 +604,36 @@ const PasswordResetToken = mongoose.model('PasswordResetToken', new mongoose.Sch
 
 async function initDB() {
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+      bufferCommands: false // Disable mongoose buffering
+    });
     console.log('✅ Connected to MongoDB');
-  } catch (err: any) { console.error('❌ DB Error:', err.message); }
+  } catch (err: any) {
+    console.error('❌ DB Error:', err.message);
+    if (MONGODB_URI.includes('mongodb.net')) {
+      const fallbackUri = 'mongodb://127.0.0.1:27017/lucky_hub';
+      console.warn(`🔁 Falling back to local MongoDB at ${fallbackUri}`);
+      try {
+        await mongoose.connect(fallbackUri, {
+          serverSelectionTimeoutMS: 5000,
+          socketTimeoutMS: 45000,
+          bufferCommands: false
+        });
+        console.log('✅ Connected to local MongoDB fallback');
+      } catch (fallbackErr: any) {
+        console.error('❌ Local DB fallback error:', fallbackErr.message);
+      }
+    }
+  }
 }
-initDB();
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', database: 'connected' }));
+app.get('/api/health', (req, res) => {
+  const dbState = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  const statusCode = dbState === 'connected' ? 200 : 503;
+  res.status(statusCode).json({ status: dbState === 'connected' ? 'ok' : 'unhealthy', database: dbState });
+});
 
 app.post('/api/check-email', async (req, res) => {
   const { email } = req.body;
@@ -648,25 +691,37 @@ app.post('/api/login', async (req, res) => {
 
 // Forgot Password Endpoint
 app.post('/api/forgot-password', async (req, res) => {
+  console.log('[FORGOT-PASSWORD] Request received:', { email: req.body.email, timestamp: new Date().toISOString() });
+
   try {
     const { email } = req.body;
 
     if (!email) {
+      console.log('[FORGOT-PASSWORD] Missing email parameter');
       return res.status(400).json({ message: 'Email là bắt buộc' });
     }
 
+    console.log('[FORGOT-PASSWORD] Processing email:', email.toLowerCase().trim());
+
     // Find user by email
+    console.log('[FORGOT-PASSWORD] Looking up user in database...');
     const user = await User.findOne({ email: email.toLowerCase().trim() });
+    console.log('[FORGOT-PASSWORD] User lookup result:', user ? { id: user._id, email: user.email } : 'User not found');
+
     if (!user) {
       // Don't reveal if email exists or not for security
+      console.log('[FORGOT-PASSWORD] User not found, returning generic message');
       return res.json({ message: 'Nếu email tồn tại trong hệ thống, bạn sẽ nhận được hướng dẫn đặt lại mật khẩu.' });
     }
 
     // Generate reset token
+    console.log('[FORGOT-PASSWORD] Generating reset token...');
     const resetToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    console.log('[FORGOT-PASSWORD] Token generated, expires at:', expiresAt.toISOString());
 
     // Save reset token
+    console.log('[FORGOT-PASSWORD] Saving token to database...');
     const tokenDoc = new PasswordResetToken({
       userId: user._id,
       token: resetToken,
@@ -674,12 +729,16 @@ app.post('/api/forgot-password', async (req, res) => {
       expiresAt
     });
     await tokenDoc.save();
+    console.log('[FORGOT-PASSWORD] Token saved successfully');
 
     // Send reset email
+    console.log('[FORGOT-PASSWORD] Sending reset email...');
     const emailSent = await emailService.sendPasswordResetEmail(user.email, resetToken, user.fullName);
+    console.log('[FORGOT-PASSWORD] Email send result:', emailSent);
 
     if (emailSent) {
       // Audit Log
+      console.log('[FORGOT-PASSWORD] Creating audit log...');
       const log = new AuditLog({
         actorId: user._id,
         actorName: user.fullName,
@@ -688,13 +747,17 @@ app.post('/api/forgot-password', async (req, res) => {
         timestamp: new Date().toISOString()
       });
       await log.save();
+      console.log('[FORGOT-PASSWORD] Audit log saved');
 
+      console.log('[FORGOT-PASSWORD] Success response sent');
       res.json({ message: 'Hướng dẫn đặt lại mật khẩu đã được gửi đến email của bạn.' });
     } else {
+      console.log('[FORGOT-PASSWORD] Email send failed, sending error response');
       res.status(500).json({ message: 'Không thể gửi email. Vui lòng thử lại sau.' });
     }
   } catch (err: any) {
     console.error(`[FORGOT-PASSWORD] Error: ${err.message}`);
+    console.error(`[FORGOT-PASSWORD] Stack trace:`, err.stack);
     res.status(500).json({ message: 'Lỗi hệ thống. Vui lòng thử lại sau.' });
   }
 });
@@ -1042,14 +1105,22 @@ app.get('/MM/users/sync', async (req, res) => {
 app.use(express.static('.') as any);
 app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 
-server.listen(PORT, async () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  logger.info('SYSTEM', `Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info('SYSTEM', `Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
-  
-  // Migration: Populate avatarHash for existing users
-  await migrationService.runAvatarHashMigration(User);
+async function startServer() {
+  await initDB();
+  await initEmailService();
 
-  // Gemini Health Check
-  checkGeminiHealth();
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    logger.info('SYSTEM', `Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.info('SYSTEM', `Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
+
+    // Gemini Health Check
+    checkGeminiHealth().catch((err: any) => {
+      logger.error('SYSTEM', `Gemini health check failed: ${err?.message || err}`);
+    });
+  });
+}
+
+startServer().catch((err: any) => {
+  console.error('[SYSTEM] Failed to start server:', err?.message || err);
 });

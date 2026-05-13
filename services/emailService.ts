@@ -15,14 +15,34 @@ interface EmailOptions {
 
 class EmailService {
   private transporter: nodemailer.Transporter;
+  private smtpUser: string;
+  private smtpPass: string;
+  private emailFrom: string;
 
   constructor() {
-    // Create transporter with Gmail SMTP
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+    const smtpSecure = process.env.SMTP_SECURE === 'true';
+    this.smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || 'luckysystem2026@gmail.com';
+    this.smtpPass = process.env.SMTP_PASS || process.env.EMAIL_APP_PASSWORD || 'your-app-password-here';
+    this.emailFrom = process.env.EMAIL_FROM || this.smtpUser;
+
+    console.log('[EMAIL-SERVICE] Initializing with config:', {
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      user: this.smtpUser,
+      pass: this.smtpPass ? `${this.smtpPass.substring(0, 10)}...` : '<missing>'
+    });
+
+    // Create transporter with SMTP config
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
       auth: {
-        user: process.env.EMAIL_USER || process.env.SMTP_USER || 'luckysystem2026@gmail.com',
-        pass: process.env.EMAIL_APP_PASSWORD || process.env.SMTP_PASS || 'your-app-password-here'
+        user: this.smtpUser,
+        pass: this.smtpPass
       }
     });
 
@@ -43,19 +63,27 @@ class EmailService {
    * Send email
    */
   public async sendEmail(options: EmailOptions): Promise<boolean> {
+    console.log('[EMAIL-SERVICE] sendEmail called with:', { to: options.to, subject: options.subject });
+
     try {
       const mailOptions = {
-        from: `"Lucky Hub" <${process.env.EMAIL_USER || 'luckysystem2026@gmail.com'}>`,
+        from: `"Lucky Hub" <${this.emailFrom}>`,
         to: options.to,
         subject: options.subject,
         html: options.html,
         text: options.text || this.stripHtml(options.html)
       };
 
+      console.log('[EMAIL-SERVICE] Mail options prepared:', { from: mailOptions.from, to: mailOptions.to });
+      console.log('[EMAIL-SERVICE] About to call transporter.sendMail...');
+
       const info = await this.transporter.sendMail(mailOptions);
+      console.log('[EMAIL-SERVICE] transporter.sendMail completed:', { messageId: info.messageId });
+
       logger.info('Email', `Email sent successfully to ${options.to}: ${info.messageId}`);
       return true;
     } catch (error) {
+      console.error('[EMAIL-SERVICE] transporter.sendMail failed:', error);
       logger.error('Email', `Failed to send email to ${options.to}: ${error}`);
       return false;
     }
@@ -65,7 +93,10 @@ class EmailService {
    * Send password reset email
    */
   public async sendPasswordResetEmail(email: string, resetToken: string, userName: string): Promise<boolean> {
+    console.log('[EMAIL-SERVICE] sendPasswordResetEmail called:', { email, userName, tokenLength: resetToken.length });
+
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    console.log('[EMAIL-SERVICE] Reset URL generated:', resetUrl);
 
     const html = `
       <!DOCTYPE html>
@@ -178,12 +209,16 @@ class EmailService {
       Đội ngũ Lucky Hub
     `;
 
-    return await this.sendEmail({
+    console.log('[EMAIL-SERVICE] About to call sendEmail with:', { to: email, subject: 'Đặt lại mật khẩu - Lucky Hub' });
+    const result = await this.sendEmail({
       to: email,
       subject: 'Đặt lại mật khẩu - Lucky Hub',
       html,
       text
     });
+    console.log('[EMAIL-SERVICE] sendEmail result:', result);
+
+    return result;
   }
 
   /**
