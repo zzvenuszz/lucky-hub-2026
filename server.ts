@@ -17,6 +17,7 @@ import { ttsService } from './src/services/ttsService.ts';
 import { configService } from './src/services/configService.ts';
 import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
+import { emailService } from './services/emailService.ts';
 
 dotenv.config();
 
@@ -572,6 +573,15 @@ const Chat = mongoose.model('Chat', new mongoose.Schema({
 const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
 const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 
+// Password Reset Token Schema
+const PasswordResetToken = mongoose.model('PasswordResetToken', new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  token: { type: String, required: true, unique: true },
+  email: { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+  used: { type: Boolean, default: false }
+}, { timestamps: true }));
+
 async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI);
@@ -634,6 +644,137 @@ app.post('/api/login', async (req, res) => {
     delete u.password;
     res.json({ ...u, id: user._id });
   } catch (err) { res.status(500).json({ message: 'Error' }); }
+});
+
+// Forgot Password Endpoint
+app.post('/api/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email là bắt buộc' });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      // Don't reveal if email exists or not for security
+      return res.json({ message: 'Nếu email tồn tại trong hệ thống, bạn sẽ nhận được hướng dẫn đặt lại mật khẩu.' });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Save reset token
+    const tokenDoc = new PasswordResetToken({
+      userId: user._id,
+      token: resetToken,
+      email: user.email,
+      expiresAt
+    });
+    await tokenDoc.save();
+
+    // Send reset email
+    const emailSent = await emailService.sendPasswordResetEmail(user.email, resetToken, user.fullName);
+
+    if (emailSent) {
+      // Audit Log
+      const log = new AuditLog({
+        actorId: user._id,
+        actorName: user.fullName,
+        type: AuditLogType.LOGIN, // Using LOGIN type for password reset
+        details: `Yêu cầu đặt lại mật khẩu cho email: ${user.email}`,
+        timestamp: new Date().toISOString()
+      });
+      await log.save();
+
+      res.json({ message: 'Hướng dẫn đặt lại mật khẩu đã được gửi đến email của bạn.' });
+    } else {
+      res.status(500).json({ message: 'Không thể gửi email. Vui lòng thử lại sau.' });
+    }
+  } catch (err: any) {
+    console.error(`[FORGOT-PASSWORD] Error: ${err.message}`);
+    res.status(500).json({ message: 'Lỗi hệ thống. Vui lòng thử lại sau.' });
+  }
+});
+
+// Reset Password Endpoint
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: 'Token và mật khẩu mới là bắt buộc' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Mật khẩu phải có ít nhất 6 ký tự' });
+    }
+
+    // Find and validate token
+    const tokenDoc = await PasswordResetToken.findOne({
+      token,
+      used: false,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (!tokenDoc) {
+      return res.status(400).json({ message: 'Token không hợp lệ hoặc đã hết hạn' });
+    }
+
+    // Find user
+    const user = await User.findById(tokenDoc.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Người dùng không tồn tại' });
+    }
+
+    // Update password
+    user.password = hashPassword(newPassword);
+    user.isPasswordEncrypted = true;
+    await user.save();
+
+    // Mark token as used
+    tokenDoc.used = true;
+    await tokenDoc.save();
+
+    // Audit Log
+    const log = new AuditLog({
+      actorId: user._id,
+      actorName: user.fullName,
+      type: AuditLogType.LOGIN,
+      details: `Đặt lại mật khẩu thành công`,
+      timestamp: new Date().toISOString()
+    });
+    await log.save();
+
+    res.json({ message: 'Mật khẩu đã được đặt lại thành công. Bạn có thể đăng nhập với mật khẩu mới.' });
+  } catch (err: any) {
+    console.error(`[RESET-PASSWORD] Error: ${err.message}`);
+    res.status(500).json({ message: 'Lỗi hệ thống. Vui lòng thử lại sau.' });
+  }
+});
+
+// Verify Reset Token Endpoint
+app.get('/api/verify-reset-token/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const tokenDoc = await PasswordResetToken.findOne({
+      token,
+      used: false,
+      expiresAt: { $gt: new Date() }
+    });
+
+    if (!tokenDoc) {
+      return res.status(400).json({ valid: false, message: 'Token không hợp lệ hoặc đã hết hạn' });
+    }
+
+    res.json({ valid: true, email: tokenDoc.email });
+  } catch (err: any) {
+    console.error(`[VERIFY-TOKEN] Error: ${err.message}`);
+    res.status(500).json({ valid: false, message: 'Lỗi hệ thống' });
+  }
 });
 
 app.get('/api/audit-logs', async (req, res) => {

@@ -4,10 +4,11 @@ import React, { useState, memo } from 'react';
 interface LoginProps {
   onLogin: (data: any) => void;
   onSwitchRegister: () => void;
+  onForgotPassword: () => void;
   isLoading: boolean;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, isLoading }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPassword, isLoading }) => {
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -57,7 +58,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, isLoading }) =
       </button>
       <div className="flex justify-between px-2">
         <button type="button" onClick={onSwitchRegister} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Đăng ký mới</button>
-        <button type="button" className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Quên mật khẩu?</button>
+        <button type="button" onClick={onForgotPassword} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600">Quên mật khẩu?</button>
       </div>
     </form>
   );

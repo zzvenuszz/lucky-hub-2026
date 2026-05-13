@@ -11,6 +11,7 @@ import NewsFeed from './components/newsfeed/NewsFeed.tsx';
 import BadgeCongratulation from './components/system/BadgeCongratulation.tsx';
 import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
+import AuthContainer from './components/auth/AuthContainer.tsx';
 import SystemLog from './components/system/SystemLog.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
@@ -155,23 +156,7 @@ const App: React.FC = () => {
   };
 
   if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-8 border border-slate-100 relative">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-5xl mx-auto mb-4 shadow-lg">🍀</div>
-            <h1 className="text-4xl font-black text-slate-800 tracking-tight uppercase" style={{ fontFamily: "'Tilt Prism', cursive" }}>LUCKY HUB</h1>
-            <p className="text-slate-400 text-xs font-black uppercase tracking-[0.3em] mt-2">Nền tảng Sức khỏe</p>
-          </div>
-          {isRegistering ? (
-            <Register onRegister={handleRegister} onSwitchLogin={() => setIsRegistering(false)} isLoading={isLoading} emailError={emailError} onCheckEmail={(e) => {}} />
-          ) : (
-            <Login onLogin={handleLogin} onSwitchRegister={() => setIsRegistering(true)} isLoading={isLoading} />
-          )}
-        </div>
-        {/* Không hiển thị log khi chưa đăng nhập (hoặc bạn có thể cho phép Admin xem log lỗi khởi động nếu cần, nhưng an toàn nhất là ẩn) */}
-      </div>
-    );
+    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} />;
   }
 
   const isAdmin = currentUser.role === UserRole.ADMIN;

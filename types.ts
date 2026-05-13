@@ -32,6 +32,7 @@ export enum HealthGoal {
 
 export enum AuditLogType {
   REGISTER = 'REGISTER',
+  LOGIN = 'LOGIN',
   POST_CREATE = 'POST_CREATE',
   METRIC_UPDATE = 'METRIC_UPDATE',
   METRIC_HELP_UPDATE = 'METRIC_HELP_UPDATE',
