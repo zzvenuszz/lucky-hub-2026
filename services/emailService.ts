@@ -312,17 +312,37 @@ class EmailService {
           <div class="content">
             <div class="greeting">Xin chào ${userName}!</div>
             <div class="message">
-              <p>Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản Lucky Hub của mình.</p>
+              <p>Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản Lucky Hub của mình. Vui lòng nhấp vào nút bên dưới để đặt lại mật khẩu:</p>
             </div>
             <div style="text-align: center;">
-              <a href="${resetUrl}" class="reset-button">ĐẶT LẠI MẬT KHẨU</a>
+              <a href="${resetUrl}" style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:white;padding:15px 30px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px;margin:20px 0">ĐẶT LẠI MẬT KHẨU</a>
             </div>
+
             <div class="warning">
-              <div class="warning-title">⚠️ Lưu ý quan trọng</div>
-              <div class="warning-text">• Liên kết sẽ hết hạn sau 1 giờ<br>• Nếu không yêu cầu, vui lòng bỏ qua email</div>
+              <div class="warning-title">⚠️ Bạn không yêu cầu đặt lại mật khẩu?</div>
+              <div class="warning-text">
+                Nếu bạn <strong>không</strong> yêu cầu đặt lại mật khẩu, vui lòng <strong>bỏ qua email này</strong>. Tài khoản của bạn vẫn an toàn và không có thay đổi nào được thực hiện.
+              </div>
             </div>
-            <p>Nếu nút không hoạt động, sao chép: ${resetUrl}</p>
+
+            <div class="security-note">
+              <div class="security-note-title">🔒 Liên kết khôi phục mật khẩu hợp lệ</div>
+              <div class="security-note-text">
+                • Liên kết: <a href="${resetUrl}" style="color:#059669;word-break:break-all">${resetUrl}</a><br>
+                • Liên kết này sẽ hết hạn sau <strong>1 giờ</strong><br>
+                • Liên kết chỉ có thể sử dụng <strong>một lần</strong>
+              </div>
+            </div>
+
             <p>Trân trọng,<br><strong>Đội ngũ Lucky Hub</strong></p>
+          </div>
+
+          <div class="footer">
+            <p><strong>Lucky Hub</strong> - Chuyên gia sức khỏe của bạn</p>
+            <p style="margin-top: 15px; font-size: 12px; color: #9ca3af;">
+              © 2026 Lucky Hub. Tất cả quyền được bảo lưu.<br>
+              Email này được gửi tự động, vui lòng không trả lời.
+            </p>
           </div>
         </div>
       </body>
@@ -333,9 +353,17 @@ class EmailService {
   private getResetEmailText(resetUrl: string, userName: string): string {
     return `
       Xin chào ${userName}!
-      Bạn đã yêu cầu đặt lại mật khẩu.
-      Truy cập trong 1 giờ: ${resetUrl}
-      Trân trọng, Đội ngũ Lucky Hub
+
+      Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản Lucky Hub.
+
+      Để đặt lại mật khẩu, vui lòng truy cập liên kết sau (có hiệu lực trong 1 giờ):
+      ${resetUrl}
+
+      ⚠️ Nếu bạn KHÔNG yêu cầu đặt lại mật khẩu, vui lòng BỎ QUA email này.
+      Tài khoản của bạn vẫn an toàn.
+
+      Trân trọng,
+      Đội ngũ Lucky Hub
     `;
   }
 
