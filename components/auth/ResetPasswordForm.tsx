@@ -73,6 +73,8 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = memo(({ token, onSuc
           type: 'success'
         });
         setTimeout(() => {
+          // Xóa token khỏi URL trước khi chuyển về login
+          window.history.replaceState({}, document.title, window.location.pathname);
           onSuccess();
         }, 2000);
       } else {
@@ -114,7 +116,11 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = memo(({ token, onSuc
         )}
 
         <button
-          onClick={onBackToLogin}
+          onClick={() => {
+            // Xóa token khỏi URL trước khi quay lại đăng nhập
+            window.history.replaceState({}, document.title, window.location.pathname);
+            onBackToLogin();
+          }}
           className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all active:scale-95"
         >
           QUAY LẠI ĐĂNG NHẬP
@@ -172,15 +178,18 @@ const ResetPasswordForm: React.FC<ResetPasswordFormProps> = memo(({ token, onSuc
         {isLoading ? 'ĐANG CẬP NHẬT...' : 'ĐẶT LẠI MẬT KHẨU'}
       </button>
 
-      <div className="text-center">
-        <button
-          type="button"
-          onClick={onBackToLogin}
-          className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600 transition-all"
-        >
-          ← Quay lại đăng nhập
-        </button>
-      </div>
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => {
+              window.history.replaceState({}, document.title, window.location.pathname);
+              onBackToLogin();
+            }}
+            className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-emerald-600 transition-all"
+          >
+            ← Quay lại đăng nhập
+          </button>
+        </div>
 
       <div className="mt-6 p-4 bg-amber-50 rounded-2xl border border-amber-200">
         <h3 className="text-sm font-bold text-amber-800 mb-2">🔒 Lưu ý bảo mật:</h3>
