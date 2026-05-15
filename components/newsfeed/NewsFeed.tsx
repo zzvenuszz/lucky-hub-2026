@@ -106,6 +106,14 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
     setShowReactionsFor(null);
   };
 
+  const handleRemoveReaction = async (postId: string, type: string) => {
+    const updatedPost = await Database.removeReaction(postId, currentUserId, type);
+    if (updatedPost) {
+      setPosts(prev => prev.map(p => (p.id || (p as any)._id) === (updatedPost.id || (updatedPost as any)._id) ? { ...updatedPost, id: updatedPost.id || (updatedPost as any)._id } : p));
+      console.log(`[NewsFeed] Removed reaction: user=${currentUserId}, post=${postId}, type=${type}`);
+    }
+  };
+
   const handleDeletePost = async (postId: string) => {
     if (confirm("Xóa bài viết này?")) { await Database.deletePost(postId); fetchPosts(); }
   };
@@ -123,6 +131,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
           <PostItem 
             key={post.id || (post as any)._id} post={post} currentUser={currentUser} 
             onEdit={() => {}} onDelete={handleDeletePost} onReact={handleReaction} 
+            onRemoveReact={handleRemoveReaction}
             showReactions={showReactionsFor} setShowReactions={setShowReactionsFor} 
             reactionTypes={REACTION_TYPES} 
           />

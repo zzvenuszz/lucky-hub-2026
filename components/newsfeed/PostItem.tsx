@@ -1,5 +1,4 @@
-
-import React, { memo } from 'react';
+import React, { memo, useState, useCallback } from 'react';
 import { Post, User, UserRole } from '../../types.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import { formatTimeAgo } from '../../utils/formatters.ts';
@@ -10,9 +9,18 @@ interface PostItemProps {
   onEdit: (post: Post) => void;
   onDelete: (id: string) => void;
   onReact: (postId: string, type: string) => void;
+  onRemoveReact?: (postId: string, type: string) => void;
   showReactions: string | null;
   setShowReactions: (id: string | null) => void;
   reactionTypes: any[];
+}
+
+interface ReactionDetail {
+  userId: string;
+  userName?: string;
+  userAvatar?: string;
+  type: string;
+  count: number;
 }
 
 const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
@@ -26,15 +34,119 @@ const ImageGrid: React.FC<{ images: string[] }> = ({ images }) => {
   );
 };
 
+const REACTION_ICONS: Record<string, string> = {
+  like: '👍',
+  love: '❤️',
+  haha: '😂',
+  wow: '😮',
+  sad: '😢',
+  angry: '😡',
+};
+
+// Reaction Breakdown Bar Component
+const ReactionBreakdown: React.FC<{
+  reactions: ReactionDetail[];
+  onBreakdownClick: () => void;
+}> = memo(({ reactions, onBreakdownClick }) => {
+  // Aggregate reactions by type
+  const typeCounts: Record<string, number> = {};
+  reactions.forEach(r => {
+    typeCounts[r.type] = (typeCounts[r.type] || 0) + r.count;
+  });
+
+  return (
+    <div className="flex items-center gap-2">
+      {Object.entries(typeCounts).map(([type, count]) => (
+        <span key={type} className="flex items-center gap-1 text-xs font-semibold text-slate-500">
+          {REACTION_ICONS[type] || '👍'} {count}
+        </span>
+      ))}
+    </div>
+  );
+});
+
+ReactionBreakdown.displayName = 'ReactionBreakdown';
+
+// Reaction Detail Modal
+const ReactionDetailModal: React.FC<{
+  reactions: ReactionDetail[];
+  currentUserId: string;
+  onClose: () => void;
+  onRemoveReact?: (type: string) => void;
+}> = memo(({ reactions, currentUserId, onClose, onRemoveReact }) => {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-4 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h3 className="font-black text-slate-800 text-sm">Chi tiết tương tác</h3>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 transition-all">✕</button>
+        </div>
+        <div className="overflow-y-auto p-4 space-y-3">
+          {reactions.length === 0 ? (
+            <p className="text-center text-slate-400 py-8 text-sm font-medium">Chưa có tương tác nào</p>
+          ) : (
+            reactions.map((r, index) => {
+              const isOwn = r.userId === currentUserId;
+              return (
+                <div key={`${r.userId}-${r.type}-${index}`} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-emerald-50">
+                      <img src={r.userAvatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${r.userName}`} className="w-full h-full object-cover" alt={r.userName} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">{r.userName || 'Người dùng'}</p>
+                      <p className="text-[10px] text-slate-400 font-semibold">
+                        {REACTION_ICONS[r.type] || r.type} × {r.count} lần
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">{REACTION_ICONS[r.type] || '👍'}</span>
+                    {isOwn && onRemoveReact && (
+                      <button
+                        onClick={() => onRemoveReact(r.type)}
+                        className="text-[10px] font-bold text-rose-400 hover:text-rose-600 bg-white px-3 py-1.5 rounded-full border border-rose-100 hover:border-rose-300 transition-all"
+                        title="Gỡ tương tác"
+                      >
+                        Gỡ
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+ReactionDetailModal.displayName = 'ReactionDetailModal';
+
 const PostItem: React.FC<PostItemProps> = ({ 
-  post, currentUser, onEdit, onDelete, onReact, 
+  post, currentUser, onEdit, onDelete, onReact, onRemoveReact,
   showReactions, setShowReactions, reactionTypes 
 }) => {
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const postId = post.id || (post as any)._id;
   const isOwner = currentUserId === post.userId;
   const isAdmin = currentUser.role === UserRole.ADMIN;
-  const totalReacts = post.reactions?.reduce((sum, curr) => sum + curr.count, 0) || 0;
+  const reactions: ReactionDetail[] = post.reactions || [];
+  const totalReacts = reactions.reduce((sum, curr) => sum + curr.count, 0) || 0;
+
+  const handleRemoveOwnReaction = useCallback((type: string) => {
+    if (onRemoveReact) {
+      onRemoveReact(postId, type);
+    }
+  }, [onRemoveReact, postId]);
+
+  // Aggregate reaction counts by type for breakdown display
+  const typeCounts: Record<string, number> = {};
+  reactions.forEach(r => {
+    typeCounts[r.type] = (typeCounts[r.type] || 0) + r.count;
+  });
 
   return (
     <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden group hover:shadow-md transition-all">
@@ -61,7 +173,7 @@ const PostItem: React.FC<PostItemProps> = ({
       </div>
 
       <div className="px-5 pb-4">
-        <div className="flex items-center justify-between border-t border-slate-50 pt-3 relative">
+        <div className="flex items-center justify-between border-t border-slate-50 pt-3">
           <div className="relative">
             <button 
               onClick={() => setShowReactions(showReactions === postId ? null : postId)}
@@ -72,14 +184,49 @@ const PostItem: React.FC<PostItemProps> = ({
             {showReactions === postId && (
               <div className="absolute bottom-full left-0 mb-2 bg-white rounded-full shadow-2xl border border-slate-100 p-1 flex items-center gap-1 animate-in slide-in-from-bottom-2 z-10">
                 {reactionTypes.map(react => (
-                  <button key={react.type} onClick={() => onReact(postId, react.type)} className="w-10 h-10 flex items-center justify-center text-xl hover:scale-125 transition-all rounded-full">{react.icon}</button>
+                  <button 
+                    key={react.type} 
+                    onClick={() => onReact(postId, react.type)} 
+                    className="w-10 h-10 flex items-center justify-center text-xl hover:scale-125 transition-all rounded-full"
+                    title={react.type}
+                  >
+                    {react.icon}
+                  </button>
                 ))}
               </div>
             )}
           </div>
-          {totalReacts > 0 && <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{totalReacts} tương tác</span>}
+          
+          {/* Reaction Breakdown - Right Side */}
+          {totalReacts > 0 && (
+            <button 
+              onClick={() => setShowDetailModal(true)}
+              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-xl transition-all"
+              title="Xem chi tiết tương tác"
+            >
+              <div className="flex items-center gap-1">
+                {Object.entries(typeCounts).map(([type, count]) => (
+                  <span key={type} className="flex items-center gap-0.5 text-xs font-bold text-slate-500">
+                    {REACTION_ICONS[type] || '👍'} 
+                    <span className="text-[10px]">{count}</span>
+                  </span>
+                ))}
+              </div>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{totalReacts} tương tác</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Reaction Detail Modal */}
+      {showDetailModal && (
+        <ReactionDetailModal 
+          reactions={reactions}
+          currentUserId={currentUserId}
+          onClose={() => setShowDetailModal(false)}
+          onRemoveReact={handleRemoveOwnReaction}
+        />
+      )}
     </div>
   );
 };

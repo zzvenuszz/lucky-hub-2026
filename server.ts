@@ -1098,6 +1098,84 @@ app.post('/api/posts', async (req, res) => {
   res.json({ ...p.toObject(), id: p._id });
 });
 
+// React to post - Add or increment reaction
+app.put('/api/posts/:postId/react', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId, type, userName, userAvatar } = req.body;
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    if (!Array.isArray(post.reactions)) {
+      (post as any).reactions = [];
+    }
+
+    // Find existing reaction by same user and type
+    const existingReaction = post.reactions.find(
+      (r: any) => r.userId === userId && r.type === type
+    );
+
+    if (existingReaction) {
+      // Increment count
+      existingReaction.count = (existingReaction.count || 1) + 1;
+    } else {
+      // Add new reaction
+      post.reactions.push({
+        userId,
+        userName: userName || 'Unknown',
+        userAvatar: userAvatar || '',
+        type,
+        count: 1
+      });
+    }
+
+    await post.save();
+    console.log(`[Post] React to post ${postId}: user=${userId}, type=${type}`);
+
+    res.json({ ...post.toObject(), id: post._id });
+  } catch (err: any) {
+    console.error(`[Post] React error:`, err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Remove user's reaction - Decrement or delete reaction
+app.delete('/api/posts/:postId/react', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId, type } = req.body;
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const reactionIndex = post.reactions?.findIndex(
+      (r: any) => r.userId === userId && r.type === type
+    );
+
+    if (reactionIndex === undefined || reactionIndex === -1) {
+      return res.status(404).json({ message: 'Reaction not found' });
+    }
+
+    const reaction = post.reactions![reactionIndex];
+    if (reaction.count > 1) {
+      // Decrement count
+      reaction.count -= 1;
+    } else {
+      // Remove reaction entirely
+      post.reactions!.splice(reactionIndex, 1);
+    }
+
+    await post.save();
+    console.log(`[Post] Remove react from post ${postId}: user=${userId}, type=${type}`);
+
+    res.json({ ...post.toObject(), id: post._id });
+  } catch (err: any) {
+    console.error(`[Post] Remove react error:`, err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 app.get('/api/metrics/:userId', async (req, res) => {
   const m = await Metric.find({ userId: req.params.userId }).sort({ date: -1 });
   res.json(m.map(item => ({ ...item.toObject(), id: item._id })));

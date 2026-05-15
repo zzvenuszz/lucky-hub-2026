@@ -72,6 +72,8 @@ export const Database = {
   deletePost: (id: string) => request(`${API_BASE}/posts/${id}`, 'DELETE'),
   reactToPost: (postId: string, userId: string, type: string, userName?: string, userAvatar?: string) => 
     request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type, userName, userAvatar }),
+  removeReaction: (postId: string, userId: string, type: string) => 
+    request<Post>(`${API_BASE}/posts/${postId}/react`, 'DELETE', { userId, type }),
   getAuditLogs: async () => (await request<AuditLog[]>(`${API_BASE}/audit-logs`)) ?? [],
   
   // Gemini Keys Management
