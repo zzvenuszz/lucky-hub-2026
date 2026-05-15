@@ -136,10 +136,15 @@ const App: React.FC = () => {
 
     const pingSession = async () => {
       try {
+        // QUAN TRỌNG: Luôn dùng sessionId từ ref, KHÔNG đọc từ localStorage
+        // để tránh bị ghi đè khi tab khác login cùng trình duyệt
+        const mySessionId = sessionIdRef.current;
+        if (!mySessionId) return;
+        
         const resp = await fetch('/api/session/ping', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: sessionIdRef.current })
+          body: JSON.stringify({ sessionId: mySessionId })
         });
         const data = await resp.json();
         if (!data.valid && data.reason === 'session_invalidated') {
@@ -159,6 +164,27 @@ const App: React.FC = () => {
         pingIntervalRef.current = null;
       }
     };
+  }, [currentUser, handleLogout]);
+
+  // Phát hiện khi tab khác trong cùng trình duyệt login và ghi đè session
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleStorageChange = (e: StorageEvent) => {
+      // Chỉ xử lý khi key LS_SESSION thay đổi
+      if (e.key === LS_SESSION && e.newValue && e.newValue !== e.oldValue) {
+        const mySessionId = sessionIdRef.current;
+        // Nếu session trong localStorage khác với session của tab này
+        // => tab khác đã login và ghi đè
+        if (mySessionId && e.newValue !== mySessionId) {
+          console.log(`[Session] Detected other tab login: storage session=${e.newValue.substring(0, 8)}..., my session=${mySessionId.substring(0, 8)}...`);
+          handleLogout('session_invalidated');
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [currentUser, handleLogout]);
 
   // Cơ chế refresh session: reset timer khi có tương tác người dùng
