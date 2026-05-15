@@ -1157,14 +1157,8 @@ app.delete('/api/posts/:postId/react', async (req, res) => {
       return res.status(404).json({ message: 'Reaction not found' });
     }
 
-    const reaction = post.reactions![reactionIndex];
-    if (reaction.count > 1) {
-      // Decrement count
-      reaction.count -= 1;
-    } else {
-      // Remove reaction entirely
-      post.reactions!.splice(reactionIndex, 1);
-    }
+    // Remove all reactions of this type for this user at once
+    post.reactions!.splice(reactionIndex, 1);
 
     await post.save();
     console.log(`[Post] Remove react from post ${postId}: user=${userId}, type=${type}`);
