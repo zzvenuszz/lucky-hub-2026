@@ -95,9 +95,15 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
   };
 
   const handleReaction = async (postId: string, type: string) => {
+    console.log(`[NewsFeed] Reacting: user=${currentUserId}, post=${postId}, type=${type}`);
     const updatedPost = await Database.reactToPost(postId, currentUserId, type, currentUser.fullName, currentUser.avatar);
     if (updatedPost) {
-      setPosts(prev => prev.map(p => (p.id || (p as any)._id) === (updatedPost.id || (updatedPost as any)._id) ? { ...updatedPost, id: updatedPost.id || (updatedPost as any)._id } : p));
+      setPosts(prev => {
+        const newPosts = prev.map(p => (p.id || (p as any)._id) === (updatedPost.id || (updatedPost as any)._id) ? { ...updatedPost, id: updatedPost.id || (updatedPost as any)._id } : p);
+        // Clear cache to force fresh data on reload
+        cacheManager.remove('posts');
+        return newPosts;
+      });
       if (window.debugLog) {
         const reactionLabel = REACTION_TYPES.find(r => r.type === type)?.label || type;
         window.debugLog(`Người dùng @${currentUser.username} đã bày tỏ cảm xúc ${reactionLabel} với một bài viết`, "user");
@@ -107,10 +113,18 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
   };
 
   const handleRemoveReaction = async (postId: string, type: string) => {
+    console.log(`[NewsFeed] Removing reaction: user=${currentUserId}, post=${postId}, type=${type}`);
     const updatedPost = await Database.removeReaction(postId, currentUserId, type);
     if (updatedPost) {
-      setPosts(prev => prev.map(p => (p.id || (p as any)._id) === (updatedPost.id || (updatedPost as any)._id) ? { ...updatedPost, id: updatedPost.id || (updatedPost as any)._id } : p));
-      console.log(`[NewsFeed] Removed reaction: user=${currentUserId}, post=${postId}, type=${type}`);
+      setPosts(prev => {
+        const newPosts = prev.map(p => (p.id || (p as any)._id) === (updatedPost.id || (updatedPost as any)._id) ? { ...updatedPost, id: updatedPost.id || (updatedPost as any)._id } : p);
+        // Clear cache to force fresh data on reload
+        cacheManager.remove('posts');
+        return newPosts;
+      });
+      console.log(`[NewsFeed] Successfully removed reaction: user=${currentUserId}, post=${postId}, type=${type}`);
+    } else {
+      console.error(`[NewsFeed] Failed to remove reaction: user=${currentUserId}, post=${postId}, type=${type}`);
     }
   };
 

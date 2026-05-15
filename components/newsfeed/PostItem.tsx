@@ -139,6 +139,7 @@ const PostItem: React.FC<PostItemProps> = ({
   const handleRemoveOwnReaction = useCallback((type: string) => {
     if (onRemoveReact) {
       onRemoveReact(postId, type);
+      setShowDetailModal(false);
     }
   }, [onRemoveReact, postId]);
 
