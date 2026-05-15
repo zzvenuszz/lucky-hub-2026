@@ -6,9 +6,10 @@ interface LoginProps {
   onSwitchRegister: () => void;
   onForgotPassword: () => void;
   isLoading: boolean;
+  errorMessage?: string | null;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPassword, isLoading }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPassword, isLoading, errorMessage }) => {
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -20,6 +21,11 @@ const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPasswo
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in zoom-in-95">
+      {errorMessage && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3 text-xs font-black text-rose-600 text-center leading-relaxed shadow-inner">
+          {errorMessage}
+        </div>
+      )}
       <input 
         required 
         placeholder="Email hoặc Tên đăng nhập" 

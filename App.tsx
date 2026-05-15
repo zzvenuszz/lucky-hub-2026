@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
   const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
 
   const handleLogout = useCallback(() => {
@@ -178,6 +179,7 @@ const App: React.FC = () => {
   }, [isChatOpen, currentUser]);
 
   const handleLogin = async (data: any) => {
+    setLoginError(null);
     setIsLoading(true);
     try {
       const response = await fetch('/api/login', {
@@ -188,6 +190,7 @@ const App: React.FC = () => {
       const result = await response.json();
       if (response.ok) {
         setCurrentUser(result);
+        setLoginError(null);
         
         // Lưu thông tin session với rememberMe
         const rememberMe = !!data.rememberMe;
@@ -221,19 +224,19 @@ const App: React.FC = () => {
         // Locked - quá nhiều lần đăng nhập sai
         const lockMsg = result.message || 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau.';
         if (window.debugLog) window.debugLog(`[Login] Locked: ${lockMsg}`, "error");
-        alert(lockMsg);
+        setLoginError(lockMsg);
       } else {
         // Sai mật khẩu
         let errorMsg = result.message || 'Sai thông tin đăng nhập';
         if (result.remainingAttempts !== undefined) {
-          errorMsg += `\nCòn ${result.remainingAttempts} lần thử trước khi tài khoản bị tạm khóa.`;
+          errorMsg += ` - Còn ${result.remainingAttempts} lần thử.`;
         }
         if (window.debugLog) window.debugLog(`Đăng nhập thất bại: ${result.message}`, "error");
-        alert(errorMsg);
+        setLoginError(errorMsg);
       }
     } catch (err: any) { 
       if (window.debugLog) window.debugLog(`Lỗi kết nối Login: ${err.message}`, "error");
-      alert('Lỗi kết nối Server'); 
+      setLoginError('Lỗi kết nối Server');
     } finally { setIsLoading(false); }
   };
 
@@ -282,7 +285,7 @@ const App: React.FC = () => {
   }, []);
 
   if (!currentUser) {
-    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} onRegister={handleRegister} emailError={emailError} onCheckEmail={handleCheckEmail} />;
+    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} onRegister={handleRegister} emailError={emailError} onCheckEmail={handleCheckEmail} errorMessage={loginError} />;
   }
 
   const isAdmin = currentUser.role === UserRole.ADMIN;

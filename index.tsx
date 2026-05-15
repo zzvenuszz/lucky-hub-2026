@@ -7,9 +7,9 @@ declare global {
   interface Window {
     debugLog?: (message: string, type?: string, duration?: number) => void;
     reactLoaded?: boolean;
+    PasswordCredential?: PasswordCredentialConstructor;
   }
   
-  // TypeScript type for Credential Management API PasswordCredential
   interface PasswordCredential extends Credential {
     readonly id: string;
     readonly password: string;
@@ -18,10 +18,6 @@ declare global {
   
   interface PasswordCredentialConstructor {
     new (data: { id: string; password: string; name: string }): PasswordCredential;
-  }
-  
-  interface Window {
-    PasswordCredential?: PasswordCredentialConstructor;
   }
 }
 

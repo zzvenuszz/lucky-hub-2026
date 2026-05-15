@@ -12,9 +12,10 @@ interface AuthContainerProps {
   isLoading: boolean;
   emailError: string | null;
   onCheckEmail: (email: string) => void;
+  errorMessage?: string | null;
 }
 
-const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail }) => {
+const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail, errorMessage }) => {
   const [mode, setMode] = useState<AuthMode>('login');
   const [resetToken, setResetToken] = useState<string>('');
 
@@ -72,6 +73,7 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister,
             onSwitchRegister={handleSwitchToRegister}
             onForgotPassword={handleSwitchToForgotPassword}
             isLoading={isLoading}
+            errorMessage={errorMessage}
           />
         );
     }
