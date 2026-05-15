@@ -601,6 +601,16 @@ const LoginAttempt = mongoose.model('LoginAttempt', new mongoose.Schema({
   lastAttempt: { type: Date, default: null }
 }, { timestamps: true }));
 
+// Active Session Schema (Theo dõi session đa thiết bị)
+const ActiveSession = mongoose.model('ActiveSession', new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  sessionId: { type: String, required: true, unique: true },
+  device: { type: String, default: 'unknown' },
+  ip: { type: String, default: '' },
+  isActive: { type: Boolean, default: true },
+  lastPing: { type: Date, default: null }
+}, { timestamps: true }));
+
 // Password Reset Token Schema
 const PasswordResetToken = mongoose.model('PasswordResetToken', new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -685,6 +695,32 @@ app.post('/api/register', async (req, res) => {
   } catch (err) { res.status(500).json({ message: 'Error' }); }
 });
 
+// Hàm hủy session cũ và thông báo
+async function invalidateOldSessions(userId: string, newSessionId: string, newDevice: string) {
+  const oldSessions = await ActiveSession.find({
+    userId,
+    isActive: true,
+    sessionId: { $ne: newSessionId }
+  });
+
+  for (const session of oldSessions) {
+    session.isActive = false;
+    await session.save();
+    console.log(`[Session] Invalidated session ${session.sessionId} for user ${userId}`);
+  }
+
+  // Broadcast qua WebSocket để thông báo cho thiết bị cũ
+  if (oldSessions.length > 0) {
+    broadcastToMirrors('session:invalidated', {
+      userId: userId.toString(),
+      message: 'Tài khoản của bạn đã được đăng nhập từ thiết bị khác.',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  return oldSessions.length;
+}
+
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -706,11 +742,6 @@ app.post('/api/login', async (req, res) => {
       });
     }
 
-    // Nếu hết lock, reset count (chỉ giữ để track block tiếp theo)
-    // Reset count về 0 để bắt đầu đếm lại, nhưng vẫn giữ block history?
-    // Thực tế: nếu đã hết lock, count vẫn giữ để tính block tiếp theo
-    // Ví dụ: sai 5 lần -> lock 1 phút -> sau 1 phút, count=5, thử lại sai tiếp -> count=6 -> lock 5 phút
-
     const user = await User.findOne({
       $or: [{ username: identifier }, { email: identifier }]
     });
@@ -726,12 +757,12 @@ app.post('/api/login', async (req, res) => {
 
       // Kiểm tra nếu cần lock
       if (attempt.count >= 5) {
-        const blockIndex = Math.floor(attempt.count / 5); // 1, 2, 3...
+        const blockIndex = Math.floor(attempt.count / 5);
         let lockMinutes: number;
         if (blockIndex === 1) {
-          lockMinutes = 1; // Lần lock đầu: 1 phút
+          lockMinutes = 1;
         } else {
-          lockMinutes = Math.min(1 + (blockIndex - 1) * 5, 60); // 6, 11, 16... max 60
+          lockMinutes = Math.min(1 + (blockIndex - 1) * 5, 60);
         }
         attempt.lockUntil = new Date(now.getTime() + lockMinutes * 60 * 1000);
         console.log(`[Login] Failed attempt #${attempt.count} for ${identifier}: locked for ${lockMinutes} minutes`);
@@ -739,7 +770,7 @@ app.post('/api/login', async (req, res) => {
 
       await attempt.save();
 
-      const remainingAttempts = 5 - (attempt.count % 5 || 5); // Số lần còn lại trước khi lock
+      const remainingAttempts = 5 - (attempt.count % 5 || 5);
       console.log(`[Login] Failed login for ${identifier}: attempt #${attempt.count}`);
 
       return res.status(401).json({
@@ -762,13 +793,66 @@ app.post('/api/login', async (req, res) => {
       });
     }
 
+    // Tạo session mới
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    
+    // Hủy các session cũ của user này
+    const invalidatedCount = await invalidateOldSessions(user._id.toString(), sessionId, userAgent);
+    
+    // Lưu session mới
+    const activeSession = new ActiveSession({
+      userId: user._id,
+      sessionId,
+      device: userAgent.substring(0, 200),
+      ip,
+      isActive: true,
+      lastPing: now
+    });
+    await activeSession.save();
+
     const u = user.toObject();
     delete u.password;
-    console.log(`[Login] Successful login: @${user.username}`);
-    res.json({ ...u, id: user._id });
+    console.log(`[Login] Successful login: @${user.username}, session=${sessionId.substring(0, 8)}..., invalidated=${invalidatedCount} old sessions`);
+    res.json({
+      ...u,
+      id: user._id,
+      email: user.email,
+      sessionId,
+      invalidatedOldSessions: invalidatedCount
+    });
   } catch (err) {
     console.error(`[Login] Error:`, err);
     res.status(500).json({ message: 'Lỗi hệ thống' });
+  }
+});
+
+// Session Ping Endpoint - Client gọi mỗi 30s để kiểm tra session còn hiệu lực
+app.post('/api/session/ping', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    if (!sessionId) {
+      return res.status(401).json({ valid: false, message: 'Thiếu sessionId' });
+    }
+
+    const session = await ActiveSession.findOne({ sessionId, isActive: true });
+    if (!session) {
+      return res.status(401).json({
+        valid: false,
+        message: 'Session đã hết hạn hoặc bị hủy do đăng nhập từ thiết bị khác.',
+        reason: 'session_invalidated'
+      });
+    }
+
+    // Cập nhật thời gian ping cuối
+    session.lastPing = new Date();
+    await session.save();
+
+    res.json({ valid: true });
+  } catch (err: any) {
+    console.error(`[Session] Ping error:`, err.message);
+    res.status(500).json({ valid: false, message: 'Lỗi hệ thống' });
   }
 });
 

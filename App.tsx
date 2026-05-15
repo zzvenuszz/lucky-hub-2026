@@ -22,8 +22,12 @@ const LOGOUT_NO_REMEMBER = 15 * 60 * 1000;        // 15 phút nếu không
 
 // Key lưu trong localStorage
 const LS_USER = 'lucky_hub_user';
+const LS_SESSION = 'lucky_hub_session';
 const LS_REMEMBER = 'lucky_hub_remember';
 const LS_LOGIN_TIME = 'lucky_hub_login_time';
+
+// Session ping interval: 30 giây
+const SESSION_PING_INTERVAL = 30000;
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -46,10 +50,13 @@ const App: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [lockUntil, setLockUntil] = useState<string | null>(null);
   const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
+  const pingIntervalRef = useRef<number | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback((reason?: string) => {
     setCurrentUser(null);
     localStorage.removeItem(LS_USER);
+    localStorage.removeItem(LS_SESSION);
     localStorage.removeItem(LS_REMEMBER);
     localStorage.removeItem(LS_LOGIN_TIME);
     setActiveTab('dashboard');
@@ -59,15 +66,34 @@ const App: React.FC = () => {
       clearTimeout(expireTimerRef.current);
       expireTimerRef.current = null;
     }
-    if (window.debugLog) window.debugLog(`Người dùng đã đăng xuất`, "auth");
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    sessionIdRef.current = null;
+    if (window.debugLog) window.debugLog(`Người dùng đã đăng xuất${reason ? ': ' + reason : ''}`, "auth");
+    
+    // Nếu bị đá do đăng nhập từ thiết bị khác, hiển thị cảnh báo đặc biệt
+    if (reason === 'session_invalidated') {
+      alert(
+        '⚠️ Tài khoản của bạn đã được đăng nhập từ thiết bị khác.\n\n' +
+        'Nếu không phải bạn đang đăng nhập, hãy đổi mật khẩu ngay để bảo vệ tài khoản.\n\n' +
+        'Vui lòng đăng nhập lại.'
+      );
+    }
   }, []);
 
   // Kiểm tra session hết hạn khi mount
   useEffect(() => {
     Database.checkHealth();
     const savedUser = localStorage.getItem(LS_USER);
+    const savedSession = localStorage.getItem(LS_SESSION);
     const savedRemember = localStorage.getItem(LS_REMEMBER) === 'true';
     const savedLoginTime = parseInt(localStorage.getItem(LS_LOGIN_TIME) || '0', 10);
+    
+    if (savedSession) {
+      sessionIdRef.current = savedSession;
+    }
     
     if (savedUser && savedLoginTime > 0) {
       const now = Date.now();
@@ -104,6 +130,37 @@ const App: React.FC = () => {
     }
   }, [handleLogout]);
 
+  // Session Ping: kiểm tra session còn hiệu lực mỗi 30s
+  useEffect(() => {
+    if (!currentUser || !sessionIdRef.current) return;
+
+    const pingSession = async () => {
+      try {
+        const resp = await fetch('/api/session/ping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sessionIdRef.current })
+        });
+        const data = await resp.json();
+        if (!data.valid && data.reason === 'session_invalidated') {
+          handleLogout('session_invalidated');
+        }
+      } catch {
+        // Bỏ qua lỗi mạng, không ảnh hưởng
+      }
+    };
+
+    pingSession(); // Ping ngay khi mount
+    pingIntervalRef.current = window.setInterval(pingSession, SESSION_PING_INTERVAL);
+
+    return () => {
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+    };
+  }, [currentUser, handleLogout]);
+
   // Cơ chế refresh session: reset timer khi có tương tác người dùng
   useEffect(() => {
     if (!currentUser) return;
@@ -126,7 +183,6 @@ const App: React.FC = () => {
       
       expireTimerRef.current = window.setTimeout(() => {
         handleLogout();
-        alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
         if (window.debugLog) window.debugLog(`Phiên đăng nhập tự động hết hạn`, "auth");
       }, remaining);
     };
@@ -199,8 +255,10 @@ const App: React.FC = () => {
         const loginTime = Date.now();
         rememberMeRef.current = rememberMe;
         loginTimestampRef.current = loginTime;
+        sessionIdRef.current = result.sessionId || null;
         
         localStorage.setItem(LS_USER, JSON.stringify(result));
+        localStorage.setItem(LS_SESSION, result.sessionId || '');
         localStorage.setItem(LS_REMEMBER, rememberMe ? 'true' : 'false');
         localStorage.setItem(LS_LOGIN_TIME, loginTime.toString());
         
@@ -233,6 +291,10 @@ const App: React.FC = () => {
         let errorMsg = result.message || 'Sai thông tin đăng nhập';
         if (result.remainingAttempts !== undefined) {
           errorMsg += ` - Còn ${result.remainingAttempts} lần thử.`;
+        }
+        // Nếu bị đăng nhập từ thiết bị khác
+        if (result.invalidatedOldSessions && result.invalidatedOldSessions > 0) {
+          console.log(`[Login] Invalidated ${result.invalidatedOldSessions} old session(s)`);
         }
         // Nếu có lockUntil (trường hợp vừa bị lock khi sai lần thứ 5)
         if (result.locked && result.lockUntil) {
