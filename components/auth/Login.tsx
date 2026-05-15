@@ -1,5 +1,5 @@
 
-import React, { useState, memo } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 
 interface LoginProps {
   onLogin: (data: any) => void;
@@ -7,23 +7,86 @@ interface LoginProps {
   onForgotPassword: () => void;
   isLoading: boolean;
   errorMessage?: string | null;
+  lockUntil?: string | null;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPassword, isLoading, errorMessage }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPassword, isLoading, errorMessage, lockUntil }) => {
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [countdown, setCountdown] = useState<string>('');
+  const intervalRef = useRef<number | null>(null);
+
+  // Countdown timer cho lockout
+  useEffect(() => {
+    // Clear interval cũ nếu có
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (!lockUntil) {
+      setCountdown('');
+      return;
+    }
+
+    const updateCountdown = () => {
+      const now = Date.now();
+      const lockTime = new Date(lockUntil).getTime();
+      const remaining = Math.max(0, lockTime - now);
+
+      if (remaining <= 0) {
+        setCountdown('');
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        return;
+      }
+
+      const minutes = Math.floor(remaining / 60000);
+      const seconds = Math.floor((remaining % 60000) / 1000);
+      setCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+    };
+
+    updateCountdown();
+    intervalRef.current = window.setInterval(updateCountdown, 1000);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [lockUntil]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onLogin({ ...loginData, rememberMe });
   };
 
+  const isLocked = countdown !== '';
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in zoom-in-95">
       {errorMessage && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3 text-xs font-black text-rose-600 text-center leading-relaxed shadow-inner">
-          {errorMessage}
+        <div className={`rounded-2xl px-4 py-3 text-xs font-black text-center leading-relaxed shadow-inner ${isLocked ? 'bg-orange-50 border border-orange-200 text-orange-600' : 'bg-rose-50 border border-rose-200 text-rose-600'}`}>
+          {isLocked ? (
+            <>
+              <div>🔒 Tài khoản đã bị tạm khóa</div>
+              <div className="mt-1 text-base tracking-widest font-mono">{countdown}</div>
+              <div className="mt-0.5 text-[10px] opacity-70">Vui lòng đợi để thử lại</div>
+              <button
+                type="button"
+                onClick={onForgotPassword}
+                className="mt-2 w-full py-2 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-wider text-[10px] shadow-lg hover:bg-emerald-700 transition-all active:scale-95"
+              >
+                🔓 Mở khóa ngay bằng cách đặt lại mật khẩu
+              </button>
+            </>
+          ) : (
+            errorMessage
+          )}
         </div>
       )}
       <input 

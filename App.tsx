@@ -44,6 +44,7 @@ const App: React.FC = () => {
   const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [lockUntil, setLockUntil] = useState<string | null>(null);
   const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
 
   const handleLogout = useCallback(() => {
@@ -180,6 +181,7 @@ const App: React.FC = () => {
 
   const handleLogin = async (data: any) => {
     setLoginError(null);
+    setLockUntil(null);
     setIsLoading(true);
     try {
       const response = await fetch('/api/login', {
@@ -225,11 +227,16 @@ const App: React.FC = () => {
         const lockMsg = result.message || 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau.';
         if (window.debugLog) window.debugLog(`[Login] Locked: ${lockMsg}`, "error");
         setLoginError(lockMsg);
+        setLockUntil(result.lockUntil || null);
       } else {
         // Sai mật khẩu
         let errorMsg = result.message || 'Sai thông tin đăng nhập';
         if (result.remainingAttempts !== undefined) {
           errorMsg += ` - Còn ${result.remainingAttempts} lần thử.`;
+        }
+        // Nếu có lockUntil (trường hợp vừa bị lock khi sai lần thứ 5)
+        if (result.locked && result.lockUntil) {
+          setLockUntil(result.lockUntil);
         }
         if (window.debugLog) window.debugLog(`Đăng nhập thất bại: ${result.message}`, "error");
         setLoginError(errorMsg);
@@ -285,7 +292,7 @@ const App: React.FC = () => {
   }, []);
 
   if (!currentUser) {
-    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} onRegister={handleRegister} emailError={emailError} onCheckEmail={handleCheckEmail} errorMessage={loginError} />;
+    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} onRegister={handleRegister} emailError={emailError} onCheckEmail={handleCheckEmail} errorMessage={loginError} lockUntil={lockUntil} />;
   }
 
   const isAdmin = currentUser.role === UserRole.ADMIN;

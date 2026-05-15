@@ -13,9 +13,10 @@ interface AuthContainerProps {
   emailError: string | null;
   onCheckEmail: (email: string) => void;
   errorMessage?: string | null;
+  lockUntil?: string | null;
 }
 
-const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail, errorMessage }) => {
+const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail, errorMessage, lockUntil }) => {
   const [mode, setMode] = useState<AuthMode>('login');
   const [resetToken, setResetToken] = useState<string>('');
 
@@ -74,6 +75,7 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister,
             onForgotPassword={handleSwitchToForgotPassword}
             isLoading={isLoading}
             errorMessage={errorMessage}
+            lockUntil={lockUntil}
           />
         );
     }
