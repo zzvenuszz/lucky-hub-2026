@@ -67,13 +67,14 @@ export const Database = {
   saveChat: (chat: ChatSession) => request<ChatSession>(`${API_BASE}/chats`, 'POST', chat),
   getPosts: async () => (await request<Post[]>(`${API_BASE}/posts`)) ?? [],
   createPost: (post: Omit<Post, 'id'>) => request<Post>(`${API_BASE}/posts`, 'POST', post),
-  updatePost: (id: string, data: { content: string, existingImages: any[], newImages: string[] }) => 
+  updatePost: (id: string, data: { content: string, existingImages: string[], newImages: string[], hashtags?: string[] }) => 
     request<Post>(`${API_BASE}/posts/${id}`, 'PUT', data),
   deletePost: (id: string) => request(`${API_BASE}/posts/${id}`, 'DELETE'),
   reactToPost: (postId: string, userId: string, type: string, userName?: string, userAvatar?: string) => 
     request<Post>(`${API_BASE}/posts/${postId}/react`, 'PUT', { userId, type, userName, userAvatar }),
   removeReaction: (postId: string, userId: string, type: string) => 
     request<Post>(`${API_BASE}/posts/${postId}/react`, 'DELETE', { userId, type }),
+  getPopularHashtags: async () => (await request<{ tag: string, count: number }[]>(`${API_BASE}/hashtags`)) ?? [],
   getAuditLogs: async () => (await request<AuditLog[]>(`${API_BASE}/audit-logs`)) ?? [],
   
   // Gemini Keys Management

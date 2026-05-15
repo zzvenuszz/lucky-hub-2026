@@ -13,6 +13,7 @@ interface PostItemProps {
   showReactions: string | null;
   setShowReactions: (id: string | null) => void;
   reactionTypes: any[];
+  onHashtagClick?: (hashtag: string) => void;
 }
 
 interface ReactionDetail {
@@ -124,9 +125,38 @@ const ReactionDetailModal: React.FC<{
 
 ReactionDetailModal.displayName = 'ReactionDetailModal';
 
+// Parse content to render hashtags as clickable blue links
+const renderContentWithHashtags = (content: string, onHashtagClick?: (hashtag: string) => void) => {
+  if (!content) return null;
+  
+  // Regex to match hashtags like #word or #word_with_underscores
+  const hashtagRegex = /(#[\w\u00C0-\u024F]+)/g;
+  const parts = content.split(hashtagRegex);
+  
+  return parts.map((part, index) => {
+    if (part.startsWith('#') && part.length > 1) {
+      return onHashtagClick ? (
+        <button
+          key={index}
+          onClick={(e) => {
+            e.preventDefault();
+            onHashtagClick(part);
+          }}
+          className="text-blue-500 hover:text-blue-700 font-bold cursor-pointer inline"
+        >
+          {part}
+        </button>
+      ) : (
+        <span key={index} className="text-blue-500 font-bold">{part}</span>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
 const PostItem: React.FC<PostItemProps> = ({ 
   post, currentUser, onEdit, onDelete, onReact, onRemoveReact,
-  showReactions, setShowReactions, reactionTypes 
+  showReactions, setShowReactions, reactionTypes, onHashtagClick 
 }) => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
@@ -169,7 +199,32 @@ const PostItem: React.FC<PostItemProps> = ({
       </div>
       
       <div className="px-5 pb-3 space-y-4">
-        <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">{post.content}</p>
+        {/* Content with hashtag highlighting */}
+        <p className="text-sm text-slate-700 leading-relaxed font-medium whitespace-pre-wrap">
+          {renderContentWithHashtags(post.content, onHashtagClick)}
+        </p>
+        
+        {/* Hashtag chips */}
+        {post.hashtags && post.hashtags.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {post.hashtags.map((tag, i) => (
+              onHashtagClick ? (
+                <button
+                  key={i}
+                  onClick={() => onHashtagClick(tag)}
+                  className="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-bold hover:bg-blue-100 transition-colors"
+                >
+                  {tag}
+                </button>
+              ) : (
+                <span key={i} className="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-bold">
+                  {tag}
+                </span>
+              )
+            ))}
+          </div>
+        )}
+
         <ImageGrid images={post.imageUrls || []} />
       </div>
 

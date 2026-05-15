@@ -1,4 +1,3 @@
-
 export enum UserRole {
   MEMBER = 'MEMBER',
   COACH = 'COACH',
@@ -34,6 +33,7 @@ export enum AuditLogType {
   REGISTER = 'REGISTER',
   LOGIN = 'LOGIN',
   POST_CREATE = 'POST_CREATE',
+  POST_UPDATE = 'POST_UPDATE',
   METRIC_UPDATE = 'METRIC_UPDATE',
   METRIC_HELP_UPDATE = 'METRIC_HELP_UPDATE',
   AI_KEY_UPDATE = 'AI_KEY_UPDATE'
@@ -95,6 +95,7 @@ export interface Post {
   images?: PostImage[]; 
   timestamp: string;
   reactions?: PostReaction[];
+  hashtags?: string[];
 }
 
 export interface HealthMetric {

@@ -582,7 +582,8 @@ const Metric = mongoose.model('Metric', new mongoose.Schema({
 const Post = mongoose.model('Post', new mongoose.Schema({
   userId: String, userFullName: String, userAvatar: String, userBadges: [String],
   content: String, imageUrls: [String], images: [{ url: String, deleteUrl: String }],
-  timestamp: String, reactions: [{ userId: String, userName: String, userAvatar: String, type: { type: String }, count: { type: Number, default: 0 } }]
+  timestamp: String, reactions: [{ userId: String, userName: String, userAvatar: String, type: { type: String }, count: { type: Number, default: 0 } }],
+  hashtags: [String]
 }, { timestamps: true }));
 
 const Chat = mongoose.model('Chat', new mongoose.Schema({
@@ -1096,6 +1097,95 @@ app.post('/api/posts', async (req, res) => {
   await log.save();
 
   res.json({ ...p.toObject(), id: p._id });
+});
+
+// Update post
+app.put('/api/posts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content, existingImages, newImages, hashtags } = req.body;
+
+    console.log(`[Post] Updating post ${id}: content="${content?.substring(0, 50)}...", hashtags=${JSON.stringify(hashtags)}`);
+
+    const post = await Post.findById(id);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    // Update content
+    if (content !== undefined) post.content = content;
+
+    // Update hashtags
+    if (hashtags !== undefined) post.hashtags = hashtags;
+
+    // Handle images: keep existingImages + upload newImages
+    if (existingImages !== undefined || newImages !== undefined) {
+      // Keep existing images (URLs that user chose to keep)
+      const keptImageUrls: string[] = existingImages || [];
+      
+      // Upload new images
+      const newUploadedImages: { url: string; deleteUrl: string }[] = [];
+      if (newImages && Array.isArray(newImages)) {
+        for (const img of newImages) {
+          if (img.startsWith('data:image')) {
+            const imgData = await uploadToImgBB(img);
+            if (imgData) {
+              newUploadedImages.push(imgData);
+            }
+          } else {
+            // If it's already a URL, keep it
+            newUploadedImages.push({ url: img, deleteUrl: '' });
+          }
+        }
+      }
+
+      // Build final image URLs
+      const finalUrls = [...keptImageUrls, ...newUploadedImages.map(i => i.url)];
+      
+      // Build final images array (with deleteUrl)
+      const keptImages = (post.images || []).filter((img: any) => keptImageUrls.includes(img.url));
+      const finalImages = [...keptImages, ...newUploadedImages];
+
+      post.imageUrls = finalUrls;
+      (post as any).images = finalImages;
+    }
+
+    await post.save();
+
+    // Audit Log
+    const log = new AuditLog({
+      actorId: post.userId, actorName: post.userFullName, type: AuditLogType.POST_UPDATE,
+      details: `Chỉnh sửa bài viết: "${post.content?.substring(0, 50)}..."`, timestamp: new Date().toISOString()
+    });
+    await log.save();
+
+    console.log(`[Post] Post ${id} updated successfully`);
+    res.json({ ...post.toObject(), id: post._id });
+  } catch (err: any) {
+    console.error(`[Post] Update error:`, err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Get popular hashtags
+app.get('/api/hashtags', async (req, res) => {
+  try {
+    // Aggregate all hashtags and count occurrences
+    const hashtagCounts = await Post.aggregate([
+      { $unwind: '$hashtags' },
+      { $group: { _id: '$hashtags', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 }
+    ]);
+    
+    const result = hashtagCounts.map(h => ({
+      tag: h._id,
+      count: h.count
+    }));
+    
+    res.json(result);
+  } catch (err: any) {
+    console.error(`[Hashtags] Error:`, err);
+    res.status(500).json({ message: err.message });
+  }
 });
 
 // React to post - Add or increment reaction
