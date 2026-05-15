@@ -77,8 +77,8 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, isLoading }
       <div className="w-full max-w-md">
         {/* Logo/Brand - Bấm vào về trang chủ */}
         <a href="/" className="block text-center mb-8 no-underline">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-600 rounded-3xl mb-4 shadow-xl shadow-emerald-100">
-            <span className="text-2xl">🍀</span>
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-600 rounded-3xl mb-4 shadow-xl shadow-emerald-100 p-3">
+            <img src="/favicon/luckyhub.png" alt="Lucky Hub" className="w-full h-full object-contain" />
           </div>
           <h1 className="text-3xl font-black text-slate-800 mb-2">LUCKY HUB</h1>
           <p className="text-slate-600 text-sm font-medium">Nền tảng quản lý dinh dưỡng thông minh</p>

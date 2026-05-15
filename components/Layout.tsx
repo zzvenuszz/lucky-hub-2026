@@ -42,7 +42,9 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
       <header className="bg-white border-b border-slate-100 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 h-20 flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer group shrink-0" onClick={() => setActiveTab('dashboard')}>
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-2xl sm:text-3xl shadow-lg shadow-emerald-100 group-hover:scale-110 group-hover:rotate-12 transition-all">🍀</div>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-50 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-100 group-hover:scale-110 group-hover:rotate-12 transition-all p-2">
+              <img src="/favicon/luckyhub.png" alt="Lucky Hub" className="w-full h-full object-contain" />
+            </div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-800 hidden sm:block">Lucky Hub</h1>
           </div>
           
