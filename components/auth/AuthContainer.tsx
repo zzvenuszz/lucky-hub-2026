@@ -8,10 +8,13 @@ type AuthMode = 'login' | 'register' | 'forgot-password' | 'reset-password';
 
 interface AuthContainerProps {
   onLogin: (data: any) => void;
+  onRegister: (data: any) => void;
   isLoading: boolean;
+  emailError: string | null;
+  onCheckEmail: (email: string) => void;
 }
 
-const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, isLoading }) => {
+const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail }) => {
   const [mode, setMode] = useState<AuthMode>('login');
   const [resetToken, setResetToken] = useState<string>('');
 
@@ -41,9 +44,11 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, isLoading }
       case 'register':
         return (
           <Register
-            onRegister={onLogin}
+            onRegister={onRegister}
             onSwitchLogin={handleSwitchToLogin}
             isLoading={isLoading}
+            emailError={emailError}
+            onCheckEmail={onCheckEmail}
           />
         );
       case 'forgot-password':

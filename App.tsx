@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from './components/system/Layout.tsx';
 import Dashboard from './components/dashboard/Dashboard.tsx';
 import ChatSystem from './components/chat/ChatSystem.tsx';
@@ -16,10 +16,20 @@ import SystemLog from './components/system/SystemLog.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 
-const AUTO_LOGOUT_TIME = 15 * 60 * 1000; 
+// Hằng số thời gian logout
+const LOGOUT_REMEMBER = 7 * 24 * 60 * 60 * 1000;  // 7 ngày nếu "Duy trì đăng nhập"
+const LOGOUT_NO_REMEMBER = 15 * 60 * 1000;        // 15 phút nếu không
+
+// Key lưu trong localStorage
+const LS_USER = 'lucky_hub_user';
+const LS_REMEMBER = 'lucky_hub_remember';
+const LS_LOGIN_TIME = 'lucky_hub_login_time';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const expireTimerRef = useRef<number | null>(null);
+  const loginTimestampRef = useRef<number | null>(null);
+  const rememberMeRef = useRef<boolean>(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isRegistering, setIsRegistering] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -37,34 +47,99 @@ const App: React.FC = () => {
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
-    localStorage.removeItem('lucky_hub_user');
+    localStorage.removeItem(LS_USER);
+    localStorage.removeItem(LS_REMEMBER);
+    localStorage.removeItem(LS_LOGIN_TIME);
     setActiveTab('dashboard');
     setIsChatOpen(false);
     setIsLogOpen(false);
+    if (expireTimerRef.current) {
+      clearTimeout(expireTimerRef.current);
+      expireTimerRef.current = null;
+    }
     if (window.debugLog) window.debugLog(`Người dùng đã đăng xuất`, "auth");
   }, []);
 
+  // Kiểm tra session hết hạn khi mount
   useEffect(() => {
     Database.checkHealth();
-    const savedUser = localStorage.getItem('lucky_hub_user');
-    if (savedUser) {
-      try { setCurrentUser(JSON.parse(savedUser)); } catch (e) { localStorage.removeItem('lucky_hub_user'); }
+    const savedUser = localStorage.getItem(LS_USER);
+    const savedRemember = localStorage.getItem(LS_REMEMBER) === 'true';
+    const savedLoginTime = parseInt(localStorage.getItem(LS_LOGIN_TIME) || '0', 10);
+    
+    if (savedUser && savedLoginTime > 0) {
+      const now = Date.now();
+      const maxAge = savedRemember ? LOGOUT_REMEMBER : LOGOUT_NO_REMEMBER;
+      const elapsed = now - savedLoginTime;
+      
+      if (elapsed >= maxAge) {
+        // Session đã hết hạn
+        console.log('[App] Session expired on load, logging out');
+        localStorage.removeItem(LS_USER);
+        localStorage.removeItem(LS_REMEMBER);
+        localStorage.removeItem(LS_LOGIN_TIME);
+        if (window.debugLog) window.debugLog(`Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.`, "auth");
+      } else {
+        try {
+          setCurrentUser(JSON.parse(savedUser));
+          loginTimestampRef.current = savedLoginTime;
+          rememberMeRef.current = savedRemember;
+          
+          // Thiết lập timer logout tự động
+          const remaining = maxAge - elapsed;
+          if (expireTimerRef.current) clearTimeout(expireTimerRef.current);
+          expireTimerRef.current = window.setTimeout(() => {
+            handleLogout();
+            alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+            if (window.debugLog) window.debugLog(`Phiên đăng nhập tự động hết hạn sau ${savedRemember ? '7 ngày' : '15 phút'}`, "auth");
+          }, remaining);
+        } catch (e) {
+          localStorage.removeItem(LS_USER);
+          localStorage.removeItem(LS_REMEMBER);
+          localStorage.removeItem(LS_LOGIN_TIME);
+        }
+      }
     }
-  }, []);
+  }, [handleLogout]);
 
+  // Cơ chế refresh session: reset timer khi có tương tác người dùng
   useEffect(() => {
     if (!currentUser) return;
-    let timeoutId: number;
-    const resetTimer = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = window.setTimeout(handleLogout, AUTO_LOGOUT_TIME);
+    
+    const refreshSession = () => {
+      // Chỉ refresh khi ghi nhớ đăng nhập (session kéo dài)
+      if (rememberMeRef.current) {
+        const now = Date.now();
+        loginTimestampRef.current = now;
+        localStorage.setItem(LS_LOGIN_TIME, now.toString());
+      }
+      
+      // Reset timer logout
+      if (expireTimerRef.current) {
+        clearTimeout(expireTimerRef.current);
+      }
+      const maxAge = rememberMeRef.current ? LOGOUT_REMEMBER : LOGOUT_NO_REMEMBER;
+      const elapsed = Date.now() - (loginTimestampRef.current || Date.now());
+      const remaining = Math.max(0, maxAge - elapsed);
+      
+      expireTimerRef.current = window.setTimeout(() => {
+        handleLogout();
+        alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        if (window.debugLog) window.debugLog(`Phiên đăng nhập tự động hết hạn`, "auth");
+      }, remaining);
     };
+    
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    events.forEach(event => window.addEventListener(event, resetTimer));
-    resetTimer();
+    const handleActivity = () => refreshSession();
+    events.forEach(event => window.addEventListener(event, handleActivity));
+    refreshSession();
+    
     return () => {
-      events.forEach(event => window.removeEventListener(event, resetTimer));
-      if (timeoutId) clearTimeout(timeoutId);
+      events.forEach(event => window.removeEventListener(event, handleActivity));
+      if (expireTimerRef.current) {
+        clearTimeout(expireTimerRef.current);
+        expireTimerRef.current = null;
+      }
     };
   }, [currentUser, handleLogout]);
 
@@ -113,11 +188,48 @@ const App: React.FC = () => {
       const result = await response.json();
       if (response.ok) {
         setCurrentUser(result);
-        localStorage.setItem('lucky_hub_user', JSON.stringify(result));
-        if (window.debugLog) window.debugLog(`Đăng nhập thành công: @${result.username}`, "auth");
+        
+        // Lưu thông tin session với rememberMe
+        const rememberMe = !!data.rememberMe;
+        const loginTime = Date.now();
+        rememberMeRef.current = rememberMe;
+        loginTimestampRef.current = loginTime;
+        
+        localStorage.setItem(LS_USER, JSON.stringify(result));
+        localStorage.setItem(LS_REMEMBER, rememberMe ? 'true' : 'false');
+        localStorage.setItem(LS_LOGIN_TIME, loginTime.toString());
+        
+        console.log(`[Login] Success, rememberMe=${rememberMe}, will auto-logout in ${rememberMe ? '7 days' : '15 minutes'}`);
+        if (window.debugLog) window.debugLog(`Đăng nhập thành công: @${result.username}${rememberMe ? ' (ghi nhớ 7 ngày)' : ' (15 phút)'}`, "auth");
+        
+        // Gợi ý trình duyệt lưu mật khẩu - dùng Credential Management API
+        try {
+          if ('credentials' in navigator && typeof window.PasswordCredential !== 'undefined') {
+            const cred = new (window.PasswordCredential as any)({
+              id: data.username.toLowerCase().trim(),
+              password: data.password,
+              name: result.fullName || result.username,
+            });
+            await navigator.credentials.store(cred);
+            console.log('[Login] Password credential saved via Credential Management API');
+          }
+        } catch (credErr: any) {
+          // Trình duyệt không hỗ trợ hoặc user từ chối - không sao
+          console.log('[Login] Credential Management API not supported or denied:', credErr?.message);
+        }
+      } else if (response.status === 429) {
+        // Locked - quá nhiều lần đăng nhập sai
+        const lockMsg = result.message || 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau.';
+        if (window.debugLog) window.debugLog(`[Login] Locked: ${lockMsg}`, "error");
+        alert(lockMsg);
       } else {
+        // Sai mật khẩu
+        let errorMsg = result.message || 'Sai thông tin đăng nhập';
+        if (result.remainingAttempts !== undefined) {
+          errorMsg += `\nCòn ${result.remainingAttempts} lần thử trước khi tài khoản bị tạm khóa.`;
+        }
         if (window.debugLog) window.debugLog(`Đăng nhập thất bại: ${result.message}`, "error");
-        alert(result.message || 'Sai thông tin');
+        alert(errorMsg);
       }
     } catch (err: any) { 
       if (window.debugLog) window.debugLog(`Lỗi kết nối Login: ${err.message}`, "error");
@@ -155,8 +267,22 @@ const App: React.FC = () => {
     setIsAddingMetric(true);
   };
 
+  const handleCheckEmail = useCallback(async (email: string) => {
+    try {
+      const res = await fetch('/api/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      setEmailError(data.exists ? 'Email đã được sử dụng' : null);
+    } catch {
+      setEmailError(null);
+    }
+  }, []);
+
   if (!currentUser) {
-    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} />;
+    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} onRegister={handleRegister} emailError={emailError} onCheckEmail={handleCheckEmail} />;
   }
 
   const isAdmin = currentUser.role === UserRole.ADMIN;

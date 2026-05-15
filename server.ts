@@ -593,6 +593,14 @@ const Chat = mongoose.model('Chat', new mongoose.Schema({
 const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
 const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 
+// Login Attempt Schema (Chống brute-force đăng nhập)
+const LoginAttempt = mongoose.model('LoginAttempt', new mongoose.Schema({
+  identifier: { type: String, required: true, unique: true }, // email hoặc username
+  count: { type: Number, default: 0 },
+  lockUntil: { type: Date, default: null },
+  lastAttempt: { type: Date, default: null }
+}, { timestamps: true }));
+
 // Password Reset Token Schema
 const PasswordResetToken = mongoose.model('PasswordResetToken', new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -680,13 +688,88 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    const user = await User.findOne({ $or: [{ username: username.toLowerCase().trim() }, { email: username.toLowerCase().trim() }] });
-    if (!user || user.password !== hashPassword(password)) return res.status(401).json({ message: 'Invalid credentials' });
-    if (user.status === AccountStatus.SUSPENDED) return res.status(403).json({ message: "Tài khoản của bạn bị lỗi. Vui lòng liên hệ với Quản trị viên hệ thống hoặc Nhóm dinh dưỡng bạn đang sinh hoạt để được hỗ trợ." });
+    const identifier = username.toLowerCase().trim();
+
+    // Kiểm tra lockout
+    const now = new Date();
+    let attempt = await LoginAttempt.findOne({ identifier });
+
+    if (attempt && attempt.lockUntil && attempt.lockUntil > now) {
+      const remainingMs = attempt.lockUntil.getTime() - now.getTime();
+      const remainingMinutes = Math.ceil(remainingMs / 60000);
+      console.log(`[Login] Blocked login for ${identifier}: locked for ${remainingMinutes} more minutes`);
+      return res.status(429).json({
+        message: `Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau ${remainingMinutes} phút.`,
+        locked: true,
+        remainingMinutes,
+        lockUntil: attempt.lockUntil.toISOString()
+      });
+    }
+
+    // Nếu hết lock, reset count (chỉ giữ để track block tiếp theo)
+    // Reset count về 0 để bắt đầu đếm lại, nhưng vẫn giữ block history?
+    // Thực tế: nếu đã hết lock, count vẫn giữ để tính block tiếp theo
+    // Ví dụ: sai 5 lần -> lock 1 phút -> sau 1 phút, count=5, thử lại sai tiếp -> count=6 -> lock 5 phút
+
+    const user = await User.findOne({
+      $or: [{ username: identifier }, { email: identifier }]
+    });
+
+    if (!user || user.password !== hashPassword(password)) {
+      // Đăng nhập sai: tăng count và kiểm tra lock
+      if (!attempt) {
+        attempt = new LoginAttempt({ identifier, count: 1, lastAttempt: now });
+      } else {
+        attempt.count = (attempt.count || 0) + 1;
+        attempt.lastAttempt = now;
+      }
+
+      // Kiểm tra nếu cần lock
+      if (attempt.count >= 5) {
+        const blockIndex = Math.floor(attempt.count / 5); // 1, 2, 3...
+        let lockMinutes: number;
+        if (blockIndex === 1) {
+          lockMinutes = 1; // Lần lock đầu: 1 phút
+        } else {
+          lockMinutes = Math.min(1 + (blockIndex - 1) * 5, 60); // 6, 11, 16... max 60
+        }
+        attempt.lockUntil = new Date(now.getTime() + lockMinutes * 60 * 1000);
+        console.log(`[Login] Failed attempt #${attempt.count} for ${identifier}: locked for ${lockMinutes} minutes`);
+      }
+
+      await attempt.save();
+
+      const remainingAttempts = 5 - (attempt.count % 5 || 5); // Số lần còn lại trước khi lock
+      console.log(`[Login] Failed login for ${identifier}: attempt #${attempt.count}`);
+
+      return res.status(401).json({
+        message: 'Sai thông tin đăng nhập',
+        remainingAttempts,
+        locked: attempt.lockUntil ? true : false,
+        lockUntil: attempt.lockUntil?.toISOString() || null
+      });
+    }
+
+    // Đăng nhập thành công: reset login attempts
+    if (attempt) {
+      await LoginAttempt.deleteOne({ identifier });
+      console.log(`[Login] Successful login for ${identifier}: reset login attempts`);
+    }
+
+    if (user.status === AccountStatus.SUSPENDED) {
+      return res.status(403).json({
+        message: "Tài khoản của bạn bị lỗi. Vui lòng liên hệ với Quản trị viên hệ thống hoặc Nhóm dinh dưỡng bạn đang sinh hoạt để được hỗ trợ."
+      });
+    }
+
     const u = user.toObject();
     delete u.password;
+    console.log(`[Login] Successful login: @${user.username}`);
     res.json({ ...u, id: user._id });
-  } catch (err) { res.status(500).json({ message: 'Error' }); }
+  } catch (err) {
+    console.error(`[Login] Error:`, err);
+    res.status(500).json({ message: 'Lỗi hệ thống' });
+  }
 });
 
 // Forgot Password Endpoint
@@ -796,6 +879,15 @@ app.post('/api/reset-password', async (req, res) => {
     user.password = hashPassword(newPassword);
     user.isPasswordEncrypted = true;
     await user.save();
+
+    // Reset login attempts khi đổi mật khẩu
+    try {
+      await LoginAttempt.deleteOne({ identifier: user.email });
+      await LoginAttempt.deleteOne({ identifier: user.username });
+      console.log(`[ResetPassword] Reset login attempts for ${user.email}`);
+    } catch (e) {
+      // Không ảnh hưởng đến luồng chính
+    }
 
     // Mark token as used
     tokenDoc.used = true;

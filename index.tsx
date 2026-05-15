@@ -8,6 +8,21 @@ declare global {
     debugLog?: (message: string, type?: string, duration?: number) => void;
     reactLoaded?: boolean;
   }
+  
+  // TypeScript type for Credential Management API PasswordCredential
+  interface PasswordCredential extends Credential {
+    readonly id: string;
+    readonly password: string;
+    readonly name: string;
+  }
+  
+  interface PasswordCredentialConstructor {
+    new (data: { id: string; password: string; name: string }): PasswordCredential;
+  }
+  
+  interface Window {
+    PasswordCredential?: PasswordCredentialConstructor;
+  }
 }
 
 // Thiết lập Bridge để các file .ts/JS thuần có thể gửi log vào hệ thống React

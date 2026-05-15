@@ -25,6 +25,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPasswo
         placeholder="Email hoặc Tên đăng nhập" 
         value={loginData.username} 
         onChange={e => setLoginData({...loginData, username: e.target.value})} 
+        autoComplete="username"
         className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" 
       />
       <div className="relative">
@@ -34,6 +35,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPasswo
           placeholder="Mật khẩu" 
           value={loginData.password} 
           onChange={e => setLoginData({...loginData, password: e.target.value})} 
+          autoComplete="current-password"
           className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" 
         />
         <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 hover:text-emerald-600">
@@ -43,11 +45,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onSwitchRegister, onForgotPasswo
       <div className="flex items-center gap-2 px-2">
         <input 
           type="checkbox" 
+          id="rememberMe"
           checked={rememberMe} 
           onChange={() => setRememberMe(!rememberMe)} 
           className="w-4 h-4 accent-emerald-600 rounded" 
         />
-        <span className="text-[10px] font-black text-slate-400 uppercase">Duy trì đăng nhập</span>
+        <label htmlFor="rememberMe" className="text-[10px] font-black text-slate-400 uppercase cursor-pointer">Duy trì đăng nhập</label>
       </div>
       <button 
         type="submit" 
