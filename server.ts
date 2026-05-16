@@ -17,6 +17,7 @@ import { ttsService } from './src/services/ttsService.ts';
 import { configService } from './src/services/configService.ts';
 import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
+import { validateBody, sanitizeText } from './services/validationService.ts';
 
 dotenv.config();
 
@@ -594,6 +595,16 @@ const Chat = mongoose.model('Chat', new mongoose.Schema({
 const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
 const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 
+// Notification Schema
+const Notification = mongoose.model('Notification', new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { type: String, enum: ['reaction', 'message', 'metric_help', 'badge', 'system'], default: 'system' },
+  message: { type: String, required: true },
+  read: { type: Boolean, default: false },
+  link: String,
+  timestamp: { type: Date, default: Date.now }
+}, { timestamps: true }));
+
 // Login Attempt Schema (Chống brute-force đăng nhập)
 const LoginAttempt = mongoose.model('LoginAttempt', new mongoose.Schema({
   identifier: { type: String, required: true, unique: true }, // email hoặc username
@@ -660,7 +671,14 @@ app.post('/api/check-email', async (req, res) => {
   res.json({ exists: !!user });
 });
 
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', validateBody(
+  { field: 'username', type: 'username', required: true },
+  { field: 'email', type: 'email', required: true },
+  { field: 'password', type: 'password', required: true },
+  { field: 'fullName', type: 'string', required: true, min: 2, max: 100 }
+), async (req, res) => {
+  // Sanitize text fields
+  if (req.body.fullName) req.body.fullName = sanitizeText(req.body.fullName);
   try {
     const { username, email, password, avatar, ...rest } = req.body;
     const imgData = await uploadToImgBB(avatar);
@@ -1071,8 +1089,40 @@ app.put('/api/users/:id', async (req, res) => {
 });
 
 app.get('/api/posts', async (req, res) => {
-  const p = await Post.find().sort({ createdAt: -1 });
-  res.json(p.map(i => ({ ...i.toObject(), id: i._id })));
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const search = (req.query.search as string) || '';
+  const hashtag = (req.query.hashtag as string) || '';
+  const skip = (page - 1) * limit;
+
+  let query: any = {};
+  if (search) {
+    query.content = { $regex: search, $options: 'i' };
+  }
+  if (hashtag) {
+    query.hashtags = hashtag;
+  }
+
+  const total = await Post.countDocuments(query);
+  const p = await Post.find(query)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  const totalPages = Math.ceil(total / limit);
+
+  logger.info('POSTS', `Fetched page ${page}/${totalPages} (${p.length} posts, total: ${total})`);
+
+  res.json({
+    posts: p.map(i => ({ ...i.toObject(), id: i._id })),
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasMore: page < totalPages
+    }
+  });
 });
 
 app.post('/api/posts', async (req, res) => {
@@ -1338,6 +1388,48 @@ app.post('/api/rules', async (req, res) => {
 app.delete('/api/rules/:id', async (req, res) => {
   await Rule.findByIdAndDelete(req.params.id);
   res.json({ success: true });
+});
+
+// Notification API Endpoints
+app.get('/api/notifications/:userId', async (req, res) => {
+  try {
+    const notifications = await Notification.find({ userId: req.params.userId })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    res.json(notifications.map(n => ({ ...n.toObject(), id: n._id })));
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/notifications', async (req, res) => {
+  try {
+    const { userId, type, message, link } = req.body;
+    const notif = new Notification({ userId, type, message, link, read: false });
+    await notif.save();
+    logger.info('NOTIFICATION', `Created notification for user ${userId}: ${message.substring(0, 50)}`);
+    res.json({ ...notif.toObject(), id: notif._id });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.put('/api/notifications/:id/read', async (req, res) => {
+  try {
+    await Notification.findByIdAndUpdate(req.params.id, { read: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.put('/api/notifications/read-all/:userId', async (req, res) => {
+  try {
+    await Notification.updateMany({ userId: req.params.userId, read: false }, { read: true });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));

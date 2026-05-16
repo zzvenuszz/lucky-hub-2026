@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect, memo, useMemo } from 'react';
 import { User, UserRole } from '../../types.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
+import NotificationBell from '../notification/NotificationBell.tsx';
 
 interface LayoutProps {
   user: User;
@@ -52,7 +53,8 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
             {[
               { id: 'dashboard', label: '📊 Tổng quan' },
               { id: 'community', label: '🌍 Cộng đồng' },
-              { id: 'metrics', label: '📈 Chỉ số' }
+              { id: 'metrics', label: '📈 Chỉ số' },
+              ...(user.role === UserRole.COACH || user.role === UserRole.ADMIN ? [{ id: 'coach', label: '🎯 Coach' }] : [])
             ].map(tab => (
               <button 
                 key={tab.id} onClick={() => setActiveTab(tab.id)} 
@@ -62,6 +64,9 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
               </button>
             ))}
           </nav>
+
+          {/* Notification Bell */}
+          <NotificationBell currentUser={user} />
 
           <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
             <div className="hidden lg:flex flex-col items-end">

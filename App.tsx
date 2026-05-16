@@ -13,6 +13,7 @@ import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
 import AuthContainer from './components/auth/AuthContainer.tsx';
 import SystemLog from './components/system/SystemLog.tsx';
+import CoachDashboard from './components/coach/CoachDashboard.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 
@@ -400,6 +401,7 @@ const App: React.FC = () => {
         } 
       }} />}
       {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
+      {activeTab === 'coach' && (currentUser.role === UserRole.COACH || isAdmin) && <CoachDashboard currentUser={currentUser!} />}
       
       {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { User, Post, UserRole } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { cacheManager } from '../../utils/cacheManager.ts';
@@ -16,6 +16,8 @@ const REACTION_TYPES = [
   { type: 'wow', icon: '😮' }, { type: 'sad', icon: '😢' }, { type: 'angry', icon: '😡' },
 ];
 
+const PER_PAGE = 10;
+
 const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [inputText, setInputText] = useState('');
@@ -27,6 +29,11 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
   const [popularHashtags, setPopularHashtags] = useState<string[]>([]);
   const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
   const [hashtags, setHashtags] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [totalPosts, setTotalPosts] = useState(0);
+  const observerRef = useRef<IntersectionObserver | null>(null);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
 
   // Fetch popular hashtags
@@ -41,33 +48,91 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
     }
   }, []);
 
-  const fetchPosts = useCallback(async () => {
-    try {
-      console.log(`[NewsFeed] Fetching posts for user: ${currentUserId}`);
-      
-      // Check cache first
-      const cachedPosts = cacheManager.get<Post[]>('posts');
-      if (cachedPosts && !activeHashtag) {
-        console.log(`[NewsFeed] Using cached posts: ${cachedPosts.length} posts`);
-        setPosts(cachedPosts);
-        return;
-      }
+  // Load posts with pagination - reset when hashtag changes
+  const loadPosts = useCallback(async (pageNum: number, append: boolean, searchHashtag: string) => {
+    if (pageNum === 1 && !append) {
+      setIsLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
 
-      const data = await Database.getPosts();
-      if (data) {
-        cacheManager.set('posts', data, 3); // Cache for 3 minutes
-        setPosts(data);
-        // Also fetch hashtags
-        fetchHashtags();
-        console.log(`[NewsFeed] Successfully loaded ${data.length} posts`);
+    try {
+      console.log(`[NewsFeed] Fetching page ${pageNum}${searchHashtag ? ` with hashtag: ${searchHashtag}` : ''}`);
+      const result = await Database.getPostsPaginated(pageNum, PER_PAGE, '', searchHashtag);
+      if (result) {
+        if (append) {
+          setPosts(prev => [...prev, ...result.posts]);
+        } else {
+          setPosts(result.posts);
+        }
+        setTotalPosts(result.pagination.total);
+        setHasMore(result.pagination.hasMore);
+        console.log(`[NewsFeed] Loaded page ${pageNum}/${result.pagination.totalPages} (${result.posts.length} posts, total: ${result.pagination.total})`);
+
+        // Load hashtags on first page load
+        if (pageNum === 1) {
+          fetchHashtags();
+        }
       }
     } catch (error) {
       console.error(`[NewsFeed] Error fetching posts:`, error);
-      // Graceful fallback - maintain existing posts
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
     }
-  }, [currentUserId, activeHashtag, fetchHashtags]);
+  }, [fetchHashtags]);
 
-  useEffect(() => { fetchPosts(); const interval = setInterval(fetchPosts, 120000); return () => clearInterval(interval); }, [fetchPosts]);
+  // Initial load + reload when hashtag changes
+  useEffect(() => {
+    setPage(1);
+    setPosts([]);
+    setHasMore(true);
+    loadPosts(1, false, activeHashtag || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeHashtag]);
+
+  // Setup IntersectionObserver for infinite scroll using callback ref
+  const sentinelCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    // Cleanup previous observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
+    if (!node || !hasMore || isLoadingMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          const nextPage = page + 1;
+          setPage(nextPage);
+          loadPosts(nextPage, true, activeHashtag || '');
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(node);
+    observerRef.current = observer;
+  }, [hasMore, isLoadingMore, page, activeHashtag, loadPosts]);
+
+  // Cleanup observer on unmount
+  useEffect(() => {
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Refresh posts periodically (mỗi 2 phút, không reset page)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadPosts(1, false, activeHashtag || '');
+    }, 120000);
+    return () => clearInterval(interval);
+  }, [activeHashtag, loadPosts]);
 
   // Filter posts by active hashtag
   const filteredPosts = activeHashtag
@@ -172,9 +237,12 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
 
   const handleDeletePost = async (postId: string) => {
     if (confirm("Xóa bài viết này?")) { 
-      await Database.deletePost(postId); 
-      cacheManager.remove('posts');
-      fetchPosts(); 
+      const success = await Database.deletePost(postId); 
+      if (success !== null) {
+        setPosts(prev => prev.filter(p => (p.id || (p as any)._id) !== postId));
+        cacheManager.remove('posts');
+        console.log(`[NewsFeed] Post ${postId} deleted successfully`);
+      }
     }
   };
 
@@ -237,7 +305,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
       )}
 
       <div className="space-y-6">
-        {filteredPosts.length === 0 ? (
+        {posts.length === 0 && !isLoading ? (
           <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 p-10 text-center">
             <p className="text-slate-400 font-bold text-sm">
               {activeHashtag 
@@ -246,16 +314,31 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
             </p>
           </div>
         ) : (
-          filteredPosts.map(post => (
-            <PostItem 
-              key={post.id || (post as any)._id} post={post} currentUser={currentUser} 
-              onEdit={handleEditPost} onDelete={handleDeletePost} onReact={handleReaction} 
-              onRemoveReact={handleRemoveReaction}
-              showReactions={showReactionsFor} setShowReactions={setShowReactionsFor} 
-              reactionTypes={REACTION_TYPES}
-              onHashtagClick={handleHashtagClick}
-            />
-          ))
+          <>
+            {posts.map(post => (
+              <PostItem 
+                key={post.id || (post as any)._id} post={post} currentUser={currentUser} 
+                onEdit={handleEditPost} onDelete={handleDeletePost} onReact={handleReaction} 
+                onRemoveReact={handleRemoveReaction}
+                showReactions={showReactionsFor} setShowReactions={setShowReactionsFor} 
+                reactionTypes={REACTION_TYPES}
+                onHashtagClick={handleHashtagClick}
+              />
+            ))}
+            {/* Infinite scroll sentinel - dùng callback ref để observer hoạt động */}
+            <div ref={sentinelCallbackRef} className="h-4" />
+            {isLoadingMore && (
+              <div className="text-center py-4">
+                <div className="inline-block w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-slate-400 font-bold mt-2">Đang tải thêm...</p>
+              </div>
+            )}
+            {!hasMore && posts.length > 0 && (
+              <div className="text-center py-6">
+                <p className="text-xs text-slate-400 font-bold">Đã hiển thị tất cả {totalPosts} bài viết</p>
+              </div>
+            )}
+          </>
         )}
       </div>
 

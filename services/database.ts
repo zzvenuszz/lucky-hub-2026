@@ -66,6 +66,12 @@ export const Database = {
   getChats: async () => (await request<ChatSession[]>(`${API_BASE}/chats`)) ?? [],
   saveChat: (chat: ChatSession) => request<ChatSession>(`${API_BASE}/chats`, 'POST', chat),
   getPosts: async () => (await request<Post[]>(`${API_BASE}/posts`)) ?? [],
+  getPostsPaginated: async (page = 1, limit = 10, search = '', hashtag = '') => {
+    const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    if (search) params.set('search', search);
+    if (hashtag) params.set('hashtag', hashtag);
+    return (await request<{ posts: Post[], pagination: { page: number, limit: number, total: number, totalPages: number, hasMore: boolean } }>(`${API_BASE}/posts?${params.toString()}`)) ?? { posts: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0, hasMore: false } };
+  },
   createPost: (post: Omit<Post, 'id'>) => request<Post>(`${API_BASE}/posts`, 'POST', post),
   updatePost: (id: string, data: { content: string, existingImages: string[], newImages: string[], hashtags?: string[] }) => 
     request<Post>(`${API_BASE}/posts/${id}`, 'PUT', data),
