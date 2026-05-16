@@ -1273,6 +1273,31 @@ app.put('/api/posts/:postId/react', async (req, res) => {
     await post.save();
     console.log(`[Post] React to post ${postId}: user=${userId}, type=${type}`);
 
+    // Gửi notification cho chủ bài viết nếu người react khác với chủ bài
+    if (post.userId && post.userId !== userId) {
+      try {
+        const reactTypes: Record<string, string> = {
+          'like': '👍 thích',
+          'love': '❤️ yêu thích',
+          'laugh': '😂 cười',
+          'wow': '😮 ngạc nhiên',
+          'sad': '😢 buồn',
+          'angry': '😠 tức giận'
+        };
+        const reactLabel = reactTypes[type] || type;
+        const notification = new Notification({
+          userId: post.userId,
+          type: 'reaction',
+          message: `${userName || 'Ai đó'} đã bày tỏ cảm xúc "${reactLabel}" bài viết của bạn.`,
+          link: `/posts/${postId}`
+        });
+        await notification.save();
+        console.log(`[Notification] Sent reaction notification to user ${post.userId}`);
+      } catch (notifErr: any) {
+        console.error(`[Notification] Error sending reaction notification:`, notifErr.message);
+      }
+    }
+
     res.json({ ...post.toObject(), id: post._id });
   } catch (err: any) {
     console.error(`[Post] React error:`, err);
@@ -1335,6 +1360,22 @@ app.post('/api/metrics', async (req, res) => {
     type: logType, details, timestamp: new Date().toISOString()
   });
   await log.save();
+
+  // Gửi notification cho member khi coach/admin cập nhật metrics giúp
+  if (isHelp && metricData.userId) {
+    try {
+      const notification = new Notification({
+        userId: metricData.userId,
+        type: 'metric_help',
+        message: `📊 ${actorName || 'Huấn luyện viên'} đã cập nhật chỉ số sức khỏe cho bạn.`,
+        link: `/metrics`
+      });
+      await notification.save();
+      console.log(`[Notification] Sent metric update notification to member ${metricData.userId}`);
+    } catch (notifErr: any) {
+      console.error(`[Notification] Error sending metric notification:`, notifErr.message);
+    }
+  }
 
   res.json({ ...m.toObject(), id: m._id });
 });
@@ -1435,7 +1476,28 @@ app.put('/api/notifications/read-all/:userId', async (req, res) => {
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
 app.post('/api/chats', async (req, res) => {
   const { id, ...data } = req.body;
-  res.json(await Chat.findOneAndUpdate({ id }, { ...data, id }, { upsert: true, new: true }));
+  const chat = await Chat.findOneAndUpdate({ id }, { ...data, id }, { upsert: true, new: true });
+  
+  // Gửi notification cho member khi coach gửi tin nhắn
+  if (chat && data.messages && data.messages.length > 0) {
+    const lastMsg = data.messages[data.messages.length - 1];
+    if (lastMsg && lastMsg.senderRole === 'coach') {
+      try {
+        const notification = new Notification({
+          userId: chat.memberId,
+          type: 'message',
+          message: `📩 ${lastMsg.senderName || 'Huấn luyện viên'}: "${lastMsg.content?.substring(0, 100)}"`,
+          link: `/chat/${id}`
+        });
+        await notification.save();
+        console.log(`[Notification] Sent chat notification to member ${chat.memberId}`);
+      } catch (notifErr: any) {
+        console.error(`[Notification] Error sending chat notification:`, notifErr.message);
+      }
+    }
+  }
+  
+  res.json(chat);
 });
 
 // Magic Mirror (MM) Integration Endpoints
