@@ -34,6 +34,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const currentUid = (currentUser as any).id || (currentUser as any)._id;
   const processedMsgIds = useRef<Set<string>>(new Set());
   const lastMessageCounts = useRef<Record<string, number>>({});
+  const [promptChoices, setPromptChoices] = useState<Map<string, {userName: string, choice: string}>>(new Map());
 
   useEffect(() => {
     if (pendingQueue.length > 0 && !isProcessingQueue && selectedChat) {
@@ -204,14 +205,11 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   const handleAiChoice = useCallback(async (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => {
-    const choiceText = choice === 'tham khảo' ? 'đã chọn tham khảo thông tin từ Trợ lý Lucky 🌿' : 'đã bỏ qua thông tin từ Trợ lý Lucky.';
-    const msg: Message = { id: `c_${Date.now()}`, senderId: currentUid, senderName: currentUser.fullName, senderRole: currentUser.role, content: `👤 ${currentUser.fullName} ${choiceText}`, timestamp: new Date().toISOString() };
-    const updated = { ...chat, messages: [...chat.messages, msg] };
-    setSelectedChat(updated); await Database.saveChat(updated);
+    setPromptChoices(prev => new Map(prev).set(chat.id, { userName: currentUser.fullName, choice }));
     if (choice === 'tham khảo') {
       setIsTypingAI(true);
       const userGoal2 = currentUser.healthGoals?.[0] || HealthGoal.OTHER;
-      const res = await getAICoachResponse(updated.messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal2, latestMetric);
+      const res = await getAICoachResponse(chat.messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal2, latestMetric);
       if (res) setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]); else setIsTypingAI(false);
     }
   }, [currentUid, currentUser, knowledge, rules, latestMetric]);
@@ -240,7 +238,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
             chat={selectedChat} currentUid={currentUid} isTypingAI={isTypingAI} 
             onAiChoice={handleAiChoice} showScrollButton={showScrollButton} 
             scrollToBottom={() => setShowScrollButton(false)} 
-            onScroll={() => setShowScrollButton(false)} aiPromptText={AI_PROMPT_TEXT} 
+            onScroll={() => setShowScrollButton(false)} aiPromptText={AI_PROMPT_TEXT}
+            promptChoice={promptChoices.get(selectedChat.id) || null}
           />
           <div className="p-4 bg-white border-t border-slate-50">
             {selectedImage && <div className="relative w-12 h-12 mb-2"><img src={selectedImage} className="w-full h-full object-cover rounded-lg" /><button onClick={() => setSelectedImage(null)} className="absolute -top-1 -right-1 bg-red-500 text-white w-4 h-4 rounded-full text-[10px]">×</button></div>}

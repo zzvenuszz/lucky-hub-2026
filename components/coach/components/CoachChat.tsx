@@ -21,6 +21,7 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
   const [isTypingAI, setIsTypingAI] = useState(false);
   const [pendingQueue, setPendingQueue] = useState<string[]>([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+  const [promptChoice, setPromptChoice] = useState<{userName: string, choice: string} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const selectedMemberId = (selectedMember as any).id || (selectedMember as any)._id;
@@ -176,43 +177,36 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
           messages.map((msg) => {
             const isMyMessage = msg.senderId === currentUserId;
             const isAiPrompt = msg.content === AI_PROMPT_TEXT;
-            const isChoiceNotification = msg.content.startsWith('👤') && (msg.content.includes('đã chọn') || msg.content.includes('bỏ qua'));
             const isAiResponse = msg.senderRole === 'AI';
             return (
-              <div key={msg.id} className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'} ${isChoiceNotification ? 'opacity-75' : ''}`}>
+              <div key={msg.id} className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
-                  isChoiceNotification ? 'bg-slate-50 border border-slate-200 text-slate-500 italic text-[11px]' :
                   isAiPrompt ? 'bg-emerald-50/50 border border-emerald-200 text-slate-700 rounded-2xl' :
                   isAiResponse ? 'bg-amber-50 border border-amber-100 text-slate-800 font-medium' :
                   isMyMessage
                     ? 'bg-emerald-600 text-white rounded-br-md'
                     : 'bg-slate-100 text-slate-700 rounded-bl-md'
                 }`}>
-                  {!isMyMessage && !isChoiceNotification && !isAiPrompt && !isAiResponse && (
+                  {!isMyMessage && !isAiPrompt && !isAiResponse && (
                     <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{selectedMember.fullName}</p>
                   )}
                   {isAiPrompt && <p className="text-[9px] font-black uppercase text-amber-600 mb-1">🍀Trợ lý Lucky</p>}
                   {isAiResponse && <p className="text-[9px] font-black uppercase text-amber-600 mb-1">🍀Trợ lý Lucky</p>}
                   <p className="text-sm font-bold leading-relaxed">{msg.content}</p>
-                  {!isChoiceNotification && !isAiPrompt && !isAiResponse && (
+                  {!isAiPrompt && !isAiResponse && (
                     <p className={`text-[10px] font-bold mt-1 ${isMyMessage ? 'text-emerald-200' : 'text-slate-400'}`}>
                       {formatTime(msg.timestamp)}
                     </p>
                   )}
                 </div>
-                {isAiPrompt && (
+                {isAiPrompt && !promptChoice && (
                   <div className="mt-2 flex gap-2">
                     <button 
                       onClick={async () => {
-                        const choiceText = 'đã chọn tham khảo thông tin từ Trợ lý Lucky 🌿';
-                        const choiceMsg: Message = { id: `c_${Date.now()}`, senderId: currentUserId, senderName: currentUser.fullName, senderRole: currentUser.role as any, content: `👤 ${currentUser.fullName} ${choiceText}`, timestamp: new Date().toISOString() };
-                        const updated = [...messages, choiceMsg];
-                        const chatData: ChatSession = { id: chatId, memberId: selectedMemberId, coachId: currentUserId, messages: updated };
-                        await Database.saveChat(chatData);
-                        setMessages(updated);
+                        setPromptChoice({ userName: currentUser.fullName, choice: 'tham khảo' });
                         setIsTypingAI(true);
                         const userGoal = selectedMember.healthGoals?.[0] || HealthGoal.OTHER;
-                        const res = await getAICoachResponse(updated, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal);
+                        const res = await getAICoachResponse(messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal);
                         if (res) setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]); else setIsTypingAI(false);
                       }}
                       className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md"
@@ -220,18 +214,18 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
                       Tham khảo
                     </button>
                     <button 
-                      onClick={async () => {
-                        const choiceText = 'đã bỏ qua thông tin từ Trợ lý Lucky.';
-                        const choiceMsg: Message = { id: `c_${Date.now()}`, senderId: currentUserId, senderName: currentUser.fullName, senderRole: currentUser.role as any, content: `👤 ${currentUser.fullName} ${choiceText}`, timestamp: new Date().toISOString() };
-                        const updated = [...messages, choiceMsg];
-                        const chatData: ChatSession = { id: chatId, memberId: selectedMemberId, coachId: currentUserId, messages: updated };
-                        await Database.saveChat(chatData);
-                        setMessages(updated);
+                      onClick={() => {
+                        setPromptChoice({ userName: currentUser.fullName, choice: 'bỏ qua' });
                       }}
                       className="flex-1 bg-white text-slate-400 border border-slate-200 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
                     >
                       Bỏ qua
                     </button>
+                  </div>
+                )}
+                {isAiPrompt && promptChoice && (
+                  <div className="mt-3 pt-3 border-t border-emerald-200 text-[11px] text-slate-500 italic">
+                    👤 {promptChoice.userName} đã chọn {promptChoice.choice === 'tham khảo' ? 'tham khảo thông tin' : 'bỏ qua'}
                   </div>
                 )}
               </div>

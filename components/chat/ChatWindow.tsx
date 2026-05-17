@@ -11,11 +11,12 @@ interface ChatWindowProps {
   scrollToBottom: () => void;
   onScroll: () => void;
   aiPromptText: string;
+  promptChoice: {userName: string, choice: string} | null;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ 
   chat, currentUid, isTypingAI, onAiChoice, 
-  showScrollButton, scrollToBottom, onScroll, aiPromptText 
+  showScrollButton, scrollToBottom, onScroll, aiPromptText, promptChoice
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -36,12 +37,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         {chat.messages.map((msg) => {
           const isMyMessage = msg.senderId === currentUid;
           const isAiPrompt = msg.content === aiPromptText;
-          const isChoiceNotification = msg.content.startsWith('👤') && (msg.content.includes('đã chọn') || msg.content.includes('bỏ qua'));
 
           return (
-            <div key={msg.id} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} ${isChoiceNotification ? 'opacity-75' : ''}`}>
+            <div key={msg.id} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
               <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
-                isChoiceNotification ? 'bg-slate-50 border border-slate-200 text-slate-500 italic text-[11px]' :
                 isAiPrompt ? 'bg-emerald-50/50 border border-emerald-200 text-slate-700 rounded-2xl' :
                 msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none font-medium' : 
                 isMyMessage ? 'bg-emerald-600 text-white rounded-tr-none' : 
@@ -49,11 +48,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               }`}>
                 {msg.imageUrl && <img src={msg.imageUrl} className="rounded-xl mb-2 max-h-40 w-auto shadow-sm" alt="Attach" />}
                 <div className="flex flex-col gap-1">
-                  {!isMyMessage && !isChoiceNotification && <span className="text-[9px] font-black uppercase text-slate-400 mb-1">{msg.senderName}</span>}
+                  {!isMyMessage && <span className="text-[9px] font-black uppercase text-slate-400 mb-1">{msg.senderName}</span>}
                   {msg.content}
                 </div>
 
-                {isAiPrompt && (
+                {isAiPrompt && !promptChoice && (
                   <div className="mt-4 flex gap-2">
                     <button 
                       onClick={() => onAiChoice(chat, 'tham khảo')}
@@ -69,8 +68,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     </button>
                   </div>
                 )}
+
+                {isAiPrompt && promptChoice && (
+                  <div className="mt-3 pt-3 border-t border-emerald-200 text-[11px] text-slate-500 italic">
+                    👤 {promptChoice.userName} đã chọn {promptChoice.choice === 'tham khảo' ? 'tham khảo thông tin' : 'bỏ qua'}
+                  </div>
+                )}
               </div>
-              {!isChoiceNotification && <span className="text-[8px] text-slate-400 mt-1 px-1 font-bold uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>}
+              <span className="text-[8px] text-slate-400 mt-1 px-1 font-bold uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
             </div>
           );
         })}
