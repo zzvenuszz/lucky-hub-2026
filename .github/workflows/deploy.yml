@@ -24,12 +24,13 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Lấy trực tiếp secrets.HF_TOKEN từ hệ thống GitHub (Bypass hoàn toàn lỗi trống biến env)
-          git config --global http.https://huggingface.co/.extraheader "Authorization: Bearer ${{ secrets.HF_TOKEN }}"
+          # Ghi thông tin xác thực trực tiếp vào hệ thống máy chủ để tự động đăng nhập
+          # Sử dụng username là 'luckyhubvn' và password chính là Token của bạn
+          echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
+          chmod 600 ~/.netrc
           
-          # Xóa remote hf cũ nếu có để tránh lỗi trùng lặp
-          git remote remove hf || true
-          
-          # Thêm remote mới và ép đẩy code sang Hugging Face
+          # Thêm URL Space tiêu chuẩn sạch hoàn toàn
           git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
+          
+          # Đẩy code lên Hugging Face
           git push --force hf main
