@@ -36,10 +36,13 @@ jobs:
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
           
-          # 4. Thêm toàn bộ các file còn lại (đã sạch file nặng) vào repo mới này
+          # 4. Đổi tên nhánh mặc định từ master thành main để khớp với đích đến
+          git branch -m main
+          
+          # 5. Thêm toàn bộ các file còn lại (đã sạch file nặng) vào repo mới này
           git add .
           git commit -m "Initial clean commit for Hugging Face"
           
-          # 5. Ép đẩy đè lên Hugging Face Spaces (Nhánh main)
+          # 6. Ép đẩy đè lên Hugging Face Spaces
           git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
           git push --force hf main
