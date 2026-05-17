@@ -23,13 +23,15 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          # 1. Cấu hình thông tin Git Action cơ bản
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Sử dụng cơ chế ghi nhớ thông tin đăng nhập tự động của Git
-          git config --global credential.helper store
-          echo "https://hf:$HF_TOKEN@huggingface.co" > ~/.git-credentials
+          # 2. Ép Git sử dụng Bearer Token qua Header theo đúng chuẩn bảo mật của Hugging Face Docs
+          git config --global http.https://huggingface.co/.extraheader "Authorization: Bearer $HF_TOKEN"
           
-          # Thêm remote và đẩy code sang Hugging Face
+          # 3. Thêm link Space dạng HTTPS tiêu chuẩn (không chứa bất kỳ username/password nào trên URL)
           git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
+          
+          # 4. Thực hiện đẩy code an toàn
           git push --force hf main
