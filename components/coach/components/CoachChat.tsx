@@ -1,18 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { User, ChatSession, Message } from '../../../types.ts';
+import { User, ChatSession, Message, AIKnowledge, AIRule, HealthGoal } from '../../../types.ts';
+import { getAICoachResponse } from '../../../services/gemini.ts';
 import { Database } from '../../../services/database.ts';
+
+const AI_PROMPT_TEXT = "Trợ lý Lucky AI có thông tin về vấn đề bạn đang đề cập, bạn có muốn tham khảo không?";
 
 interface CoachChatProps {
   currentUser: User;
   selectedMember: User;
+  knowledge: AIKnowledge[];
+  rules: AIRule[];
   onClose: () => void;
 }
 
-const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember, onClose }) => {
+const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember, knowledge, rules, onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isTypingAI, setIsTypingAI] = useState(false);
+  const [pendingQueue, setPendingQueue] = useState<string[]>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const selectedMemberId = (selectedMember as any).id || (selectedMember as any)._id;
@@ -61,15 +69,31 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
       };
 
       const updatedMessages = [...messages, newMsg];
+      let finalMessages = updatedMessages;
+
+      // Kiểm tra keyword AI
+      if (knowledge.some(k => inputText.toLowerCase().includes(k.keyword.toLowerCase()))) {
+        console.log(`[CoachChat] AI trigger detected: keyword match in message to ${selectedMember.fullName}`);
+        const promptMsg: Message = {
+          id: `p_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          senderId: 'ai_coach',
+          senderName: '🍀Trợ lý Lucky',
+          senderRole: 'AI' as any,
+          content: AI_PROMPT_TEXT,
+          timestamp: new Date().toISOString()
+        };
+        finalMessages = [...updatedMessages, promptMsg];
+      }
+
       const chatData: ChatSession = {
         id: chatId,
         memberId: selectedMemberId,
         coachId: currentUserId,
-        messages: updatedMessages
+        messages: finalMessages
       };
 
       await Database.saveChat(chatData);
-      setMessages(updatedMessages);
+      setMessages(finalMessages);
       setInputText('');
       console.log(`[CoachChat] Message sent to ${selectedMember.fullName}`);
     } catch (error) {
@@ -78,6 +102,28 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
       setIsSending(false);
     }
   }, [inputText, isSending, currentUserId, currentUser, messages, chatId, selectedMemberId, selectedMember.fullName]);
+
+  // Xử lý AI queue
+  useEffect(() => {
+    if (pendingQueue.length > 0 && !isProcessingQueue) {
+      processNextInQueue();
+    }
+  }, [pendingQueue, isProcessingQueue]);
+
+  const processNextInQueue = async () => {
+    if (pendingQueue.length === 0) return;
+    setIsProcessingQueue(true);
+    const textToDisplay = pendingQueue[0];
+    await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(textToDisplay.length * 20, 800), 2500)));
+    const aiMsg: Message = { id: `ai_${Date.now()}`, senderId: 'ai_coach', senderName: '🍀Trợ lý Lucky', senderRole: 'AI' as any, content: textToDisplay, timestamp: new Date().toISOString() };
+    const updatedMessages = [...messages, aiMsg];
+    const chatData: ChatSession = { id: chatId, memberId: selectedMemberId, coachId: currentUserId, messages: updatedMessages };
+    await Database.saveChat(chatData);
+    setMessages(updatedMessages);
+    setPendingQueue(prev => prev.slice(1));
+    setIsProcessingQueue(false);
+    if (pendingQueue.length <= 1) setIsTypingAI(false);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -129,21 +175,77 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
         ) : (
           messages.map((msg) => {
             const isMyMessage = msg.senderId === currentUserId;
+            const isAiPrompt = msg.content === AI_PROMPT_TEXT;
+            const isChoiceNotification = msg.content.startsWith('👤') && (msg.content.includes('đã chọn') || msg.content.includes('bỏ qua'));
+            const isAiResponse = msg.senderRole === 'AI';
             return (
-              <div key={msg.id} className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'}`}>
+              <div key={msg.id} className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'} ${isChoiceNotification ? 'opacity-75' : ''}`}>
                 <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+                  isChoiceNotification ? 'bg-slate-50 border border-slate-200 text-slate-500 italic text-[11px]' :
+                  isAiPrompt ? 'bg-emerald-50 border-2 border-emerald-500 text-slate-800 rounded-xl animate-bounce shadow-emerald-100' :
+                  isAiResponse ? 'bg-amber-50 border border-amber-100 text-slate-800 font-medium' :
                   isMyMessage
                     ? 'bg-emerald-600 text-white rounded-br-md'
                     : 'bg-slate-100 text-slate-700 rounded-bl-md'
                 }`}>
+                  {!isMyMessage && !isChoiceNotification && !isAiPrompt && !isAiResponse && (
+                    <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{selectedMember.fullName}</p>
+                  )}
+                  {isAiPrompt && <p className="text-[9px] font-black uppercase text-amber-600 mb-1">🍀Trợ lý Lucky</p>}
+                  {isAiResponse && <p className="text-[9px] font-black uppercase text-amber-600 mb-1">🍀Trợ lý Lucky</p>}
                   <p className="text-sm font-bold leading-relaxed">{msg.content}</p>
-                  <p className={`text-[10px] font-bold mt-1 ${isMyMessage ? 'text-emerald-200' : 'text-slate-400'}`}>
-                    {formatTime(msg.timestamp)}
-                  </p>
+                  {!isChoiceNotification && !isAiPrompt && !isAiResponse && (
+                    <p className={`text-[10px] font-bold mt-1 ${isMyMessage ? 'text-emerald-200' : 'text-slate-400'}`}>
+                      {formatTime(msg.timestamp)}
+                    </p>
+                  )}
                 </div>
+                {isAiPrompt && (
+                  <div className="mt-2 flex gap-2">
+                    <button 
+                      onClick={async () => {
+                        const choiceText = 'đã chọn tham khảo thông tin từ Trợ lý Lucky 🌿';
+                        const choiceMsg: Message = { id: `c_${Date.now()}`, senderId: currentUserId, senderName: currentUser.fullName, senderRole: currentUser.role as any, content: `👤 ${currentUser.fullName} ${choiceText}`, timestamp: new Date().toISOString() };
+                        const updated = [...messages, choiceMsg];
+                        const chatData: ChatSession = { id: chatId, memberId: selectedMemberId, coachId: currentUserId, messages: updated };
+                        await Database.saveChat(chatData);
+                        setMessages(updated);
+                        setIsTypingAI(true);
+                        const userGoal = selectedMember.healthGoals?.[0] || HealthGoal.OTHER;
+                        const res = await getAICoachResponse(updated, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal);
+                        if (res) setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]); else setIsTypingAI(false);
+                      }}
+                      className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md"
+                    >
+                      Tham khảo
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        const choiceText = 'đã bỏ qua thông tin từ Trợ lý Lucky.';
+                        const choiceMsg: Message = { id: `c_${Date.now()}`, senderId: currentUserId, senderName: currentUser.fullName, senderRole: currentUser.role as any, content: `👤 ${currentUser.fullName} ${choiceText}`, timestamp: new Date().toISOString() };
+                        const updated = [...messages, choiceMsg];
+                        const chatData: ChatSession = { id: chatId, memberId: selectedMemberId, coachId: currentUserId, messages: updated };
+                        await Database.saveChat(chatData);
+                        setMessages(updated);
+                      }}
+                      className="flex-1 bg-white text-slate-400 border border-slate-200 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
+                    >
+                      Bỏ qua
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })
+        )}
+        {isTypingAI && (
+          <div className="flex justify-start">
+            <div className="bg-amber-50 border border-amber-100 text-amber-600 p-2 rounded-xl rounded-tl-none flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce"></span>
+              <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+              <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+            </div>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>

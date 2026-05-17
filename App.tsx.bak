@@ -47,7 +47,6 @@ const App: React.FC = () => {
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
   const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
-  const [preloadedChats, setPreloadedChats] = useState<any[]>([]);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [lockUntil, setLockUntil] = useState<string | null>(null);
@@ -231,15 +230,13 @@ const App: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [u, k, r, c] = await Promise.all([
+      const [u, k, r] = await Promise.all([
         Database.getUsers(), 
         Database.getKnowledge(),
-        Database.getRules(),
-        Database.getChats()
+        Database.getRules()
       ]);
       setUsers(u || []);
-      setPreloadedChats(c || []);
-      if (window.debugLog) window.debugLog(`[App] Nhận dữ liệu: ${u?.length || 0} users, ${k?.length || 0} kiến thức, ${r?.length || 0} quy tắc, ${c?.length || 0} chats`, "system");
+      if (window.debugLog) window.debugLog(`[App] Nhận dữ liệu: ${u?.length || 0} users, ${k?.length || 0} kiến thức, ${r?.length || 0} quy tắc`, "system");
       setKnowledge(k || []);
       setRules(r || []);
       if (currentUser) {
@@ -259,6 +256,11 @@ const App: React.FC = () => {
     }
   }, [currentUser, refreshTrigger]);
 
+  useEffect(() => {
+    if (isChatOpen && currentUser) {
+      fetchData();
+    }
+  }, [isChatOpen, currentUser]);
 
   const handleLogin = async (data: any) => {
     setLoginError(null);
@@ -413,7 +415,7 @@ const App: React.FC = () => {
       {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
       {activeTab === 'coach' && (currentUser.role === UserRole.COACH || isAdmin) && <CoachDashboard currentUser={currentUser!} />}
       
-      {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats} onClose={() => setIsChatOpen(false)} />}
+      {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onClose={() => setIsChatOpen(false)} />}
       
       {/* Floating Action Buttons Stack */}
       <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-[1000]">

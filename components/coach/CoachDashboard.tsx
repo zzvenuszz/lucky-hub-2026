@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { User, HealthMetric, ChatSession, UserRole } from '../../types.ts';
+import { User, HealthMetric, ChatSession, UserRole, AIKnowledge, AIRule } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import MemberList from './components/MemberList.tsx';
 import MemberMetrics from './components/MemberMetrics.tsx';
@@ -13,6 +13,8 @@ type CoachTab = 'members' | 'chat';
 
 const CoachDashboard: React.FC<CoachDashboardProps> = memo(({ currentUser }) => {
   const [members, setMembers] = useState<User[]>([]);
+  const [knowledge, setKnowledge] = useState<AIKnowledge[]>([]);
+  const [rules, setRules] = useState<AIRule[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<CoachTab>('members');
   const [isLoading, setIsLoading] = useState(true);
@@ -24,11 +26,17 @@ const CoachDashboard: React.FC<CoachDashboardProps> = memo(({ currentUser }) => 
       setIsLoading(true);
       try {
         console.log('[CoachDashboard] Fetching members...');
-        const allUsers = await Database.getUsers();
+        const [allUsers, knowledgeData, rulesData] = await Promise.all([
+          Database.getUsers(),
+          Database.getKnowledge(),
+          Database.getRules()
+        ]);
         if (allUsers) {
           const memberUsers = allUsers.filter(u => u.role === UserRole.MEMBER);
           setMembers(memberUsers);
-          console.log(`[CoachDashboard] Loaded ${memberUsers.length} members`);
+          setKnowledge(knowledgeData || []);
+          setRules(rulesData || []);
+          console.log(`[CoachDashboard] Loaded ${memberUsers.length} members, ${knowledgeData?.length || 0} knowledge, ${rulesData?.length || 0} rules`);
         }
       } catch (error) {
         console.error('[CoachDashboard] Error fetching members:', error);
@@ -125,6 +133,8 @@ const CoachDashboard: React.FC<CoachDashboardProps> = memo(({ currentUser }) => 
             <CoachChat
               currentUser={currentUser}
               selectedMember={selectedMember}
+              knowledge={knowledge}
+              rules={rules}
               onClose={() => setSelectedMemberId(null)}
             />
           ) : (

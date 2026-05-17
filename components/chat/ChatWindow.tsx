@@ -36,10 +36,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         {chat.messages.map((msg) => {
           const isMyMessage = msg.senderId === currentUid;
           const isAiPrompt = msg.content === aiPromptText;
+          const isChoiceNotification = msg.content.startsWith('👤') && (msg.content.includes('đã chọn') || msg.content.includes('bỏ qua'));
 
           return (
-            <div key={msg.id} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'}`}>
+            <div key={msg.id} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} ${isChoiceNotification ? 'opacity-75' : ''}`}>
               <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
+                isChoiceNotification ? 'bg-slate-50 border border-slate-200 text-slate-500 italic text-[11px]' :
                 isAiPrompt ? 'bg-emerald-50 border-2 border-emerald-500 text-slate-800 rounded-xl animate-bounce shadow-emerald-100' :
                 msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none font-medium' : 
                 isMyMessage ? 'bg-emerald-600 text-white rounded-tr-none' : 
@@ -47,7 +49,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               }`}>
                 {msg.imageUrl && <img src={msg.imageUrl} className="rounded-xl mb-2 max-h-40 w-auto shadow-sm" alt="Attach" />}
                 <div className="flex flex-col gap-1">
-                  {!isMyMessage && <span className="text-[9px] font-black uppercase text-slate-400 mb-1">{msg.senderName}</span>}
+                  {!isMyMessage && !isChoiceNotification && <span className="text-[9px] font-black uppercase text-slate-400 mb-1">{msg.senderName}</span>}
                   {msg.content}
                 </div>
 
@@ -68,7 +70,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   </div>
                 )}
               </div>
-              <span className="text-[8px] text-slate-400 mt-1 px-1 font-bold uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+              {!isChoiceNotification && <span className="text-[8px] text-slate-400 mt-1 px-1 font-bold uppercase">{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>}
             </div>
           );
         })}

@@ -12,12 +12,13 @@ interface ChatSystemProps {
   users: User[];
   knowledge: AIKnowledge[];
   rules: AIRule[];
+  preloadedChats: ChatSession[];
   onClose: () => void;
 }
 
 const AI_PROMPT_TEXT = "Trợ lý Lucky AI có thông tin về vấn đề bạn đang đề cập, bạn có muốn tham khảo không?";
 
-const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, rules, onClose }) => {
+const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, rules, preloadedChats, onClose }) => {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
   const [inputText, setInputText] = useState('');
@@ -31,6 +32,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const [showScrollButton, setShowScrollButton] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentUid = (currentUser as any).id || (currentUser as any)._id;
+  const processedMsgIds = useRef<Set<string>>(new Set());
+  const lastMessageCounts = useRef<Record<string, number>>({});
 
   useEffect(() => {
     if (pendingQueue.length > 0 && !isProcessingQueue && selectedChat) {
@@ -52,12 +55,53 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     if (pendingQueue.length <= 1) setIsTypingAI(false);
   };
 
+  const checkNewMessagesAndAddPrompt = useCallback(async (chat: ChatSession) => {
+    const prevCount = lastMessageCounts.current[chat.id] || 0;
+    if (chat.messages.length <= prevCount || chat.coachId === 'ai_coach') return;
+
+    const newMessages = chat.messages.slice(prevCount);
+    let hasChanges = false;
+    let updatedMsgs = [...chat.messages];
+
+    for (const msg of newMessages) {
+      if (msg.senderId === 'ai_coach' || msg.senderId === currentUid) continue;
+      if (processedMsgIds.current.has(msg.id)) continue;
+
+      if (knowledge.some(k => msg.content.toLowerCase().includes(k.keyword.toLowerCase()))) {
+        console.log(`[ChatSystem] AI trigger detected: keyword match in message from ${msg.senderName}`);
+        
+        const promptMsg: Message = {
+          id: `p_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          senderId: 'ai_coach',
+          senderName: '🍀Trợ lý Lucky',
+          senderRole: 'AI' as any,
+          content: AI_PROMPT_TEXT,
+          timestamp: new Date().toISOString()
+        };
+        
+        updatedMsgs.push(promptMsg);
+        processedMsgIds.current.add(msg.id);
+        hasChanges = true;
+      }
+    }
+
+    if (hasChanges) {
+      const updated = { ...chat, messages: updatedMsgs };
+      await Database.saveChat(updated);
+      setSelectedChat(prev => prev?.id === updated.id ? updated : prev);
+      setChats(prev => prev.map(c => c.id === updated.id ? updated : c));
+      console.log(`[ChatSystem] AI prompt added to chat ${chat.id}`);
+    }
+
+    lastMessageCounts.current[chat.id] = chat.messages.length;
+  }, [knowledge, currentUid]);
+
   const loadData = useCallback(async () => {
     try {
       console.log(`[ChatSystem] Loading chat data for user ${currentUid}`);
       const metrics = await Database.getMetrics(currentUid);
       if (metrics?.length) setLatestMetric([...metrics].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]);
-      const allChats = await Database.getChats() || [];
+      const allChats = preloadedChats.length > 0 ? preloadedChats : (await Database.getChats() || []);
       
       let contacts = users.filter(u => {
         const uId = String((u as any).id || (u as any)._id);
@@ -85,7 +129,13 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       });
       const aiChatId = `chat_ai_${String(currentUid)}`;
       const aiChat = allChats.find(c => c.id === aiChatId) || { id: aiChatId, memberId: String(currentUid), coachId: 'ai_coach', messages: [] };
-      setChats([aiChat, ...activeChats]);
+      const newChats = [aiChat, ...activeChats];
+      setChats(newChats);
+
+      // Kiểm tra tin nhắn mới từ người khác để trigger AI prompt
+      for (const chat of newChats) {
+        checkNewMessagesAndAddPrompt(chat);
+      }
     } catch (error) {
       console.error(`[ChatSystem] Error loading chat data:`, error);
       // Graceful fallback - maintain existing chat state
@@ -154,7 +204,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   };
 
   const handleAiChoice = useCallback(async (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => {
-    const msg: Message = { id: `c_${Date.now()}`, senderId: currentUid, senderName: currentUser.fullName, senderRole: currentUser.role, content: `${currentUser.fullName} chọn ${choice}.`, timestamp: new Date().toISOString() };
+    const choiceText = choice === 'tham khảo' ? 'đã chọn tham khảo thông tin từ Trợ lý Lucky 🌿' : 'đã bỏ qua thông tin từ Trợ lý Lucky.';
+    const msg: Message = { id: `c_${Date.now()}`, senderId: currentUid, senderName: currentUser.fullName, senderRole: currentUser.role, content: `👤 ${currentUser.fullName} ${choiceText}`, timestamp: new Date().toISOString() };
     const updated = { ...chat, messages: [...chat.messages, msg] };
     setSelectedChat(updated); await Database.saveChat(updated);
     if (choice === 'tham khảo') {
