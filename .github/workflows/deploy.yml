@@ -17,11 +17,39 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
 
-      - name: Push to HF Space
-        uses: huggingface/space-sync@v1
-        with:
-          hf_token: ${{ secrets.HF_TOKEN }}
-          hf_user: luckyhubvn
-          space_name: lucky-hub-2026
+      - name: Push to HF
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # 1. Đăng nhập tự động bằng Token bí mật vào hệ thống máy chủ
+          echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
+          chmod 600 ~/.netrc
+          
+          # 2. Tạo một thư mục tạm thời bên ngoài để sao lưu dữ liệu sạch hiện tại
+          mkdir /tmp/clean_app
+          cp -r ./* /tmp/clean_app/
+          
+          # 3. XÓA file lịch sử JSON nặng gây lỗi (>10MB)
+          rm -rf /tmp/clean_app/migrated_prompt_history/
+          
+          # 4. Khởi tạo một repo Git mới tinh tại thư mục tạm để XÓA SẠCH LỊCH SỬ LỖI CŨ
+          cd /tmp/clean_app
+          git init
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git branch -m main
+          
+          # 5. KÍCH HOẠT GIT LFS để bảo vệ và nén các file ảnh favicon/img không bị Hugging Face từ chối
+          git lfs install
+          git lfs track "favicon/*"
+          git lfs track "img/*"
+          
+          # 6. Gom toàn bộ mã nguồn sạch (Đầy đủ Dockerfile, README, Ảnh) vào commit mới
+          git add -A
+          git commit -m "Initial clean full-stack deployment commit with LFS assets"
+          
+          # 7. Ép đẩy đè lên Hugging Face Spaces
+          git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
+          git push --force hf main
