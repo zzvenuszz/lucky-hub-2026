@@ -17,22 +17,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true # Kích hoạt tải các file lớn từ GitHub xuống máy chủ ảo
 
       - name: Push to HF
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Đăng nhập tự động bằng Token bí mật vào hệ thống máy chủ
+          # Đăng nhập tự động bằng Token bí mật
           echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
           chmod 600 ~/.netrc
           
-          # Cài đặt và kích hoạt Git LFS trên máy chủ chạy Action để xử lý file > 10MB
-          git lfs install
+          # Tách nhánh tạm thời để dọn dẹp các file nặng trước khi đẩy sang HF
+          git checkout -b hf-deploy
           
-          # Cấu hình remote chuẩn sạch
+          # Xóa thư mục chứa file lịch sử JSON nặng ra khỏi hàng đợi đẩy lên HF
+          # (Lưu ý: Lệnh này chỉ xóa ở nhánh tạm thời trên máy chủ ảo, KHÔNG ảnh hưởng đến code gốc trên GitHub của bạn)
+          git rm -r --cached migrated_prompt_history/ || true
+          
+          # Commit lại sự thay đổi này cho nhánh tạm
+          git commit -m "Exclude heavy history files for HF deployment" || true
+          
+          # Thêm remote và ép đẩy nhánh tạm này lên nhánh main của Hugging Face
           git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026 || git remote set-url hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
-          
-          # Thực hiện ép đẩy code kèm theo các file lớn qua định dạng LFS
-          git push --force hf main
+          git push --force hf hf-deploy:main
