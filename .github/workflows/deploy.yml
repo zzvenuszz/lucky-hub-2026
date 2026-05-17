@@ -20,9 +20,8 @@ jobs:
           lfs: true
 
       - name: Push to HF Space
-        uses: huggingface/github-action@v2.4
+        uses: huggingface/space-sync@v1
         with:
-          nohash: true # Bỏ qua việc kiểm tra lịch sử commit cũ (Sửa lỗi file nặng)
           hf_token: ${{ secrets.HF_TOKEN }}
-          repo_id: luckyhubvn/lucky-hub-2026
-          repo_type: space
+          hf_user: luckyhubvn
+          space_name: lucky-hub-2026
