@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, UserRole } from '../types.ts';
-import BadgeDisplay from './BadgeDisplay.tsx';
+import BadgeDisplay from './system/BadgeDisplay.tsx';
 import AvatarEditor from './profile/AvatarEditor.tsx';
 import ProfileForm from './profile/ProfileForm.tsx';
 

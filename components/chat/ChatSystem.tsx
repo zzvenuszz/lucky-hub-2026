@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule, HealthMetric } from '../../types.ts';
+import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule, HealthMetric, HealthGoal } from '../../types.ts';
 import { getAICoachResponse } from '../../services/gemini.ts';
 import { Database } from '../../services/database.ts';
 import { compressImage } from '../../utils/imageUtils.ts';
@@ -134,7 +134,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       
       if (selectedChat.coachId === 'ai_coach') {
         setIsTypingAI(true);
-        const res = await getAICoachResponse(updatedChat.messages, knowledge, rules, sentText || "Phân tích ảnh", currentUser.healthGoal, latestMetric, sentImg?.split(',')[1]);
+        const userGoal = currentUser.healthGoals?.[0] || HealthGoal.OTHER;
+        const res = await getAICoachResponse(updatedChat.messages, knowledge, rules, sentText || "Phân tích ảnh", userGoal, latestMetric, sentImg?.split(',')[1]);
         if (res) {
           setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]);
           console.log(`[ChatSystem] AI response generated with ${res.split(/\n\n+/).length} parts`);
@@ -158,7 +159,8 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     setSelectedChat(updated); await Database.saveChat(updated);
     if (choice === 'tham khảo') {
       setIsTypingAI(true);
-      const res = await getAICoachResponse(updated.messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", currentUser.healthGoal, latestMetric);
+      const userGoal2 = currentUser.healthGoals?.[0] || HealthGoal.OTHER;
+      const res = await getAICoachResponse(updated.messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal2, latestMetric);
       if (res) setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]); else setIsTypingAI(false);
     }
   }, [currentUid, currentUser, knowledge, rules, latestMetric]);

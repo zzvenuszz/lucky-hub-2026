@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { User, UserRole } from '../types.ts';
-import BadgeDisplay from './BadgeDisplay.tsx';
+import BadgeDisplay from './system/BadgeDisplay.tsx';
 
 interface LayoutProps {
   user: User;

@@ -212,7 +212,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
         return newPosts;
       });
       if (window.debugLog) {
-        const reactionLabel = REACTION_TYPES.find(r => r.type === type)?.label || type;
+        const reactionLabel = REACTION_TYPES.find(r => r.type === type)?.icon || type;
         window.debugLog(`Người dùng @${currentUser.username} đã bày tỏ cảm xúc ${reactionLabel} với một bài viết`, "user");
       }
     }
