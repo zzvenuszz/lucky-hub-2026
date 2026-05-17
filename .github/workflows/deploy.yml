@@ -23,25 +23,29 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # 1. Đăng nhập tự động bằng Token bí mật
+          # 1. Đăng nhập tự động bằng Token bí mật vào hệ thống
           echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
           chmod 600 ~/.netrc
           
-          # 2. Xóa triệt để thư mục chứa file nặng JSON khỏi bản sao hiện tại
+          # 2. Xóa triệt để thư mục chứa lịch sử JSON nặng > 10MB (file này không cần cho app chạy)
           rm -rf migrated_prompt_history/
           
-          # 3. Khởi tạo một repo Git hoàn toàn mới tại đây để XÓA SẠCH LỊCH SỬ CŨ
+          # 3. Khởi tạo một repo Git hoàn toàn mới tại máy chủ ảo để dọn sạch lịch sử lỗi cũ
           rm -rf .git
           git init
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          
-          # 4. Đổi tên nhánh mặc định từ master thành main để khớp với đích đến
           git branch -m main
           
-          # 5. Thêm toàn bộ các file còn lại (đã sạch file nặng) vào repo mới này
+          # 4. Kích hoạt và cấu hình Git LFS để xử lý đúng cách các tệp tin hình ảnh nhị phân (Bypass lỗi của HF)
+          git lfs install
+          git lfs track "favicon/*.png"
+          git lfs track "favicon/*.ico"
+          git lfs track "img/*.png"
+          
+          # 5. Gom toàn bộ mã nguồn và hình ảnh vào commit mới
           git add .
-          git commit -m "Initial clean commit for Hugging Face"
+          git commit -m "Initial clean commit with proper Git LFS tracking for assets"
           
           # 6. Ép đẩy đè lên Hugging Face Spaces
           git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
