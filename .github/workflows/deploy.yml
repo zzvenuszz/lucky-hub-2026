@@ -23,20 +23,23 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Đăng nhập tự động bằng Token bí mật
+          # 1. Đăng nhập tự động bằng Token bí mật
           echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
           chmod 600 ~/.netrc
           
-          # Tách nhánh tạm thời để dọn dẹp các file nặng trước khi đẩy sang HF
-          git checkout -b hf-deploy
+          # 2. Xóa triệt để thư mục chứa file nặng JSON khỏi bản sao hiện tại
+          rm -rf migrated_prompt_history/
           
-          # Xóa thư mục chứa file lịch sử JSON nặng ra khỏi hàng đợi đẩy lên HF
-          # (Lưu ý: Lệnh này chỉ xóa ở nhánh tạm thời trên máy chủ ảo, KHÔNG ảnh hưởng đến code gốc trên GitHub của bạn)
-          git rm -r --cached migrated_prompt_history/ || true
+          # 3. Khởi tạo một repo Git hoàn toàn mới tại đây để XÓA SẠCH LỊCH SỬ CŨ
+          rm -rf .git
+          git init
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
           
-          # Commit lại sự thay đổi này cho nhánh tạm
-          git commit -m "Exclude heavy history files for HF deployment" || true
+          # 4. Thêm toàn bộ các file còn lại (đã sạch file nặng) vào repo mới này
+          git add .
+          git commit -m "Initial clean commit for Hugging Face"
           
-          # Thêm remote và ép đẩy nhánh tạm này lên nhánh main của Hugging Face
-          git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026 || git remote set-url hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
-          git push --force hf hf-deploy:main
+          # 5. Ép đẩy đè lên Hugging Face Spaces (Nhánh main)
+          git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
+          git push --force hf main
