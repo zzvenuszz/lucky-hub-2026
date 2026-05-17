@@ -42,7 +42,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <div key={msg.id} className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} ${isChoiceNotification ? 'opacity-75' : ''}`}>
               <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
                 isChoiceNotification ? 'bg-slate-50 border border-slate-200 text-slate-500 italic text-[11px]' :
-                isAiPrompt ? 'bg-emerald-50 border-2 border-emerald-500 text-slate-800 rounded-xl animate-bounce shadow-emerald-100' :
+                isAiPrompt ? 'bg-emerald-50/50 border border-emerald-200 text-slate-700 rounded-2xl' :
                 msg.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none font-medium' : 
                 isMyMessage ? 'bg-emerald-600 text-white rounded-tr-none' : 
                 'bg-white text-slate-800 rounded-tl-none border border-slate-100'
