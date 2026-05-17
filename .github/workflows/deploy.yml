@@ -2,9 +2,12 @@ name: Sync to Hugging Face Spaces
 
 on:
   push:
-    branches: [ main ] # Nếu bạn dùng nhánh master thì sửa 'main' thành 'master'
+    branches: [ main ] # Sửa thành master nếu bạn đang dùng nhánh master của GitHub
 
   workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   deploy:
@@ -23,8 +26,5 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # Đã tự động điền tên Space theo dự án của bạn (lucky-hub-2026)
-          # Lưu ý: Thay thế 'TEN_TAI_KHOAN_HUGGING_FACE_CỦA_BẠN' bằng Username trên Hugging Face của bạn
-          git remote add hf https://root:$HF_TOKEN@huggingface.co/spaces/luckyhubvn/lucky-hub-2026
-          
-          git push --force hf main
+          # Đã cấu hình chính xác link Space của bạn
+          git push --force https://root:$HF_TOKEN@huggingface.co/spaces/luckyhubvn/lucky-hub-2026 main
