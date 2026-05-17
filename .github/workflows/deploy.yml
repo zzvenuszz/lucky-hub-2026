@@ -19,12 +19,11 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Push to HF
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          
-          # Cú pháp chuẩn xác nhất để bypass xác thực Hugging Face qua Git URL
-          git push --force https://hf:$HF_TOKEN@huggingface.co/spaces/luckyhubvn/lucky-hub-2026 main
+      # Sử dụng Action chuyên dụng để đồng bộ sang Hugging Face ngon lành nhất
+      - name: Push to Hugging Face Spaces
+        uses: Adisb/huggingface-spaces-sync-action@v1.0.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          huggingface_token: ${{ secrets.HF_TOKEN }}
+          huggingface_repo: luckyhubvn/lucky-hub-2026
+          repo_type: space
