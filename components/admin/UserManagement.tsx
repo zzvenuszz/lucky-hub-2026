@@ -1,5 +1,5 @@
 
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import { User, UserRole, AccountStatus } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 
@@ -11,14 +11,73 @@ interface UserManagementProps {
 const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Lấy userId an toàn
+  const getUserId = useCallback((u: any): string => u.id || u._id, []);
 
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
-    const uid = (editingUser as any).id || (editingUser as any)._id;
+    const uid = getUserId(editingUser);
     await Database.updateUser(uid, editingUser);
     setEditingUser(null);
     onRefresh();
+  };
+
+  // Gửi email khôi phục mật khẩu cho người dùng
+  const handleSendResetEmail = async (user: User) => {
+    const uid = getUserId(user);
+    setSendingEmail(uid);
+    setActionMessage(null);
+    try {
+      const res = await fetch(`/api/users/${uid}/send-reset-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actorName: 'Admin' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionMessage({ type: 'success', text: `📧 Email khôi phục đã gửi đến ${user.email}` });
+        console.log(`[UserManagement] Reset email sent to ${user.email}`);
+      } else {
+        setActionMessage({ type: 'error', text: data.message || 'Không thể gửi email' });
+      }
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: 'Lỗi kết nối: ' + err.message });
+      console.error(`[UserManagement] Send reset email error:`, err);
+    } finally {
+      setSendingEmail(null);
+    }
+  };
+
+  // Xóa người dùng
+  const handleDeleteUser = async () => {
+    if (!deletingUser) return;
+    const uid = getUserId(deletingUser);
+    setActionMessage(null);
+    try {
+      const res = await fetch(`/api/users/${uid}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actorName: 'Admin' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionMessage({ type: 'success', text: `🗑️ Đã xóa người dùng ${deletingUser.fullName}` });
+        console.log(`[UserManagement] Deleted user ${deletingUser.username}`);
+      } else {
+        setActionMessage({ type: 'error', text: data.message || 'Không thể xóa người dùng' });
+      }
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: 'Lỗi kết nối: ' + err.message });
+      console.error(`[UserManagement] Delete user error:`, err);
+    } finally {
+      setDeletingUser(null);
+      onRefresh();
+    }
   };
 
   const filteredUsers = users.filter(u => 
@@ -63,13 +122,71 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                   {u.status}
                 </span>
               </td>
-              <td className="text-right space-x-3">
-                <button onClick={() => setEditingUser(u)} className="text-emerald-600 font-black text-[9px] hover:underline">Sửa</button>
+              <td className="text-right space-x-2">
+                <button 
+                  onClick={() => setEditingUser(u)} 
+                  className="text-emerald-600 font-black text-[9px] hover:underline"
+                >
+                  Sửa
+                </button>
+                <button 
+                  onClick={() => handleSendResetEmail(u)} 
+                  disabled={sendingEmail === getUserId(u)}
+                  className={`text-amber-600 font-black text-[9px] hover:underline ${sendingEmail === getUserId(u) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {sendingEmail === getUserId(u) ? 'Đang gửi...' : 'Gửi email khôi phục'}
+                </button>
+                <button 
+                  onClick={() => setDeletingUser(u)} 
+                  className="text-rose-600 font-black text-[9px] hover:underline"
+                >
+                  Xóa
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {/* Action Message Toast */}
+      {actionMessage && (
+        <div className={`fixed top-6 right-6 z-[1300] px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right font-bold text-sm ${actionMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+          {actionMessage.text}
+          <button onClick={() => setActionMessage(null)} className="ml-4 opacity-50 hover:opacity-100">✕</button>
+        </div>
+      )}
+
+      {/* Confirm Delete Modal */}
+      {deletingUser && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
+            <div className="text-5xl mb-2">⚠️</div>
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xác nhận xóa</h4>
+            <p className="text-slate-600 text-sm leading-relaxed">
+              Bạn có chắc chắn muốn xóa người dùng <strong>{deletingUser.fullName}</strong> (@{deletingUser.username})?
+              <br />
+              <span className="text-rose-500 text-[10px] font-black mt-2 block">
+                Tất cả dữ liệu liên quan (chỉ số, bài viết, mục tiêu, chat) sẽ bị xóa vĩnh viễn!
+              </span>
+            </p>
+            <div className="flex gap-3 pt-4">
+              <button 
+                type="button" 
+                onClick={() => setDeletingUser(null)} 
+                className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px] hover:bg-slate-200 transition-all"
+              >
+                Hủy
+              </button>
+              <button 
+                onClick={handleDeleteUser} 
+                className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all"
+              >
+                Xác nhận xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {editingUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">

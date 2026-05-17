@@ -1111,6 +1111,63 @@ app.get('/api/verify-reset-token/:token', async (req, res) => {
   }
 });
 
+// Admin sends password reset email for a user
+app.post('/api/users/:id/send-reset-email', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Save token
+    const tokenDoc = new PasswordResetToken({
+      userId: user._id,
+      token: resetToken,
+      email: user.email,
+      expiresAt
+    });
+    await tokenDoc.save();
+
+    // Send email
+    let emailSent = false;
+    try {
+      if (emailService && typeof emailService.sendPasswordResetEmail === 'function') {
+        emailSent = await emailService.sendPasswordResetEmail(user.email, resetToken, user.fullName);
+      } else {
+        console.warn(`[AdminResetEmail] Email service not ready for ${user.email}`);
+      }
+    } catch (emailErr: any) {
+      console.error(`[AdminResetEmail] Failed to send email:`, emailErr.message);
+    }
+
+    if (emailSent) {
+      const log = new AuditLog({
+        actorId: req.body.actorId || 'admin',
+        actorName: req.body.actorName || 'Admin',
+        targetId: userId,
+        targetName: user.fullName,
+        type: AuditLogType.LOGIN,
+        details: `Admin gửi email khôi phục mật khẩu cho @${user.username} (${user.email})`,
+        timestamp: new Date().toISOString()
+      });
+      await log.save();
+
+      console.log(`[AdminResetEmail] Reset email sent to ${user.email} by admin`);
+      res.json({ success: true, message: 'Email khôi phục mật khẩu đã được gửi.' });
+    } else {
+      res.status(500).json({ success: false, message: 'Không thể gửi email. Vui lòng kiểm tra cấu hình email.' });
+    }
+  } catch (err: any) {
+    console.error(`[AdminResetEmail] Error: ${err.message}`);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 app.get('/api/audit-logs', async (req, res) => {
   const logs = await AuditLog.find().sort({ createdAt: -1 }).limit(500);
   res.json(logs);
@@ -1189,6 +1246,61 @@ app.post('/api/resend-verification', async (req, res) => {
   } catch (err: any) {
     console.error(`[ResendVerification] Error: ${err.message}`);
     res.status(500).json({ message: 'Lỗi hệ thống.' });
+  }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    
+    // Find user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+    }
+
+    // Prevent deleting the last admin
+    if (user.role === UserRole.ADMIN) {
+      const adminCount = await User.countDocuments({ role: UserRole.ADMIN });
+      if (adminCount <= 1) {
+        return res.status(400).json({ message: 'Không thể xóa quản trị viên cuối cùng' });
+      }
+    }
+
+    // Delete all related data
+    await Metric.deleteMany({ userId });
+    await Goal.deleteMany({ userId });
+    await Notification.deleteMany({ userId });
+    await Post.deleteMany({ userId });
+    await Chat.deleteMany({ memberId: userId });
+    await Chat.deleteMany({ coachId: userId });
+    await ActiveSession.deleteMany({ userId });
+    await PasswordResetToken.deleteMany({ userId });
+
+    // Audit log before deleting user
+    const log = new AuditLog({
+      actorId: req.body.actorId || 'admin',
+      actorName: req.body.actorName || 'Admin',
+      targetId: userId,
+      targetName: user.fullName,
+      type: AuditLogType.REGISTER,
+      details: `Xóa người dùng: @${user.username} (${user.fullName})`,
+      timestamp: new Date().toISOString()
+    });
+    await log.save();
+
+    // Delete user
+    await User.findByIdAndDelete(userId);
+
+    console.log(`[USER] Deleted user ${user.username} (${user._id})`);
+    logger.info('USER', `Deleted user @${user.username} (${userId})`);
+    
+    broadcastToMirrors('user:deleted', { username: user.username });
+    
+    res.json({ success: true, message: 'Đã xóa người dùng thành công' });
+  } catch (err: any) {
+    console.error(`[USER] Delete error: ${err.message}`);
+    res.status(500).json({ message: err.message });
   }
 });
 
