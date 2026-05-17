@@ -18,6 +18,7 @@ import { configService } from './src/services/configService.ts';
 import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
 import { validateBody, sanitizeText } from './services/validationService.ts';
+import rateLimit from 'express-rate-limit';
 
 dotenv.config();
 
@@ -74,6 +75,43 @@ const broadcastToMirrors = (type: string, data: any) => {
 
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '50mb' }) as any);
+
+// Rate Limiting Configuration
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 phút
+  max: 200,
+  message: { message: 'Quá nhiều yêu cầu. Vui lòng thử lại sau 15 phút.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { message: 'Quá nhiều lần thử đăng nhập. Vui lòng thử lại sau 15 phút.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 phút
+  max: 30,
+  message: { message: 'Quá nhiều yêu cầu AI. Vui lòng thử lại sau.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply global rate limiter to all /api routes
+app.use('/api', globalLimiter);
+
+// Apply auth-specific limiter (stricter)
+app.use('/api/login', authLimiter);
+app.use('/api/register', authLimiter);
+app.use('/api/forgot-password', authLimiter);
+app.use('/api/reset-password', authLimiter);
+
+// Apply AI-specific limiter
+app.use('/api/ai', aiLimiter);
 
 // Global Request Logger for API and MM endpoints
 app.use((req, res, next) => {
@@ -457,7 +495,10 @@ app.get('/api/admin/gemini-keys', async (req, res) => {
   } catch (err: any) { res.status(500).json({ message: err.message }); }
 });
 
-app.post('/api/admin/gemini-keys', async (req, res) => {
+app.post('/api/admin/gemini-keys', validateBody(
+  { field: 'key', type: 'string', required: true },
+  { field: 'label', type: 'string', required: false, max: 100 }
+), async (req, res) => {
   try {
     const { key, label } = req.body;
     
@@ -570,7 +611,10 @@ const User = mongoose.model('User', new mongoose.Schema({
   avatar: String,
   avatarHash: String,
   isPasswordEncrypted: { type: Boolean, default: false },
-  badges: { type: [String], default: [] }
+  badges: { type: [String], default: [] },
+  isEmailVerified: { type: Boolean, default: false },
+  emailVerificationToken: String,
+  emailVerificationExpires: Date
 }, { timestamps: true }));
 
 const Metric = mongoose.model('Metric', new mongoose.Schema({
@@ -596,6 +640,18 @@ const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: Str
 const Rule = mongoose.model('Rule', new mongoose.Schema({ content: String }));
 
 // Notification Schema
+// Goal Schema
+const Goal = mongoose.model('Goal', new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { type: String, enum: ['weight', 'bodyFat', 'muscleMass', 'waterPercent', 'boneMinerals', 'visceralFat', 'energy', 'bioAge', 'balanceIndex'], required: true },
+  targetValue: { type: Number, required: true },
+  startValue: { type: Number, default: 0 },
+  startDate: { type: String, required: true },
+  targetDate: { type: String, required: true },
+  status: { type: String, enum: ['active', 'completed', 'cancelled'], default: 'active' },
+  progress: { type: Number, default: 0 } // 0-100%
+}, { timestamps: true }));
+
 const Notification = mongoose.model('Notification', new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   type: { type: String, enum: ['reaction', 'message', 'metric_help', 'badge', 'system'], default: 'system' },
@@ -684,6 +740,10 @@ app.post('/api/register', validateBody(
     const imgData = await uploadToImgBB(avatar);
     const finalAvatar = imgData?.url || avatar;
     const adminExists = await User.exists({ role: UserRole.ADMIN });
+    // Generate email verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
     const newUser = new User({ 
       ...rest, 
       username: username.toLowerCase().trim(), 
@@ -692,9 +752,25 @@ app.post('/api/register', validateBody(
       role: !adminExists ? UserRole.ADMIN : (rest.role || UserRole.MEMBER),
       isPasswordEncrypted: true, 
       avatar: finalAvatar,
-      avatarHash: cryptoUtils.generateAvatarHash(finalAvatar)
+      avatarHash: cryptoUtils.generateAvatarHash(finalAvatar),
+      isEmailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpires: verificationExpires
     });
     await newUser.save();
+    
+    // Send verification email
+    try {
+      if (emailService && typeof emailService.sendVerificationEmail === 'function') {
+        await emailService.sendVerificationEmail(newUser.email, verificationToken, newUser.fullName);
+        console.log(`[Register] Verification email sent to ${newUser.email}`);
+      } else {
+        console.warn(`[Register] Email service not ready, skipping verification email for ${newUser.email}`);
+      }
+    } catch (emailErr: any) {
+      console.error(`[Register] Failed to send verification email:`, emailErr.message);
+      // Don't block registration if email fails
+    }
     
     broadcastToMirrors('user:created', { 
       username: newUser.username, 
@@ -710,7 +786,7 @@ app.post('/api/register', validateBody(
     });
     await log.save();
 
-    res.json({ message: 'Success' });
+    res.json({ message: 'Success', emailSent: true });
   } catch (err) { res.status(500).json({ message: 'Error' }); }
 });
 
@@ -1045,6 +1121,77 @@ app.get('/api/users', async (req, res) => {
   res.json(u.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
+// Email Verification Endpoint
+app.get('/api/verify-email/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    console.log(`[EmailVerification] Verifying token: ${token.substring(0, 8)}...`);
+
+    const user = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: new Date() }
+    });
+
+    if (!user) {
+      console.log(`[EmailVerification] Invalid or expired token`);
+      return res.status(400).json({ message: 'Liên kết xác thực không hợp lệ hoặc đã hết hạn.' });
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    console.log(`[EmailVerification] Email verified for user: ${user.email}`);
+    res.json({ message: 'Xác thực email thành công! Bạn có thể đăng nhập và sử dụng đầy đủ chức năng.' });
+  } catch (err: any) {
+    console.error(`[EmailVerification] Error: ${err.message}`);
+    res.status(500).json({ message: 'Lỗi hệ thống. Vui lòng thử lại sau.' });
+  }
+});
+
+// Resend Verification Email
+app.post('/api/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email là bắt buộc' });
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    if (!user) {
+      return res.json({ message: 'Nếu email tồn tại trong hệ thống, bạn sẽ nhận được email xác thực.' });
+    }
+
+    if (user.isEmailVerified) {
+      return res.json({ message: 'Email này đã được xác thực. Bạn có thể đăng nhập.' });
+    }
+
+    // Generate new token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    user.emailVerificationToken = verificationToken;
+    user.emailVerificationExpires = verificationExpires;
+    await user.save();
+
+    // Send verification email
+    try {
+      if (emailService && typeof emailService.sendVerificationEmail === 'function') {
+        await emailService.sendVerificationEmail(user.email, verificationToken, user.fullName);
+        console.log(`[ResendVerification] Email sent to ${user.email}`);
+      } else {
+        console.warn(`[ResendVerification] Email service not ready`);
+      }
+    } catch (emailErr: any) {
+      console.error(`[ResendVerification] Failed to send email:`, emailErr.message);
+    }
+
+    res.json({ message: 'Email xác thực đã được gửi. Vui lòng kiểm tra hộp thư đến.' });
+  } catch (err: any) {
+    console.error(`[ResendVerification] Error: ${err.message}`);
+    res.status(500).json({ message: 'Lỗi hệ thống.' });
+  }
+});
+
 app.put('/api/users/:id', async (req, res) => {
   try {
     const data = req.body;
@@ -1125,7 +1272,11 @@ app.get('/api/posts', async (req, res) => {
   });
 });
 
-app.post('/api/posts', async (req, res) => {
+app.post('/api/posts', validateBody(
+  { field: 'userId', type: 'string', required: true },
+  { field: 'content', type: 'content', required: true },
+  { field: 'userFullName', type: 'string', required: false, max: 100 }
+), async (req, res) => {
   const { imageUrls, ...data } = req.body;
   const uploadedImages = [];
   if (imageUrls && Array.isArray(imageUrls)) {
@@ -1150,7 +1301,9 @@ app.post('/api/posts', async (req, res) => {
 });
 
 // Update post
-app.put('/api/posts/:id', async (req, res) => {
+app.put('/api/posts/:id', validateBody(
+  { field: 'content', type: 'content', required: false }
+), async (req, res) => {
   try {
     const { id } = req.params;
     const { content, existingImages, newImages, hashtags } = req.body;
@@ -1340,7 +1493,19 @@ app.get('/api/metrics/:userId', async (req, res) => {
   res.json(m.map(item => ({ ...item.toObject(), id: item._id })));
 });
 
-app.post('/api/metrics', async (req, res) => {
+app.post('/api/metrics', validateBody(
+  { field: 'userId', type: 'string', required: true },
+  { field: 'date', type: 'string', required: true },
+  { field: 'weight', type: 'number', required: false },
+  { field: 'bodyFat', type: 'number', required: false },
+  { field: 'muscleMass', type: 'number', required: false },
+  { field: 'waterPercent', type: 'number', required: false },
+  { field: 'boneMinerals', type: 'number', required: false },
+  { field: 'visceralFat', type: 'number', required: false },
+  { field: 'energy', type: 'number', required: false },
+  { field: 'bioAge', type: 'number', required: false },
+  { field: 'balanceIndex', type: 'number', required: false }
+), async (req, res) => {
   const { actorId, actorName, ...metricData } = req.body;
   const m = new Metric(metricData);
   await m.save();
@@ -1380,6 +1545,46 @@ app.post('/api/metrics', async (req, res) => {
   res.json({ ...m.toObject(), id: m._id });
 });
 
+// Export Metrics as CSV
+app.get('/api/metrics/export/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const format = (req.query.format as string) || 'csv';
+    const fromDate = req.query.from as string;
+    const toDate = req.query.to as string;
+
+    let query: any = { userId };
+    if (fromDate || toDate) {
+      query.date = {};
+      if (fromDate) query.date.$gte = fromDate;
+      if (toDate) query.date.$lte = toDate;
+    }
+
+    const metrics = await Metric.find(query).sort({ date: -1 }).limit(1000);
+
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename=metrics.json');
+      return res.json(metrics);
+    }
+
+    // CSV format
+    const headers = 'Date,Weight,BodyFat,MuscleMass,WaterPercent,BoneMinerals,VisceralFat,Energy,BioAge,BalanceIndex';
+    const rows = metrics.map(m => 
+      `${m.date},${m.weight || ''},${m.bodyFat || ''},${m.muscleMass || ''},${m.waterPercent || ''},${m.boneMinerals || ''},${m.visceralFat || ''},${m.energy || ''},${m.bioAge || ''},${m.balanceIndex || ''}`
+    );
+    const csv = `${headers}\n${rows.join('\n')}`;
+
+    console.log(`[Export] Exported ${metrics.length} metrics for user ${userId} as CSV`);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=health_metrics.csv');
+    res.send(csv);
+  } catch (err: any) {
+    console.error(`[Export] Error: ${err.message}`);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 app.post('/api/metrics/bulk', async (req, res) => {
   try {
     const { metrics, actorId, actorName } = req.body;
@@ -1412,7 +1617,10 @@ app.post('/api/metrics/bulk', async (req, res) => {
 });
 
 app.get('/api/knowledge', async (req, res) => res.json((await Knowledge.find()).map(i => ({...i.toObject(), id: i._id}))));
-app.post('/api/knowledge', async (req, res) => {
+app.post('/api/knowledge', validateBody(
+  { field: 'keyword', type: 'string', required: true, max: 200 },
+  { field: 'content', type: 'string', required: true, max: 5000 }
+), async (req, res) => {
   const k = new Knowledge(req.body); await k.save();
   res.json({ ...k.toObject(), id: k._id });
 });
@@ -1422,13 +1630,117 @@ app.delete('/api/knowledge/:id', async (req, res) => {
 });
 
 app.get('/api/rules', async (req, res) => res.json((await Rule.find()).map(i => ({...i.toObject(), id: i._id}))));
-app.post('/api/rules', async (req, res) => {
+app.post('/api/rules', validateBody(
+  { field: 'content', type: 'string', required: true, max: 5000 }
+), async (req, res) => {
   const r = new Rule(req.body); await r.save();
   res.json({ ...r.toObject(), id: r._id });
 });
 app.delete('/api/rules/:id', async (req, res) => {
   await Rule.findByIdAndDelete(req.params.id);
   res.json({ success: true });
+});
+
+// Goal API Endpoints
+app.get('/api/goals/:userId', async (req, res) => {
+  try {
+    const goals = await Goal.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    console.log(`[Goals] Fetched ${goals.length} goals for user ${req.params.userId}`);
+    res.json(goals.map(g => ({ ...g.toObject(), id: g._id })));
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/goals', validateBody(
+  { field: 'userId', type: 'string', required: true },
+  { field: 'type', type: 'string', required: true },
+  { field: 'targetValue', type: 'number', required: true },
+  { field: 'startValue', type: 'number', required: false },
+  { field: 'startDate', type: 'string', required: true },
+  { field: 'targetDate', type: 'string', required: true }
+), async (req, res) => {
+  try {
+    const { userId, type, targetValue, startValue, startDate, targetDate } = req.body;
+    
+    // Calculate initial progress
+    const progress = 0;
+
+    const goal = new Goal({ userId, type, targetValue, startValue: startValue || 0, startDate, targetDate, progress, status: 'active' });
+    await goal.save();
+    
+    console.log(`[Goals] Created goal: ${type} for user ${userId}, target=${targetValue}`);
+    logger.info('GOALS', `Created ${type} goal for user ${userId}: target ${targetValue}`);
+    res.json({ ...goal.toObject(), id: goal._id });
+  } catch (err: any) {
+    console.error(`[Goals] Create error:`, err.message);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.put('/api/goals/:id', async (req, res) => {
+  try {
+    const { targetValue, targetDate, status } = req.body;
+    const updateData: any = {};
+    if (targetValue !== undefined) updateData.targetValue = targetValue;
+    if (targetDate !== undefined) updateData.targetDate = targetDate;
+    if (status !== undefined) updateData.status = status;
+
+    const goal = await Goal.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    if (!goal) return res.status(404).json({ message: 'Goal not found' });
+    
+    console.log(`[Goals] Updated goal ${req.params.id}`);
+    res.json({ ...goal.toObject(), id: goal._id });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.delete('/api/goals/:id', async (req, res) => {
+  try {
+    await Goal.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Recalculate goal progress based on latest metric
+app.post('/api/goals/recalculate/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const goals = await Goal.find({ userId, status: 'active' });
+    
+    // Get latest metric
+    const latestMetric = await Metric.findOne({ userId }).sort({ date: -1 });
+    if (!latestMetric) return res.json({ goals: goals.map(g => ({ ...g.toObject(), id: g._id })) });
+
+    const updatedGoals = [];
+    for (const goal of goals) {
+      const currentValue = (latestMetric as any)[goal.type] || 0;
+      const startValue = goal.startValue || 0;
+      const targetValue = goal.targetValue;
+      const range = Math.abs(targetValue - startValue);
+      
+      let progress = 0;
+      if (range > 0) {
+        const isDecrease = targetValue < startValue;
+        const achieved = isDecrease ? (startValue - currentValue) : (currentValue - startValue);
+        progress = Math.min(100, Math.max(0, Math.round((achieved / range) * 100)));
+      }
+
+      goal.progress = progress;
+      if (progress >= 100) goal.status = 'completed';
+      await goal.save();
+      updatedGoals.push({ ...goal.toObject(), id: goal._id });
+    }
+
+    console.log(`[Goals] Recalculated ${updatedGoals.length} goals for user ${userId}`);
+    res.json({ goals: updatedGoals });
+  } catch (err: any) {
+    console.error(`[Goals] Recalculate error:`, err.message);
+    res.status(500).json({ message: err.message });
+  }
 });
 
 // Notification API Endpoints
@@ -1474,7 +1786,11 @@ app.put('/api/notifications/read-all/:userId', async (req, res) => {
 });
 
 app.get('/api/chats', async (req, res) => res.json(await Chat.find()));
-app.post('/api/chats', async (req, res) => {
+app.post('/api/chats', validateBody(
+  { field: 'id', type: 'string', required: true },
+  { field: 'memberId', type: 'string', required: true },
+  { field: 'coachId', type: 'string', required: true }
+), async (req, res) => {
   const { id, ...data } = req.body;
   const chat = await Chat.findOneAndUpdate({ id }, { ...data, id }, { upsert: true, new: true });
   

@@ -61,6 +61,17 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             </select>
           )}
           <button onClick={() => onAddMetric(selectedUserId)} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">+ Thêm mới</button>
+          <button 
+            onClick={() => {
+              const uid = selectedUserId || currentUid;
+              window.open(`/api/metrics/export/${uid}?format=csv`, '_blank');
+              console.log(`[Export] Downloading CSV for user ${uid}`);
+            }} 
+            className="bg-slate-100 text-slate-600 px-4 py-2.5 rounded-xl font-bold hover:bg-slate-200 transition-all text-sm flex items-center gap-2"
+            title="Xuất dữ liệu CSV"
+          >
+            📥 CSV
+          </button>
         </div>
       </div>
 

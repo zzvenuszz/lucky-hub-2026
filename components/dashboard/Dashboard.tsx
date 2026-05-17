@@ -6,6 +6,7 @@ import { cacheManager } from '../../utils/cacheManager.ts';
 import StatCards from './StatCards.tsx';
 import BodyCompositionPie from './BodyCompositionPie.tsx';
 import TrendChart from './TrendChart.tsx';
+import GoalTracking from '../goals/GoalTracking.tsx';
 
 interface DashboardProps {
   user: User;
@@ -101,6 +102,13 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
           configs={AVAILABLE_METRICS} 
         />
       </div>
+
+      {/* Goals Section */}
+      {metrics.length > 0 && (
+        <div className="mt-8">
+          <GoalTracking currentUser={user} refreshTrigger={refreshTrigger} />
+        </div>
+      )}
     </div>
   );
 });

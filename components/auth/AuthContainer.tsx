@@ -3,8 +3,9 @@ import Login from './Login';
 import Register from './Register';
 import ForgotPasswordForm from './ForgotPasswordForm';
 import ResetPasswordForm from './ResetPasswordForm';
+import EmailVerification from './EmailVerification';
 
-type AuthMode = 'login' | 'register' | 'forgot-password' | 'reset-password';
+type AuthMode = 'login' | 'register' | 'forgot-password' | 'reset-password' | 'verify-email' | 'verify-success';
 
 interface AuthContainerProps {
   onLogin: (data: any) => void;
@@ -14,10 +15,12 @@ interface AuthContainerProps {
   onCheckEmail: (email: string) => void;
   errorMessage?: string | null;
   lockUntil?: string | null;
+  verifyMode?: boolean;
+  onBackFromVerify?: () => void;
 }
 
-const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail, errorMessage, lockUntil }) => {
-  const [mode, setMode] = useState<AuthMode>('login');
+const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail, errorMessage, lockUntil, verifyMode, onBackFromVerify }) => {
+  const [mode, setMode] = useState<AuthMode>(verifyMode ? 'verify-success' : 'login');
   const [resetToken, setResetToken] = useState<string>('');
 
   const handleSwitchToRegister = () => setMode('register');
@@ -30,14 +33,29 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister,
     setMode('reset-password');
   };
 
-  // Check if we have a reset token in URL
+  // Sync verifyMode prop
+  React.useEffect(() => {
+    if (verifyMode && mode === 'login') {
+      setMode('verify-success');
+    }
+  }, [verifyMode, mode]);
+
+  // Check if we have a reset token or verify token in URL
   React.useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
+    const verifyToken = urlParams.get('verify');
+    
     if (token && mode === 'login') {
       // Xóa token khỏi URL sau khi lấy để tránh vòng lặp
       window.history.replaceState({}, document.title, window.location.pathname);
       handleResetPassword(token);
+    }
+    
+    if (verifyToken && mode === 'login') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setResetToken(verifyToken);
+      setMode('verify-email');
     }
   }, [mode]);
 
@@ -65,6 +83,22 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister,
             token={resetToken}
             onSuccess={handleResetPasswordSuccess}
             onBackToLogin={handleSwitchToLogin}
+          />
+        );
+      case 'verify-email':
+        return (
+          <EmailVerification
+            token={resetToken}
+            onVerified={handleSwitchToLogin}
+            onBackToLogin={handleSwitchToLogin}
+          />
+        );
+      case 'verify-success':
+        return (
+          <EmailVerification
+            token=""
+            onVerified={onBackFromVerify || handleSwitchToLogin}
+            onBackToLogin={onBackFromVerify || handleSwitchToLogin}
           />
         );
       default:

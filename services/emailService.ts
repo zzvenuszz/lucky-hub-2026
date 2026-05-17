@@ -167,6 +167,75 @@ class EmailService {
   }
 
   /**
+   * Send email verification email
+   */
+  public async sendVerificationEmail(email: string, verificationToken: string, userName: string): Promise<boolean> {
+    console.log('[EMAIL-SERVICE] sendVerificationEmail called:', { email, userName, tokenLength: verificationToken.length });
+
+    const verifyUrl = `${this.appBaseUrl}/verify-email?token=${verificationToken}`;
+    console.log('[EMAIL-SERVICE] Verification URL generated:', verifyUrl);
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Xác thực Email - Lucky Hub</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
+          .container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+          .header { background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 40px 30px; text-align: center; }
+          .logo { font-size: 32px; margin-bottom: 10px; }
+          .title { font-size: 24px; font-weight: bold; margin: 0; }
+          .content { padding: 40px 30px; color: #374151; line-height: 1.6; }
+          .greeting { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #059669; }
+          .verify-button { display: inline-block; background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; }
+          .note { background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0; font-size: 14px; }
+          .footer { background-color: #f9fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">🍀</div>
+            <h1 class="title">Xác thực Email</h1>
+          </div>
+          <div class="content">
+            <div class="greeting">Xin chào ${userName}!</div>
+            <p>Cảm ơn bạn đã đăng ký tài khoản <strong>Lucky Hub</strong>.</p>
+            <p>Vui lòng nhấp vào nút bên dưới để xác thực địa chỉ email của bạn:</p>
+            <div style="text-align: center;">
+              <a href="${verifyUrl}" class="verify-button">XÁC THỰC EMAIL</a>
+            </div>
+            <div class="note">
+              <strong>⏰ Liên kết có hiệu lực trong 24 giờ.</strong><br>
+              Nếu bạn không đăng ký tài khoản Lucky Hub, vui lòng bỏ qua email này.
+            </div>
+            <p>Trân trọng,<br><strong>Đội ngũ Lucky Hub</strong></p>
+          </div>
+          <div class="footer">
+            <p><strong>Lucky Hub</strong> - Chuyên gia sức khỏe của bạn</p>
+            <p style="margin-top: 15px; font-size: 12px; color: #9ca3af;">© 2026 Lucky Hub. Tất cả quyền được bảo lưu.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const text = `Xin chào ${userName}!\n\nCảm ơn bạn đã đăng ký tài khoản Lucky Hub.\n\nVui lòng truy cập liên kết sau để xác thực email (có hiệu lực trong 24 giờ):\n${verifyUrl}\n\nTrân trọng,\nĐội ngũ Lucky Hub`;
+
+    const result = await this.sendEmail({
+      to: email,
+      subject: 'Xác thực email - Lucky Hub',
+      html,
+      text
+    });
+    console.log('[EMAIL-SERVICE] sendVerificationEmail result:', result);
+    return result;
+  }
+
+  /**
    * Send password reset email
    */
   public async sendPasswordResetEmail(email: string, resetToken: string, userName: string): Promise<boolean> {

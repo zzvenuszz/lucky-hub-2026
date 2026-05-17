@@ -336,6 +336,8 @@ const App: React.FC = () => {
     } finally { setIsLoading(false); }
   };
 
+  const [isVerifyMode, setIsVerifyMode] = useState(false);
+
   const handleRegister = async (data: any) => {
     if (emailError) return alert('Email không hợp lệ');
     setIsLoading(true);
@@ -347,8 +349,8 @@ const App: React.FC = () => {
       });
       if (response.ok) {
         if (window.debugLog) window.debugLog(`Đăng ký tài khoản mới thành công: @${data.username}`, "auth");
-        alert('Đăng ký thành công!');
-        setIsRegistering(false);
+        // Chuyển sang màn hình thông báo xác thực email
+        setIsVerifyMode(true);
       } else {
         const res = await response.json();
         if (window.debugLog) window.debugLog(`Lỗi đăng ký: ${res.message}`, "error");
@@ -381,7 +383,17 @@ const App: React.FC = () => {
   }, []);
 
   if (!currentUser) {
-    return <AuthContainer onLogin={handleLogin} isLoading={isLoading} onRegister={handleRegister} emailError={emailError} onCheckEmail={handleCheckEmail} errorMessage={loginError} lockUntil={lockUntil} />;
+    return <AuthContainer 
+      onLogin={handleLogin} 
+      isLoading={isLoading} 
+      onRegister={handleRegister} 
+      emailError={emailError} 
+      onCheckEmail={handleCheckEmail} 
+      errorMessage={loginError} 
+      lockUntil={lockUntil}
+      verifyMode={isVerifyMode}
+      onBackFromVerify={() => setIsVerifyMode(false)}
+    />;
   }
 
   const isAdmin = currentUser.role === UserRole.ADMIN;
