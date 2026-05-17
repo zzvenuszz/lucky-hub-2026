@@ -2,7 +2,7 @@ name: Sync to Hugging Face Spaces
 
 on:
   push:
-    branches: [ main ] # Sửa thành master nếu bạn đang dùng nhánh master của GitHub
+    branches: [ main ] # Sửa thành master nếu nhánh chính trên GitHub của bạn là master
 
   workflow_dispatch:
 
@@ -19,20 +19,17 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Push to HF using SSH
+      - name: Push to HF
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          # 1. Tạo thư mục cấu hình SSH an toàn nội bộ
-          mkdir -p ~/.ssh
-          echo "strictbase64token" > /tmp/hf_token
-          
-          # 2. Thiết lập thông tin Git
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # 3. Sử dụng cấu hình URL chứa Token đã được chuẩn hóa riêng cho môi trường Linux Runner
-          git remote add hf https://hf:$HF_TOKEN@huggingface.co/spaces/luckyhubvn/lucky-hub-2026
+          # Sử dụng cơ chế ghi nhớ thông tin đăng nhập tự động của Git
+          git config --global credential.helper store
+          echo "https://hf:$HF_TOKEN@huggingface.co" > ~/.git-credentials
           
-          # 4. Thực hiện đẩy code
+          # Thêm remote và đẩy code sang Hugging Face
+          git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
           git push --force hf main
