@@ -17,36 +17,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          lfs: true
 
-      - name: Push to HF
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          
-          # 1. Đăng nhập tự động bằng Token bí mật vào hệ thống máy chủ
-          echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
-          chmod 600 ~/.netrc
-          
-          # 2. Tạo một thư mục tạm thời bên ngoài để sao lưu dữ liệu sạch hiện tại
-          mkdir /tmp/clean_app
-          cp -r ./* /tmp/clean_app/
-          
-          # 3. Xóa các thư mục chứa lịch sử JSON nặng và file ảnh gây lỗi trong thư mục tạm
-          rm -rf /tmp/clean_app/migrated_prompt_history/
-          rm -rf /tmp/clean_app/favicon/
-          rm -rf /tmp/clean_app/img/
-          
-          # 4. Khởi tạo một repo Git mới tinh tại thư mục tạm để XÓA SẠCH LỊCH SỬ LỖI CŨ
-          cd /tmp/clean_app
-          git init
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
-          git branch -m main
-          
-          # 5. Gom toàn bộ mã nguồn sạch (ĐÃ BAO GỒM DOCKERFILE VÀ README) vào commit mới
-          git add -A
-          git commit -m "Initial clean full-stack deployment commit"
-          
-          # 6. Ép đẩy đè lên Hugging Face Spaces
-          git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
-          git push --force hf main
+      - name: Push to HF Space
+        uses: huggingface/github-action@v2.4
+        with:
+          nohash: true # Bỏ qua việc kiểm tra lịch sử commit cũ (Sửa lỗi file nặng)
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_id: luckyhubvn/lucky-hub-2026
+          repo_type: space
