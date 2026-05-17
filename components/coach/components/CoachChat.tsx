@@ -182,7 +182,7 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
               <div key={msg.id} className={`flex ${isMyMessage ? 'justify-end' : 'justify-start'} ${isChoiceNotification ? 'opacity-75' : ''}`}>
                 <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
                   isChoiceNotification ? 'bg-slate-50 border border-slate-200 text-slate-500 italic text-[11px]' :
-                  isAiPrompt ? 'bg-emerald-50 border-2 border-emerald-500 text-slate-800 rounded-xl animate-bounce shadow-emerald-100' :
+                  isAiPrompt ? 'bg-emerald-50/50 border border-emerald-200 text-slate-700 rounded-2xl' :
                   isAiResponse ? 'bg-amber-50 border border-amber-100 text-slate-800 font-medium' :
                   isMyMessage
                     ? 'bg-emerald-600 text-white rounded-br-md'
