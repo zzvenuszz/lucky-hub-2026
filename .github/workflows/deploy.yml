@@ -23,29 +23,29 @@ jobs:
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           
-          # 1. Đăng nhập tự động bằng Token bí mật vào hệ thống
+          # 1. Đăng nhập tự động bằng Token bí mật vào hệ thống máy chủ
           echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
           chmod 600 ~/.netrc
           
-          # 2. Xóa triệt để thư mục chứa lịch sử JSON nặng > 10MB (file này không cần cho app chạy)
-          rm -rf migrated_prompt_history/
+          # 2. Tạo một thư mục tạm thời bên ngoài để sao lưu dữ liệu sạch hiện tại
+          mkdir /tmp/clean_app
+          cp -r ./* /tmp/clean_app/
           
-          # 3. Khởi tạo một repo Git hoàn toàn mới tại máy chủ ảo để dọn sạch lịch sử lỗi cũ
-          rm -rf .git
+          # 3. Xóa các thư mục chứa lịch sử JSON nặng và file ảnh gây lỗi trong thư mục tạm
+          rm -rf /tmp/clean_app/migrated_prompt_history/
+          rm -rf /tmp/clean_app/favicon/
+          rm -rf /tmp/clean_app/img/
+          
+          # 4. Khởi tạo một repo Git mới tinh tại thư mục tạm để XÓA SẠCH LỊCH SỬ LỖI CŨ
+          cd /tmp/clean_app
           git init
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
           git branch -m main
           
-          # 4. Kích hoạt và cấu hình Git LFS để xử lý đúng cách các tệp tin hình ảnh nhị phân (Bypass lỗi của HF)
-          git lfs install
-          git lfs track "favicon/*.png"
-          git lfs track "favicon/*.ico"
-          git lfs track "img/*.png"
-          
-          # 5. Gom toàn bộ mã nguồn và hình ảnh vào commit mới
-          git add .
-          git commit -m "Initial clean commit with proper Git LFS tracking for assets"
+          # 5. Gom toàn bộ mã nguồn sạch (ĐÃ BAO GỒM DOCKERFILE VÀ README) vào commit mới
+          git add -A
+          git commit -m "Initial clean full-stack deployment commit"
           
           # 6. Ép đẩy đè lên Hugging Face Spaces
           git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
