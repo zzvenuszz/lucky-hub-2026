@@ -13,6 +13,14 @@ interface ChatWindowProps {
   newMessageCount: number;
 }
 
+/** Scroll container xuống cuối cùng */
+function scrollToBottomDom(container: HTMLDivElement | null) {
+  if (!container) return;
+  requestAnimationFrame(() => {
+    container.scrollTo({ top: container.scrollHeight, behavior: 'instant' as any });
+  });
+}
+
 const ChatWindow: React.FC<ChatWindowProps> = ({ 
   chat, currentUid, isTypingAI, onAiChoice, 
   onAtBottomChange, scrollToBottom, aiPromptText, promptChoice,
@@ -21,29 +29,39 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const [showNotification, setShowNotification] = useState(false);
+  const initialScrollDone = useRef(false);
+
+  // Khi lần đầu mở chat, scroll xuống cuối sau khi DOM render xong
+  useEffect(() => {
+    initialScrollDone.current = false;
+    const container = scrollRef.current;
+    if (!container) return;
+
+    // Scroll ngay sau khi DOM có thể render
+    const timeoutId = setTimeout(() => {
+      scrollToBottomDom(container);
+      isAtBottomRef.current = true;
+      onAtBottomChange(true);
+      initialScrollDone.current = true;
+      console.log(`[ChatWindow] Initial scroll to bottom for chat ${chat.id}`);
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [chat.id]);
 
   // Auto scroll xuống cuối khi messages thay đổi (nếu đang ở bottom)
   useEffect(() => {
-    if (scrollRef.current && isAtBottomRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!scrollRef.current) return;
+    if (isAtBottomRef.current && initialScrollDone.current) {
+      scrollToBottomDom(scrollRef.current);
     }
   }, [chat.messages, isTypingAI]);
-
-  // Khi lần đầu mở chat, scroll xuống cuối
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      isAtBottomRef.current = true;
-      onAtBottomChange(true);
-    }
-  }, [chat.id]);
 
   // Hiển thị notification khi có newMessageCount > 0
   useEffect(() => {
     if (newMessageCount > 0) {
       setShowNotification(true);
     } else {
-      // Delay một chút để tránh flicker khi reset
       const timer = setTimeout(() => setShowNotification(false), 300);
       return () => clearTimeout(timer);
     }
@@ -58,9 +76,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [onAtBottomChange]);
 
   const handleScrollToBottom = useCallback(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    scrollToBottomDom(scrollRef.current);
     isAtBottomRef.current = true;
     scrollToBottom();
   }, [scrollToBottom]);
