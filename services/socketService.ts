@@ -1,13 +1,20 @@
-import { io, Socket } from 'socket.io-client';
+// Socket.IO service - dùng global io từ CDN (script tag trong index.html)
+// Không dùng import socket.io-client vì project dùng importmap không hỗ trợ
 
-let socket: Socket | null = null;
+let socket: any = null;
 
-export function connectSocket(userId: string, sessionId: string, userRole: string): Socket {
+export function connectSocket(userId: string, sessionId: string, userRole: string): any {
+  // Kiểm tra io global từ CDN
+  if (typeof (window as any).io === 'undefined') {
+    console.warn('[SocketService] Socket.IO CDN not loaded, socket unavailable');
+    return null;
+  }
+
   if (socket?.connected) {
     socket.disconnect();
   }
 
-  socket = io({
+  socket = (window as any).io({
     path: '/socket.io',
     query: {
       userId,
@@ -25,11 +32,11 @@ export function connectSocket(userId: string, sessionId: string, userRole: strin
     console.log(`[SocketService] Connected: userId=${userId}, socketId=${socket?.id}`);
   });
 
-  socket.on('disconnect', (reason) => {
+  socket.on('disconnect', (reason: string) => {
     console.log(`[SocketService] Disconnected: reason=${reason}`);
   });
 
-  socket.on('connect_error', (err) => {
+  socket.on('connect_error', (err: any) => {
     console.error(`[SocketService] Connection error:`, err.message);
   });
 
@@ -44,7 +51,7 @@ export function disconnectSocket() {
   }
 }
 
-export function getSocket(): Socket | null {
+export function getSocket(): any {
   return socket;
 }
 
