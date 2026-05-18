@@ -33,7 +33,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const currentUid = (currentUser as any).id || (currentUser as any)._id;
   const processedMsgIds = useRef<Set<string>>(new Set());
   const lastMessageCounts = useRef<Record<string, number>>({});
-  const [promptChoices, setPromptChoices] = useState<Map<string, {userName: string, choice: string}>>(new Map());
   const isAtBottomRef = useRef(true);
   const prevMessagesLength = useRef(0);
 
@@ -227,13 +226,45 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     }
   };
 
-  const handleAiChoice = useCallback(async (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => {
-    setPromptChoices(prev => new Map(prev).set(chat.id, { userName: currentUser.fullName, choice }));
+  const handleAiChoice = useCallback(async (chat: ChatSession, messageId: string, choice: 'tham khảo' | 'bỏ qua') => {
+    console.log(`[ChatSystem] handleAiChoice: chat=${chat.id}, messageId=${messageId}, choice=${choice}, user=${currentUser.fullName}`);
+    
+    // Gắn meta vào prompt message cụ thể dựa trên messageId
+    const updatedMsgs = chat.messages.map(msg => {
+      if (msg.id === messageId) {
+        return {
+          ...msg,
+          meta: {
+            chosenBy: currentUid,
+            chosenByName: currentUser.fullName,
+            choice,
+            chosenAt: new Date().toISOString()
+          }
+        };
+      }
+      return msg;
+    });
+    
+    // Lưu xuống database
+    const updatedChat = { ...chat, messages: updatedMsgs };
+    await Database.saveChat(updatedChat);
+    
+    // Cập nhật state local
+    setSelectedChat(prev => prev?.id === updatedChat.id ? updatedChat : prev);
+    setChats(prev => prev.map(c => c.id === updatedChat.id ? updatedChat : c));
+    
+    console.log(`[ChatSystem] Choice saved: ${currentUser.fullName} chose "${choice}" on message ${messageId} in chat ${chat.id}`);
+    
+    // Nếu chọn "tham khảo", gọi AI để gửi thông tin
     if (choice === 'tham khảo') {
       setIsTypingAI(true);
       const userGoal2 = currentUser.healthGoals?.[0] || HealthGoal.OTHER;
-      const res = await getAICoachResponse(chat.messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal2, latestMetric);
-      if (res) setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]); else setIsTypingAI(false);
+      const res = await getAICoachResponse(updatedChat.messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal2, latestMetric);
+      if (res) {
+        setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter(c => c.trim())]);
+      } else {
+        setIsTypingAI(false);
+      }
     }
   }, [currentUid, currentUser, knowledge, rules, latestMetric]);
 
@@ -278,7 +309,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
             onAtBottomChange={handleAtBottomChange}
             scrollToBottom={handleScrollToBottom}
             aiPromptText={AI_PROMPT_TEXT}
-            promptChoice={promptChoices.get(selectedChat.id) || null}
             newMessageCount={newMessageCount}
           />
           <div className="p-4 bg-white border-t border-slate-50">

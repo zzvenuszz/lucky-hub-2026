@@ -5,11 +5,10 @@ interface ChatWindowProps {
   chat: ChatSession;
   currentUid: string;
   isTypingAI: boolean;
-  onAiChoice: (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => void;
+  onAiChoice: (chat: ChatSession, messageId: string, choice: 'tham khảo' | 'bỏ qua') => void;
   onAtBottomChange: (atBottom: boolean) => void;
   scrollToBottom: () => void;
   aiPromptText: string;
-  promptChoice: {userName: string, choice: string} | null;
   newMessageCount: number;
 }
 
@@ -23,7 +22,7 @@ function scrollToBottomDom(container: HTMLDivElement | null) {
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ 
   chat, currentUid, isTypingAI, onAiChoice, 
-  onAtBottomChange, scrollToBottom, aiPromptText, promptChoice,
+  onAtBottomChange, scrollToBottom, aiPromptText,
   newMessageCount
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -107,16 +106,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   {msg.content}
                 </div>
 
-                {isAiPrompt && !promptChoice && (
+                {isAiPrompt && !msg.meta?.choice && (
                   <div className="mt-4 flex gap-2">
                     <button 
-                      onClick={() => onAiChoice(chat, 'tham khảo')}
+                      onClick={() => onAiChoice(chat, msg.id, 'tham khảo')}
                       className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md"
                     >
                       Tham khảo
                     </button>
                     <button 
-                      onClick={() => onAiChoice(chat, 'bỏ qua')}
+                      onClick={() => onAiChoice(chat, msg.id, 'bỏ qua')}
                       className="flex-1 bg-white text-slate-400 border border-slate-200 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
                     >
                       Bỏ qua
@@ -124,9 +123,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   </div>
                 )}
 
-                {isAiPrompt && promptChoice && (
-                  <div className="mt-3 pt-3 border-t border-emerald-200 text-[11px] text-slate-500 italic">
-                    👤 {promptChoice.userName} đã chọn {promptChoice.choice === 'tham khảo' ? 'tham khảo thông tin' : 'bỏ qua'}
+                {isAiPrompt && msg.meta?.choice && (
+                  <div className={`mt-3 pt-3 border-t text-[11px] italic ${
+                    msg.meta.choice === 'tham khảo' 
+                      ? 'border-emerald-200 text-emerald-600' 
+                      : 'border-slate-200 text-slate-500'
+                  }`}>
+                    👤 {msg.meta.chosenByName} đã chọn {msg.meta.choice === 'tham khảo' ? 'tham khảo thông tin' : 'bỏ qua'}
                   </div>
                 )}
               </div>

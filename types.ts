@@ -144,6 +144,12 @@ export interface Message {
   content: string;
   timestamp: string;
   imageUrl?: string;
+  meta?: {
+    chosenBy: string;
+    chosenByName: string;
+    choice: 'tham khảo' | 'bỏ qua';
+    chosenAt: string;
+  };
 }
 
 export interface ChatSession {
