@@ -35,6 +35,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const lastMessageCounts = useRef<Record<string, number>>({});
   const isAtBottomRef = useRef(true);
   const prevMessagesLength = useRef(0);
+  const hasLoadedOnce = useRef(false);
 
   /** Theo dõi số tin nhắn thay đổi để đếm tin nhắn mới khi không ở bottom */
   useEffect(() => {
@@ -124,7 +125,9 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       console.log(`[ChatSystem] Loading chat data for user ${currentUid}`);
       const metrics = await Database.getMetrics(currentUid);
       if (metrics?.length) setLatestMetric([...metrics].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]);
-      const allChats = preloadedChats.length > 0 ? preloadedChats : (await Database.getChats() || []);
+      // Chỉ dùng preloadedChats lần đầu load, các lần sau luôn fetch từ database
+      const allChats = (!hasLoadedOnce.current && preloadedChats.length > 0) ? preloadedChats : (await Database.getChats() || []);
+      hasLoadedOnce.current = true;
       
       let contacts = users.filter(u => {
         const uId = String((u as any).id || (u as any)._id);
@@ -287,8 +290,10 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     if (!window.confirm('Bạn có chắc muốn xóa toàn bộ nội dung chat với người này?')) return;
     
     console.log(`[ChatSystem] Clearing chat ${selectedChat.id}`);
+    // Gọi API riêng dùng $set để đảm bảo MongoDB clear mảng messages
+    await Database.clearChat(selectedChat.id);
+    // Cập nhật state local
     const clearedChat = { ...selectedChat, messages: [] };
-    await Database.saveChat(clearedChat);
     setSelectedChat(clearedChat);
     setChats(prev => prev.map(c => c.id === clearedChat.id ? clearedChat : c));
     console.log(`[ChatSystem] Chat ${selectedChat.id} cleared successfully`);

@@ -634,7 +634,15 @@ const Post = mongoose.model('Post', new mongoose.Schema({
 
 const Chat = mongoose.model('Chat', new mongoose.Schema({
   id: { type: String, required: true, unique: true }, memberId: { type: String, required: true }, coachId: { type: String, required: true },
-  messages: [{ id: String, senderId: String, senderName: String, senderRole: String, content: String, timestamp: String, imageUrl: String }]
+  messages: [{ 
+    id: String, senderId: String, senderName: String, senderRole: String, 
+    content: String, timestamp: String, imageUrl: String,
+    meta: {
+      chosenBy: String, chosenByName: String,
+      choice: { type: String, enum: ['tham khảo', 'bỏ qua'] },
+      chosenAt: String
+    }
+  }]
 }, { timestamps: true }));
 
 const Knowledge = mongoose.model('Knowledge', new mongoose.Schema({ keyword: String, content: String }));
@@ -1894,6 +1902,24 @@ app.put('/api/notifications/read-all/:userId', async (req, res) => {
     await Notification.updateMany({ userId: req.params.userId, read: false }, { read: true });
     res.json({ success: true });
   } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Clear all messages in a chat (use $set to bypass Mongoose schema strictness)
+app.put('/api/chats/:id/clear', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const chat = await Chat.findOneAndUpdate(
+      { id },
+      { $set: { messages: [] } },
+      { new: true }
+    );
+    if (!chat) return res.status(404).json({ message: 'Chat not found' });
+    console.log(`[Chat] Cleared all messages for chat ${id}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error(`[Chat] Clear error:`, err.message);
     res.status(500).json({ message: err.message });
   }
 });

@@ -1,4 +1,3 @@
-
 import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog, GeminiKey } from '../types.ts';
 
 const API_BASE = '/api';
@@ -65,6 +64,7 @@ export const Database = {
   deleteRule: (id: string) => request(`${API_BASE}/rules/${id}`, 'DELETE'),
   getChats: async () => (await request<ChatSession[]>(`${API_BASE}/chats`)) ?? [],
   saveChat: (chat: ChatSession) => request<ChatSession>(`${API_BASE}/chats`, 'POST', chat),
+  clearChat: (chatId: string) => request<{ success: boolean }>(`${API_BASE}/chats/${chatId}/clear`, 'PUT'),
   getPosts: async () => (await request<Post[]>(`${API_BASE}/posts`)) ?? [],
   getPostsPaginated: async (page = 1, limit = 10, search = '', hashtag = '') => {
     const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
