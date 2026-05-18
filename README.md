@@ -28,3 +28,14 @@ View your app in AI Studio: https://ai.studio/apps/deadf569-6a8d-4c68-a9a7-e339e
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+# maping hiện tại:
+# RENDER:
+# ACC: huyhoan76
+# Uptimerobot: huyhoan76
+# https://lucky-hub-2026.onrender.com
+
+# HUGGING FACE:
+# Acc: luckyhubvn
+# Uptimerobot: luckyhubvn
+# https://luckyhubvn-lucky-hub-2026.hf.space

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, memo, useMemo } from 'react';
+import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from 'react';
 import { User, UserRole } from '../../types.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
 import NotificationBell from '../notification/NotificationBell.tsx';
@@ -10,6 +10,24 @@ interface LayoutProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
 }
+
+const NAV_ITEMS = [
+  { id: 'dashboard', label: '📊', text: 'Tổng quan' },
+  { id: 'community', label: '🌍', text: 'Cộng đồng' },
+  { id: 'metrics', label: '📈', text: 'Chỉ số' },
+  { id: 'coach', label: '🎯', text: 'Coach' },
+];
+
+const getRoleInfo = (role: UserRole): { icon: string; label: string; color: string } => {
+  switch (role) {
+    case UserRole.ADMIN:
+      return { icon: '🔑', label: 'Quản trị viên', color: 'text-red-600' };
+    case UserRole.COACH:
+      return { icon: '📋', label: 'Huấn luyện viên', color: 'text-amber-600' };
+    default:
+      return { icon: '🌱', label: 'Hội viên', color: 'text-emerald-600' };
+  }
+};
 
 const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTab, setActiveTab }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -32,10 +50,24 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleMenuClick = (tab: string) => {
+  const handleMenuClick = useCallback((tab: string) => {
     setActiveTab(tab);
     setIsMenuOpen(false);
-  };
+  }, [setActiveTab]);
+
+  const roleInfo = useMemo(() => getRoleInfo(user.role), [user.role]);
+
+  const availableNavItems = useMemo(() => {
+    const items = NAV_ITEMS.filter(item => {
+      if (item.id === 'coach') {
+        return user.role === UserRole.COACH || user.role === UserRole.ADMIN;
+      }
+      return true;
+    });
+    return items;
+  }, [user.role]);
+
+  console.log(`[Layout] Render: user=${user.fullName}, role=${user.role}, activeTab=${activeTab}`);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50">
@@ -49,78 +81,71 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-800 hidden sm:block">Lucky Hub</h1>
           </div>
           
-          {/* Navigation */}
+          {/* Navigation - Icon lớn + Text, responsive */}
           <nav className="flex-auto max-w-fit flex items-center space-x-0.5 sm:space-x-1 bg-slate-50 p-0.5 sm:p-1 rounded-2xl overflow-x-auto no-scrollbar">
-            {[
-              { id: 'dashboard', label: '📊' },
-              { id: 'community', label: '🌍' },
-              { id: 'metrics', label: '📈' },
-              ...(user.role === UserRole.COACH || user.role === UserRole.ADMIN ? [{ id: 'coach', label: '🎯' }] : [])
-            ].map(tab => (
+            {availableNavItems.map(tab => (
               <button 
                 key={tab.id} onClick={() => setActiveTab(tab.id)} 
-                className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-xs font-black uppercase tracking-tight sm:tracking-wide transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                title={tab.label.replace(/^.{1,2}\s/, '') + (tab.label.includes('📊') ? 'Tổng quan' : tab.label.includes('🌍') ? 'Cộng đồng' : tab.label.includes('📈') ? 'Chỉ số' : 'Coach')}
+                className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-black uppercase tracking-tight sm:tracking-wide transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               >
-                <span className="sm:hidden">{tab.label}</span>
-                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="text-base sm:text-lg">{tab.label}</span>
+                <span className="hidden md:inline ml-1.5">{tab.text}</span>
               </button>
             ))}
           </nav>
 
-          {/* Right section: Notification + User Menu */}
+          {/* Right section: Notification + Avatar only */}
           <div className="flex items-center gap-1 sm:gap-2 ml-auto shrink-0">
             <NotificationBell currentUser={user} />
 
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="hidden lg:flex flex-col items-end">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-black text-slate-800">{user.fullName}</span>
-                  <BadgeDisplay badgeIds={user.badges} />
-                </div>
-                <div className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">{user.role}</div>
+            <div className="relative" ref={menuRef}>
+              <div 
+                className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl border-2 transition-all cursor-pointer overflow-hidden shadow-sm ${isMenuOpen ? 'border-emerald-500 scale-105 ring-4 ring-emerald-50' : 'border-slate-100 hover:border-emerald-300'}`}
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+              >
+                <img src={avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
               </div>
-              
-              <div className="relative" ref={menuRef}>
-                <div 
-                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl border-2 transition-all cursor-pointer overflow-hidden shadow-sm ${isMenuOpen ? 'border-emerald-500 scale-105 ring-4 ring-emerald-50' : 'border-slate-100 hover:border-emerald-300'}`}
-                  onClick={() => setIsMenuOpen(!isMenuOpen)}
-                >
-                  <img src={avatarUrl} alt={user.fullName} className="w-full h-full object-cover" />
-                </div>
 
-                {isMenuOpen && (
-                  <div className="absolute right-0 mt-3 w-64 bg-white rounded-3xl shadow-2xl border border-slate-100 py-3 z-[100] animate-in slide-in-from-top-2 duration-200">
-                    <div className="px-5 py-3 border-b border-slate-50 mb-2">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Hồ sơ hội viên</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <p className="font-bold text-slate-800 truncate">{user.fullName}</p>
-                        <BadgeDisplay badgeIds={user.badges} />
-                      </div>
-                    </div>
-                    
-                    <div className="px-2 space-y-1">
-                      <button onClick={() => handleMenuClick('profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
-                        <span className="text-lg group-hover:scale-110 transition-transform">👤</span> Hồ sơ cá nhân
-                      </button>
-                      <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
-                        <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
-                      </button>
-                      {user.role === UserRole.ADMIN && (
-                        <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
-                          <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Quản trị Lucky Hub
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="mt-2 pt-2 border-t border-slate-50 px-2">
-                      <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-rose-500 hover:bg-rose-50 transition-all text-sm font-black uppercase tracking-widest group">
-                        <span className="text-lg group-hover:translate-x-1 transition-transform">🚪</span> Thoát tài khoản
-                      </button>
-                    </div>
+              {isMenuOpen && (
+                <div className="absolute right-0 mt-3 w-72 bg-white rounded-3xl shadow-2xl border border-slate-100 py-4 z-[100] animate-in slide-in-from-top-2 duration-200">
+                  {/* User info: Tên + Role */}
+                  <div className="px-5 pb-3 border-b border-slate-100">
+                    <p className="text-base font-black text-slate-800">{user.fullName}</p>
+                    <p className={`text-xs font-black uppercase tracking-wider mt-0.5 ${roleInfo.color}`}>
+                      {roleInfo.icon} {roleInfo.label}
+                    </p>
                   </div>
-                )}
-              </div>
+
+                  {/* Badges section */}
+                  {user.badges && user.badges.length > 0 && (
+                    <div className="px-5 py-3 border-b border-slate-100">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">🏆 Thành tựu đạt được</p>
+                      <BadgeDisplay badgeIds={user.badges} />
+                    </div>
+                  )}
+
+                  {/* Menu items */}
+                  <div className="px-2 mt-2 space-y-1">
+                    <button onClick={() => handleMenuClick('profile')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
+                      <span className="text-lg group-hover:scale-110 transition-transform">👤</span> Hồ sơ cá nhân
+                    </button>
+                    <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
+                      <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
+                    </button>
+                    {user.role === UserRole.ADMIN && (
+                      <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
+                        <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Admin Panel
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-slate-50 px-2">
+                    <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-rose-500 hover:bg-rose-50 transition-all text-sm font-black uppercase tracking-widest group">
+                      <span className="text-lg group-hover:translate-x-1 transition-transform">🚪</span> Thoát tài khoản
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
