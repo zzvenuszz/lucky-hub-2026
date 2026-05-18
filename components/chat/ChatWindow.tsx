@@ -1,5 +1,4 @@
-
-import React, { useRef, useEffect, memo } from 'react';
+import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { Message, ChatSession } from '../../types.ts';
 
 interface ChatWindowProps {
@@ -7,30 +6,70 @@ interface ChatWindowProps {
   currentUid: string;
   isTypingAI: boolean;
   onAiChoice: (chat: ChatSession, choice: 'tham khảo' | 'bỏ qua') => void;
-  showScrollButton: boolean;
+  onAtBottomChange: (atBottom: boolean) => void;
   scrollToBottom: () => void;
-  onScroll: () => void;
   aiPromptText: string;
   promptChoice: {userName: string, choice: string} | null;
+  newMessageCount: number;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ 
   chat, currentUid, isTypingAI, onAiChoice, 
-  showScrollButton, scrollToBottom, onScroll, aiPromptText, promptChoice
+  onAtBottomChange, scrollToBottom, aiPromptText, promptChoice,
+  newMessageCount
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const [showNotification, setShowNotification] = useState(false);
 
+  // Auto scroll xuống cuối khi messages thay đổi (nếu đang ở bottom)
   useEffect(() => {
-    if (scrollRef.current && !showScrollButton) {
+    if (scrollRef.current && isAtBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [chat.messages, isTypingAI, showScrollButton]);
+  }, [chat.messages, isTypingAI]);
+
+  // Khi lần đầu mở chat, scroll xuống cuối
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      isAtBottomRef.current = true;
+      onAtBottomChange(true);
+    }
+  }, [chat.id]);
+
+  // Hiển thị notification khi có newMessageCount > 0
+  useEffect(() => {
+    if (newMessageCount > 0) {
+      setShowNotification(true);
+    } else {
+      // Delay một chút để tránh flicker khi reset
+      const timer = setTimeout(() => setShowNotification(false), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [newMessageCount]);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const atBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+    isAtBottomRef.current = atBottom;
+    onAtBottomChange(atBottom);
+  }, [onAtBottomChange]);
+
+  const handleScrollToBottom = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+    isAtBottomRef.current = true;
+    scrollToBottom();
+  }, [scrollToBottom]);
 
   return (
     <div className="flex-grow flex flex-col min-h-0 bg-slate-50/30 relative">
       <div 
         ref={scrollRef} 
-        onScroll={onScroll}
+        onScroll={handleScroll}
         className="flex-grow p-4 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-slate-200" 
         style={{ overscrollBehavior: 'contain' }}
       >
@@ -89,13 +128,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </div>
         )}
       </div>
-      {showScrollButton && (
-        <button onClick={scrollToBottom} className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white text-emerald-600 w-10 h-10 rounded-full shadow-xl flex items-center justify-center border border-emerald-100 hover:bg-emerald-50 transition-all animate-bounce z-10">
-          <span>↓</span>
+
+      {/* Notification: có tin nhắn mới khi đang scroll lên */}
+      {showNotification && (
+        <button 
+          onClick={handleScrollToBottom} 
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white text-emerald-600 px-4 py-2 rounded-full shadow-xl border border-emerald-100 hover:bg-emerald-50 transition-all z-10 flex items-center gap-2 animate-in slide-in-from-bottom-2 duration-200"
+        >
+          <span className="text-lg font-bold animate-bounce">↓</span>
+          <span className="font-bold text-xs">{newMessageCount > 0 ? `Có ${newMessageCount} tin nhắn mới` : 'Xuống cuối'}</span>
         </button>
       )}
     </div>
   );
 };
+
+ChatWindow.displayName = 'ChatWindow';
 
 export default memo(ChatWindow);

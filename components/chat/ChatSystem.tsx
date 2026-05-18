@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule, HealthMetric, HealthGoal } from '../../types.ts';
 import { getAICoachResponse } from '../../services/gemini.ts';
@@ -29,12 +28,36 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [latestMetric, setLatestMetric] = useState<HealthMetric | undefined>(undefined);
   const [showContacts, setShowContacts] = useState(true);
-  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [newMessageCount, setNewMessageCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentUid = (currentUser as any).id || (currentUser as any)._id;
   const processedMsgIds = useRef<Set<string>>(new Set());
   const lastMessageCounts = useRef<Record<string, number>>({});
   const [promptChoices, setPromptChoices] = useState<Map<string, {userName: string, choice: string}>>(new Map());
+  const isAtBottomRef = useRef(true);
+  const prevMessagesLength = useRef(0);
+
+  /** Theo dõi số tin nhắn thay đổi để đếm tin nhắn mới khi không ở bottom */
+  useEffect(() => {
+    if (!selectedChat) return;
+    const currentLength = selectedChat.messages.length;
+    if (currentLength > prevMessagesLength.current) {
+      if (!isAtBottomRef.current) {
+        const diff = currentLength - prevMessagesLength.current;
+        setNewMessageCount(prev => prev + diff);
+        console.log(`[ChatSystem] ${diff} new message(s) while not at bottom, total: ${newMessageCount + diff}`);
+      }
+    }
+    prevMessagesLength.current = currentLength;
+  }, [selectedChat?.messages]);
+
+  /** Reset đếm khi chọn chat khác */
+  useEffect(() => {
+    if (selectedChat) {
+      prevMessagesLength.current = selectedChat.messages.length;
+      setNewMessageCount(0);
+    }
+  }, [selectedChat?.id]);
 
   useEffect(() => {
     if (pendingQueue.length > 0 && !isProcessingQueue && selectedChat) {
@@ -220,6 +243,21 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     return users.find(u => String((u as any).id || (u as any)._id) === otherId);
   }, [currentUid, users]);
 
+  /** Callback để ChatWindow thông báo trạng thái scroll cho ChatSystem */
+  const handleAtBottomChange = useCallback((atBottom: boolean) => {
+    isAtBottomRef.current = atBottom;
+    if (atBottom) {
+      setNewMessageCount(0);
+    }
+  }, []);
+
+  /** Callback khi ChatWindow scroll xuống cuối */
+  const handleScrollToBottom = useCallback(() => {
+    isAtBottomRef.current = true;
+    setNewMessageCount(0);
+    console.log(`[ChatSystem] Scrolled to bottom, reset newMessageCount`);
+  }, []);
+
   return (
     <div className="fixed md:bottom-6 md:right-[90px] bottom-24 right-4 w-[400px] max-w-[95vw] h-[600px] max-h-[85vh] bg-white rounded-[2.5rem] shadow-2xl border border-slate-100 flex flex-col overflow-hidden z-[999] animate-in slide-in-from-bottom-6 duration-300">
       <div className="p-5 bg-emerald-600 text-white flex items-center justify-between shrink-0">
@@ -236,10 +274,12 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
         <>
           <ChatWindow 
             chat={selectedChat} currentUid={currentUid} isTypingAI={isTypingAI} 
-            onAiChoice={handleAiChoice} showScrollButton={showScrollButton} 
-            scrollToBottom={() => setShowScrollButton(false)} 
-            onScroll={() => setShowScrollButton(false)} aiPromptText={AI_PROMPT_TEXT}
+            onAiChoice={handleAiChoice}
+            onAtBottomChange={handleAtBottomChange}
+            scrollToBottom={handleScrollToBottom}
+            aiPromptText={AI_PROMPT_TEXT}
             promptChoice={promptChoices.get(selectedChat.id) || null}
+            newMessageCount={newMessageCount}
           />
           <div className="p-4 bg-white border-t border-slate-50">
             {selectedImage && <div className="relative w-12 h-12 mb-2"><img src={selectedImage} className="w-full h-full object-cover rounded-lg" /><button onClick={() => setSelectedImage(null)} className="absolute -top-1 -right-1 bg-red-500 text-white w-4 h-4 rounded-full text-[10px]">×</button></div>}
