@@ -1,7 +1,7 @@
 
 Module.register("MMM-LuckyHub-FaceSync", {
   defaults: {
-    baseUrl: "https://lucky-hub-2026.onrender.com",
+    baseUrl: "https://luckyhub.io.vn",
     syncInterval: 30 * 60 * 1000, // 30 phút đồng bộ 1 lần
     recognitionInterval: 2000, // 2 giây quét 1 lần
     confidenceThreshold: 0.6,
