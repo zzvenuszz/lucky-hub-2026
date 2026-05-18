@@ -16,6 +16,7 @@ import SystemLog from './components/system/SystemLog.tsx';
 import CoachDashboard from './components/coach/CoachDashboard.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
+import { connectSocket, disconnectSocket, getSocket } from './services/socketService.ts';
 
 // Hằng số thời gian logout
 const LOGOUT_REMEMBER = 7 * 24 * 60 * 60 * 1000;  // 7 ngày nếu "Duy trì đăng nhập"
@@ -167,6 +168,36 @@ const App: React.FC = () => {
       }
     };
   }, [currentUser, handleLogout]);
+
+  // Kết nối Socket.IO khi user đăng nhập
+  useEffect(() => {
+    if (currentUser && sessionIdRef.current) {
+      const uid = (currentUser as any).id || (currentUser as any)._id;
+      const s = connectSocket(uid, sessionIdRef.current, currentUser.role);
+      
+      // Lắng nghe notification real-time
+      s.on('notification:new', (data: any) => {
+        console.log(`[App] New notification:`, data.message?.substring(0, 50));
+        // Có thể trigger refresh notification bell ở đây
+        // Hoặc hiển thị toast notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Lucky Hub', { body: data.message });
+        }
+      });
+
+      // Lắng nghe session multi-tab
+      s.on('session:multiTab', (data: any) => {
+        console.log(`[App] Multi-tab detected:`, data.message);
+      });
+
+      console.log(`[App] Socket connected for user ${uid}`);
+    } else {
+      disconnectSocket();
+    }
+    return () => {
+      disconnectSocket();
+    };
+  }, [currentUser]);
 
   // Phát hiện khi tab khác trong cùng trình duyệt login và ghi đè session
   useEffect(() => {

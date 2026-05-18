@@ -19,6 +19,7 @@ import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
 import { validateBody, sanitizeText } from './services/validationService.ts';
 import rateLimit from 'express-rate-limit';
+import { Server as SocketIOServer } from 'socket.io';
 
 dotenv.config();
 
@@ -73,6 +74,253 @@ const broadcastToMirrors = (type: string, data: any) => {
   });
   logger.ws(`Successfully sent ${type} to ${count} active mirrors.`);
 };
+
+// Socket.IO for real-time communication
+let io: any = null;
+
+function initSocketIO() {
+  io = new SocketIOServer(server, {
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    path: '/socket.io',
+  });
+
+  // Map userId -> Set<socketId>
+  const userSockets = new Map<string, Set<string>>();
+
+  io.on('connection', (socket: any) => {
+    const userId = socket.handshake.query.userId as string;
+    const sessionId = socket.handshake.query.sessionId as string;
+    const userRole = socket.handshake.query.userRole as string;
+
+    if (!userId) {
+      socket.disconnect();
+      return;
+    }
+
+    console.log(`[SocketIO] Client connected: userId=${userId}, socketId=${socket.id}`);
+
+    // Join user room
+    socket.join(`user:${userId}`);
+    
+    // Track user sockets
+    if (!userSockets.has(userId)) {
+      userSockets.set(userId, new Set());
+    }
+    userSockets.get(userId)!.add(socket.id);
+
+    // Notify other tabs of same user about session change
+    if (userSockets.get(userId)!.size > 1) {
+      socket.to(`user:${userId}`).emit('session:multiTab', {
+        message: 'Tài khoản của bạn đang mở ở nhiều tab.',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // ----- CHAT EVENTS -----
+    
+    // Send message via socket tunnel
+    socket.on('chat:sendMessage', async (data: any, callback?: Function) => {
+      try {
+        const { chatId, message, recipientId } = data;
+        console.log(`[SocketIO] Chat message from ${userId}: chat=${chatId}, recipient=${recipientId}`);
+
+        // Save to DB
+        const chat = await Chat.findOneAndUpdate(
+          { id: chatId },
+          { 
+            $push: { messages: message },
+            $setOnInsert: { id: chatId, memberId: data.memberId || userId, coachId: data.coachId || recipientId }
+          },
+          { upsert: true, new: true }
+        );
+
+        // Broadcast to recipient (if different from sender)
+        if (recipientId && recipientId !== userId) {
+          io.to(`user:${recipientId}`).emit('chat:newMessage', {
+            chatId,
+            message,
+            fromUserId: userId,
+          });
+          
+          // Also send notification to recipient
+          const senderName = message.senderName || 'Ai đó';
+          const notifMessage = `📩 ${senderName}: "${message.content?.substring(0, 100)}"`;
+          io.to(`user:${recipientId}`).emit('notification:new', {
+            type: 'message',
+            message: notifMessage,
+            link: `/chat/${chatId}`,
+            timestamp: new Date().toISOString()
+          });
+
+          // Save notification to DB
+          try {
+            const notif = new Notification({
+              userId: recipientId,
+              type: 'message',
+              message: notifMessage,
+              link: `/chat/${chatId}`
+            });
+            await notif.save();
+          } catch (notifErr: any) {
+            console.error(`[SocketIO] Error saving notification:`, notifErr.message);
+          }
+        }
+
+        // Acknowledge back to sender
+        if (callback) callback({ success: true, chat });
+        
+        console.log(`[SocketIO] Message saved and broadcast to user:${recipientId}`);
+      } catch (err: any) {
+        console.error(`[SocketIO] Error sending message:`, err.message);
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    // AI Choice (tham khảo / bỏ qua)
+    socket.on('chat:aiChoice', async (data: any, callback?: Function) => {
+      try {
+        const { chatId, messageId, choice, chosenBy, chosenByName } = data;
+        console.log(`[SocketIO] AI choice: chat=${chatId}, msg=${messageId}, choice=${choice}, by=${chosenByName}`);
+
+        // Update message meta in DB
+        const chat = await Chat.findOne({ id: chatId });
+        if (!chat) {
+          if (callback) callback({ success: false, error: 'Chat not found' });
+          return;
+        }
+
+        const updatedMsgs = chat.messages.map((msg: any) => {
+          if (msg.id === messageId) {
+            return {
+              ...msg,
+              meta: {
+                chosenBy,
+                chosenByName,
+                choice,
+                chosenAt: new Date().toISOString()
+              }
+            };
+          }
+          return msg;
+        });
+
+        await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: updatedMsgs } });
+
+        // Broadcast to all users in this chat room
+        const recipientId = chat.memberId === userId ? chat.coachId : chat.memberId;
+        if (recipientId) {
+          io.to(`user:${recipientId}`).emit('chat:aiChoiceUpdated', {
+            chatId,
+            messageId,
+            meta: { chosenBy, chosenByName, choice, chosenAt: new Date().toISOString() }
+          });
+        }
+
+        if (callback) callback({ success: true });
+      } catch (err: any) {
+        console.error(`[SocketIO] Error in aiChoice:`, err.message);
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    // Clear chat
+    socket.on('chat:clear', async (data: any, callback?: Function) => {
+      try {
+        const { chatId, recipientId } = data;
+        await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: [] } });
+        
+        if (recipientId && recipientId !== userId) {
+          io.to(`user:${recipientId}`).emit('chat:cleared', { chatId });
+        }
+        
+        if (callback) callback({ success: true });
+        console.log(`[SocketIO] Chat ${chatId} cleared by user ${userId}`);
+      } catch (err: any) {
+        if (callback) callback({ success: false, error: err.message });
+      }
+    });
+
+    // AI typing indicator
+    socket.on('chat:aiTyping', (data: any) => {
+      const { chatId, isTyping } = data;
+      io.to(`user:${userId}`).emit('chat:aiTypingStatus', { chatId, isTyping });
+    });
+
+    // AI response
+    socket.on('chat:aiResponse', (data: any) => {
+      const { chatId, messages } = data;
+      io.to(`user:${userId}`).emit('chat:newAiResponse', { chatId, messages });
+    });
+
+    // ----- NOTIFICATION EVENTS -----
+    socket.on('notification:send', async (data: any) => {
+      try {
+        const { targetUserId, type, message, link } = data;
+        const notif = new Notification({ userId: targetUserId, type, message, link, read: false });
+        await notif.save();
+        
+        io.to(`user:${targetUserId}`).emit('notification:new', {
+          type,
+          message,
+          link,
+          timestamp: new Date().toISOString(),
+          id: notif._id
+        });
+        
+        console.log(`[SocketIO] Notification sent to user:${targetUserId}: ${message.substring(0, 50)}`);
+      } catch (err: any) {
+        console.error(`[SocketIO] Error sending notification:`, err.message);
+      }
+    });
+
+    // ----- POST EVENTS -----
+    socket.on('post:reacted', (data: any) => {
+      const { postId, targetUserId, userId: reactorId, userName, type } = data;
+      if (targetUserId && targetUserId !== reactorId) {
+        const reactTypes: Record<string, string> = {
+          'like': '👍 thích', 'love': '❤️ yêu thích', 'laugh': '😂 cười',
+          'wow': '😮 ngạc nhiên', 'sad': '😢 buồn', 'angry': '😠 tức giận'
+        };
+        const msg = `${userName || 'Ai đó'} đã bày tỏ cảm xúc "${reactTypes[type] || type}" bài viết của bạn.`;
+        io.to(`user:${targetUserId}`).emit('notification:new', {
+          type: 'reaction', message: msg, link: `/posts/${postId}`, timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // ----- METRIC EVENTS -----
+    socket.on('metric:updated', (data: any) => {
+      const { targetUserId, actorName } = data;
+      if (targetUserId && targetUserId !== userId) {
+        const msg = `📊 ${actorName || 'Huấn luyện viên'} đã cập nhật chỉ số sức khỏe cho bạn.`;
+        io.to(`user:${targetUserId}`).emit('notification:new', {
+          type: 'metric_help', message: msg, link: '/metrics', timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    // ----- DISCONNECT -----
+    socket.on('disconnect', () => {
+      console.log(`[SocketIO] Client disconnected: userId=${userId}, socketId=${socket.id}`);
+      const sockets = userSockets.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          userSockets.delete(userId);
+        }
+      }
+    });
+  });
+
+  console.log('[SocketIO] Initialized successfully');
+}
+
+// Helper to emit socket events from anywhere
+function emitToUser(userId: string, event: string, data: any) {
+  if (io) {
+    io.to(`user:${userId}`).emit(event, data);
+  }
+}
 
 app.use(cors({ origin: '*' }) as any);
 app.use(express.json({ limit: '50mb' }) as any);
@@ -2055,6 +2303,7 @@ app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 async function startServer() {
   await initDB();
   await initEmailService();
+  initSocketIO();
 
   server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);

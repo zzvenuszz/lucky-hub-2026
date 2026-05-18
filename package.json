@@ -25,6 +25,8 @@
     "react-easy-crop": "^5.5.7",
     "recharts": "^3.8.1",
     "sib-api-v3-sdk": "^8.5.0",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "sucrase": "^3.35.0",
     "tsx": "^4.19.2",
     "ws": "^8.19.0"

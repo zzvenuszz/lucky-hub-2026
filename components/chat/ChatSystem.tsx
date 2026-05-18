@@ -3,6 +3,7 @@ import { User, UserRole, Message, ChatSession, AIKnowledge, AIRule, HealthMetric
 import { getAICoachResponse } from '../../services/gemini.ts';
 import { Database } from '../../services/database.ts';
 import { compressImage } from '../../utils/imageUtils.ts';
+import { getSocket, emitEvent } from '../../services/socketService.ts';
 import ContactList from './ContactList.tsx';
 import ChatWindow from './ChatWindow.tsx';
 
@@ -36,6 +37,12 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const isAtBottomRef = useRef(true);
   const prevMessagesLength = useRef(0);
   const hasLoadedOnce = useRef(false);
+  const chatsRef = useRef<ChatSession[]>([]);
+
+  // Keep chatsRef in sync
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
 
   /** Theo dõi số tin nhắn thay đổi để đếm tin nhắn mới khi không ở bottom */
   useEffect(() => {
@@ -70,8 +77,25 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     setIsProcessingQueue(true);
     const textToDisplay = pendingQueue[0];
     await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(textToDisplay.length * 20, 800), 2500)));
-    const aiMsg: Message = { id: `ai_${Date.now()}`, senderId: 'ai_coach', senderName: '🍀Trợ lý Lucky', senderRole: 'AI' as any, content: textToDisplay, timestamp: new Date().toISOString() };
+    const aiMsg: Message = { 
+      id: `ai_${Date.now()}`, 
+      senderId: 'ai_coach', 
+      senderName: '🍀Trợ lý Lucky', 
+      senderRole: 'AI' as any, 
+      content: textToDisplay, 
+      timestamp: new Date().toISOString() 
+    };
+    
+    // Lưu qua socket để broadcast real-time
     const updated = { ...selectedChat, messages: [...selectedChat.messages, aiMsg] };
+    emitEvent('chat:sendMessage', {
+      chatId: selectedChat.id,
+      message: aiMsg,
+      recipientId: currentUid, // AI response gửi cho chính user
+      memberId: selectedChat.memberId,
+      coachId: selectedChat.coachId,
+    });
+    
     await Database.saveChat(updated);
     setSelectedChat(updated);
     setPendingQueue(prev => prev.slice(1));
@@ -164,11 +188,107 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       }
     } catch (error) {
       console.error(`[ChatSystem] Error loading chat data:`, error);
-      // Graceful fallback - maintain existing chat state
     }
   }, [currentUid, users, currentUser.role]);
 
-  useEffect(() => { loadData(); const interval = setInterval(() => { if (!isTypingAI) loadData(); }, 30000); return () => clearInterval(interval); }, [loadData, isTypingAI]);
+  // Load dữ liệu ban đầu
+  useEffect(() => { 
+    loadData(); 
+  }, [loadData]);
+
+  // Socket.IO real-time listeners
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    // Lắng nghe tin nhắn mới từ người khác
+    const handleNewMessage = (data: any) => {
+      const { chatId, message } = data;
+      console.log(`[ChatSystem] New message received via socket: chat=${chatId}, from=${message.senderId}`);
+
+      setChats(prev => {
+        const updatedChats = prev.map(chat => {
+          if (chat.id === chatId) {
+            // Kiểm tra xem message đã tồn tại chưa (tránh trùng)
+            const exists = chat.messages.some(m => m.id === message.id);
+            if (exists) return chat;
+            return { ...chat, messages: [...chat.messages, message] };
+          }
+          return chat;
+        });
+        return updatedChats;
+      });
+
+      // Nếu đang chọn chat này, cập nhật selectedChat
+      setSelectedChat(prev => {
+        if (prev && prev.id === chatId) {
+          const exists = prev.messages.some(m => m.id === message.id);
+          if (exists) return prev;
+          return { ...prev, messages: [...prev.messages, message] };
+        }
+        return prev;
+      });
+
+      // Kiểm tra AI prompt trigger
+      const chat = chatsRef.current.find(c => c.id === chatId);
+      if (chat) {
+        checkNewMessagesAndAddPrompt({ ...chat, messages: [...chat.messages, message] });
+      }
+    };
+
+    // Lắng nghe AI choice updates
+    const handleAiChoiceUpdated = (data: any) => {
+      const { chatId, messageId, meta } = data;
+      console.log(`[ChatSystem] AI choice updated: chat=${chatId}, msg=${messageId}`);
+
+      setChats(prev => prev.map(chat => {
+        if (chat.id !== chatId) return chat;
+        const updatedMsgs = chat.messages.map(msg => 
+          msg.id === messageId ? { ...msg, meta } : msg
+        );
+        return { ...chat, messages: updatedMsgs };
+      }));
+
+      setSelectedChat(prev => {
+        if (!prev || prev.id !== chatId) return prev;
+        const updatedMsgs = prev.messages.map(msg => 
+          msg.id === messageId ? { ...msg, meta } : msg
+        );
+        return { ...prev, messages: updatedMsgs };
+      });
+    };
+
+    // Lắng nghe chat cleared
+    const handleChatCleared = (data: any) => {
+      const { chatId } = data;
+      console.log(`[ChatSystem] Chat cleared: ${chatId}`);
+      
+      setChats(prev => prev.map(chat => 
+        chat.id === chatId ? { ...chat, messages: [] } : chat
+      ));
+      setSelectedChat(prev => 
+        prev && prev.id === chatId ? { ...prev, messages: [] } : prev
+      );
+    };
+
+    // Lắng nghe AI typing status
+    const handleAiTypingStatus = (data: any) => {
+      const { isTyping } = data;
+      setIsTypingAI(isTyping);
+    };
+
+    socket.on('chat:newMessage', handleNewMessage);
+    socket.on('chat:aiChoiceUpdated', handleAiChoiceUpdated);
+    socket.on('chat:cleared', handleChatCleared);
+    socket.on('chat:aiTypingStatus', handleAiTypingStatus);
+
+    return () => {
+      socket.off('chat:newMessage', handleNewMessage);
+      socket.off('chat:aiChoiceUpdated', handleAiChoiceUpdated);
+      socket.off('chat:cleared', handleChatCleared);
+      socket.off('chat:aiTypingStatus', handleAiTypingStatus);
+    };
+  }, [checkNewMessagesAndAddPrompt]);
 
   const handleSendMessage = async () => {
     if ((!inputText.trim() && !selectedImage) || !selectedChat) return;
@@ -192,7 +312,10 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
         timestamp: new Date().toISOString() 
       };
       
+      // Thêm tin nhắn vào local ngay lập tức
       let updatedMsgs = [...selectedChat.messages, msg];
+      
+      // Kiểm tra AI prompt trigger
       if (selectedChat.coachId !== 'ai_coach' && knowledge.some(k => sentText.toLowerCase().includes(k.keyword.toLowerCase()))) {
         updatedMsgs.push({ 
           id: `p_${Date.now()}`, 
@@ -205,9 +328,29 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       }
       
       const updatedChat = { ...selectedChat, messages: updatedMsgs };
-      setSelectedChat(updatedChat); 
+      
+      // Cập nhật local state ngay
+      setSelectedChat(updatedChat);
+      setChats(prev => prev.map(c => c.id === updatedChat.id ? updatedChat : c));
+
+      // Xác định recipient
+      const recipientId = selectedChat.coachId === 'ai_coach' 
+        ? currentUid 
+        : (String(currentUid) === String(selectedChat.memberId) ? selectedChat.coachId : selectedChat.memberId);
+
+      // Gửi tin nhắn qua socket tunnel (server sẽ lưu DB + broadcast)
+      emitEvent('chat:sendMessage', {
+        chatId: selectedChat.id,
+        message: msg,
+        recipientId,
+        memberId: selectedChat.memberId,
+        coachId: selectedChat.coachId,
+      });
+      
+      // Lưu fallback qua REST API
       await Database.saveChat(updatedChat);
       
+      // Xử lý AI coach response
       if (selectedChat.coachId === 'ai_coach') {
         setIsTypingAI(true);
         const userGoal = currentUser.healthGoals?.[0] || HealthGoal.OTHER;
@@ -223,7 +366,6 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       console.log(`[ChatSystem] Message sent successfully`);
     } catch (error) {
       console.error(`[ChatSystem] Error sending message:`, error);
-      // Graceful fallback - message may be partially saved
     } finally {
       setIsProcessingImage(false);
     }
@@ -232,7 +374,7 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
   const handleAiChoice = useCallback(async (chat: ChatSession, messageId: string, choice: 'tham khảo' | 'bỏ qua') => {
     console.log(`[ChatSystem] handleAiChoice: chat=${chat.id}, messageId=${messageId}, choice=${choice}, user=${currentUser.fullName}`);
     
-    // Gắn meta vào prompt message cụ thể dựa trên messageId
+    // Cập nhật local state trước
     const updatedMsgs = chat.messages.map(msg => {
       if (msg.id === messageId) {
         return {
@@ -248,13 +390,27 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
       return msg;
     });
     
-    // Lưu xuống database
     const updatedChat = { ...chat, messages: updatedMsgs };
-    await Database.saveChat(updatedChat);
     
-    // Cập nhật state local
+    // Cập nhật local
     setSelectedChat(prev => prev?.id === updatedChat.id ? updatedChat : prev);
     setChats(prev => prev.map(c => c.id === updatedChat.id ? updatedChat : c));
+    
+    // Gửi qua socket để broadcast đến recipient
+    const recipientId = chat.coachId === 'ai_coach' 
+      ? currentUid 
+      : (String(currentUid) === String(chat.memberId) ? chat.coachId : chat.memberId);
+    
+    emitEvent('chat:aiChoice', {
+      chatId: chat.id,
+      messageId,
+      choice,
+      chosenBy: currentUid,
+      chosenByName: currentUser.fullName,
+    });
+    
+    // Lưu fallback qua REST API
+    await Database.saveChat(updatedChat);
     
     console.log(`[ChatSystem] Choice saved: ${currentUser.fullName} chose "${choice}" on message ${messageId} in chat ${chat.id}`);
     
@@ -290,14 +446,27 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     if (!window.confirm('Bạn có chắc muốn xóa toàn bộ nội dung chat với người này?')) return;
     
     console.log(`[ChatSystem] Clearing chat ${selectedChat.id}`);
-    // Gọi API riêng dùng $set để đảm bảo MongoDB clear mảng messages
+    
+    // Xác định recipient
+    const recipientId = selectedChat.coachId === 'ai_coach' 
+      ? currentUid 
+      : (String(currentUid) === String(selectedChat.memberId) ? selectedChat.coachId : selectedChat.memberId);
+    
+    // Gửi socket event
+    emitEvent('chat:clear', {
+      chatId: selectedChat.id,
+      recipientId,
+    });
+    
+    // Gọi API clear
     await Database.clearChat(selectedChat.id);
+    
     // Cập nhật state local
     const clearedChat = { ...selectedChat, messages: [] };
     setSelectedChat(clearedChat);
     setChats(prev => prev.map(c => c.id === clearedChat.id ? clearedChat : c));
     console.log(`[ChatSystem] Chat ${selectedChat.id} cleared successfully`);
-  }, [selectedChat]);
+  }, [selectedChat, currentUid]);
 
   /** Callback khi ChatWindow scroll xuống cuối */
   const handleScrollToBottom = useCallback(() => {
