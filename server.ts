@@ -38,6 +38,7 @@ async function initEmailService() {
 }
 
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (Hugging Face Spaces)
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
