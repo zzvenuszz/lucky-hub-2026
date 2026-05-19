@@ -89,9 +89,12 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   }, [lastReadTimestamps]);
 
   // Rebuild unread counts whenever chats or lastReadTimestamps change
-  const rebuildUnreadCounts = useCallback((chatList: ChatSession[], timestamps: Record<string, string>) => {
+  // Bỏ qua chat đang được xem (selectedChatId) để không hiển thị badge cho chat đang mở
+  const rebuildUnreadCounts = useCallback((chatList: ChatSession[], timestamps: Record<string, string>, selectedChatId?: string) => {
     const counts: Record<string, number> = {};
     chatList.forEach(chat => {
+      // Bỏ qua nếu chat này đang được xem
+      if (chat.id === selectedChatId) return;
       if (chat.messages.length === 0) return;
       const count = chat.messages.filter(m => {
         // Chỉ đếm tin nhắn từ người khác (không phải currentUser, không phải AI)
@@ -154,14 +157,14 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
     load();
   }, [currentUid, users, currentUser.role, preloadedChats]);
 
-  // Rebuild unread counts khi chats hoặc lastReadTimestamps thay đổi
+  // Rebuild unread counts khi chats, lastReadTimestamps hoặc selectedChat thay đổi
   useEffect(() => {
-    const counts = rebuildUnreadCounts(chats, lastReadTimestamps);
+    const counts = rebuildUnreadCounts(chats, lastReadTimestamps, selectedChat?.id);
     setUnreadCounts(counts);
     if (Object.keys(counts).length > 0) {
       console.log(`[ChatProvider] Unread counts rebuilt:`, counts);
     }
-  }, [chats, lastReadTimestamps, rebuildUnreadCounts]);
+  }, [chats, lastReadTimestamps, selectedChat?.id, rebuildUnreadCounts]);
 
   // ===== Process AI response queue =====
   useEffect(() => {
