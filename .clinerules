@@ -1,0 +1,16 @@
+# Cline Construction Rules for Handling Skipped Commands & Thinking Loops
+
+## 1. CRITICAL: Handle "Skipped" or "Empty" Command Results
+- If a command (e.g., `grep`, `find`, `ls`) returns NO output, is explicitly marked as "Skipped", or returns an error, DO NOT enter an endless inner thinking loop trying to re-execute the exact same logic.
+- Acknowledge immediately that the criteria was not met or the file/pattern does not exist, then instantly pivot to an alternative approach.
+
+## 2. Anti-Loop & Thinking Timeout Rules
+- You are forbidden from spending more than 2 consecutive thinking cycles on the same failed/skipped step.
+- If you find yourself overthinking a skipped command, STOP and communicate with the user. Ask for clarification or propose a manual check instead of getting stuck.
+- NEVER generate complex regex or escaped shell commands (e.g., matching HTML tags like `</write_to_file>` combined with pipes `\|`) that are prone to shell parsing failures. Break them down into simpler, sequential commands.
+
+## 3. Execution & Progress Recovery
+- When a command is skipped or yields no results:
+  1. Print a clear summary of what failed or returned empty in your response.
+  2. Change your strategy (e.g., read the file directly using `view_file` instead of filtering via `grep`).
+  3. Move forward with the next logical step in the task progress. Do not let the agent freeze.

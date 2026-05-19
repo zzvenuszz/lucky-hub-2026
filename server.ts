@@ -19,7 +19,6 @@ import { cryptoUtils } from './src/utils/cryptoUtils.ts';
 import { audioUtils } from './src/utils/audioUtils.ts';
 import { validateBody, sanitizeText } from './services/validationService.ts';
 import rateLimit from 'express-rate-limit';
-import { Server as SocketIOServer } from 'socket.io';
 
 dotenv.config();
 
@@ -75,251 +74,399 @@ const broadcastToMirrors = (type: string, data: any) => {
   logger.ws(`Successfully sent ${type} to ${count} active mirrors.`);
 };
 
-// Socket.IO for real-time communication
-let io: any = null;
+// =============================================================================
+// WebSocket Manager cho Chat & Real-time events (thay thế Socket.IO)
+// =============================================================================
 
-function initSocketIO() {
-  io = new SocketIOServer(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
-    path: '/socket.io',
+// Map lưu user connections: userId -> Set<WebSocket>
+const userWsConnections = new Map<string, Set<WebSocket>>();
+
+// Map lưu online status: userId -> true
+const onlineUsers = new Map<string, boolean>();
+
+function sendToUser(userId: string, message: any) {
+  const connections = userWsConnections.get(userId);
+  if (!connections) return;
+  const data = JSON.stringify(message);
+  connections.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+    }
   });
+}
 
-  // Map userId -> Set<socketId>
-  const userSockets = new Map<string, Set<string>>();
+function sendToAllUsers(message: any) {
+  const data = JSON.stringify(message);
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(data);
+    }
+  });
+}
 
-  io.on('connection', (socket: any) => {
-    const userId = socket.handshake.query.userId as string;
-    const sessionId = socket.handshake.query.sessionId as string;
-    const userRole = socket.handshake.query.userRole as string;
-
-    if (!userId) {
-      socket.disconnect();
+function initChatWebSocket() {
+  // Lưu ws gốc để không ghi đè
+  const originalOnConnection = wss.on.bind(wss);
+  
+  wss.on('connection', (ws: WebSocket, req) => {
+    const ip = req.socket.remoteAddress || 'unknown';
+    const url = new URL(req.url || '', `http://${req.headers.host}`);
+    const pathname = url.pathname;
+    
+    // Chỉ xử lý kết nối chat tại /ws, còn lại cho Magic Mirror
+    if (pathname !== '/ws') {
+      // Đây là Magic Mirror connection, xử lý bởi handler cũ
+      logger.ws(`[MM] New connection from ${ip}. Total clients: ${wss.clients.size}`);
+      
+      ws.on('message', (data) => {
+        logger.ws(`[MM] Received message from ${ip}: ${data}`);
+      });
+      
+      ws.on('close', () => {
+        logger.ws(`[MM] Connection closed for ${ip}. Remaining clients: ${wss.clients.size}`);
+      });
+      
+      ws.on('error', (err) => {
+        logger.error('MM', `Error from ${ip}: ${err.message}`);
+      });
       return;
     }
 
-    console.log(`[SocketIO] Client connected: userId=${userId}, socketId=${socket.id}`);
+    // ===== XỬ LÝ KẾT NỐI CHAT =====
+    const userId = url.searchParams.get('userId') || '';
+    const sessionId = url.searchParams.get('sessionId') || '';
+    const userRole = url.searchParams.get('role') || '';
 
-    // Join user room
-    socket.join(`user:${userId}`);
-    
-    // Track user sockets
-    if (!userSockets.has(userId)) {
-      userSockets.set(userId, new Set());
-    }
-    userSockets.get(userId)!.add(socket.id);
-
-    // Notify other tabs of same user about session change
-    if (userSockets.get(userId)!.size > 1) {
-      socket.to(`user:${userId}`).emit('session:multiTab', {
-        message: 'Tài khoản của bạn đang mở ở nhiều tab.',
-        timestamp: new Date().toISOString()
-      });
+    if (!userId) {
+      ws.close(4001, 'Missing userId');
+      return;
     }
 
-    // ----- CHAT EVENTS -----
-    
-    // Send message via socket tunnel
-    socket.on('chat:sendMessage', async (data: any, callback?: Function) => {
+    console.log(`[WebSocket] ✅ Chat client connected: userId=${userId}, ip=${ip}`);
+
+    // Track user connections
+    if (!userWsConnections.has(userId)) {
+      userWsConnections.set(userId, new Set());
+    }
+    userWsConnections.get(userId)!.add(ws);
+
+    // Broadcast online status
+    if (!onlineUsers.has(userId)) {
+      onlineUsers.set(userId, true);
+      sendToAllUsers({ event: 'user:online', payload: { userId, online: true, timestamp: new Date().toISOString() } });
+    }
+
+    // Xử lý incoming messages
+    ws.on('message', async (rawData) => {
       try {
-        const { chatId, message, recipientId } = data;
-        console.log(`[SocketIO] Chat message from ${userId}: chat=${chatId}, recipient=${recipientId}`);
+        const msg = JSON.parse(rawData.toString());
+        const { event, payload } = msg;
 
-        // Save to DB
-        const chat = await Chat.findOneAndUpdate(
-          { id: chatId },
-          { 
-            $push: { messages: message },
-            $setOnInsert: { id: chatId, memberId: data.memberId || userId, coachId: data.coachId || recipientId }
-          },
-          { upsert: true, new: true }
-        );
-
-        // Broadcast to recipient (if different from sender)
-        if (recipientId && recipientId !== userId) {
-          io.to(`user:${recipientId}`).emit('chat:newMessage', {
-            chatId,
-            message,
-            fromUserId: userId,
-          });
-          
-          // Also send notification to recipient
-          const senderName = message.senderName || 'Ai đó';
-          const notifMessage = `📩 ${senderName}: "${message.content?.substring(0, 100)}"`;
-          io.to(`user:${recipientId}`).emit('notification:new', {
-            type: 'message',
-            message: notifMessage,
-            link: `/chat/${chatId}`,
-            timestamp: new Date().toISOString()
-          });
-
-          // Save notification to DB
-          try {
-            const notif = new Notification({
-              userId: recipientId,
-              type: 'message',
-              message: notifMessage,
-              link: `/chat/${chatId}`
-            });
-            await notif.save();
-          } catch (notifErr: any) {
-            console.error(`[SocketIO] Error saving notification:`, notifErr.message);
-          }
-        }
-
-        // Acknowledge back to sender
-        if (callback) callback({ success: true, chat });
-        
-        console.log(`[SocketIO] Message saved and broadcast to user:${recipientId}`);
-      } catch (err: any) {
-        console.error(`[SocketIO] Error sending message:`, err.message);
-        if (callback) callback({ success: false, error: err.message });
-      }
-    });
-
-    // AI Choice (tham khảo / bỏ qua)
-    socket.on('chat:aiChoice', async (data: any, callback?: Function) => {
-      try {
-        const { chatId, messageId, choice, chosenBy, chosenByName } = data;
-        console.log(`[SocketIO] AI choice: chat=${chatId}, msg=${messageId}, choice=${choice}, by=${chosenByName}`);
-
-        // Update message meta in DB
-        const chat = await Chat.findOne({ id: chatId });
-        if (!chat) {
-          if (callback) callback({ success: false, error: 'Chat not found' });
+        // Ping/Pong
+        if (event === 'ping') {
+          ws.send(JSON.stringify({ event: 'pong', timestamp: new Date().toISOString() }));
           return;
         }
 
-        const updatedMsgs = chat.messages.map((msg: any) => {
-          if (msg.id === messageId) {
-            return {
-              ...msg,
-              meta: {
-                chosenBy,
-                chosenByName,
-                choice,
-                chosenAt: new Date().toISOString()
+        console.log(`[WebSocket] 📥 ${event} from userId=${userId}:`, JSON.stringify(payload).substring(0, 150));
+
+        switch (event) {
+          // ===== CHAT: MESSAGE =====
+          case 'chat:message': {
+            const { chatId, message, recipientId } = payload;
+            
+            // Save to DB
+            await Chat.findOneAndUpdate(
+              { id: chatId },
+              { 
+                $push: { messages: message },
+                $setOnInsert: { id: chatId, memberId: payload.memberId || userId, coachId: payload.coachId || recipientId }
+              },
+              { upsert: true, new: true }
+            );
+
+            // Cập nhật status thành 'sent' cho sender
+            message.status = 'sent';
+
+            // Gửi lại cho sender để xác nhận
+            sendToUser(userId, {
+              event: 'chat:messageSent',
+              payload: { chatId, messageId: message.id, status: 'sent', timestamp: new Date().toISOString() }
+            });
+
+            // Broadcast to recipient
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:message',
+                payload: { chatId, message, fromUserId: userId }
+              });
+
+              // Notification for recipient
+              try {
+                const senderName = message.senderName || 'Ai đó';
+                const notifMessage = `📩 ${senderName}: "${message.content?.substring(0, 100)}"`;
+                const notif = new Notification({
+                  userId: recipientId,
+                  type: 'message',
+                  message: notifMessage,
+                  link: `/chat/${chatId}`
+                });
+                await notif.save();
+              } catch (notifErr: any) {
+                console.error(`[WebSocket] Error saving notification:`, notifErr.message);
               }
-            };
+            }
+
+            console.log(`[WebSocket] 📤 chat:message delivered to user:${recipientId}`);
+            break;
           }
-          return msg;
-        });
 
-        await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: updatedMsgs } });
+          // ===== CHAT: TYPING =====
+          case 'chat:typing': {
+            const { chatId, recipientId, userName } = payload;
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:typing',
+                payload: { chatId, userId, userName, isTyping: true }
+              });
+            }
+            break;
+          }
 
-        // Broadcast to all users in this chat room
-        const recipientId = chat.memberId === userId ? chat.coachId : chat.memberId;
-        if (recipientId) {
-          io.to(`user:${recipientId}`).emit('chat:aiChoiceUpdated', {
-            chatId,
-            messageId,
-            meta: { chosenBy, chosenByName, choice, chosenAt: new Date().toISOString() }
-          });
+          // ===== CHAT: STOP TYPING =====
+          case 'chat:stopTyping': {
+            const { chatId, recipientId } = payload;
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:typing',
+                payload: { chatId, userId, isTyping: false }
+              });
+            }
+            break;
+          }
+
+          // ===== CHAT: REACTION =====
+          case 'chat:reaction': {
+            const { chatId, messageId, reaction, recipientId } = payload;
+            
+            // Update message reaction in DB
+            const chat = await Chat.findOne({ id: chatId });
+            if (chat) {
+              const updatedMsgs = chat.messages.map((m: any) => {
+                if (m.id === messageId) {
+                  const existingReactions = m.reactions || [];
+                  // Add or remove reaction
+                  const existingIdx = existingReactions.findIndex(
+                    (r: any) => r.userId === reaction.userId && r.emoji === reaction.emoji
+                  );
+                  if (existingIdx >= 0) {
+                    existingReactions.splice(existingIdx, 1);
+                  } else {
+                    existingReactions.push(reaction);
+                  }
+                  return { ...m, reactions: existingReactions };
+                }
+                return m;
+              });
+              await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: updatedMsgs } });
+            }
+
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:reaction',
+                payload: { chatId, messageId, reaction }
+              });
+            }
+            break;
+          }
+
+          // ===== CHAT: READ =====
+          case 'chat:read': {
+            const { chatId, lastReadMessageId, recipientId } = payload;
+            
+            // Update lastReadBy in DB
+            await Chat.findOneAndUpdate(
+              { id: chatId },
+              { $set: { [`lastReadBy.${userId}`]: lastReadMessageId } }
+            );
+
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:read',
+                payload: { chatId, userId, lastReadMessageId }
+              });
+            }
+            break;
+          }
+
+          // ===== CHAT: EDIT =====
+          case 'chat:edit': {
+            const { chatId, messageId, newContent, recipientId } = payload;
+            
+            const chat = await Chat.findOne({ id: chatId });
+            if (chat) {
+              const updatedMsgs = chat.messages.map((m: any) => {
+                if (m.id === messageId) {
+                  return { ...m, content: newContent, editedAt: new Date().toISOString() };
+                }
+                return m;
+              });
+              await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: updatedMsgs } });
+            }
+
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:edit',
+                payload: { chatId, messageId, newContent, editedAt: new Date().toISOString() }
+              });
+            }
+            break;
+          }
+
+          // ===== CHAT: DELETE ONE MESSAGE =====
+          case 'chat:delete': {
+            const { chatId, messageId, recipientId } = payload;
+            
+            const chat = await Chat.findOne({ id: chatId });
+            if (chat) {
+              const updatedMsgs = chat.messages.filter((m: any) => m.id !== messageId);
+              await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: updatedMsgs } });
+            }
+
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:delete',
+                payload: { chatId, messageId }
+              });
+            }
+            break;
+          }
+
+          // ===== CHAT: CLEAR =====
+          case 'chat:clear': {
+            const { chatId, recipientId } = payload;
+            await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: [] } });
+            
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:clear',
+                payload: { chatId }
+              });
+            }
+            break;
+          }
+
+          // ===== CHAT: AI CHOICE =====
+          case 'chat:aiChoice': {
+            const { chatId, messageId, choice, chosenBy, chosenByName, recipientId } = payload;
+            
+            const chat = await Chat.findOne({ id: chatId });
+            if (chat) {
+              const updatedMsgs = chat.messages.map((m: any) => {
+                if (m.id === messageId) {
+                  return {
+                    ...m,
+                    meta: { chosenBy, chosenByName, choice, chosenAt: new Date().toISOString() }
+                  };
+                }
+                return m;
+              });
+              await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: updatedMsgs } });
+            }
+
+            if (recipientId && recipientId !== userId) {
+              sendToUser(recipientId, {
+                event: 'chat:aiChoiceUpdated',
+                payload: { chatId, messageId, meta: { chosenBy, chosenByName, choice, chosenAt: new Date().toISOString() } }
+              });
+            }
+            break;
+          }
+
+          // ===== NOTIFICATION: SEND =====
+          case 'notification:send': {
+            const { targetUserId, type, message, link } = payload;
+            const notif = new Notification({ userId: targetUserId, type, message, link, read: false });
+            await notif.save();
+            
+            sendToUser(targetUserId, {
+              event: 'notification:new',
+              payload: { type, message, link, timestamp: new Date().toISOString(), id: notif._id.toString() }
+            });
+            break;
+          }
+
+          // ===== POST: REACTED =====
+          case 'post:reacted': {
+            const { postId, targetUserId, userId: reactorId, userName, type } = payload;
+            if (targetUserId && targetUserId !== reactorId) {
+              const reactTypes: Record<string, string> = {
+                'like': '👍 thích', 'love': '❤️ yêu thích', 'laugh': '😂 cười',
+                'wow': '😮 ngạc nhiên', 'sad': '😢 buồn', 'angry': '😠 tức giận'
+              };
+              const msg = `${userName || 'Ai đó'} đã bày tỏ cảm xúc "${reactTypes[type] || type}" bài viết của bạn.`;
+              sendToUser(targetUserId, {
+                event: 'notification:new',
+                payload: { type: 'reaction', message: msg, link: `/posts/${postId}`, timestamp: new Date().toISOString() }
+              });
+            }
+            break;
+          }
+
+          // ===== METRIC: UPDATED =====
+          case 'metric:updated': {
+            const { targetUserId, actorName } = payload;
+            if (targetUserId && targetUserId !== userId) {
+              const msg = `📊 ${actorName || 'Huấn luyện viên'} đã cập nhật chỉ số sức khỏe cho bạn.`;
+              sendToUser(targetUserId, {
+                event: 'notification:new',
+                payload: { type: 'metric_help', message: msg, link: '/metrics', timestamp: new Date().toISOString() }
+              });
+            }
+            break;
+          }
+
+          default:
+            console.log(`[WebSocket] Unknown event: ${event}`);
         }
-
-        if (callback) callback({ success: true });
       } catch (err: any) {
-        console.error(`[SocketIO] Error in aiChoice:`, err.message);
-        if (callback) callback({ success: false, error: err.message });
+        console.error(`[WebSocket] Error processing message:`, err.message);
       }
     });
 
-    // Clear chat
-    socket.on('chat:clear', async (data: any, callback?: Function) => {
-      try {
-        const { chatId, recipientId } = data;
-        await Chat.findOneAndUpdate({ id: chatId }, { $set: { messages: [] } });
-        
-        if (recipientId && recipientId !== userId) {
-          io.to(`user:${recipientId}`).emit('chat:cleared', { chatId });
-        }
-        
-        if (callback) callback({ success: true });
-        console.log(`[SocketIO] Chat ${chatId} cleared by user ${userId}`);
-      } catch (err: any) {
-        if (callback) callback({ success: false, error: err.message });
-      }
-    });
+    // Handle disconnect
+    ws.on('close', () => {
+      console.log(`[WebSocket] ❌ Chat client disconnected: userId=${userId}`);
 
-    // AI typing indicator
-    socket.on('chat:aiTyping', (data: any) => {
-      const { chatId, isTyping } = data;
-      io.to(`user:${userId}`).emit('chat:aiTypingStatus', { chatId, isTyping });
-    });
-
-    // AI response
-    socket.on('chat:aiResponse', (data: any) => {
-      const { chatId, messages } = data;
-      io.to(`user:${userId}`).emit('chat:newAiResponse', { chatId, messages });
-    });
-
-    // ----- NOTIFICATION EVENTS -----
-    socket.on('notification:send', async (data: any) => {
-      try {
-        const { targetUserId, type, message, link } = data;
-        const notif = new Notification({ userId: targetUserId, type, message, link, read: false });
-        await notif.save();
-        
-        io.to(`user:${targetUserId}`).emit('notification:new', {
-          type,
-          message,
-          link,
-          timestamp: new Date().toISOString(),
-          id: notif._id
-        });
-        
-        console.log(`[SocketIO] Notification sent to user:${targetUserId}: ${message.substring(0, 50)}`);
-      } catch (err: any) {
-        console.error(`[SocketIO] Error sending notification:`, err.message);
-      }
-    });
-
-    // ----- POST EVENTS -----
-    socket.on('post:reacted', (data: any) => {
-      const { postId, targetUserId, userId: reactorId, userName, type } = data;
-      if (targetUserId && targetUserId !== reactorId) {
-        const reactTypes: Record<string, string> = {
-          'like': '👍 thích', 'love': '❤️ yêu thích', 'laugh': '😂 cười',
-          'wow': '😮 ngạc nhiên', 'sad': '😢 buồn', 'angry': '😠 tức giận'
-        };
-        const msg = `${userName || 'Ai đó'} đã bày tỏ cảm xúc "${reactTypes[type] || type}" bài viết của bạn.`;
-        io.to(`user:${targetUserId}`).emit('notification:new', {
-          type: 'reaction', message: msg, link: `/posts/${postId}`, timestamp: new Date().toISOString()
-        });
-      }
-    });
-
-    // ----- METRIC EVENTS -----
-    socket.on('metric:updated', (data: any) => {
-      const { targetUserId, actorName } = data;
-      if (targetUserId && targetUserId !== userId) {
-        const msg = `📊 ${actorName || 'Huấn luyện viên'} đã cập nhật chỉ số sức khỏe cho bạn.`;
-        io.to(`user:${targetUserId}`).emit('notification:new', {
-          type: 'metric_help', message: msg, link: '/metrics', timestamp: new Date().toISOString()
-        });
-      }
-    });
-
-    // ----- DISCONNECT -----
-    socket.on('disconnect', () => {
-      console.log(`[SocketIO] Client disconnected: userId=${userId}, socketId=${socket.id}`);
-      const sockets = userSockets.get(userId);
-      if (sockets) {
-        sockets.delete(socket.id);
-        if (sockets.size === 0) {
-          userSockets.delete(userId);
+      const connections = userWsConnections.get(userId);
+      if (connections) {
+        connections.delete(ws);
+        if (connections.size === 0) {
+          userWsConnections.delete(userId);
+          onlineUsers.delete(userId);
+          
+          // Broadcast offline status (delay để tránh flicker)
+          setTimeout(() => {
+            if (!onlineUsers.has(userId)) {
+              sendToAllUsers({ event: 'user:offline', payload: { userId, online: false, timestamp: new Date().toISOString() } });
+            }
+          }, 3000);
         }
       }
+    });
+
+    ws.on('error', (err) => {
+      console.error(`[WebSocket] Error for userId=${userId}:`, err.message);
     });
   });
 
-  console.log('[SocketIO] Initialized successfully');
-}
+  // Broadcast online users list periodically
+  setInterval(() => {
+    const onlineList = Array.from(onlineUsers.keys());
+    sendToAllUsers({ event: 'users:online', payload: { userIds: onlineList, timestamp: new Date().toISOString() } });
+  }, 60000);
 
-// Helper to emit socket events from anywhere
-function emitToUser(userId: string, event: string, data: any) {
-  if (io) {
-    io.to(`user:${userId}`).emit(event, data);
-  }
+  console.log('[WebSocket] ✅ Chat real-time initialized');
 }
 
 app.use(cors({ origin: '*' }) as any);
@@ -2303,7 +2450,7 @@ app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 async function startServer() {
   await initDB();
   await initEmailService();
-  initSocketIO();
+  initChatWebSocket();
 
   server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);

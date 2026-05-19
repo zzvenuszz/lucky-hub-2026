@@ -1,6 +1,5 @@
-
 import React, { useState, memo } from 'react';
-import { Message, AIKnowledge, AIRule, UserRole, HealthGoal } from '../../../types.ts';
+import { Message, AIKnowledge, AIRule, UserRole, HealthGoal, MessageType, MessageStatus } from '../../../types.ts';
 import { getAICoachResponse } from '../../../services/gemini.ts';
 
 interface AITestLabProps {
@@ -17,7 +16,7 @@ const AITestLab: React.FC<AITestLabProps> = ({ knowledge, rules }) => {
     if (!input.trim()) return;
     const userMsg: Message = { 
       id: Date.now().toString(), senderId: 'tester', senderName: 'Admin', 
-      senderRole: UserRole.ADMIN, content: input, timestamp: new Date().toISOString() 
+      senderRole: UserRole.ADMIN, content: input, type: MessageType.TEXT, status: MessageStatus.SENT, timestamp: new Date().toISOString() 
     };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
@@ -27,7 +26,7 @@ const AITestLab: React.FC<AITestLabProps> = ({ knowledge, rules }) => {
     if (response) {
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), senderId: 'ai', senderName: '🍀Trợ lý Lucky', 
-        senderRole: 'AI' as any, content: response, timestamp: new Date().toISOString() 
+        senderRole: 'AI' as any, content: response, type: MessageType.TEXT, status: MessageStatus.SENT, timestamp: new Date().toISOString() 
       }]);
     }
   };
@@ -47,7 +46,7 @@ const AITestLab: React.FC<AITestLabProps> = ({ knowledge, rules }) => {
           {isTyping && <div className="animate-pulse text-emerald-600">_ AI đang suy nghĩ...</div>}
         </div>
         <div className="flex items-center gap-2 border-t border-slate-800 pt-4">
-          <span className="text-emerald-600 font-black">PROMPT&gt;</span>
+          <span className="text-emerald-600 font-black">{'PROMPT>'}</span>
           <input 
             placeholder="Nhập câu hỏi test AI..." value={input} 
             onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleTest()} 

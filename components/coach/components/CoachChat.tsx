@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { User, ChatSession, Message, AIKnowledge, AIRule, HealthGoal } from '../../../types.ts';
+import { User, ChatSession, Message, AIKnowledge, AIRule, HealthGoal, MessageType, MessageStatus } from '../../../types.ts';
 import { getAICoachResponse } from '../../../services/gemini.ts';
 import { Database } from '../../../services/database.ts';
 
@@ -66,6 +66,8 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
         senderName: currentUser.fullName,
         senderRole: (currentUser as any).role || 'COACH',
         content: inputText.trim(),
+        type: MessageType.TEXT,
+        status: MessageStatus.SENT,
         timestamp: new Date().toISOString()
       };
 
@@ -81,6 +83,8 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
           senderName: '🍀Trợ lý Lucky',
           senderRole: 'AI' as any,
           content: AI_PROMPT_TEXT,
+          type: MessageType.TEXT,
+          status: MessageStatus.SENT,
           timestamp: new Date().toISOString()
         };
         finalMessages = [...updatedMessages, promptMsg];
@@ -116,7 +120,7 @@ const CoachChat: React.FC<CoachChatProps> = memo(({ currentUser, selectedMember,
     setIsProcessingQueue(true);
     const textToDisplay = pendingQueue[0];
     await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(textToDisplay.length * 20, 800), 2500)));
-    const aiMsg: Message = { id: `ai_${Date.now()}`, senderId: 'ai_coach', senderName: '🍀Trợ lý Lucky', senderRole: 'AI' as any, content: textToDisplay, timestamp: new Date().toISOString() };
+    const aiMsg: Message = { id: `ai_${Date.now()}`, senderId: 'ai_coach', senderName: '🍀Trợ lý Lucky', senderRole: 'AI' as any, content: textToDisplay, type: MessageType.TEXT, status: MessageStatus.SENT, timestamp: new Date().toISOString() };
     const updatedMessages = [...messages, aiMsg];
     const chatData: ChatSession = { id: chatId, memberId: selectedMemberId, coachId: currentUserId, messages: updatedMessages };
     await Database.saveChat(chatData);

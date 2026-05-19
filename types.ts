@@ -39,6 +39,45 @@ export enum AuditLogType {
   AI_KEY_UPDATE = 'AI_KEY_UPDATE'
 }
 
+export enum MessageType {
+  TEXT = 'text',
+  IMAGE = 'image',
+  FILE = 'file',
+  VOICE = 'voice',
+  SYSTEM = 'system'
+}
+
+export enum MessageStatus {
+  SENDING = 'sending',
+  SENT = 'sent',
+  DELIVERED = 'delivered',
+  READ = 'read',
+  FAILED = 'failed'
+}
+
+export enum WsEvent {
+  // Chat events
+  CHAT_MESSAGE = 'chat:message',
+  CHAT_TYPING = 'chat:typing',
+  CHAT_STOP_TYPING = 'chat:stopTyping',
+  CHAT_REACTION = 'chat:reaction',
+  CHAT_READ = 'chat:read',
+  CHAT_EDIT = 'chat:edit',
+  CHAT_DELETE = 'chat:delete',
+  CHAT_CLEAR = 'chat:clear',
+  // Status events
+  USER_ONLINE = 'user:online',
+  USER_OFFLINE = 'user:offline',
+  // Notification events
+  NOTIFICATION_NEW = 'notification:new',
+  // Post events
+  POST_REACTED = 'post:reacted',
+  // Metric events
+  METRIC_UPDATED = 'metric:updated',
+  // Session events
+  SESSION_INVALIDATED = 'session:invalidated',
+}
+
 export interface GeminiKey {
   id?: string;
   _id?: string;
@@ -136,6 +175,13 @@ export interface User {
   badges: string[];
 }
 
+export interface MessageReaction {
+  userId: string;
+  userName: string;
+  emoji: string;
+  timestamp: string;
+}
+
 export interface Message {
   id: string;
   senderId: string;
@@ -143,7 +189,20 @@ export interface Message {
   senderRole: UserRole | 'AI';
   content: string;
   timestamp: string;
+  type: MessageType;
+  status: MessageStatus;
   imageUrl?: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: number;
+  voiceUrl?: string;
+  replyTo?: {
+    messageId: string;
+    senderName: string;
+    content: string;
+  };
+  reactions?: MessageReaction[];
+  editedAt?: string;
   meta?: {
     chosenBy: string;
     chosenByName: string;
@@ -157,6 +216,7 @@ export interface ChatSession {
   memberId: string;
   coachId: string;
   messages: Message[];
+  lastReadBy?: Record<string, string>; // userId -> lastReadMessageId
 }
 
 export interface AIKnowledge {
@@ -168,4 +228,12 @@ export interface AIKnowledge {
 export interface AIRule {
   id: string;
   content: string;
+}
+
+// WebSocket message envelope
+export interface WsMessage {
+  event: WsEvent;
+  payload: any;
+  timestamp: string;
+  fromUserId: string;
 }

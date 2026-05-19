@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from './components/system/Layout.tsx';
 import Dashboard from './components/dashboard/Dashboard.tsx';
-import ChatSystem from './components/chat/ChatSystem.tsx';
+import ChatSystem from './components/chat/index.tsx';
 import AdminPanel from './components/admin/AdminPanel.tsx';
 import MetricForm from './components/dashboard/MetricForm.tsx';
 import Profile from './components/profile/Profile.tsx';
@@ -16,7 +16,7 @@ import SystemLog from './components/system/SystemLog.tsx';
 import CoachDashboard from './components/coach/CoachDashboard.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
-import { connectSocket, disconnectSocket, getSocket } from './services/socketService.ts';
+import wsService from './services/wsService.ts';
 
 // Hằng số thời gian logout
 const LOGOUT_REMEMBER = 7 * 24 * 60 * 60 * 1000;  // 7 ngày nếu "Duy trì đăng nhập"
@@ -169,58 +169,30 @@ const App: React.FC = () => {
     };
   }, [currentUser, handleLogout]);
 
-  // Kết nối Socket.IO khi user đăng nhập - global listener cho chat
+  // Kết nối WebSocket khi user đăng nhập
   useEffect(() => {
     if (currentUser && sessionIdRef.current) {
       const uid = (currentUser as any).id || (currentUser as any)._id;
-      const s = connectSocket(uid, sessionIdRef.current, currentUser.role);
       
-      if (!s) {
-        console.warn('[App] Socket not available, real-time disabled');
-        return;
-      }
+      wsService.connect(uid, sessionIdRef.current, currentUser.role);
+      
+      console.log(`[App] WebSocket connected for user ${uid}`);
 
-      console.log(`[App] Socket connected for user ${uid}, socketId=${s.id}`);
-
-      // Lắng nghe tin nhắn chat mới (kể cả khi ChatSystem chưa mount)
-      s.on('chat:newMessage', (data: any) => {
-        const { chatId, message } = data;
-        console.log(`[App] Global chat:newMessage chat=${chatId} from=${message.senderId} msgId=${message.id}`);
-        
-        // Cập nhật preloadedChats để ChatSystem có dữ liệu khi mount
-        setPreloadedChats(prev => {
-          const existing = prev.find(c => c.id === chatId);
-          if (existing) {
-            // Kiểm tra trùng
-            const dup = existing.messages.some((m: any) => m.id === message.id);
-            if (dup) return prev;
-            return prev.map(c => c.id === chatId ? { ...c, messages: [...c.messages, message] } : c);
-          }
-          // Tạo chat mới nếu chưa tồn tại
-          const newChat = { id: chatId, messages: [message], memberId: uid, coachId: data.fromUserId || '' };
-          return [...prev, newChat];
-        });
-      });
-
-      // Lắng nghe notification real-time
-      s.on('notification:new', (data: any) => {
+      // Lắng nghe notification real-time (global)
+      const unsubNotif = wsService.on('notification:new', (data: any) => {
         console.log(`[App] New notification:`, data.message?.substring(0, 50));
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification('Lucky Hub', { body: data.message });
         }
       });
 
-      // Lắng nghe session multi-tab
-      s.on('session:multiTab', (data: any) => {
-        console.log(`[App] Multi-tab detected:`, data.message);
-      });
-
+      return () => {
+        unsubNotif();
+        wsService.disconnect();
+      };
     } else {
-      disconnectSocket();
+      wsService.disconnect();
     }
-    return () => {
-      disconnectSocket();
-    };
   }, [currentUser]);
 
   // Phát hiện khi tab khác trong cùng trình duyệt login và ghi đè session
