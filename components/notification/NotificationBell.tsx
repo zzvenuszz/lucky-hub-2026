@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { User } from '../../types.ts';
 import NotificationPanel, { NotificationItem } from './NotificationPanel.tsx';
 
@@ -59,7 +59,11 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Lọc bỏ notification type 'message' (tin nhắn chat) vì chat đã có badge riêng
+  const chatFilteredNotifications = useMemo(() => 
+    notifications.filter(n => n.type !== 'message'), 
+  [notifications]);
+  const unreadCount = chatFilteredNotifications.filter(n => !n.read).length;
 
   // Mark all as read qua API
   const handleMarkAllRead = useCallback(async () => {
@@ -123,7 +127,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
 
       {isOpen && (
         <NotificationPanel
-          notifications={notifications}
+          notifications={chatFilteredNotifications}
           onMarkAllRead={handleMarkAllRead}
           onNotificationClick={handleNotificationClick}
           onClose={handleClose}

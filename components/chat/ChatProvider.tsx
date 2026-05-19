@@ -110,6 +110,25 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         
         const newChats = [aiChat, ...activeChats];
         setChats(newChats);
+
+        // Khởi tạo unread counts từ messages có sẵn khi load
+        const initialCounts: Record<string, number> = {};
+        newChats.forEach(chat => {
+          if (chat.messages.length > 0) {
+            const count = chat.messages.filter(m => {
+              // Tin nhắn từ người khác (không phải currentUser), không tính AI prompt
+              return m.senderId !== currentUid && m.senderId !== 'ai_coach';
+            }).length;
+            if (count > 0) {
+              initialCounts[chat.id] = count;
+            }
+          }
+        });
+        if (Object.keys(initialCounts).length > 0) {
+          setUnreadCounts(initialCounts);
+          console.log(`[ChatProvider] Initial unread counts:`, initialCounts);
+        }
+
         console.log(`[ChatProvider] Loaded ${newChats.length} chats`);
       } catch (error) {
         console.error(`[ChatProvider] Error loading data:`, error);
