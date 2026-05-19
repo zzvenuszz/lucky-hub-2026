@@ -1,7 +1,7 @@
 /**
  * ContactList - Danh sách chat với online status, unread badge
  */
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { ChatSession } from '../../../types.ts';
 import { useChat } from '../ChatProvider.tsx';
 
@@ -17,6 +17,29 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
     onSelectContact?.(chat);
   };
 
+  // Sắp xếp chats: ưu tiên chưa đọc lên trên, sau đó theo tin nhắn gần nhất
+  const sortedChats = useMemo(() => {
+    return [...chats].sort((a, b) => {
+      const aUnread = unreadCounts[a.id] || 0;
+      const bUnread = unreadCounts[b.id] || 0;
+
+      // Ưu tiên chưa đọc > 0 lên trên
+      if (bUnread > 0 && aUnread === 0) return 1;
+      if (aUnread > 0 && bUnread === 0) return -1;
+
+      // Trong cùng nhóm, sắp xếp theo tin nhắn gần nhất
+      const aLastMsg = a.messages[a.messages.length - 1];
+      const bLastMsg = b.messages[b.messages.length - 1];
+      
+      if (aLastMsg && bLastMsg) {
+        return new Date(bLastMsg.timestamp).getTime() - new Date(aLastMsg.timestamp).getTime();
+      }
+      if (aLastMsg) return -1;
+      if (bLastMsg) return 1;
+      return 0;
+    });
+  }, [chats, unreadCounts]);
+
   return (
     <div className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">
@@ -29,7 +52,7 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Chưa có ai để chat</p>
           <p className="text-[10px] text-slate-300">Nếu bạn là thành viên, hãy chờ Admin hoặc Coach xuất hiện nhé!</p>
         </div>
-      ) : chats.map(chat => {
+      ) : sortedChats.map(chat => {
         const other = getOtherUser(chat);
         if (!other) return null;
         

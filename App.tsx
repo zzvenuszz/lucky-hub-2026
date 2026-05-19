@@ -427,7 +427,7 @@ const App: React.FC = () => {
   // ChatSystem UI chỉ render khi isChatOpen = true
   return (
     <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
-      <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
+      <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={() => setIsChatOpen(!isChatOpen)}>
         {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
         {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
         {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
@@ -458,14 +458,6 @@ const App: React.FC = () => {
               <span className="text-xl">{isLogOpen ? '❌' : '📟'}</span>
             </button>
           )}
-
-          {/* Nút Chat Toggle */}
-          <button 
-            onClick={() => setIsChatOpen(!isChatOpen)} 
-            className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all border-4 border-white ${isChatOpen ? 'bg-slate-800' : 'bg-emerald-600 text-white'}`}
-          >
-            <span className="text-xl">{isChatOpen ? '❌' : '💬'}</span>
-          </button>
         </div>
 
         {/* Cửa sổ Log - CHỈ RENDER CHO ADMIN */}

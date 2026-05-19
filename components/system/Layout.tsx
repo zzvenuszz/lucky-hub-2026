@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from '
 import { User, UserRole } from '../../types.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
 import NotificationBell from '../notification/NotificationBell.tsx';
+import ChatToggle from '../chat/components/ChatToggle.tsx';
 
 interface LayoutProps {
   user: User;
@@ -9,6 +10,8 @@ interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  isChatOpen?: boolean;
+  onChatToggle?: () => void;
 }
 
 const NAV_ITEMS = [
@@ -29,7 +32,7 @@ const getRoleInfo = (role: UserRole): { icon: string; label: string; color: stri
   }
 };
 
-const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTab, setActiveTab }) => {
+const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTab, setActiveTab, isChatOpen, onChatToggle }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -94,9 +97,10 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
             ))}
           </nav>
 
-          {/* Right section: Notification + Avatar only */}
+          {/* Right section: Notification + Chat + Avatar */}
           <div className="flex items-center gap-1 sm:gap-2 ml-auto shrink-0">
             <NotificationBell currentUser={user} />
+            <ChatToggle isChatOpen={!!isChatOpen} onToggle={() => onChatToggle?.()} />
 
             <div className="relative" ref={menuRef}>
               <div 
