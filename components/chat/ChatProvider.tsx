@@ -39,6 +39,7 @@ interface ChatProviderProps {
 }
 
 const AI_PROMPT_TEXT = "Trợ lý Lucky AI có thông tin về vấn đề bạn đang đề cập, bạn có muốn tham khảo không?";
+const LS_READ_TIMESTAMPS = 'lucky_hub_chat_read_timestamps';
 
 // ===== Context =====
 const ChatContext = createContext<ChatContextType | null>(null);
@@ -48,6 +49,7 @@ export const useChat = () => {
   if (!ctx) throw new Error('useChat must be used within ChatProvider');
   return ctx;
 };
+
 
 // ===== Provider Component =====
 const ChatProvider: React.FC<ChatProviderProps> = memo(({ 
@@ -67,9 +69,42 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   const selectedChatRef = useRef<ChatSession | null>(null);
   const processedAiMsgIds = useRef<Set<string>>(new Set());
 
+  // Lưu lastReadTimestamps: chatId -> timestamp của tin nhắn cuối cùng đã đọc
+  const [lastReadTimestamps, setLastReadTimestamps] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(LS_READ_TIMESTAMPS);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Keep refs in sync
   useEffect(() => { chatsRef.current = chats; }, [chats]);
   useEffect(() => { selectedChatRef.current = selectedChat; }, [selectedChat]);
+
+  // Lưu lastReadTimestamps xuống localStorage
+  useEffect(() => {
+    localStorage.setItem(LS_READ_TIMESTAMPS, JSON.stringify(lastReadTimestamps));
+  }, [lastReadTimestamps]);
+
+  // Rebuild unread counts whenever chats or lastReadTimestamps change
+  const rebuildUnreadCounts = useCallback((chatList: ChatSession[], timestamps: Record<string, string>) => {
+    const counts: Record<string, number> = {};
+    chatList.forEach(chat => {
+      if (chat.messages.length === 0) return;
+      const count = chat.messages.filter(m => {
+        // Chỉ đếm tin nhắn từ người khác (không phải currentUser, không phải AI)
+        if (m.senderId === currentUid || m.senderId === 'ai_coach') return false;
+        // Chỉ đếm tin nhắn sau lần đọc cuối
+        const lastRead = timestamps[chat.id];
+        if (!lastRead) return true; // chưa đọc lần nào → tất cả đều chưa đọc
+        return m.timestamp > lastRead;
+      }).length;
+      if (count > 0) counts[chat.id] = count;
+    });
+    return counts;
+  }, [currentUid]);
 
   // ===== Load initial data =====
   useEffect(() => {
@@ -111,24 +146,6 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         const newChats = [aiChat, ...activeChats];
         setChats(newChats);
 
-        // Khởi tạo unread counts từ messages có sẵn khi load
-        const initialCounts: Record<string, number> = {};
-        newChats.forEach(chat => {
-          if (chat.messages.length > 0) {
-            const count = chat.messages.filter(m => {
-              // Tin nhắn từ người khác (không phải currentUser), không tính AI prompt
-              return m.senderId !== currentUid && m.senderId !== 'ai_coach';
-            }).length;
-            if (count > 0) {
-              initialCounts[chat.id] = count;
-            }
-          }
-        });
-        if (Object.keys(initialCounts).length > 0) {
-          setUnreadCounts(initialCounts);
-          console.log(`[ChatProvider] Initial unread counts:`, initialCounts);
-        }
-
         console.log(`[ChatProvider] Loaded ${newChats.length} chats`);
       } catch (error) {
         console.error(`[ChatProvider] Error loading data:`, error);
@@ -136,6 +153,15 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
     };
     load();
   }, [currentUid, users, currentUser.role, preloadedChats]);
+
+  // Rebuild unread counts khi chats hoặc lastReadTimestamps thay đổi
+  useEffect(() => {
+    const counts = rebuildUnreadCounts(chats, lastReadTimestamps);
+    setUnreadCounts(counts);
+    if (Object.keys(counts).length > 0) {
+      console.log(`[ChatProvider] Unread counts rebuilt:`, counts);
+    }
+  }, [chats, lastReadTimestamps, rebuildUnreadCounts]);
 
   // ===== Process AI response queue =====
   useEffect(() => {
@@ -215,10 +241,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
 
       // Tăng unread count nếu tin nhắn từ người khác và không đang xem chat đó
       if (isFromOtherUser && chatId !== currentlySelectedChatId) {
-        setUnreadCounts(prev => ({
-          ...prev,
-          [chatId]: (prev[chatId] || 0) + 1
-        }));
+        // unread sẽ tự động được rebuild bởi useEffect bên dưới
       }
 
       setSelectedChat(prev => {
@@ -359,8 +382,14 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
 
   const selectChat = useCallback((chat: ChatSession) => {
     setSelectedChat(chat);
-    // Reset unread count
-    setUnreadCounts(prev => ({ ...prev, [chat.id]: 0 }));
+    // Cập nhật lastReadTimestamp = timestamp của tin nhắn cuối cùng trong chat
+    const lastMsg = chat.messages[chat.messages.length - 1];
+    if (lastMsg) {
+      setLastReadTimestamps(prev => ({
+        ...prev,
+        [chat.id]: lastMsg.timestamp
+      }));
+    }
   }, []);
 
   const sendMessage = useCallback(async (text: string, imageBase64?: string) => {
