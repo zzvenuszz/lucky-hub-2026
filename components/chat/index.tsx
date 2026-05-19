@@ -1,23 +1,19 @@
 /**
- * ChatSystem - Entry point cho chat system mới
- * Sử dụng ChatProvider context + WebSocket
+ * ChatSystem - UI component cho chat system
+ * ChatProvider được quản lý ở App level (luôn active 24/7)
  */
 import React, { memo, useState, useCallback } from 'react';
-import { User, AIKnowledge, AIRule, ChatSession } from '../../types.ts';
-import ChatProvider, { useChat } from './ChatProvider.tsx';
+import { User } from '../../types.ts';
+import { useChat } from './ChatProvider.tsx';
 import ContactList from './components/ContactList.tsx';
 import ChatWindow from './components/ChatWindow.tsx';
 
 interface ChatSystemProps {
   currentUser: User;
-  users: User[];
-  knowledge: AIKnowledge[];
-  rules: AIRule[];
-  preloadedChats: ChatSession[];
   onClose: () => void;
 }
 
-const ChatContent: React.FC<{ onClose: () => void; currentUser: User }> = memo(({ onClose, currentUser }) => {
+const ChatSystem: React.FC<ChatSystemProps> = memo(({ onClose, currentUser }) => {
   const { selectedChat, getOtherUser, clearChat } = useChat();
   const [showContacts, setShowContacts] = useState(true);
   const currentUid = String((currentUser as any).id || (currentUser as any)._id);
@@ -61,16 +57,6 @@ const ChatContent: React.FC<{ onClose: () => void; currentUser: User }> = memo((
         </div>
       )}
     </div>
-  );
-});
-
-ChatContent.displayName = 'ChatContent';
-
-const ChatSystem: React.FC<ChatSystemProps> = memo(({ currentUser, users, knowledge, rules, preloadedChats, onClose }) => {
-  return (
-    <ChatProvider currentUser={currentUser} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
-      <ChatContent onClose={onClose} currentUser={currentUser} />
-    </ChatProvider>
   );
 });
 

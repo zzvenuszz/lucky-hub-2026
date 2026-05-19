@@ -173,6 +173,10 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
       const { chatId, message, fromUserId } = payload;
       console.log(`[ChatProvider] 📨 New message: chat=${chatId}, from=${message.senderId}`);
 
+      // Kiểm tra nếu message từ người khác (không phải chính mình)
+      const isFromOtherUser = message.senderId !== currentUid;
+      const currentlySelectedChatId = selectedChatRef.current?.id;
+
       setChats(prev => {
         const existing = prev.find(c => c.id === chatId);
         if (existing) {
@@ -189,6 +193,14 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         };
         return [...prev, newChat];
       });
+
+      // Tăng unread count nếu tin nhắn từ người khác và không đang xem chat đó
+      if (isFromOtherUser && chatId !== currentlySelectedChatId) {
+        setUnreadCounts(prev => ({
+          ...prev,
+          [chatId]: (prev[chatId] || 0) + 1
+        }));
+      }
 
       setSelectedChat(prev => {
         if (prev?.id === chatId) {

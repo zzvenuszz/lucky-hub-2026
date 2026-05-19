@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Layout from './components/system/Layout.tsx';
 import Dashboard from './components/dashboard/Dashboard.tsx';
 import ChatSystem from './components/chat/index.tsx';
+import ChatProvider from './components/chat/ChatProvider.tsx';
 import AdminPanel from './components/admin/AdminPanel.tsx';
 import MetricForm from './components/dashboard/MetricForm.tsx';
 import Profile from './components/profile/Profile.tsx';
@@ -423,67 +423,72 @@ const App: React.FC = () => {
 
   const isAdmin = currentUser.role === UserRole.ADMIN;
 
+  // ChatProvider luôn active 24/7 để lắng nghe WebSocket,
+  // ChatSystem UI chỉ render khi isChatOpen = true
   return (
-    <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
-      {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
-      {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
-      {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
-      {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { 
-        const uid = (currentUser as any).id || (currentUser as any)._id; 
-        const u = await Database.updateUser(uid, d); 
-        if(u) { 
-          setCurrentUser(u); 
-          localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
-          if (window.debugLog) window.debugLog(`Cập nhật hồ sơ người dùng @${u.username} thành công`, "user");
-        } 
-      }} />}
-      {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
-      {activeTab === 'coach' && (currentUser.role === UserRole.COACH || isAdmin) && <CoachDashboard currentUser={currentUser!} />}
-      
-      {isChatOpen && <ChatSystem currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats} onClose={() => setIsChatOpen(false)} />}
-      
-      {/* Floating Action Buttons Stack */}
-      <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-[1000]">
-        {/* Nút System Log - CHỈ HIỂN THỊ CHO ADMIN */}
-        {isAdmin && (
+    <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
+      <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab}>
+        {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
+        {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
+        {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
+        {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { 
+          const uid = (currentUser as any).id || (currentUser as any)._id; 
+          const u = await Database.updateUser(uid, d); 
+          if(u) { 
+            setCurrentUser(u); 
+            localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
+            if (window.debugLog) window.debugLog(`Cập nhật hồ sơ người dùng @${u.username} thành công`, "user");
+          } 
+        }} />}
+        {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
+        {activeTab === 'coach' && (currentUser.role === UserRole.COACH || isAdmin) && <CoachDashboard currentUser={currentUser!} />}
+        
+        {/* ChatSystem UI - chỉ hiển thị khung chat khi mở */}
+        {isChatOpen && <ChatSystem currentUser={currentUser!} onClose={() => setIsChatOpen(false)} />}
+        
+        {/* Floating Action Buttons Stack */}
+        <div className="fixed bottom-6 right-6 flex flex-col gap-4 z-[1000]">
+          {/* Nút System Log - CHỈ HIỂN THỊ CHO ADMIN */}
+          {isAdmin && (
+            <button 
+              onClick={() => setIsLogOpen(!isLogOpen)}
+              className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all border-4 border-white ${isLogOpen ? 'bg-slate-800 rotate-180' : 'bg-slate-700 hover:scale-110 active:scale-95'}`}
+              title="Hệ thống Log (Admin only)"
+            >
+              <span className="text-xl">{isLogOpen ? '❌' : '📟'}</span>
+            </button>
+          )}
+
+          {/* Nút Chat Toggle */}
           <button 
-            onClick={() => setIsLogOpen(!isLogOpen)}
-            className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all border-4 border-white ${isLogOpen ? 'bg-slate-800 rotate-180' : 'bg-slate-700 hover:scale-110 active:scale-95'}`}
-            title="Hệ thống Log (Admin only)"
+            onClick={() => setIsChatOpen(!isChatOpen)} 
+            className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all border-4 border-white ${isChatOpen ? 'bg-slate-800' : 'bg-emerald-600 text-white'}`}
           >
-            <span className="text-xl">{isLogOpen ? '❌' : '📟'}</span>
+            <span className="text-xl">{isChatOpen ? '❌' : '💬'}</span>
           </button>
-        )}
+        </div>
 
-        {/* Nút Chat Toggle */}
-        <button 
-          onClick={() => setIsChatOpen(!isChatOpen)} 
-          className={`w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all border-4 border-white ${isChatOpen ? 'bg-slate-800' : 'bg-emerald-600 text-white'}`}
-        >
-          <span className="text-xl">{isChatOpen ? '❌' : '💬'}</span>
-        </button>
-      </div>
+        {/* Cửa sổ Log - CHỈ RENDER CHO ADMIN */}
+        {isAdmin && <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />}
 
-      {/* Cửa sổ Log - CHỈ RENDER CHO ADMIN */}
-      {isAdmin && <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />}
-
-      {isAddingMetric && <MetricForm onSave={async (m) => { 
-        const actorId = (currentUser as any).id || (currentUser as any)._id;
-        await Database.saveMetric({ ...m, userId: metricTargetUserId, actorId, actorName: currentUser?.fullName }); 
-        setRefreshTrigger(t => t+1); 
-        setIsAddingMetric(false); 
-      }} onSaveBulk={async (l) => { 
-        const actorId = (currentUser as any).id || (currentUser as any)._id;
-        await Database.saveMetricsBulk({
-          metrics: l.map(m => ({...m, userId: metricTargetUserId})),
-          actorId,
-          actorName: currentUser?.fullName
-        }); 
-        setRefreshTrigger(t => t+1); 
-        setIsAddingMetric(false); 
-      }} onClose={() => setIsAddingMetric(false)} />}
-      {newEarnedBadge && <BadgeCongratulation badge={newEarnedBadge} onClose={() => setNewEarnedBadge(null)} />}
-    </Layout>
+        {isAddingMetric && <MetricForm onSave={async (m) => { 
+          const actorId = (currentUser as any).id || (currentUser as any)._id;
+          await Database.saveMetric({ ...m, userId: metricTargetUserId, actorId, actorName: currentUser?.fullName }); 
+          setRefreshTrigger(t => t+1); 
+          setIsAddingMetric(false); 
+        }} onSaveBulk={async (l) => { 
+          const actorId = (currentUser as any).id || (currentUser as any)._id;
+          await Database.saveMetricsBulk({
+            metrics: l.map(m => ({...m, userId: metricTargetUserId})),
+            actorId,
+            actorName: currentUser?.fullName
+          }); 
+          setRefreshTrigger(t => t+1); 
+          setIsAddingMetric(false); 
+        }} onClose={() => setIsAddingMetric(false)} />}
+        {newEarnedBadge && <BadgeCongratulation badge={newEarnedBadge} onClose={() => setNewEarnedBadge(null)} />}
+      </Layout>
+    </ChatProvider>
   );
 };
 
