@@ -1,7 +1,9 @@
 /**
  * ContactList - Danh sách chat với online status, unread badge
+ * Sắp xếp: Trợ lý AI → Coach → Người dùng khác
+ * Trong cùng nhóm: unread > 0 lên trước → tin nhắn gần nhất
  */
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useState, useCallback } from 'react';
 import { ChatSession } from '../../../types.ts';
 import { useChat } from '../ChatProvider.tsx';
 
@@ -9,28 +11,43 @@ interface ContactListProps {
   onSelectContact?: (chat: ChatSession) => void;
 }
 
+/** Hàm lấy độ ưu tiên: 0 = AI, 1 = Coach, 2 = Others */
+const getPriority = (chat: ChatSession, other: any): number => {
+  if (chat.coachId === 'ai_coach') return 0;
+  const role = (other as any)?.role;
+  if (role === 'COACH') return 1;
+  return 2;
+};
+
 const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
   const { chats, selectedChat, selectChat, getOtherUser, onlineUsers, unreadCounts } = useChat();
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const handleSelect = (chat: ChatSession) => {
+  const handleSelect = useCallback((chat: ChatSession) => {
     selectChat(chat);
     onSelectContact?.(chat);
-  };
+  }, [selectChat, onSelectContact]);
 
-  // Sắp xếp chats: ưu tiên chưa đọc lên trên, sau đó theo tin nhắn gần nhất
+  // Sắp xếp chats: ưu tiên AI → Coach → Others, sau đó unread → latest message
   const sortedChats = useMemo(() => {
     return [...chats].sort((a, b) => {
+      const otherA = getOtherUser(a);
+      const otherB = getOtherUser(b);
+      const prioA = getPriority(a, otherA);
+      const prioB = getPriority(b, otherB);
+
+      // Theo nhóm ưu tiên
+      if (prioA !== prioB) return prioA - prioB;
+
+      // Trong cùng nhóm: ưu tiên chưa đọc
       const aUnread = unreadCounts[a.id] || 0;
       const bUnread = unreadCounts[b.id] || 0;
-
-      // Ưu tiên chưa đọc > 0 lên trên
       if (bUnread > 0 && aUnread === 0) return 1;
       if (aUnread > 0 && bUnread === 0) return -1;
 
-      // Trong cùng nhóm, sắp xếp theo tin nhắn gần nhất
+      // Cùng unread status: sắp xếp theo tin nhắn gần nhất
       const aLastMsg = a.messages[a.messages.length - 1];
       const bLastMsg = b.messages[b.messages.length - 1];
-      
       if (aLastMsg && bLastMsg) {
         return new Date(bLastMsg.timestamp).getTime() - new Date(aLastMsg.timestamp).getTime();
       }
@@ -38,21 +55,65 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
       if (bLastMsg) return 1;
       return 0;
     });
-  }, [chats, unreadCounts]);
+  }, [chats, unreadCounts, getOtherUser]);
+
+  // Lọc theo từ khóa tìm kiếm
+  const filteredChats = useMemo(() => {
+    if (!searchTerm.trim()) return sortedChats;
+    const term = searchTerm.toLowerCase().trim();
+    return sortedChats.filter(chat => {
+      const other = getOtherUser(chat);
+      if (!other) return false;
+      return other.fullName.toLowerCase().includes(term);
+    });
+  }, [sortedChats, searchTerm, getOtherUser]);
+
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  }, []);
 
   return (
-    <div className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
-      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 mb-2">
-        💬 Hội thoại của bạn
+    <div className="flex-grow overflow-y-auto no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
+      {/* Search bar */}
+      <div className="px-4 pt-4 pb-2">
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">🔍</span>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={handleSearchChange}
+            placeholder="Tìm kiếm hội thoại..."
+            className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-medium text-slate-600 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-300 transition-all"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center text-slate-300 hover:text-slate-500 transition-colors text-[10px]"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
-      
-      {chats.length === 0 ? (
+
+      {/* Label */}
+      <div className="px-4 mb-2">
+        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+          💬 Hội thoại của bạn
+        </div>
+      </div>
+
+      {filteredChats.length === 0 ? (
         <div className="p-8 text-center space-y-4">
           <div className="text-4xl">🏜️</div>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Chưa có ai để chat</p>
-          <p className="text-[10px] text-slate-300">Nếu bạn là thành viên, hãy chờ Admin hoặc Coach xuất hiện nhé!</p>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+            {searchTerm ? 'Không tìm thấy kết quả' : 'Chưa có ai để chat'}
+          </p>
+          {!searchTerm && (
+            <p className="text-[10px] text-slate-300">Nếu bạn là thành viên, hãy chờ Admin hoặc Coach xuất hiện nhé!</p>
+          )}
         </div>
-      ) : sortedChats.map(chat => {
+      ) : filteredChats.map(chat => {
         const other = getOtherUser(chat);
         if (!other) return null;
         
@@ -61,12 +122,13 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
         const unreadCount = unreadCounts[chat.id] || 0;
         const isSelected = selectedChat?.id === chat.id;
         const lastMessage = chat.messages[chat.messages.length - 1];
+        const isAiCoach = chat.coachId === 'ai_coach';
 
         return (
           <div 
             key={chat.id} 
             onClick={() => handleSelect(chat)} 
-            className={`p-4 rounded-2xl cursor-pointer transition-all border flex items-center gap-3 group ${
+            className={`mx-4 mb-2 p-4 rounded-2xl cursor-pointer transition-all border flex items-center gap-3 group ${
               isSelected 
                 ? 'bg-emerald-50 border-emerald-200 shadow-sm' 
                 : 'bg-white border-slate-50 hover:shadow-md hover:scale-[1.02]'
@@ -75,12 +137,12 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
             {/* Avatar */}
             <div className="relative shrink-0">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm overflow-hidden ${
-                other.id === 'ai_coach' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                isAiCoach ? 'bg-amber-100 text-amber-600' : 'bg-emerald-50 text-emerald-600'
               }`}>
                 {(other as any).avatar ? (
                   <img src={(other as any).avatar} alt={other.fullName} className="w-full h-full object-cover" />
                 ) : (
-                  <span>{other.id === 'ai_coach' ? '🍀' : other.fullName.charAt(0)}</span>
+                  <span>{isAiCoach ? '🍀' : other.fullName.charAt(0)}</span>
                 )}
               </div>
               {/* Online dot */}
@@ -104,7 +166,7 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[8px] font-black uppercase text-slate-400">
-                    {other.id === 'ai_coach' ? 'AI' : (other as any).role === 'ADMIN' ? 'ADMIN' : (other as any).role === 'COACH' ? 'COACH' : ''}
+                    {isAiCoach ? 'AI' : (other as any).role === 'ADMIN' ? 'ADMIN' : (other as any).role === 'COACH' ? 'COACH' : ''}
                   </span>
                   {/* Unread badge */}
                   {unreadCount > 0 && (
@@ -118,7 +180,7 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
               {/* Last message preview */}
               {lastMessage && (
                 <p className="text-[10px] text-slate-400 mt-1 truncate">
-                  {lastMessage.senderId === (other as any).id ? '' : 'Bạn: '}
+                  {lastMessage.senderId === otherId ? '' : 'Bạn: '}
                   {lastMessage.content?.substring(0, 50)}
                   {lastMessage.content?.length > 50 ? '...' : ''}
                 </p>
