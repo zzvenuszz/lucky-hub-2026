@@ -16,6 +16,8 @@ interface ChatContextType {
   onlineUsers: Set<string>;
   unreadCounts: Record<string, number>;
   aiPromptText: string;
+  isChatOpen: boolean;
+  setIsChatOpen: (open: boolean) => void;
   // Actions
   selectChat: (chat: ChatSession) => void;
   sendMessage: (text: string, imageBase64?: string) => Promise<void>;
@@ -60,6 +62,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   const [isTypingAI, setIsTypingAI] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [pendingQueue, setPendingQueue] = useState<string[]>([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [latestMetric, setLatestMetric] = useState<HealthMetric | undefined>(undefined);
@@ -89,12 +92,12 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   }, [lastReadTimestamps]);
 
   // Rebuild unread counts whenever chats or lastReadTimestamps change
-  // Bỏ qua chat đang được xem (selectedChatId) để không hiển thị badge cho chat đang mở
-  const rebuildUnreadCounts = useCallback((chatList: ChatSession[], timestamps: Record<string, string>, selectedChatId?: string) => {
+  // Chỉ bỏ qua chat đang được xem nếu khung chat đang mở (isChatOpen === true)
+  const rebuildUnreadCounts = useCallback((chatList: ChatSession[], timestamps: Record<string, string>, selectedChatId?: string, chatOpen?: boolean) => {
     const counts: Record<string, number> = {};
     chatList.forEach(chat => {
-      // Bỏ qua nếu chat này đang được xem
-      if (chat.id === selectedChatId) return;
+      // Bỏ qua nếu chat này đang được xem VÀ khung chat đang mở
+      if (chatOpen && chat.id === selectedChatId) return;
       if (chat.messages.length === 0) return;
       const count = chat.messages.filter(m => {
         // Chỉ đếm tin nhắn từ người khác (không phải currentUser, không phải AI)
@@ -157,14 +160,14 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
     load();
   }, [currentUid, users, currentUser.role, preloadedChats]);
 
-  // Rebuild unread counts khi chats, lastReadTimestamps hoặc selectedChat thay đổi
+  // Rebuild unread counts khi chats, lastReadTimestamps, selectedChat hoặc isChatOpen thay đổi
   useEffect(() => {
-    const counts = rebuildUnreadCounts(chats, lastReadTimestamps, selectedChat?.id);
+    const counts = rebuildUnreadCounts(chats, lastReadTimestamps, selectedChat?.id, isChatOpen);
     setUnreadCounts(counts);
     if (Object.keys(counts).length > 0) {
       console.log(`[ChatProvider] Unread counts rebuilt:`, counts);
     }
-  }, [chats, lastReadTimestamps, selectedChat?.id, rebuildUnreadCounts]);
+  }, [chats, lastReadTimestamps, selectedChat?.id, isChatOpen, rebuildUnreadCounts]);
 
   // ===== Process AI response queue =====
   useEffect(() => {
@@ -599,6 +602,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
 
   const contextValue: ChatContextType = {
     chats, selectedChat, isTypingAI, onlineUsers, unreadCounts, aiPromptText: AI_PROMPT_TEXT,
+    isChatOpen, setIsChatOpen,
     selectChat, sendMessage, sendTyping, sendReaction, sendReadReceipt,
     editMessage, deleteMessage, clearChat, handleAiChoice, getOtherUser,
   };

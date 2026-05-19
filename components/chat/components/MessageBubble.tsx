@@ -54,12 +54,59 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({
 
   return (
     <div className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} group`}>
-      <div className={`max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
+      <div className={`relative max-w-[85%] p-3.5 rounded-2xl text-[12px] leading-relaxed whitespace-pre-wrap shadow-sm ${
         isAiPrompt ? 'bg-emerald-50/50 border border-emerald-200 text-slate-700 rounded-2xl' :
         message.senderRole === 'AI' ? 'bg-amber-50 border border-amber-100 text-slate-800 rounded-tl-none font-medium' : 
         isMyMessage ? 'bg-emerald-600 text-white rounded-tr-none' : 
         'bg-white text-slate-800 rounded-tl-none border border-slate-100'
       }`}>
+        {/* Actions overlay (visible on hover) */}
+        {!isAiPrompt && (
+          <div className={`absolute top-1 ${isMyMessage ? 'left-1' : 'right-1'} flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 rounded-lg px-1 py-0.5 shadow-sm border border-slate-100`}>
+            {/* Emoji reaction */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className="text-[10px] text-slate-400 hover:text-slate-600 px-0.5 hover:scale-110 transition-transform"
+                title="Cảm xúc"
+              >
+                😊
+              </button>
+              {showEmojiPicker && (
+                <div className={`absolute ${isMyMessage ? 'left-0' : 'right-0'} bottom-full mb-1 bg-white rounded-lg shadow-lg border p-1 flex gap-1 z-10`}>
+                  {EMOJI_LIST.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => { onReaction(chat.id, message.id, emoji); setShowEmojiPicker(false); }}
+                      className="hover:scale-125 transition-transform text-sm px-0.5"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Edit (own message) */}
+            {isMyMessage && (
+              <button 
+                onClick={() => { setEditText(message.content); setIsEditing(true); }}
+                className="text-[10px] text-slate-400 hover:text-slate-600 px-0.5 hover:scale-110 transition-transform"
+                title="Sửa"
+              >
+                ✏️
+              </button>
+            )}
+            {/* Delete */}
+            <button 
+              onClick={() => { if (confirm('Xóa tin nhắn này?')) onDelete(chat.id, message.id); }}
+              className="text-[10px] text-slate-400 hover:text-red-500 px-0.5 hover:scale-110 transition-transform"
+              title="Xóa"
+            >
+              🗑️
+            </button>
+          </div>
+        )}
+
         {/* Reply preview */}
         {message.replyTo && (
           <div className="border-l-2 border-slate-300 pl-2 mb-2 text-[10px] opacity-75">
@@ -150,49 +197,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({
         </div>
       </div>
 
-      {/* Actions (visible on hover) */}
-      {!isAiPrompt && (
-        <div className="hidden group-hover:flex items-center gap-1 mt-1 opacity-60">
-          {/* Emoji reaction */}
-          <div className="relative">
-            <button 
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="text-[10px] text-slate-400 hover:text-slate-600 px-1"
-            >
-              😊
-            </button>
-            {showEmojiPicker && (
-              <div className={`absolute ${isMyMessage ? 'right-0' : 'left-0'} bottom-full mb-1 bg-white rounded-lg shadow-lg border p-1 flex gap-1 z-10`}>
-                {EMOJI_LIST.map(emoji => (
-                  <button
-                    key={emoji}
-                    onClick={() => { onReaction(chat.id, message.id, emoji); setShowEmojiPicker(false); }}
-                    className="hover:scale-125 transition-transform text-sm px-0.5"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {/* Edit (own message) */}
-          {isMyMessage && (
-            <button 
-              onClick={() => { setEditText(message.content); setIsEditing(true); }}
-              className="text-[10px] text-slate-400 hover:text-slate-600 px-1"
-            >
-              ✏️
-            </button>
-          )}
-          {/* Delete */}
-          <button 
-            onClick={() => { if (confirm('Xóa tin nhắn này?')) onDelete(chat.id, message.id); }}
-            className="text-[10px] text-slate-400 hover:text-red-500 px-1"
-          >
-            🗑️
-          </button>
-        </div>
-      )}
     </div>
   );
 });

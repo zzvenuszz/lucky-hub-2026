@@ -2,7 +2,7 @@
  * ChatSystem - UI component cho chat system
  * ChatProvider được quản lý ở App level (luôn active 24/7)
  */
-import React, { memo, useState, useCallback } from 'react';
+import React, { memo, useState, useCallback, useEffect } from 'react';
 import { User } from '../../types.ts';
 import { useChat } from './ChatProvider.tsx';
 import ContactList from './components/ContactList.tsx';
@@ -14,9 +14,15 @@ interface ChatSystemProps {
 }
 
 const ChatSystem: React.FC<ChatSystemProps> = memo(({ onClose, currentUser }) => {
-  const { selectedChat, getOtherUser, clearChat } = useChat();
+  const { selectedChat, getOtherUser, clearChat, setIsChatOpen } = useChat();
   const [showContacts, setShowContacts] = useState(true);
   const currentUid = String((currentUser as any).id || (currentUser as any)._id);
+
+  // Đồng bộ trạng thái mở chat với ChatProvider
+  useEffect(() => {
+    setIsChatOpen(true);
+    return () => setIsChatOpen(false);
+  }, [setIsChatOpen]);
 
   const handleClearChat = useCallback(() => {
     if (!selectedChat) return;
