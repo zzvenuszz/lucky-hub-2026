@@ -191,9 +191,14 @@ const ChatSystem: React.FC<ChatSystemProps> = ({ currentUser, users, knowledge, 
     }
   }, [currentUid, users, currentUser.role]);
 
-  // Load dữ liệu ban đầu
+  // Load dữ liệu ban đầu + polling fallback 15s
   useEffect(() => { 
     loadData(); 
+    const fallbackInterval = setInterval(() => {
+      console.log('[ChatSystem] Polling fallback: reloading chats');
+      loadData();
+    }, 15000);
+    return () => clearInterval(fallbackInterval);
   }, [loadData]);
 
   // Socket.IO real-time listeners

@@ -169,17 +169,42 @@ const App: React.FC = () => {
     };
   }, [currentUser, handleLogout]);
 
-  // Kết nối Socket.IO khi user đăng nhập
+  // Kết nối Socket.IO khi user đăng nhập - global listener cho chat
   useEffect(() => {
     if (currentUser && sessionIdRef.current) {
       const uid = (currentUser as any).id || (currentUser as any)._id;
       const s = connectSocket(uid, sessionIdRef.current, currentUser.role);
       
+      if (!s) {
+        console.warn('[App] Socket not available, real-time disabled');
+        return;
+      }
+
+      console.log(`[App] Socket connected for user ${uid}, socketId=${s.id}`);
+
+      // Lắng nghe tin nhắn chat mới (kể cả khi ChatSystem chưa mount)
+      s.on('chat:newMessage', (data: any) => {
+        const { chatId, message } = data;
+        console.log(`[App] Global chat:newMessage chat=${chatId} from=${message.senderId} msgId=${message.id}`);
+        
+        // Cập nhật preloadedChats để ChatSystem có dữ liệu khi mount
+        setPreloadedChats(prev => {
+          const existing = prev.find(c => c.id === chatId);
+          if (existing) {
+            // Kiểm tra trùng
+            const dup = existing.messages.some((m: any) => m.id === message.id);
+            if (dup) return prev;
+            return prev.map(c => c.id === chatId ? { ...c, messages: [...c.messages, message] } : c);
+          }
+          // Tạo chat mới nếu chưa tồn tại
+          const newChat = { id: chatId, messages: [message], memberId: uid, coachId: data.fromUserId || '' };
+          return [...prev, newChat];
+        });
+      });
+
       // Lắng nghe notification real-time
       s.on('notification:new', (data: any) => {
         console.log(`[App] New notification:`, data.message?.substring(0, 50));
-        // Có thể trigger refresh notification bell ở đây
-        // Hoặc hiển thị toast notification
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification('Lucky Hub', { body: data.message });
         }
@@ -190,7 +215,6 @@ const App: React.FC = () => {
         console.log(`[App] Multi-tab detected:`, data.message);
       });
 
-      console.log(`[App] Socket connected for user ${uid}`);
     } else {
       disconnectSocket();
     }
