@@ -5,8 +5,17 @@ import React, { memo } from 'react';
 import { ChatSession } from '../../../types.ts';
 import { useChat } from '../ChatProvider.tsx';
 
-const ContactList: React.FC = memo(() => {
+interface ContactListProps {
+  onSelectContact?: (chat: ChatSession) => void;
+}
+
+const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
   const { chats, selectedChat, selectChat, getOtherUser, onlineUsers, unreadCounts } = useChat();
+
+  const handleSelect = (chat: ChatSession) => {
+    selectChat(chat);
+    onSelectContact?.(chat);
+  };
 
   return (
     <div className="flex-grow overflow-y-auto p-4 space-y-2 no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
@@ -33,7 +42,7 @@ const ContactList: React.FC = memo(() => {
         return (
           <div 
             key={chat.id} 
-            onClick={() => selectChat(chat)} 
+            onClick={() => handleSelect(chat)} 
             className={`p-4 rounded-2xl cursor-pointer transition-all border flex items-center gap-3 group ${
               isSelected 
                 ? 'bg-emerald-50 border-emerald-200 shadow-sm' 

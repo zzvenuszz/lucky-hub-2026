@@ -52,7 +52,7 @@ const ChatContent: React.FC<{ onClose: () => void; currentUser: User }> = memo((
 
       {/* Content */}
       {showContacts ? (
-        <ContactList />
+        <ContactList onSelectContact={() => setShowContacts(false)} />
       ) : selectedChat ? (
         <ChatWindow chat={selectedChat} currentUid={currentUid} />
       ) : (
