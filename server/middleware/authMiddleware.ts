@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ActiveSession } from '../models/ActiveSession.ts';
 import { User } from '../models/User.ts';
+import { getEffectivePermissions } from '../services/permissionService.ts';
 
 // Mở rộng type Request để thêm user info
 declare global {
@@ -79,17 +80,24 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       });
     }
 
+    // Gộp permissions từ user-specific + groups
+    const effectivePermissions = await getEffectivePermissions(
+      (user._id as string).toString(),
+      user.role,
+      user.permissions || []
+    );
+
     // Gắn user info vào request
     req.user = {
       userId: (user._id as string).toString(),
       role: user.role,
-      permissions: user.permissions || [],
+      permissions: effectivePermissions,
       fullName: user.fullName,
       email: user.email,
       username: user.username,
     };
 
-    console.log(`[Auth] ✅ Verified: ${user.fullName} (@${user.username})`);
+    console.log(`[Auth] ✅ Verified: ${user.fullName} (@${user.username}) - ${effectivePermissions.length} permissions`);
     next();
   } catch (err: any) {
     console.error(`[Auth] ❌ Error: ${err.message}`);

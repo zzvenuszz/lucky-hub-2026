@@ -24,7 +24,10 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
     if (!currentUserId) return;
     setIsLoading(true);
     try {
-      const resp = await fetch(`/api/notifications/${currentUserId}`);
+      const sessionId = localStorage.getItem('lucky_hub_session');
+      const resp = await fetch(`/api/notifications/${currentUserId}`, {
+        headers: sessionId ? { 'Authorization': `Bearer ${sessionId}` } : {}
+      });
       if (resp.ok) {
         const data: NotificationItem[] = await resp.json();
         setNotifications(prev => {
