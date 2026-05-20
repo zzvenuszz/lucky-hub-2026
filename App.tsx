@@ -457,7 +457,7 @@ const App: React.FC = () => {
           } 
         }} />}
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
-        {activeTab === 'coach' && (currentUser.role === UserRole.COACH || isAdmin) && <CoachDashboard currentUser={currentUser!} />}
+        {activeTab === 'coach' && (currentUser as any).permissions?.includes('coach:access') && <CoachDashboard currentUser={currentUser!} />}
         
         {/* ChatSystem UI - chỉ hiển thị khung chat khi mở */}
         {isChatOpen && <ChatSystem currentUser={currentUser!} onClose={() => setIsChatOpen(false)} />}

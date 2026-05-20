@@ -45,6 +45,9 @@ export const RESOURCES = {
     SEND: 'chat:send',
     VIEW: 'chat:view',
   },
+  COACH: {
+    ACCESS: 'coach:access',
+  },
 } as const;
 
 /**
@@ -85,6 +88,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     RESOURCES.CHATS.VIEW,
     RESOURCES.CHATS.SEND,
     RESOURCES.AI.VIEW,
+    RESOURCES.COACH.ACCESS,
   ],
   [UserRole.ADMIN]: ALL_PERMISSIONS,
 };
@@ -118,4 +122,5 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.POSTS.DELETE_ANY]: 'Xóa bài viết của người khác',
   [RESOURCES.CHATS.VIEW]: 'Xem chat',
   [RESOURCES.CHATS.SEND]: 'Gửi tin nhắn chat',
+  [RESOURCES.COACH.ACCESS]: 'Truy cập giao diện Coach',
 };

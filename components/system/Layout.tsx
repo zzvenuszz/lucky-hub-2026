@@ -63,12 +63,12 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
   const availableNavItems = useMemo(() => {
     const items = NAV_ITEMS.filter(item => {
       if (item.id === 'coach') {
-        return user.role === UserRole.COACH || user.role === UserRole.ADMIN;
+        return (user as any).permissions?.includes('coach:access');
       }
       return true;
     });
     return items;
-  }, [user.role]);
+  }, [user]);
 
   console.log(`[Layout] Render: user=${user.fullName}, role=${user.role}, activeTab=${activeTab}`);
 
