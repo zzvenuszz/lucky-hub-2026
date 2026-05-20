@@ -195,6 +195,18 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
+  // Lắng nghe sự kiện session bị vô hiệu hóa từ database.ts
+  useEffect(() => {
+    const handleSessionInvalidated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      console.log(`[Session] Invalidated event received:`, detail);
+      handleLogout('session_invalidated');
+    };
+    
+    window.addEventListener('session:invalidated', handleSessionInvalidated);
+    return () => window.removeEventListener('session:invalidated', handleSessionInvalidated);
+  }, [handleLogout]);
+
   // Phát hiện khi tab khác trong cùng trình duyệt login và ghi đè session
   useEffect(() => {
     if (!currentUser) return;

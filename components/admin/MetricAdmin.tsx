@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, memo } from 'react';
 import { User, HealthMetric } from '../../types.ts';
 import { Database } from '../../services/database.ts';
@@ -13,6 +12,8 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
   const [selectedMetricUser, setSelectedMetricUser] = useState<User | null>(null);
   const [userMetrics, setUserMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
+  const [deletingMetric, setDeletingMetric] = useState<HealthMetric | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadUserMetrics = async () => {
     try {
@@ -31,8 +32,42 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
 
   useEffect(() => { loadUserMetrics(); }, [selectedMetricUser]);
 
+  const handleUpdateMetric = async () => {
+    if (!editingMetric) return;
+    const mid = editingMetric.id || (editingMetric as any)._id;
+    try {
+      await Database.updateMetric(mid, editingMetric);
+      setEditingMetric(null);
+      setActionMessage({ type: 'success', text: '✅ Đã cập nhật chỉ số' });
+      loadUserMetrics();
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
+    }
+  };
+
+  const handleDeleteMetric = async () => {
+    if (!deletingMetric) return;
+    const mid = deletingMetric.id || (deletingMetric as any)._id;
+    try {
+      await Database.deleteMetric(mid);
+      setDeletingMetric(null);
+      setActionMessage({ type: 'success', text: '🗑️ Đã xóa chỉ số' });
+      loadUserMetrics();
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in fade-in">
+      {/* Action Message Toast */}
+      {actionMessage && (
+        <div className={`fixed top-6 right-6 z-[1300] px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right font-bold text-sm ${actionMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+          {actionMessage.text}
+          <button onClick={() => setActionMessage(null)} className="ml-4 opacity-50 hover:opacity-100">✕</button>
+        </div>
+      )}
+
       <div className="lg:col-span-3 bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
         <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest">Danh sách Hội viên</h3>
         <div className="max-h-[500px] overflow-y-auto no-scrollbar space-y-2">
@@ -73,16 +108,22 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
                     <td className="p-3 text-blue-600 font-bold">{m.muscleMass}kg</td>
                     <td className="p-3 font-bold text-indigo-600">{m.balanceIndex ?? 0}</td>
                     <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? 0}</td>
-                    <td className="p-3 text-right">
-                       <button 
-                         onClick={() => {
-                           setEditingMetric(m);
-                           console.log(`[MetricAdmin] Edit metric: ${m.date} (${m.id || (m as any)._id})`);
-                         }} 
-                         className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
-                       >
-                         Sửa
-                       </button>
+                    <td className="p-3 text-right space-x-2">
+                      <button 
+                        onClick={() => {
+                          setEditingMetric(m);
+                          console.log(`[MetricAdmin] Edit metric: ${m.date} (${m.id || (m as any)._id})`);
+                        }} 
+                        className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
+                      >
+                        Sửa
+                      </button>
+                      <button 
+                        onClick={() => setDeletingMetric(m)} 
+                        className="text-rose-600 font-black text-[9px] hover:underline uppercase"
+                      >
+                        Xóa
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -100,41 +141,51 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
         )}
       </div>
 
+      {/* Edit Modal */}
       {editingMetric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95">
-             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật chỉ số nhanh</h4>
-             <div className="grid grid-cols-2 gap-4">
-               <div className="space-y-1">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
-                 <input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-               </div>
-               <div className="space-y-1">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ (%)</label>
-                 <input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-               </div>
-               <div className="space-y-1">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ (kg)</label>
-                 <input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-               </div>
-               <div className="space-y-1">
-                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân đối</label>
-                 <input type="number" value={editingMetric.balanceIndex} onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-               </div>
-             </div>
-             <div className="flex gap-3 pt-4">
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật chỉ số nhanh</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
+                <input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ (%)</label>
+                <input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ (kg)</label>
+                <input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân đối</label>
+                <input type="number" value={editingMetric.balanceIndex} onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-4">
               <button type="button" onClick={() => setEditingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
-              <button 
-                onClick={async () => {
-                  const mid = editingMetric.id || (editingMetric as any)._id;
-                  await Database.updateMetric(mid, editingMetric);
-                  setEditingMetric(null);
-                  loadUserMetrics();
-                }} 
-                className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg"
-              >
-                Lưu chỉ số
-              </button>
+              <button onClick={handleUpdateMetric} className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg">Lưu chỉ số</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Dialog */}
+      {deletingMetric && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
+            <div className="text-5xl mb-2">⚠️</div>
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xác nhận xóa</h4>
+            <p className="text-slate-600 text-sm leading-relaxed">
+              Bạn có chắc chắn muốn xóa chỉ số ngày <strong>{formatDateVN(deletingMetric.date)}</strong>?
+              <br />
+              <span className="text-rose-500 text-[10px] font-black mt-2 block">Hành động này không thể hoàn tác!</span>
+            </p>
+            <div className="flex gap-3 pt-4">
+              <button onClick={() => setDeletingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+              <button onClick={handleDeleteMetric} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa</button>
             </div>
           </div>
         </div>

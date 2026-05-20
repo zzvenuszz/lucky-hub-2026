@@ -8,7 +8,7 @@ const { spawn } = require('child_process');
 console.log('🚀 Đang khởi chạy hệ thống Lucky Hub...');
 
 // Khởi chạy tsx thông qua npx để đảm bảo môi trường sạch
-const server = spawn('npx', ['tsx', 'server.ts'], {
+const server = spawn('npx', ['tsx', 'server/index.ts'], {
   stdio: 'inherit',
   env: process.env
 });

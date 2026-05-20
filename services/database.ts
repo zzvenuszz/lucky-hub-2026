@@ -3,6 +3,15 @@ import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, C
 const API_BASE = '/api';
 let isOfflineMode = false;
 
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const sessionId = localStorage.getItem('lucky_hub_session');
+  if (sessionId) {
+    headers['Authorization'] = `Bearer ${sessionId}`;
+  }
+  return headers;
+}
+
 async function request<T>(url: string, method = 'GET', body?: any, timeout = 15000): Promise<T | null> {
   if (isOfflineMode) return null;
   const controller = new AbortController();
@@ -12,7 +21,7 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
   try {
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal
     });
@@ -23,6 +32,13 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       const msg = errorData.message || `Lỗi API ${res.status}`;
+      
+      // Xử lý session hết hạn
+      if (res.status === 401 && errorData.reason === 'session_invalidated') {
+        // Gửi sự kiện để App.tsx bắt và logout
+        window.dispatchEvent(new CustomEvent('session:invalidated', { detail: errorData }));
+      }
+      
       if (window.debugLog) window.debugLog(`[DB] FAIL ${method} ${url}: ${msg}`, "error", duration);
       throw new Error(msg);
     }
@@ -32,6 +48,9 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
   } catch (e: any) {
     const duration = Date.now() - startTime;
     clearTimeout(id);
+    if (e.name === 'AbortError') {
+      throw new Error('Timeout: Server không phản hồi');
+    }
     if (window.debugLog) window.debugLog(`[DB] ERROR ${url}: ${e.message}`, "error", duration);
     throw e;
   }
@@ -49,6 +68,8 @@ export const Database = {
   getUsers: async () => (await request<User[]>(`${API_BASE}/users`)) ?? [],
   updateUser: (id: string, data: Partial<User>) => request<User>(`${API_BASE}/users/${id}`, 'PUT', data),
   deleteUser: (id: string) => request(`${API_BASE}/users/${id}`, 'DELETE'),
+  
+  // Metrics
   getMetrics: async (userId?: string) => (userId ? await request<HealthMetric[]>(`${API_BASE}/metrics/${userId}`) : await request<HealthMetric[]>(`${API_BASE}/all-metrics`)) ?? [],
   saveMetric: (data: any) => request<HealthMetric>(`${API_BASE}/metrics`, 'POST', data),
   updateMetric: (id: string, data: any) => request<HealthMetric>(`${API_BASE}/metrics/${id}`, 'PUT', data),
@@ -56,15 +77,37 @@ export const Database = {
   saveMetricsBulk: (data: any) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
   deleteMetricsBulk: (ids: string[]) => request(`${API_BASE}/metrics/delete-bulk`, 'POST', { ids }),
   deleteAllUserMetrics: (userId: string) => request(`${API_BASE}/metrics/all/${userId}`, 'DELETE'),
+  exportMetrics: (userId: string, format: 'csv' | 'json' = 'csv') => {
+    const sessionId = localStorage.getItem('lucky_hub_session');
+    const url = `${API_BASE}/metrics/export/${userId}?format=${format}`;
+    // Open in new tab với auth header không thể dùng window.open
+    // Dùng fetch và download
+    return fetch(url, { headers: getAuthHeaders() })
+      .then(res => res.blob())
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `health_metrics.${format}`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      });
+  },
+  
+  // Knowledge & Rules
   getKnowledge: async () => (await request<AIKnowledge[]>(`${API_BASE}/knowledge`)) ?? [],
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data),
   deleteKnowledge: (id: string) => request(`${API_BASE}/knowledge/${id}`, 'DELETE'),
   getRules: async () => (await request<AIRule[]>(`${API_BASE}/rules`)) ?? [],
   addRule: (data: Omit<AIRule, 'id'>) => request<AIRule>(`${API_BASE}/rules`, 'POST', data),
   deleteRule: (id: string) => request(`${API_BASE}/rules/${id}`, 'DELETE'),
+  
+  // Chats
   getChats: async () => (await request<ChatSession[]>(`${API_BASE}/chats`)) ?? [],
   saveChat: (chat: ChatSession) => request<ChatSession>(`${API_BASE}/chats`, 'POST', chat),
   clearChat: (chatId: string) => request<{ success: boolean }>(`${API_BASE}/chats/${chatId}/clear`, 'PUT'),
+  
+  // Posts
   getPosts: async () => (await request<Post[]>(`${API_BASE}/posts`)) ?? [],
   getPostsPaginated: async (page = 1, limit = 10, search = '', hashtag = '') => {
     const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
@@ -81,6 +124,8 @@ export const Database = {
   removeReaction: (postId: string, userId: string, type: string) => 
     request<Post>(`${API_BASE}/posts/${postId}/react`, 'DELETE', { userId, type }),
   getPopularHashtags: async () => (await request<{ tag: string, count: number }[]>(`${API_BASE}/hashtags`)) ?? [],
+  
+  // Audit Logs
   getAuditLogs: async () => (await request<AuditLog[]>(`${API_BASE}/audit-logs`)) ?? [],
   
   // Gemini Keys Management
@@ -90,4 +135,15 @@ export const Database = {
   deleteGeminiKey: (id: string) => request(`${API_BASE}/admin/gemini-keys/${id}`, 'DELETE'),
   toggleGeminiKey: (id: string, isActive: boolean) => request(`${API_BASE}/admin/gemini-keys/${id}/toggle`, 'PUT', { isActive }),
   checkKeyHealth: (key: string) => request<{ status: string }>(`${API_BASE}/admin/gemini-keys/check`, 'POST', { key }),
+
+  // Groups Management
+  getGroups: async () => (await request<any[]>(`${API_BASE}/admin/groups`)) ?? [],
+  createGroup: (data: { name: string, description?: string, permissions?: string[] }) => 
+    request<any>(`${API_BASE}/admin/groups`, 'POST', data),
+  updateGroup: (id: string, data: any) => request<any>(`${API_BASE}/admin/groups/${id}`, 'PUT', data),
+  deleteGroup: (id: string) => request(`${API_BASE}/admin/groups/${id}`, 'DELETE'),
+  updateGroupMembers: (id: string, memberIds: string[]) => 
+    request<any>(`${API_BASE}/admin/groups/${id}/members`, 'POST', { memberIds }),
+  getGroupPermissionsList: async () => (await request<{ key: string, description: string }[]>(`${API_BASE}/admin/groups/permissions-list`)) ?? [],
+  getUserGroups: async (userId: string) => (await request<any[]>(`${API_BASE}/admin/groups/user/${userId}`)) ?? [],
 };
