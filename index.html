@@ -46,6 +46,74 @@
             .text-\[9px\] { font-size: 11px !important; }
             .text-\[10px\] { font-size: 12px !important; }
         }
+
+        /* 📱 Mobile Card Layout - Admin tables → cards */
+        .mobile-card {
+            @media (max-width: 767px) {
+                display: block;
+            }
+        }
+        .table-mobile-card {
+            display: block;
+            width: 100%;
+        }
+        @media (max-width: 767px) {
+            .table-desktop { display: none; }
+            .mobile-only { display: block; }
+            .data-card {
+                background: white;
+                border: 1px solid #f1f5f9;
+                border-radius: 1.5rem;
+                padding: 1rem;
+                margin-bottom: 0.75rem;
+                transition: all 0.2s;
+            }
+            .data-card:hover {
+                border-color: #a7f3d0;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            }
+            .data-card-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0.375rem 0;
+                gap: 0.5rem;
+            }
+            .data-card-label {
+                font-size: 10px;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                color: #94a3b8;
+                flex-shrink: 0;
+            }
+            .data-card-value {
+                font-size: 13px;
+                font-weight: 700;
+                text-align: right;
+                word-break: break-word;
+            }
+            .data-card-actions {
+                display: flex;
+                gap: 0.5rem;
+                justify-content: flex-end;
+                padding-top: 0.5rem;
+                margin-top: 0.5rem;
+                border-top: 1px solid #f1f5f9;
+            }
+        }
+        @media (min-width: 768px) {
+            .mobile-only { display: none; }
+            .table-desktop { display: table; }
+        }
+
+        /* 🛡️ Safe area padding cho notch phones */
+        .safe-bottom {
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        .safe-top {
+            padding-top: env(safe-area-inset-top, 0px);
+        }
     </style>
     <script type="importmap">
 {

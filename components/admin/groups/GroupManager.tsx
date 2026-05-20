@@ -166,7 +166,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
       {isCreating && (
         <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
           <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Thông tin nhóm mới</h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <input 
               placeholder="Tên nhóm *" 
               value={newGroup.name} 
@@ -291,8 +291,8 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
 
       {/* Edit Group Modal */}
       {editingGroup && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 my-8">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] md:rounded-[2.5rem] p-4 md:p-8 space-y-6 animate-in zoom-in-95 my-8">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">
               {selectedMembers.length > 0 ? 'Quản lý thành viên' : 'Chỉnh sửa nhóm'}: {editingGroup.name}
             </h4>
@@ -337,7 +337,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
             ) : (
               <div className="space-y-4">
                 {/* Group Info */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tên nhóm</label>
                     <input value={editingGroup.name} onChange={e => setEditingGroup({...editingGroup, name: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />

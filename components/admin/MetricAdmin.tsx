@@ -59,7 +59,7 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in fade-in">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 items-start animate-in fade-in">
       {/* Action Message Toast */}
       {actionMessage && (
         <div className={`fixed top-6 right-6 z-[1300] px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right font-bold text-sm ${actionMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
@@ -68,7 +68,7 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
         </div>
       )}
 
-      <div className="lg:col-span-3 bg-slate-50/50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
+      <div className="lg:col-span-3 bg-slate-50/50 p-4 md:p-6 rounded-[2rem] border border-slate-100 space-y-4">
         <h3 className="font-black text-slate-800 text-[10px] uppercase tracking-widest">Danh sách Hội viên</h3>
         <div className="max-h-[500px] overflow-y-auto no-scrollbar space-y-2">
           {users.map(u => (
@@ -83,58 +83,116 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
           ))}
         </div>
       </div>
-      <div className="lg:col-span-9 bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px]">
+      <div className="lg:col-span-9 bg-white p-4 md:p-6 rounded-[2.5rem] border border-slate-100 shadow-sm min-h-[500px]">
         {selectedMetricUser ? (
-          <div className="overflow-x-auto no-scrollbar">
-            <h4 className="font-black text-slate-800 text-xs mb-6 uppercase tracking-widest px-2">Lịch sử chỉ số: {selectedMetricUser.fullName}</h4>
-            <table className="w-full text-[11px] text-left min-w-[1000px]">
-              <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50">
-                <tr>
-                  <th className="p-3">Ngày</th>
-                  <th className="p-3">Cân nặng</th>
-                  <th className="p-3">Mỡ %</th>
-                  <th className="p-3">Cơ (kg)</th>
-                  <th className="p-3">Cân đối</th>
-                  <th className="p-3">Mỡ nội tạng</th>
-                  <th className="p-3 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {userMetrics.map(m => (
-                  <tr key={m.id || (m as any)._id} className="hover:bg-slate-50/50">
-                    <td className="p-3 font-bold">{formatDateVN(m.date)}</td>
-                    <td className="p-3 text-emerald-600 font-black">{m.weight}kg</td>
-                    <td className="p-3 text-rose-500 font-bold">{m.bodyFat}%</td>
-                    <td className="p-3 text-blue-600 font-bold">{m.muscleMass}kg</td>
-                    <td className="p-3 font-bold text-indigo-600">{m.balanceIndex ?? 0}</td>
-                    <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? 0}</td>
-                    <td className="p-3 text-right space-x-2">
-                      <button 
-                        onClick={() => {
-                          setEditingMetric(m);
-                          console.log(`[MetricAdmin] Edit metric: ${m.date} (${m.id || (m as any)._id})`);
-                        }} 
-                        className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
-                      >
-                        Sửa
-                      </button>
-                      <button 
-                        onClick={() => setDeletingMetric(m)} 
-                        className="text-rose-600 font-black text-[9px] hover:underline uppercase"
-                      >
-                        Xóa
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {userMetrics.length === 0 && (
-              <div className="p-20 text-center text-slate-300 italic uppercase text-[10px] font-black tracking-widest">Chưa có dữ liệu cho hội viên này</div>
-            )}
-          </div>
+          <>
+            {/* Header */}
+            <h4 className="font-black text-slate-800 text-xs mb-4 md:mb-6 uppercase tracking-widest px-2">Lịch sử chỉ số: {selectedMetricUser.fullName}</h4>
+
+            {/* 📱 Mobile Cards */}
+            <div className="mobile-only space-y-3">
+              {userMetrics.map(m => (
+                <div key={m.id || (m as any)._id} className="data-card">
+                  <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-3">
+                    <div className="data-card-row col-span-2 border-b border-slate-50 pb-1 mb-1">
+                      <span className="data-card-label">📅 Ngày</span>
+                      <span className="data-card-value text-emerald-600">{formatDateVN(m.date)}</span>
+                    </div>
+                    <div>
+                      <span className="data-card-label">⚖️ Cân nặng</span>
+                      <div className="data-card-value text-emerald-600">{m.weight}kg</div>
+                    </div>
+                    <div>
+                      <span className="data-card-label">🧈 Mỡ %</span>
+                      <div className="data-card-value text-rose-500">{m.bodyFat}%</div>
+                    </div>
+                    <div>
+                      <span className="data-card-label">💪 Cơ (kg)</span>
+                      <div className="data-card-value text-blue-600">{m.muscleMass}kg</div>
+                    </div>
+                    <div>
+                      <span className="data-card-label">⚖️ Cân đối</span>
+                      <div className="data-card-value text-indigo-600">{m.balanceIndex ?? 0}</div>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="data-card-label">🫁 Mỡ nội tạng</span>
+                      <div className="data-card-value text-amber-600 inline ml-2 font-bold">{m.visceralFat ?? 0}</div>
+                    </div>
+                  </div>
+                  <div className="data-card-actions">
+                    <button 
+                      onClick={() => { setEditingMetric(m); console.log(`[MetricAdmin] Edit metric: ${m.date}`); }}
+                      className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
+                    >
+                      ✏️ Sửa
+                    </button>
+                    <button 
+                      onClick={() => setDeletingMetric(m)}
+                      className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
+                    >
+                      🗑️ Xóa
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {userMetrics.length === 0 && (
+                <div className="p-10 text-center text-slate-300 italic text-[11px] font-bold">Chưa có dữ liệu cho hội viên này</div>
+              )}
+            </div>
+
+            {/* 💻 Desktop Table */}
+            <div className="table-desktop">
+              <div className="overflow-x-auto no-scrollbar">
+                <table className="w-full text-[11px] text-left min-w-[1000px]">
+                  <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50">
+                    <tr>
+                      <th className="p-3">Ngày</th>
+                      <th className="p-3">Cân nặng</th>
+                      <th className="p-3">Mỡ %</th>
+                      <th className="p-3">Cơ (kg)</th>
+                      <th className="p-3">Cân đối</th>
+                      <th className="p-3">Mỡ nội tạng</th>
+                      <th className="p-3 text-right">Thao tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {userMetrics.map(m => (
+                      <tr key={m.id || (m as any)._id} className="hover:bg-slate-50/50">
+                        <td className="p-3 font-bold">{formatDateVN(m.date)}</td>
+                        <td className="p-3 text-emerald-600 font-black">{m.weight}kg</td>
+                        <td className="p-3 text-rose-500 font-bold">{m.bodyFat}%</td>
+                        <td className="p-3 text-blue-600 font-bold">{m.muscleMass}kg</td>
+                        <td className="p-3 font-bold text-indigo-600">{m.balanceIndex ?? 0}</td>
+                        <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? 0}</td>
+                        <td className="p-3 text-right space-x-2">
+                          <button 
+                            onClick={() => {
+                              setEditingMetric(m);
+                              console.log(`[MetricAdmin] Edit metric: ${m.date} (${m.id || (m as any)._id})`);
+                            }} 
+                            className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
+                          >
+                            Sửa
+                          </button>
+                          <button 
+                            onClick={() => setDeletingMetric(m)} 
+                            className="text-rose-600 font-black text-[9px] hover:underline uppercase"
+                          >
+                            Xóa
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {userMetrics.length === 0 && (
+                  <div className="p-20 text-center text-slate-300 italic uppercase text-[10px] font-black tracking-widest">Chưa có dữ liệu cho hội viên này</div>
+                )}
+              </div>
+            </div>
+          </>
         ) : (
-          <div className="p-20 flex flex-col items-center justify-center space-y-4 opacity-30">
+          <div className="p-10 md:p-20 flex flex-col items-center justify-center space-y-4 opacity-30">
             <span className="text-6xl">📈</span>
             <div className="text-center text-slate-500 uppercase text-[10px] font-black tracking-widest">Chọn hội viên từ danh sách bên trái để xem và quản lý chỉ số</div>
           </div>

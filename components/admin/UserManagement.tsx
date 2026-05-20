@@ -186,38 +186,38 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
           className="flex-1 px-5 py-3 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 text-sm shadow-inner font-medium" 
         />
       </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-slate-400 border-b border-slate-50 font-black uppercase text-[10px] tracking-widest">
-            <th className="pb-4">Hội viên</th>
-            <th className="pb-4">Nhóm</th>
-            <th className="pb-4">Trạng thái</th>
-            <th className="pb-4 text-right">Thao tác</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-50">
-          {filteredUsers.map(u => {
-            const uid = getUserId(u);
-            const groupName = userGroupMap[uid];
-            return (
-              <tr key={uid} className="group hover:bg-slate-50/20">
-                <td className="py-5 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
-                    {u.fullName.charAt(0)}
-                  </div>
-                  <div>
-                    <div className="font-bold text-slate-800">{u.fullName}</div>
-                    <div className="text-[10px] text-slate-400">@{u.username}</div>
-                  </div>
-                </td>
-                <td>
+
+      {/* 📱 Mobile Card View */}
+      <div className="mobile-only space-y-3">
+        {filteredUsers.map(u => {
+          const uid = getUserId(u);
+          const groupName = userGroupMap[uid];
+          const statusActive = u.status === AccountStatus.ACTIVE;
+
+          return (
+            <div key={uid} className="data-card">
+              {/* Header: Avatar + Name + Status */}
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black text-sm shrink-0">
+                  {u.fullName.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm text-slate-800 truncate">{u.fullName}</div>
+                  <div className="text-[10px] text-slate-400 truncate">@{u.username}</div>
+                </div>
+                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase shrink-0 ${statusActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                  {u.status}
+                </span>
+              </div>
+
+              {/* Group */}
+              <div className="data-card-row">
+                <span className="data-card-label">Nhóm</span>
+                <span className="data-card-value">
                   {allGroups.length === 0 ? (
-                    <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase inline-flex items-center gap-1">
-                      <span className="inline-block w-2.5 h-2.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                      Đang tải...
-                    </span>
+                    <span className="text-slate-400 text-[10px]">Đang tải...</span>
                   ) : groupName ? (
-                    <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase ${
                       groupName.toLowerCase().includes('admin') ? 'bg-red-50 text-red-600' :
                       groupName.toLowerCase().includes('coach') ? 'bg-amber-50 text-amber-600' :
                       'bg-emerald-50 text-emerald-600'
@@ -227,45 +227,125 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                        '🌱'} {groupName}
                     </span>
                   ) : (
-                    <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase">
-                      Chưa có nhóm
-                    </span>
+                    <span className="text-slate-400 text-[10px]">Chưa có nhóm</span>
                   )}
-                </td>
-                <td>
-                  <span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${u.status === AccountStatus.ACTIVE ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                    {u.status}
-                  </span>
-                </td>
-                <td className="text-right space-x-2">
-                  <button 
-                    onClick={() => {
-                      setEditingUser(u);
-                      loadUserGroups(uid);
-                    }} 
-                    className="text-emerald-600 font-black text-[9px] hover:underline"
-                  >
-                    Sửa
-                  </button>
-                  <button 
-                    onClick={() => handleSendResetEmail(u)} 
-                    disabled={sendingEmail === uid}
-                    className={`text-amber-600 font-black text-[9px] hover:underline ${sendingEmail === uid ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    {sendingEmail === uid ? 'Đang gửi...' : 'Gửi email khôi phục'}
-                  </button>
-                  <button 
-                    onClick={() => setDeletingUser(u)} 
-                    className="text-rose-600 font-black text-[9px] hover:underline"
-                  >
-                    Xóa
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="data-card-actions">
+                <button 
+                  onClick={() => { setEditingUser(u); loadUserGroups(uid); }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
+                >
+                  ✏️ Sửa
+                </button>
+                <button 
+                  onClick={() => handleSendResetEmail(u)}
+                  disabled={sendingEmail === uid}
+                  className={`px-3 py-1.5 rounded-xl bg-amber-50 text-amber-600 font-black text-[9px] uppercase tracking-wider transition-all ${sendingEmail === uid ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-100'}`}
+                >
+                  {sendingEmail === uid ? '⏳' : '📧'} Email
+                </button>
+                <button 
+                  onClick={() => setDeletingUser(u)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
+                >
+                  🗑️ Xóa
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {filteredUsers.length === 0 && (
+          <div className="p-10 text-center text-slate-300 italic text-[11px] font-bold">Không tìm thấy hội viên</div>
+        )}
+      </div>
+
+      {/* 💻 Desktop Table View */}
+      <div className="table-desktop">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-slate-400 border-b border-slate-50 font-black uppercase text-[10px] tracking-widest">
+              <th className="pb-4">Hội viên</th>
+              <th className="pb-4">Nhóm</th>
+              <th className="pb-4">Trạng thái</th>
+              <th className="pb-4 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {filteredUsers.map(u => {
+              const uid = getUserId(u);
+              const groupName = userGroupMap[uid];
+              const isActive = u.status === AccountStatus.ACTIVE;
+              return (
+                <tr key={uid} className="group hover:bg-slate-50/20">
+                  <td className="py-5 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                      {u.fullName.charAt(0)}
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-800">{u.fullName}</div>
+                      <div className="text-[10px] text-slate-400">@{u.username}</div>
+                    </div>
+                  </td>
+                  <td>
+                    {allGroups.length === 0 ? (
+                      <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase inline-flex items-center gap-1">
+                        <span className="inline-block w-2.5 h-2.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                        Đang tải...
+                      </span>
+                    ) : groupName ? (
+                      <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                        groupName.toLowerCase().includes('admin') ? 'bg-red-50 text-red-600' :
+                        groupName.toLowerCase().includes('coach') ? 'bg-amber-50 text-amber-600' :
+                        'bg-emerald-50 text-emerald-600'
+                      }`}>
+                        {groupName.toLowerCase().includes('admin') ? '🔑' :
+                         groupName.toLowerCase().includes('coach') ? '📋' :
+                         '🌱'} {groupName}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase">
+                        Chưa có nhóm
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${isActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                      {u.status}
+                    </span>
+                  </td>
+                  <td className="text-right space-x-2">
+                    <button 
+                      onClick={() => {
+                        setEditingUser(u);
+                        loadUserGroups(uid);
+                      }} 
+                      className="text-emerald-600 font-black text-[9px] hover:underline"
+                    >
+                      Sửa
+                    </button>
+                    <button 
+                      onClick={() => handleSendResetEmail(u)} 
+                      disabled={sendingEmail === uid}
+                      className={`text-amber-600 font-black text-[9px] hover:underline ${sendingEmail === uid ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {sendingEmail === uid ? 'Đang gửi...' : 'Gửi email khôi phục'}
+                    </button>
+                    <button 
+                      onClick={() => setDeletingUser(u)} 
+                      className="text-rose-600 font-black text-[9px] hover:underline"
+                    >
+                      Xóa
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* Action Message Toast */}
       {actionMessage && (
