@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from 'react';
+import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import { Database } from '../../../services/database.ts';
 
 interface Group {
@@ -9,6 +9,7 @@ interface Group {
   members: any[];
   permissions: string[];
   isActive: boolean;
+  isDefault: boolean;
   createdBy: string;
   createdAt: string;
 }
@@ -18,14 +19,44 @@ interface GroupManagerProps {
   onRefresh: () => void;
 }
 
+// Nhóm permissions theo category
+const PERMISSION_CATEGORIES: Record<string, { label: string; icon: string; color: string }> = {
+  metrics: { label: 'Chỉ số', icon: '📊', color: 'text-emerald-600' },
+  posts: { label: 'Bài viết', icon: '📝', color: 'text-blue-600' },
+  chats: { label: 'Tin nhắn', icon: '💬', color: 'text-indigo-600' },
+  users: { label: 'Người dùng', icon: '👥', color: 'text-amber-600' },
+  ai: { label: 'AI', icon: '🤖', color: 'text-purple-600' },
+  groups: { label: 'Nhóm', icon: '🔐', color: 'text-rose-600' },
+  system: { label: 'Hệ thống', icon: '⚙️', color: 'text-slate-600' },
+  admin: { label: 'Quản trị', icon: '🛡️', color: 'text-red-600' },
+};
+
+const getCategory = (key: string): string => {
+  const prefix = key.split(':')[0];
+  return prefix;
+};
+
 const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [permissionsList, setPermissionsList] = useState<{ key: string; description: string }[]>([]);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [newGroup, setNewGroup] = useState({ name: '', description: '', permissions: [] as string[] });
+  const [newGroup, setNewGroup] = useState({ name: '', description: '', permissions: [] as string[], isDefault: false });
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Nhóm permissions theo category
+  const groupedPermissions = useMemo(() => {
+    const groups: Record<string, { key: string; description: string }[]> = {};
+    permissionsList.forEach(p => {
+      const cat = getCategory(p.key);
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(p);
+    });
+    // Sắp xếp theo thứ tự category
+    const order = Object.keys(PERMISSION_CATEGORIES);
+    return Object.entries(groups).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
+  }, [permissionsList]);
 
   const loadData = useCallback(async () => {
     try {
@@ -49,7 +80,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
     }
     try {
       await Database.createGroup(newGroup);
-      setNewGroup({ name: '', description: '', permissions: [] });
+      setNewGroup({ name: '', description: '', permissions: [], isDefault: false });
       setIsCreating(false);
       setActionMessage({ type: 'success', text: '✅ Đã tạo nhóm mới' });
       loadData();
@@ -66,7 +97,8 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
         name: editingGroup.name,
         description: editingGroup.description,
         permissions: editingGroup.permissions,
-        isActive: editingGroup.isActive
+        isActive: editingGroup.isActive,
+        isDefault: editingGroup.isDefault,
       });
       setEditingGroup(null);
       setActionMessage({ type: 'success', text: '✅ Đã cập nhật nhóm' });
@@ -148,27 +180,54 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
               className="px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs"
             />
           </div>
+
+          {/* Default toggle */}
+          <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer border border-slate-100">
+            <input 
+              type="checkbox" 
+              checked={newGroup.isDefault}
+              onChange={() => setNewGroup({...newGroup, isDefault: !newGroup.isDefault})}
+              className="rounded"
+            />
+            <div>
+              <span className="text-xs font-bold text-slate-700">⭐ Nhóm mặc định</span>
+              <p className="text-[9px] text-slate-400 mt-0.5">Hội viên mới sẽ tự động được thêm vào nhóm này</p>
+            </div>
+          </label>
           
           {/* Permissions cho nhóm mới */}
           <div>
             <h4 className="font-black text-[10px] text-slate-400 uppercase tracking-widest mb-3">Phân quyền cho nhóm</h4>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {permissionsList.map(p => (
-                <label key={p.key} className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-[11px]">
-                  <input 
-                    type="checkbox" 
-                    checked={newGroup.permissions.includes(p.key)}
-                    onChange={() => {
-                      const updated = newGroup.permissions.includes(p.key)
-                        ? newGroup.permissions.filter(pp => pp !== p.key)
-                        : [...newGroup.permissions, p.key];
-                      setNewGroup({...newGroup, permissions: updated});
-                    }}
-                    className="rounded"
-                  />
-                  <span className="font-medium text-slate-700">{p.description}</span>
-                </label>
-              ))}
+            <div className="space-y-4 max-h-[400px] overflow-y-auto">
+              {groupedPermissions.map(([cat, perms]) => {
+                const catInfo = PERMISSION_CATEGORIES[cat] || { label: cat, icon: '📦', color: 'text-slate-600' };
+                return (
+                  <div key={cat} className="bg-slate-50/50 rounded-2xl p-3 border border-slate-100">
+                    <h5 className={`font-black text-[10px] uppercase tracking-wider mb-2 flex items-center gap-2 ${catInfo.color}`}>
+                      <span>{catInfo.icon}</span> {catInfo.label}
+                      <span className="text-slate-300 font-medium ml-auto">({perms.length})</span>
+                    </h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                      {perms.map(p => (
+                        <label key={p.key} className="flex items-center gap-2 p-2 rounded-xl bg-white hover:bg-slate-50 cursor-pointer text-[11px] border border-transparent hover:border-slate-200 transition-all">
+                          <input 
+                            type="checkbox" 
+                            checked={newGroup.permissions.includes(p.key)}
+                            onChange={() => {
+                              const updated = newGroup.permissions.includes(p.key)
+                                ? newGroup.permissions.filter(pp => pp !== p.key)
+                                : [...newGroup.permissions, p.key];
+                              setNewGroup({...newGroup, permissions: updated});
+                            }}
+                            className="rounded"
+                          />
+                          <span className="font-medium text-slate-700">{p.description}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -187,7 +246,14 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
             <div key={gid} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="font-bold text-slate-800 text-sm">{group.name}</h3>
+                  <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                    {group.name}
+                    {group.isDefault && (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
+                        ⭐ Mặc định
+                      </span>
+                    )}
+                  </h3>
                   <p className="text-[10px] text-slate-400 mt-1">{group.description || 'Không có mô tả'}</p>
                   <div className="flex items-center gap-3 mt-2">
                     <span className="text-[9px] text-slate-400 font-medium">
@@ -282,21 +348,48 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
                   </div>
                 </div>
 
-                {/* Permissions */}
+                {/* Default toggle */}
+                <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl cursor-pointer border border-slate-100">
+                  <input 
+                    type="checkbox" 
+                    checked={editingGroup.isDefault || false}
+                    onChange={() => setEditingGroup({...editingGroup, isDefault: !editingGroup.isDefault})}
+                    className="rounded"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-700">⭐ Nhóm mặc định</span>
+                    <p className="text-[9px] text-slate-400 mt-0.5">Hội viên mới sẽ tự động được thêm vào nhóm này</p>
+                  </div>
+                </label>
+
+                {/* Permissions - grouped by category */}
                 <div>
                   <h4 className="font-black text-[10px] text-slate-400 uppercase tracking-widest mb-3">Phân quyền</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[300px] overflow-y-auto">
-                    {permissionsList.map(p => (
-                      <label key={p.key} className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-[11px]">
-                        <input 
-                          type="checkbox" 
-                          checked={(editingGroup.permissions || []).includes(p.key)}
-                          onChange={() => togglePermission(p.key)}
-                          className="rounded"
-                        />
-                        <span className="font-medium text-slate-700">{p.description}</span>
-                      </label>
-                    ))}
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                    {groupedPermissions.map(([cat, perms]) => {
+                      const catInfo = PERMISSION_CATEGORIES[cat] || { label: cat, icon: '📦', color: 'text-slate-600' };
+                      return (
+                        <div key={cat} className="bg-slate-50/50 rounded-2xl p-3 border border-slate-100">
+                          <h5 className={`font-black text-[10px] uppercase tracking-wider mb-2 flex items-center gap-2 ${catInfo.color}`}>
+                            <span>{catInfo.icon}</span> {catInfo.label}
+                            <span className="text-slate-300 font-medium ml-auto">({perms.length})</span>
+                          </h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                            {perms.map(p => (
+                              <label key={p.key} className="flex items-center gap-2 p-2 rounded-xl bg-white hover:bg-slate-50 cursor-pointer text-[11px] border border-transparent hover:border-slate-200 transition-all">
+                                <input 
+                                  type="checkbox" 
+                                  checked={(editingGroup.permissions || []).includes(p.key)}
+                                  onChange={() => togglePermission(p.key)}
+                                  className="rounded"
+                                />
+                                <span className="font-medium text-slate-700">{p.description}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 

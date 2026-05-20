@@ -36,7 +36,7 @@ router.get('/permissions-list', async (req: Request, res: Response) => {
 // POST /api/admin/groups - Tạo nhóm mới
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, description, permissions } = req.body;
+    const { name, description, permissions, isDefault } = req.body;
     if (!name || name.trim() === '') {
       return res.status(400).json({ message: 'Tên nhóm là bắt buộc' });
     }
@@ -46,12 +46,18 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Tên nhóm đã tồn tại' });
     }
 
+    // Nếu là default, unset các group default khác
+    if (isDefault) {
+      await Group.updateMany({ isDefault: true }, { isDefault: false });
+    }
+
     const group = new Group({
       name: name.trim(),
       description: description || '',
       permissions: permissions || [],
       createdBy: req.user!.userId,
       isActive: true,
+      isDefault: !!isDefault,
     });
     await group.save();
 
@@ -65,17 +71,43 @@ router.post('/', async (req: Request, res: Response) => {
 // PUT /api/admin/groups/:id - Cập nhật nhóm
 router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { name, description, permissions, isActive } = req.body;
+    const { name, description, permissions, isActive, isDefault } = req.body;
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
     if (description !== undefined) updateData.description = description;
     if (permissions !== undefined) updateData.permissions = permissions;
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (isDefault !== undefined) updateData.isDefault = isDefault;
+
+    // Nếu set làm default, unset các group default khác
+    if (isDefault === true) {
+      await Group.updateMany({ _id: { $ne: req.params.id }, isDefault: true }, { isDefault: false });
+    }
 
     const group = await Group.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!group) return res.status(404).json({ message: 'Không tìm thấy nhóm' });
 
     console.log(`[Groups] ✅ Updated group "${group.name}" by ${req.user?.fullName}`);
+    res.json({ ...group.toObject(), id: group._id });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/admin/groups/:id/set-default - Đặt nhóm làm mặc định
+router.put('/:id/set-default', async (req: Request, res: Response) => {
+  try {
+    const { isDefault } = req.body; // true = set default, false = unset default
+
+    if (isDefault === true) {
+      // Unset tất cả các group default khác
+      await Group.updateMany({ _id: { $ne: req.params.id }, isDefault: true }, { isDefault: false });
+    }
+
+    const group = await Group.findByIdAndUpdate(req.params.id, { isDefault: !!isDefault }, { new: true });
+    if (!group) return res.status(404).json({ message: 'Không tìm thấy nhóm' });
+
+    console.log(`[Groups] ✅ ${isDefault ? 'Set' : 'Unset'} default group: "${group.name}" by ${req.user?.fullName}`);
     res.json({ ...group.toObject(), id: group._id });
   } catch (err: any) {
     res.status(500).json({ message: err.message });

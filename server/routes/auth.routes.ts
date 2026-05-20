@@ -10,6 +10,7 @@ import { ROLE_PERMISSIONS } from '../config/permissions.ts';
 import { cryptoUtils } from '../../src/utils/cryptoUtils.ts';
 import { uploadToImgBB } from '../utils/imageUtils.ts';
 import { validateBody, sanitizeText } from '../../services/validationService.ts';
+import { Group } from '../models/Group.ts';
 
 const router = Router();
 
@@ -76,6 +77,20 @@ router.post('/register', validateBody(
       permissions: roleDefaults,
     });
     await newUser.save();
+
+    // Tự động gán user vào nhóm mặc định (nếu có)
+    try {
+      const defaultGroup = await Group.findOne({ isDefault: true, isActive: true });
+      if (defaultGroup) {
+        if (!defaultGroup.members.includes(newUser._id)) {
+          defaultGroup.members.push(newUser._id);
+          await defaultGroup.save();
+          console.log(`[Auth] ✅ User @${newUser.username} added to default group "${defaultGroup.name}"`);
+        }
+      }
+    } catch (groupErr: any) {
+      console.warn(`[Auth] Could not assign default group:`, groupErr.message);
+    }
 
     // Audit Log
     const log = new AuditLog({

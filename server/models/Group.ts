@@ -7,6 +7,14 @@ const GroupSchema = new mongoose.Schema({
   permissions: { type: [String], default: [] },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   isActive: { type: Boolean, default: true },
+  isDefault: { type: Boolean, default: false },
 }, { timestamps: true });
+
+// Đảm bảo chỉ có 1 group mặc định
+GroupSchema.index({ isDefault: 1 }, { 
+  unique: true, 
+  partialFilterExpression: { isDefault: true },
+  name: 'unique_default_group'
+});
 
 export const Group = mongoose.model('Group', GroupSchema);

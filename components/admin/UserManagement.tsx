@@ -1,5 +1,4 @@
-
-import React, { useState, memo, useCallback } from 'react';
+import React, { useState, useEffect, memo, useCallback } from 'react';
 import { User, UserRole, AccountStatus } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 
@@ -8,21 +7,71 @@ interface UserManagementProps {
   onRefresh: () => void;
 }
 
+interface Group {
+  _id: string;
+  id: string;
+  name: string;
+  permissions: string[];
+  isDefault: boolean;
+}
+
 const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [userGroupIds, setUserGroupIds] = useState<string[]>([]);
 
   // Lấy userId an toàn
   const getUserId = useCallback((u: any): string => u.id || u._id, []);
+
+  // Load danh sách groups khi mở modal edit
+  const loadUserGroups = useCallback(async (userId: string) => {
+    try {
+      const [allGroups, userGroups] = await Promise.all([
+        Database.getGroups(),
+        Database.getUserGroups(userId)
+      ]);
+      setGroups(allGroups || []);
+      setUserGroupIds((userGroups || []).map((g: any) => g._id || g.id));
+    } catch (err: any) {
+      console.error('[UserManagement] Load groups error:', err);
+    }
+  }, []);
 
   const handleUpdateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
     const uid = getUserId(editingUser);
     await Database.updateUser(uid, editingUser);
+    
+    // Cập nhật group membership cho user
+    try {
+      // Với mỗi group, thêm/xóa user khỏi members
+      for (const group of groups) {
+        const gid = group.id || group._id;
+        const currentMembers = await Database.getGroups().then(all => {
+          const g = all.find((grp: any) => (grp.id || grp._id) === gid);
+          return g ? g.members?.map((m: any) => m._id || m) || [] : [];
+        });
+        
+        const shouldBeMember = userGroupIds.includes(gid);
+        const isCurrentlyMember = currentMembers.includes(uid);
+        
+        if (shouldBeMember && !isCurrentlyMember) {
+          // Thêm user vào group
+          await Database.updateGroupMembers(gid, [...currentMembers, uid]);
+        } else if (!shouldBeMember && isCurrentlyMember) {
+          // Xóa user khỏi group
+          await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
+        }
+      }
+    } catch (err: any) {
+      console.error('[UserManagement] Update group membership error:', err);
+    }
+    
     setEditingUser(null);
     onRefresh();
   };
@@ -124,7 +173,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
               </td>
               <td className="text-right space-x-2">
                 <button 
-                  onClick={() => setEditingUser(u)} 
+                  onClick={() => {
+                    setEditingUser(u);
+                    loadUserGroups(getUserId(u));
+                  }} 
                   className="text-emerald-600 font-black text-[9px] hover:underline"
                 >
                   Sửa
@@ -190,8 +242,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
 
       {editingUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-          <form onSubmit={handleUpdateUser} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95">
+          <form onSubmit={handleUpdateUser} className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật Hội viên</h4>
+            
+            {/* Thông tin cơ bản */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Họ tên</label>
@@ -204,12 +258,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                 </select>
               </div>
             </div>
+            
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Trạng thái tài khoản</label>
               <select value={editingUser.status} onChange={e => setEditingUser({...editingUser, status: e.target.value as AccountStatus})} className="w-full px-4 py-3 bg-slate-50 rounded-xl font-bold text-xs">
                 {Object.values(AccountStatus).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mật khẩu mới (Để trống nếu không đổi)</label>
               <input 
@@ -219,6 +275,57 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                 className="w-full px-4 py-3 bg-rose-50/30 text-rose-700 rounded-xl outline-none font-bold text-xs border border-rose-100 focus:border-rose-300" 
               />
             </div>
+
+            {/* Group Selector */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-2">
+                👥 Nhóm
+                <span className="font-normal text-[9px] text-slate-300">(chọn nhóm cho hội viên này)</span>
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {groups.map(group => {
+                  const gid = group.id || group._id;
+                  const isSelected = userGroupIds.includes(gid);
+                  return (
+                    <label 
+                      key={gid} 
+                      className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${
+                        isSelected 
+                          ? 'bg-emerald-50 border-emerald-200' 
+                          : 'bg-slate-50 border-transparent hover:border-slate-200'
+                      }`}
+                    >
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        onChange={() => {
+                          setUserGroupIds(prev =>
+                            prev.includes(gid) 
+                              ? prev.filter(id => id !== gid) 
+                              : [...prev, gid]
+                          );
+                        }}
+                        className="rounded"
+                      />
+                      <div>
+                        <div className="font-bold text-xs text-slate-700 flex items-center gap-2">
+                          {group.name}
+                          {group.isDefault && (
+                            <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[7px] font-black uppercase">⭐</span>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+                {groups.length === 0 && (
+                  <div className="col-span-full p-4 text-center text-slate-400 text-[10px] italic">
+                    Chưa có nhóm nào. Vào "Quản lý nhóm" để tạo nhóm trước.
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="flex gap-3 pt-4">
               <button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
               <button type="submit" className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg">Lưu thông tin</button>
