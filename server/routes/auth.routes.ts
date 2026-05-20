@@ -186,11 +186,23 @@ router.post('/login', async (req: Request, res: Response) => {
     const u = user.toObject();
     delete u.password;
     
-    // Tính permissions hiệu dụng
-    const effectivePermissions = [...new Set([
-      ...(ROLE_PERMISSIONS[user.role as UserRole] || []),
-      ...(user.permissions || [])
-    ])];
+    // Tính permissions hiệu dụng (gộp role defaults + user-specific + group permissions)
+    const roleDefaults = ROLE_PERMISSIONS[user.role as UserRole] || [];
+    const userSpecific = user.permissions || [];
+    
+    // Lấy group permissions
+    let groupPerms: string[] = [];
+    let userGroupInfo: { id: string; name: string }[] = [];
+    try {
+      const userGroups = await Group.find({ members: user._id, isActive: true }).select('permissions name');
+      groupPerms = userGroups.flatMap(g => g.permissions || []);
+      userGroupInfo = userGroups.map(g => ({ id: g._id as string, name: g.name }));
+    } catch (groupErr: any) {
+      console.warn(`[Auth] Could not load group permissions:`, groupErr.message);
+    }
+
+    // Gộp và loại bỏ trùng lặp
+    const effectivePermissions = [...new Set([...roleDefaults, ...userSpecific, ...groupPerms])];
 
     res.json({
       ...u,
@@ -198,6 +210,7 @@ router.post('/login', async (req: Request, res: Response) => {
       email: user.email,
       sessionId,
       permissions: effectivePermissions,
+      userGroups: userGroupInfo,
       invalidatedOldSessions: invalidatedCount
     });
   } catch (err) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from 'react';
+import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import { User, UserRole, AccountStatus } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { useToast } from '../system/ToastProvider.tsx';
@@ -14,6 +14,7 @@ interface Group {
   name: string;
   permissions: string[];
   isDefault: boolean;
+  members: any[];
 }
 
 const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => {
@@ -24,19 +25,39 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
   const { addToast } = useToast();
 
   // Lấy userId an toàn
   const getUserId = useCallback((u: any): string => u.id || u._id, []);
 
+  // Build map userId → group name từ tất cả groups
+  const userGroupMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    allGroups.forEach(group => {
+      const gid = group.id || group._id;
+      const memberIds = (group.members || []).map((m: any) => m._id || m);
+      memberIds.forEach(mid => {
+        map[mid] = group.name;
+      });
+    });
+    return map;
+  }, [allGroups]);
+
+  // Load tất cả groups khi mount
+  useEffect(() => {
+    Database.getGroups().then(setAllGroups).catch(() => {});
+  }, [users]);
+
   // Load danh sách groups khi mở modal edit
   const loadUserGroups = useCallback(async (userId: string) => {
     try {
-      const [allGroups, userGroups] = await Promise.all([
+      const [g, userGroups] = await Promise.all([
         Database.getGroups(),
         Database.getUserGroups(userId)
       ]);
-      setGroups(allGroups || []);
+      setGroups(g || []);
+      setAllGroups(g || []);
       // Lấy group ID đầu tiên user thuộc về (single group)
       const currentGroup = (userGroups || [])[0];
       setSelectedGroupId(currentGroup ? (currentGroup._id || currentGroup.id) : '');
@@ -62,35 +83,30 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
     try {
       await Database.updateUser(uid, updateData);
 
-      // ĐÓNG MODAL NGAY LẬP TỨC trước, toast + refresh sau
+      // ĐÓNG MODAL NGAY LẬP TỨC
       setEditingUser(null);
       addToast({ type: 'success', title: 'Đã cập nhật', message: 'Thông tin hội viên đã được lưu.' });
       onRefresh();
 
-      // Cập nhật group membership (single group) - chạy background, không chặn UI
+      // Cập nhật group membership (single group) - chạy background
       if (selectedGroupId) {
-        // Chạy bất đồng bộ, không await - UI đã đóng modal rồi
         (async () => {
           try {
-            for (const group of groups) {
+            // Xóa user khỏi tất cả group khác
+            const freshGroups = await Database.getGroups();
+            for (const group of freshGroups) {
               const gid = group.id || group._id;
-              if (gid === selectedGroupId) continue; // không xóa group đang chọn
-              const allGroupsData = await Database.getGroups();
-              const fullGroup = allGroupsData.find((grp: any) => (grp.id || grp._id) === gid);
-              if (fullGroup) {
-                const currentMembers = fullGroup.members?.map((m: any) => m._id || m) || [];
-                if (currentMembers.includes(uid)) {
-                  await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
-                }
+              if (gid === selectedGroupId) continue;
+              const currentMembers = group.members?.map((m: any) => m._id || m) || [];
+              if (currentMembers.includes(uid)) {
+                await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
               }
             }
             // Thêm user vào group được chọn
-            const targetGroup = groups.find(g => (g.id || g._id) === selectedGroupId);
+            const targetGroup = freshGroups.find((g: any) => (g.id || g._id) === selectedGroupId);
             if (targetGroup) {
               const tgtId = targetGroup.id || targetGroup._id;
-              const allGroupsData = await Database.getGroups();
-              const fullTarget = allGroupsData.find((grp: any) => (grp.id || grp._id) === tgtId);
-              const targetMembers = fullTarget ? fullTarget.members?.map((m: any) => m._id || m) || [] : [];
+              const targetMembers = targetGroup.members?.map((m: any) => m._id || m) || [];
               if (!targetMembers.includes(uid)) {
                 await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
               }
@@ -120,13 +136,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
       const data = await res.json();
       if (data.success) {
         addToast({ type: 'success', title: 'Email đã gửi', message: `Email khôi phục đã gửi đến ${user.email}` });
-        console.log(`[UserManagement] Reset email sent to ${user.email}`);
       } else {
         setActionMessage({ type: 'error', text: data.message || 'Không thể gửi email' });
       }
     } catch (err: any) {
       setActionMessage({ type: 'error', text: 'Lỗi kết nối: ' + err.message });
-      console.error(`[UserManagement] Send reset email error:`, err);
     } finally {
       setSendingEmail(null);
     }
@@ -146,13 +160,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
       const data = await res.json();
       if (data.success) {
         addToast({ type: 'success', title: 'Đã xóa', message: `Người dùng ${deletingUser.fullName} đã được xóa.` });
-        console.log(`[UserManagement] Deleted user ${deletingUser.username}`);
       } else {
         setActionMessage({ type: 'error', text: data.message || 'Không thể xóa người dùng' });
       }
     } catch (err: any) {
       setActionMessage({ type: 'error', text: 'Lỗi kết nối: ' + err.message });
-      console.error(`[UserManagement] Delete user error:`, err);
     } finally {
       setDeletingUser(null);
       onRefresh();
@@ -178,55 +190,75 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
         <thead>
           <tr className="text-left text-slate-400 border-b border-slate-50 font-black uppercase text-[10px] tracking-widest">
             <th className="pb-4">Hội viên</th>
-            <th className="pb-4">Vai trò</th>
+            <th className="pb-4">Nhóm</th>
             <th className="pb-4">Trạng thái</th>
             <th className="pb-4 text-right">Thao tác</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50">
-          {filteredUsers.map(u => (
-            <tr key={(u as any).id || (u as any)._id} className="group hover:bg-slate-50/20">
-              <td className="py-5 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
-                  {u.fullName.charAt(0)}
-                </div>
-                <div>
-                  <div className="font-bold text-slate-800">{u.fullName}</div>
-                  <div className="text-[10px] text-slate-400">@{u.username}</div>
-                </div>
-              </td>
-              <td><span className="px-2 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase">{u.role}</span></td>
-              <td>
-                <span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${u.status === AccountStatus.ACTIVE ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                  {u.status}
-                </span>
-              </td>
-              <td className="text-right space-x-2">
-                <button 
-                  onClick={() => {
-                    setEditingUser(u);
-                    loadUserGroups(getUserId(u));
-                  }} 
-                  className="text-emerald-600 font-black text-[9px] hover:underline"
-                >
-                  Sửa
-                </button>
-                <button 
-                  onClick={() => handleSendResetEmail(u)} 
-                  disabled={sendingEmail === getUserId(u)}
-                  className={`text-amber-600 font-black text-[9px] hover:underline ${sendingEmail === getUserId(u) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {sendingEmail === getUserId(u) ? 'Đang gửi...' : 'Gửi email khôi phục'}
-                </button>
-                <button 
-                  onClick={() => setDeletingUser(u)} 
-                  className="text-rose-600 font-black text-[9px] hover:underline"
-                >
-                  Xóa
-                </button>
-              </td>
-            </tr>
-          ))}
+          {filteredUsers.map(u => {
+            const uid = getUserId(u);
+            const groupName = userGroupMap[uid];
+            return (
+              <tr key={uid} className="group hover:bg-slate-50/20">
+                <td className="py-5 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                    {u.fullName.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">{u.fullName}</div>
+                    <div className="text-[10px] text-slate-400">@{u.username}</div>
+                  </div>
+                </td>
+                <td>
+                  {groupName ? (
+                    <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
+                      groupName.toLowerCase().includes('admin') ? 'bg-red-50 text-red-600' :
+                      groupName.toLowerCase().includes('coach') ? 'bg-amber-50 text-amber-600' :
+                      'bg-emerald-50 text-emerald-600'
+                    }`}>
+                      {groupName.toLowerCase().includes('admin') ? '🔑' :
+                       groupName.toLowerCase().includes('coach') ? '📋' :
+                       '🌱'} {groupName}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase">
+                      {u.role}
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${u.status === AccountStatus.ACTIVE ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                    {u.status}
+                  </span>
+                </td>
+                <td className="text-right space-x-2">
+                  <button 
+                    onClick={() => {
+                      setEditingUser(u);
+                      loadUserGroups(uid);
+                    }} 
+                    className="text-emerald-600 font-black text-[9px] hover:underline"
+                  >
+                    Sửa
+                  </button>
+                  <button 
+                    onClick={() => handleSendResetEmail(u)} 
+                    disabled={sendingEmail === uid}
+                    className={`text-amber-600 font-black text-[9px] hover:underline ${sendingEmail === uid ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {sendingEmail === uid ? 'Đang gửi...' : 'Gửi email khôi phục'}
+                  </button>
+                  <button 
+                    onClick={() => setDeletingUser(u)} 
+                    className="text-rose-600 font-black text-[9px] hover:underline"
+                  >
+                    Xóa
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
