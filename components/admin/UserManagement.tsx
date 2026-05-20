@@ -62,37 +62,46 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
     try {
       await Database.updateUser(uid, updateData);
 
-      // Cập nhật group membership (single group)
-      if (selectedGroupId) {
-        // Xóa user khỏi tất cả groups
-        for (const group of groups) {
-          const gid = group.id || group._id;
-          const allGroupsData = await Database.getGroups();
-          const fullGroup = allGroupsData.find((grp: any) => (grp.id || grp._id) === gid);
-          if (fullGroup) {
-            const currentMembers = fullGroup.members?.map((m: any) => m._id || m) || [];
-            if (currentMembers.includes(uid) && gid !== selectedGroupId) {
-              await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
-            }
-          }
-        }
-        // Thêm user vào group được chọn
-        const targetGroup = groups.find(g => (g.id || g._id) === selectedGroupId);
-        if (targetGroup) {
-          const tgtId = targetGroup.id || targetGroup._id;
-          const allGroupsData = await Database.getGroups();
-          const fullTarget = allGroupsData.find((grp: any) => (grp.id || grp._id) === tgtId);
-          const targetMembers = fullTarget ? fullTarget.members?.map((m: any) => m._id || m) || [] : [];
-          if (!targetMembers.includes(uid)) {
-            await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
-          }
-        }
-      }
-
+      // ĐÓNG MODAL NGAY LẬP TỨC trước, toast + refresh sau
       setEditingUser(null);
-      addToast({ type: 'success', title: 'Đã cập nhật', message: `Thông tin hội viên đã được lưu.` });
+      addToast({ type: 'success', title: 'Đã cập nhật', message: 'Thông tin hội viên đã được lưu.' });
       onRefresh();
+
+      // Cập nhật group membership (single group) - chạy background, không chặn UI
+      if (selectedGroupId) {
+        // Chạy bất đồng bộ, không await - UI đã đóng modal rồi
+        (async () => {
+          try {
+            for (const group of groups) {
+              const gid = group.id || group._id;
+              if (gid === selectedGroupId) continue; // không xóa group đang chọn
+              const allGroupsData = await Database.getGroups();
+              const fullGroup = allGroupsData.find((grp: any) => (grp.id || grp._id) === gid);
+              if (fullGroup) {
+                const currentMembers = fullGroup.members?.map((m: any) => m._id || m) || [];
+                if (currentMembers.includes(uid)) {
+                  await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
+                }
+              }
+            }
+            // Thêm user vào group được chọn
+            const targetGroup = groups.find(g => (g.id || g._id) === selectedGroupId);
+            if (targetGroup) {
+              const tgtId = targetGroup.id || targetGroup._id;
+              const allGroupsData = await Database.getGroups();
+              const fullTarget = allGroupsData.find((grp: any) => (grp.id || grp._id) === tgtId);
+              const targetMembers = fullTarget ? fullTarget.members?.map((m: any) => m._id || m) || [] : [];
+              if (!targetMembers.includes(uid)) {
+                await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
+              }
+            }
+          } catch (groupErr: any) {
+            console.error('[UserManagement] Background group update error:', groupErr);
+          }
+        })();
+      }
     } catch (err: any) {
+      setEditingUser(null);
       addToast({ type: 'error', title: 'Lỗi', message: err.message || 'Không thể cập nhật.' });
     }
   };
