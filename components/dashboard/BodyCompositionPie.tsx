@@ -30,17 +30,19 @@ const BodyCompositionPie: React.FC<BodyCompositionPieProps> = ({ latestMetric })
 
   const pieData = useMemo(() => {
     if (!latestMetric || !latestMetric.weight) return [];
-    const weight = latestMetric.weight;
-    const fatMass = Number((weight * (latestMetric.bodyFat / 100)).toFixed(1));
-    const waterMass = Number((weight * (latestMetric.waterPercent / 100)).toFixed(1));
+    const weight = latestMetric.weight || 0;
+    const bodyFat = latestMetric.bodyFat || 0;
+    const waterPercent = latestMetric.waterPercent || 0;
+    const fatMass = weight > 0 && bodyFat > 0 ? Number((weight * (bodyFat / 100)).toFixed(1)) : 0;
+    const waterMass = weight > 0 && waterPercent > 0 ? Number((weight * (waterPercent / 100)).toFixed(1)) : 0;
     const minerals = latestMetric.boneMinerals || 0;
     const muscle = latestMetric.muscleMass || 0;
 
     return [
-      { name: 'Cơ bắp', value: muscle, color: '#ef4444' },
-      { name: 'Nước', value: waterMass, color: '#0ea5e9' },
-      { name: 'Mỡ', value: fatMass, color: '#fde047' },
-      { name: 'Khoáng', value: minerals, color: '#94a3b8' },
+      { name: 'Cơ bắp', value: Math.max(0, muscle), color: '#ef4444' },
+      { name: 'Nước', value: Math.max(0, waterMass), color: '#0ea5e9' },
+      { name: 'Mỡ', value: Math.max(0, fatMass), color: '#fde047' },
+      { name: 'Khoáng', value: Math.max(0, minerals), color: '#94a3b8' },
     ];
   }, [latestMetric]);
 

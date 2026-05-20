@@ -73,22 +73,32 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
     return d.toISOString().split('T')[0];
   }, []);
 
+  // Helper lấy auth headers
+  const getAuthHeaders = useCallback(() => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const sessionId = localStorage.getItem('lucky_hub_session');
+    if (sessionId) {
+      headers['Authorization'] = `Bearer ${sessionId}`;
+    }
+    return headers;
+  }, []);
+
   // Fetch goals
   const fetchGoals = useCallback(async () => {
     try {
-      const resp = await fetch(`/api/goals/${currentUid}`);
+      const resp = await fetch(`/api/goals/${currentUid}`, { headers: getAuthHeaders() });
       const data = await resp.json();
       setGoals(data || []);
       console.log(`[Goals] Loaded ${data?.length || 0} goals`);
     } catch (err: any) {
       console.error('[Goals] Fetch error:', err);
     }
-  }, [currentUid]);
+  }, [currentUid, getAuthHeaders]);
 
   // Fetch latest metrics
   const fetchLatestMetrics = useCallback(async () => {
     try {
-      const resp = await fetch(`/api/metrics/${currentUid}`);
+      const resp = await fetch(`/api/metrics/${currentUid}`, { headers: getAuthHeaders() });
       const data = await resp.json();
       if (data && data.length > 0) {
         // Sorted by date desc from API
