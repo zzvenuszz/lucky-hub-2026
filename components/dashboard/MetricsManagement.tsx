@@ -131,94 +131,188 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
         </div>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-        <div className="overflow-x-auto no-scrollbar">
-          <table className="w-full text-left text-[11px] min-w-[1200px]">
-            <thead className="bg-slate-50 border-b border-slate-100">
-              <tr className="text-slate-400 font-black uppercase tracking-widest">
-                <th className="p-5">Ngày đo</th>
-                <th className="p-5">Cân nặng (kg)</th>
-                <th className="p-5">Mỡ cơ thể (%)</th>
-                <th className="p-5">Lượng cơ (kg)</th>
-                <th className="p-5">Cân đối</th>
-                <th className="p-5">Khoáng chất (kg)</th>
-                <th className="p-5">Nước (%)</th>
-                <th className="p-5">Mỡ nội tạng</th>
-                <th className="p-5">Tuổi sinh học</th>
-                <th className="p-5">Năng Lượng (kcal)</th>
-                {(canEdit(user) || canDelete(user)) && <th className="p-5 text-right">Thao tác</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {sortedMetrics.map((m, idx) => {
-                const prev = sortedMetrics[idx + 1];
-                const mid = m.id || (m as any)._id;
-                return (
-                  <tr key={mid} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="p-5 font-bold text-slate-700">{formatDateVN(m.date)}</td>
-                    <td className="p-5 font-black text-emerald-600">
-                      {m.weight} {renderTrendIcon(m.weight, prev?.weight, true)}
-                    </td>
-                    <td className="p-5 font-bold text-rose-500">
+      {/* 📱 Mobile Card View */}
+      <div className="mobile-only space-y-3">
+        {sortedMetrics.map((m, idx) => {
+          const prev = sortedMetrics[idx + 1];
+          const mid = m.id || (m as any)._id;
+          return (
+            <div key={mid} className="data-card">
+              {/* Header: Ngày + các trend */}
+              <div className="data-card-header">
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-sm text-slate-800">📅 {formatDateVN(m.date)}</span>
+                  <span className="font-black text-emerald-600 text-sm">
+                    {m.weight}kg {renderTrendIcon(m.weight, prev?.weight, true)}
+                  </span>
+                </div>
+              </div>
+              {/* Body: các chỉ số chi tiết grid 2 cột */}
+              <div className="data-card-body">
+                <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+                  <div>
+                    <span className="data-card-label">🧈 Mỡ</span>
+                    <div className="data-card-value text-rose-500 justify-start text-left">
                       {m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}
-                    </td>
-                    <td className="p-5">
-                      <div className="font-bold text-blue-600">
-                        {m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass, false)}
-                      </div>
-                      {m.weight > 0 && (
-                        <div className="text-[9px] font-black text-blue-400/70 uppercase tracking-tighter mt-0.5">
-                          ({((m.muscleMass / m.weight) * 100).toFixed(1)}%)
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-5 font-black text-indigo-600">
+                    </div>
+                  </div>
+                  <div>
+                    <span className="data-card-label">💪 Cơ</span>
+                    <div className="data-card-value text-blue-600 justify-start text-left">
+                      {m.muscleMass}kg {renderTrendIcon(m.muscleMass, prev?.muscleMass, false)}
+                      {m.weight > 0 && <span className="text-[9px] text-blue-400 ml-1">({((m.muscleMass / m.weight) * 100).toFixed(1)}%)</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="data-card-label">⚖️ Cân đối</span>
+                    <div className="data-card-value text-indigo-600 justify-start text-left">
                       {m.balanceIndex ?? 0} {renderTrendIcon(m.balanceIndex ?? 0, prev?.balanceIndex, false)}
-                    </td>
-                    <td className="p-5 text-slate-600">{m.boneMinerals || '--'}</td>
-                    <td className="p-5 text-sky-600">{m.waterPercent}%</td>
-                    <td className="p-5 font-bold text-amber-600">
+                    </div>
+                  </div>
+                  <div>
+                    <span className="data-card-label">💧 Nước</span>
+                    <div className="data-card-value text-sky-600 justify-start text-left">{m.waterPercent}%</div>
+                  </div>
+                  <div>
+                    <span className="data-card-label">🫁 Mỡ nội tạng</span>
+                    <div className="data-card-value text-amber-600 justify-start text-left">
                       {m.visceralFat || '--'} {renderTrendIcon(m.visceralFat || 0, prev?.visceralFat, true)}
-                    </td>
-                    <td className="p-5 font-bold text-slate-800">
+                    </div>
+                  </div>
+                  <div>
+                    <span className="data-card-label">🎂 Tuổi SH</span>
+                    <div className="data-card-value text-slate-800 justify-start text-left">
                       {m.bioAge || '--'} {renderTrendIcon(m.bioAge || 0, prev?.bioAge, true)}
-                    </td>
-                    <td className="p-5 text-slate-500">{m.energy || '--'}</td>
-                    {(canEdit(user) || canDelete(user)) && (
-                      <td className="p-5 text-right space-x-2">
-                        {/* MEMBER chỉ sửa được của mình, COACH/ADMIN sửa được tất cả */}
-                        {(canEdit(user) || isViewingOwn) && (
-                          <button 
-                            onClick={() => {
-                              setEditingMetric({...m});
-                              console.log(`[MetricsManagement] Edit: ${m.date}`);
-                            }} 
-                            className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
-                          >
-                            Sửa
-                          </button>
-                        )}
-                        {/* Chỉ COACH/ADMIN mới xóa được */}
-                        {canDelete(user) && (
-                          <button 
-                            onClick={() => setDeletingMetric(m)} 
-                            className="text-rose-600 font-black text-[9px] hover:underline uppercase ml-3"
-                          >
-                            Xóa
-                          </button>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="data-card-label">🦴 Khoáng</span>
+                    <div className="data-card-value text-slate-600 justify-start text-left">{m.boneMinerals || '--'}</div>
+                  </div>
+                  <div>
+                    <span className="data-card-label">⚡ Năng lượng</span>
+                    <div className="data-card-value text-slate-500 justify-start text-left">{m.energy || '--'} kcal</div>
+                  </div>
+                </div>
+              </div>
+              {/* Actions */}
+              {(canEdit(user) || canDelete(user) || isViewingOwn) && (
+                <div className="data-card-actions">
+                  {(canEdit(user) || isViewingOwn) && (
+                    <button 
+                      onClick={() => { setEditingMetric({...m}); console.log(`[MetricsManagement] Edit: ${m.date}`); }}
+                      className="flex-1 py-2.5 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
+                    >
+                      ✏️ Sửa
+                    </button>
+                  )}
+                  {canDelete(user) && (
+                    <button 
+                      onClick={() => setDeletingMetric(m)}
+                      className="flex-1 py-2.5 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
+                    >
+                      🗑️ Xóa
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {sortedMetrics.length === 0 && (
+          <div className="p-10 text-center text-slate-300 italic text-[11px] font-bold">Chưa có dữ liệu lịch sử đo lường</div>
+        )}
+      </div>
+
+      {/* 💻 Desktop Table View */}
+      <div className="table-desktop">
+        <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
+          <div className="overflow-x-auto no-scrollbar">
+            <table className="w-full text-left text-[11px] min-w-[1200px]">
+              <thead className="bg-slate-50 border-b border-slate-100">
+                <tr className="text-slate-400 font-black uppercase tracking-widest">
+                  <th className="p-5">Ngày đo</th>
+                  <th className="p-5">Cân nặng (kg)</th>
+                  <th className="p-5">Mỡ cơ thể (%)</th>
+                  <th className="p-5">Lượng cơ (kg)</th>
+                  <th className="p-5">Cân đối</th>
+                  <th className="p-5">Khoáng chất (kg)</th>
+                  <th className="p-5">Nước (%)</th>
+                  <th className="p-5">Mỡ nội tạng</th>
+                  <th className="p-5">Tuổi sinh học</th>
+                  <th className="p-5">Năng Lượng (kcal)</th>
+                  {(canEdit(user) || canDelete(user)) && <th className="p-5 text-right">Thao tác</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {sortedMetrics.map((m, idx) => {
+                  const prev = sortedMetrics[idx + 1];
+                  const mid = m.id || (m as any)._id;
+                  return (
+                    <tr key={mid} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="p-5 font-bold text-slate-700">{formatDateVN(m.date)}</td>
+                      <td className="p-5 font-black text-emerald-600">
+                        {m.weight} {renderTrendIcon(m.weight, prev?.weight, true)}
+                      </td>
+                      <td className="p-5 font-bold text-rose-500">
+                        {m.bodyFat}% {renderTrendIcon(m.bodyFat, prev?.bodyFat, true)}
+                      </td>
+                      <td className="p-5">
+                        <div className="font-bold text-blue-600">
+                          {m.muscleMass} {renderTrendIcon(m.muscleMass, prev?.muscleMass, false)}
+                        </div>
+                        {m.weight > 0 && (
+                          <div className="text-[9px] font-black text-blue-400/70 uppercase tracking-tighter mt-0.5">
+                            ({((m.muscleMass / m.weight) * 100).toFixed(1)}%)
+                          </div>
                         )}
                       </td>
-                    )}
+                      <td className="p-5 font-black text-indigo-600">
+                        {m.balanceIndex ?? 0} {renderTrendIcon(m.balanceIndex ?? 0, prev?.balanceIndex, false)}
+                      </td>
+                      <td className="p-5 text-slate-600">{m.boneMinerals || '--'}</td>
+                      <td className="p-5 text-sky-600">{m.waterPercent}%</td>
+                      <td className="p-5 font-bold text-amber-600">
+                        {m.visceralFat || '--'} {renderTrendIcon(m.visceralFat || 0, prev?.visceralFat, true)}
+                      </td>
+                      <td className="p-5 font-bold text-slate-800">
+                        {m.bioAge || '--'} {renderTrendIcon(m.bioAge || 0, prev?.bioAge, true)}
+                      </td>
+                      <td className="p-5 text-slate-500">{m.energy || '--'}</td>
+                      {(canEdit(user) || canDelete(user)) && (
+                        <td className="p-5 text-right space-x-2">
+                          {(canEdit(user) || isViewingOwn) && (
+                            <button 
+                              onClick={() => {
+                                setEditingMetric({...m});
+                                console.log(`[MetricsManagement] Edit: ${m.date}`);
+                              }} 
+                              className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
+                            >
+                              Sửa
+                            </button>
+                          )}
+                          {canDelete(user) && (
+                            <button 
+                              onClick={() => setDeletingMetric(m)} 
+                              className="text-rose-600 font-black text-[9px] hover:underline uppercase ml-3"
+                            >
+                              Xóa
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+                {sortedMetrics.length === 0 && (
+                  <tr>
+                    <td colSpan={12} className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</td>
                   </tr>
-                );
-              })}
-              {sortedMetrics.length === 0 && (
-                <tr>
-                  <td colSpan={12} className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

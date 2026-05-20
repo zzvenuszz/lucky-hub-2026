@@ -24,34 +24,40 @@ const LogTable: React.FC<LogTableProps> = ({ logs }) => {
           const typeCfg = getTypeBadge(log.type);
           return (
             <div key={log._id || log.id} className="data-card">
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-xs text-slate-800 truncate">{log.actorName}</div>
-                  <div className="text-[9px] text-slate-400">🆔 {log.actorId?.substring(0, 8)}...</div>
+              {/* Header: Người thực hiện + Loại */}
+              <div className="data-card-header">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm text-slate-800 truncate">{log.actorName}</div>
+                    <div className="text-[9px] text-slate-400">🆔 {log.actorId?.substring(0, 8)}...</div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase shrink-0 ml-2 ${typeCfg.bg} ${typeCfg.text}`}>
+                    {typeCfg.icon} {typeCfg.label}
+                  </span>
                 </div>
-                <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase shrink-0 ml-2 ${typeCfg.bg} ${typeCfg.text}`}>
-                  {typeCfg.icon} {typeCfg.label}
-                </span>
               </div>
 
-              <div className="data-card-row">
-                <span className="data-card-label">🕐 Thời gian</span>
-                <span className="data-card-value text-slate-600">{new Date(log.timestamp).toLocaleString('vi-VN')}</span>
-              </div>
-              
-              {log.targetName && (
+              {/* Body: Chi tiết */}
+              <div className="data-card-body space-y-2">
                 <div className="data-card-row">
-                  <span className="data-card-label">📄 Đối tượng</span>
-                  <span className="data-card-value text-slate-700">{log.targetName}</span>
+                  <span className="data-card-label">🕐 Thời gian</span>
+                  <span className="data-card-value text-slate-600">{new Date(log.timestamp).toLocaleString('vi-VN')}</span>
                 </div>
-              )}
+                
+                {log.targetName && (
+                  <div className="data-card-row">
+                    <span className="data-card-label">📄 Đối tượng</span>
+                    <span className="data-card-value text-slate-700">{log.targetName}</span>
+                  </div>
+                )}
 
-              {log.details && (
-                <div className="mt-2 pt-2 border-t border-slate-50">
-                  <span className="data-card-label block mb-1">📝 Chi tiết</span>
-                  <p className="text-[11px] text-slate-600 italic leading-relaxed">{log.details}</p>
-                </div>
-              )}
+                {log.details && (
+                  <div className="pt-1 border-t border-orange-100">
+                    <span className="data-card-label block mb-1">📝 Chi tiết</span>
+                    <p className="text-[11px] text-slate-600 italic leading-relaxed">{log.details}</p>
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}

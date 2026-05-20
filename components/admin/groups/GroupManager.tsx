@@ -238,54 +238,59 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
         </div>
       )}
 
-      {/* Group List */}
-      <div className="space-y-4">
+      {/* Group List - Cards with orange border */}
+      <div className="space-y-3">
         {groups.map(group => {
           const gid = group.id || group._id;
           return (
-            <div key={gid} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                    {group.name}
+            <div key={gid} className="bg-white rounded-[2rem] border border-orange-200 shadow-sm overflow-hidden hover:border-orange-400 transition-all">
+              {/* Header: Tên nhóm + trạng thái */}
+              <div className="bg-white px-5 py-4 border-b border-orange-100">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <h3 className="font-bold text-slate-800 text-sm truncate">{group.name}</h3>
                     {group.isDefault && (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[8px] font-black uppercase tracking-wider flex items-center gap-1">
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[8px] font-black uppercase tracking-wider flex items-center gap-1 shrink-0">
                         ⭐ Mặc định
                       </span>
                     )}
-                  </h3>
-                  <p className="text-[10px] text-slate-400 mt-1">{group.description || 'Không có mô tả'}</p>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-[9px] text-slate-400 font-medium">
-                      👥 {group.members?.length || 0} thành viên
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${group.isActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {group.isActive ? 'Hoạt động' : 'Tạm dừng'}
-                    </span>
                   </div>
-                  {/* Permissions badges */}
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {(group.permissions || []).map(p => {
-                      const desc = permissionsList.find(pl => pl.key === p);
-                      return (
-                        <span key={p} className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[8px] font-black uppercase">
-                          {desc?.description || p.split(':').pop()}
-                        </span>
-                      );
-                    })}
-                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase shrink-0 ml-2 ${group.isActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                    {group.isActive ? 'Hoạt động' : 'Tạm dừng'}
+                  </span>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={() => openMemberEditor(group)} className="text-blue-600 font-black text-[9px] hover:underline uppercase">Thành viên</button>
-                  <button onClick={() => setEditingGroup({...group})} className="text-emerald-600 font-black text-[9px] hover:underline uppercase">Sửa</button>
-                  <button onClick={() => handleDeleteGroup(group)} className="text-rose-600 font-black text-[9px] hover:underline uppercase">Xóa</button>
+              </div>
+              {/* Body: Chi tiết + actions */}
+              <div className="bg-orange-50/30 px-5 py-4 space-y-3">
+                <p className="text-[10px] text-slate-400">{group.description || 'Không có mô tả'}</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-[9px] text-slate-400 font-medium">
+                    👥 {group.members?.length || 0} thành viên
+                  </span>
+                </div>
+                {/* Permissions badges */}
+                <div className="flex flex-wrap gap-1.5">
+                  {(group.permissions || []).map(p => {
+                    const desc = permissionsList.find(pl => pl.key === p);
+                    return (
+                      <span key={p} className="px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[8px] font-black uppercase">
+                        {desc?.description || p.split(':').pop()}
+                      </span>
+                    );
+                  })}
+                </div>
+                {/* Actions */}
+                <div className="flex gap-2 pt-2 border-t border-orange-100">
+                  <button onClick={() => openMemberEditor(group)} className="flex-1 py-2 rounded-xl bg-blue-50 text-blue-600 font-black text-[9px] uppercase tracking-wider hover:bg-blue-100 transition-all">👥 Thành viên</button>
+                  <button onClick={() => setEditingGroup({...group})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
+                  <button onClick={() => handleDeleteGroup(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>
                 </div>
               </div>
             </div>
           );
         })}
         {groups.length === 0 && !isCreating && (
-          <div className="p-20 text-center text-slate-300 italic uppercase text-[10px] font-black tracking-widest">Chưa có nhóm nào. Hãy tạo nhóm đầu tiên!</div>
+          <div className="p-10 text-center text-slate-300 italic uppercase text-[10px] font-black tracking-widest">Chưa có nhóm nào. Hãy tạo nhóm đầu tiên!</div>
         )}
       </div>
 

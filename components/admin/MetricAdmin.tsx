@@ -93,30 +93,32 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
             <div className="mobile-only space-y-3">
               {userMetrics.map(m => (
                 <div key={m.id || (m as any)._id} className="data-card">
-                  <div className="grid grid-cols-2 gap-y-2 gap-x-3 mb-3">
-                    <div className="data-card-row col-span-2 border-b border-slate-50 pb-1 mb-1">
-                      <span className="data-card-label">📅 Ngày</span>
-                      <span className="data-card-value text-emerald-600">{formatDateVN(m.date)}</span>
+                  {/* Header: Ngày */}
+                  <div className="data-card-header">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-sm text-slate-800">📅 {formatDateVN(m.date)}</span>
+                      <span className="font-black text-emerald-600 text-sm">{m.weight}kg</span>
                     </div>
-                    <div>
-                      <span className="data-card-label">⚖️ Cân nặng</span>
-                      <div className="data-card-value text-emerald-600">{m.weight}kg</div>
-                    </div>
-                    <div>
-                      <span className="data-card-label">🧈 Mỡ %</span>
-                      <div className="data-card-value text-rose-500">{m.bodyFat}%</div>
-                    </div>
-                    <div>
-                      <span className="data-card-label">💪 Cơ (kg)</span>
-                      <div className="data-card-value text-blue-600">{m.muscleMass}kg</div>
-                    </div>
-                    <div>
-                      <span className="data-card-label">⚖️ Cân đối</span>
-                      <div className="data-card-value text-indigo-600">{m.balanceIndex ?? 0}</div>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="data-card-label">🫁 Mỡ nội tạng</span>
-                      <div className="data-card-value text-amber-600 inline ml-2 font-bold">{m.visceralFat ?? 0}</div>
+                  </div>
+                  {/* Body: Chi tiết chỉ số */}
+                  <div className="data-card-body">
+                    <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+                      <div>
+                        <span className="data-card-label">🧈 Mỡ %</span>
+                        <div className="data-card-value text-rose-500 justify-start text-left">{m.bodyFat}%</div>
+                      </div>
+                      <div>
+                        <span className="data-card-label">💪 Cơ (kg)</span>
+                        <div className="data-card-value text-blue-600 justify-start text-left">{m.muscleMass}kg</div>
+                      </div>
+                      <div>
+                        <span className="data-card-label">⚖️ Cân đối</span>
+                        <div className="data-card-value text-indigo-600 justify-start text-left">{m.balanceIndex ?? 0}</div>
+                      </div>
+                      <div>
+                        <span className="data-card-label">🫁 Mỡ nội tạng</span>
+                        <div className="data-card-value text-amber-600 justify-start text-left">{m.visceralFat ?? 0}</div>
+                      </div>
                     </div>
                   </div>
                   <div className="data-card-actions">

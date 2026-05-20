@@ -45,7 +45,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = memo(({
   };
 
   return (
-    <div className="absolute right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[100] animate-in slide-in-from-top-2 duration-200 overflow-hidden">
+    <div className="absolute right-0 sm:left-auto mt-3 w-[calc(100vw-1.5rem)] sm:w-80 bg-white rounded-3xl shadow-2xl border border-slate-100 z-[100] animate-in slide-in-from-top-2 duration-200 overflow-hidden">
       {/* Header */}
       <div className="px-5 py-4 border-b border-slate-50 flex items-center justify-between">
         <div>

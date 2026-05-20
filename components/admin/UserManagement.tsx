@@ -197,59 +197,63 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
           return (
             <div key={uid} className="data-card">
               {/* Header: Avatar + Name + Status */}
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black text-sm shrink-0">
-                  {u.fullName.charAt(0)}
+              <div className="data-card-header">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center font-black text-sm shrink-0">
+                    {u.fullName.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm text-slate-800 truncate">{u.fullName}</div>
+                    <div className="text-[10px] text-slate-400 truncate">@{u.username}</div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase shrink-0 ${statusActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                    {u.status}
+                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-sm text-slate-800 truncate">{u.fullName}</div>
-                  <div className="text-[10px] text-slate-400 truncate">@{u.username}</div>
-                </div>
-                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase shrink-0 ${statusActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                  {u.status}
-                </span>
               </div>
 
-              {/* Group */}
-              <div className="data-card-row">
-                <span className="data-card-label">Nhóm</span>
-                <span className="data-card-value">
-                  {allGroups.length === 0 ? (
-                    <span className="text-slate-400 text-[10px]">Đang tải...</span>
-                  ) : groupName ? (
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase ${
-                      groupName.toLowerCase().includes('admin') ? 'bg-red-50 text-red-600' :
-                      groupName.toLowerCase().includes('coach') ? 'bg-amber-50 text-amber-600' :
-                      'bg-emerald-50 text-emerald-600'
-                    }`}>
-                      {groupName.toLowerCase().includes('admin') ? '🔑' :
-                       groupName.toLowerCase().includes('coach') ? '📋' :
-                       '🌱'} {groupName}
-                    </span>
-                  ) : (
-                    <span className="text-slate-400 text-[10px]">Chưa có nhóm</span>
-                  )}
-                </span>
+              {/* Body: Group */}
+              <div className="data-card-body">
+                <div className="data-card-row">
+                  <span className="data-card-label">Nhóm</span>
+                  <span className="data-card-value">
+                    {allGroups.length === 0 ? (
+                      <span className="text-slate-400 text-[10px]">Đang tải...</span>
+                    ) : groupName ? (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase ${
+                        groupName.toLowerCase().includes('admin') ? 'bg-red-50 text-red-600' :
+                        groupName.toLowerCase().includes('coach') ? 'bg-amber-50 text-amber-600' :
+                        'bg-emerald-50 text-emerald-600'
+                      }`}>
+                        {groupName.toLowerCase().includes('admin') ? '🔑' :
+                         groupName.toLowerCase().includes('coach') ? '📋' :
+                         '🌱'} {groupName}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-[10px]">Chưa có nhóm</span>
+                    )}
+                  </span>
+                </div>
               </div>
 
               {/* Actions */}
               <div className="data-card-actions">
                 <button 
                   onClick={() => { setEditingUser(u); loadUserGroups(uid); }}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
+                  className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
                 >
                   ✏️ Sửa
                 </button>
                 <button 
                   onClick={() => handleSendResetEmail(u)}
                   disabled={sendingEmail === uid}
-                  className={`px-3 py-1.5 rounded-xl bg-amber-50 text-amber-600 font-black text-[9px] uppercase tracking-wider transition-all ${sendingEmail === uid ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-100'}`}
+                  className={`flex-1 py-2 rounded-xl bg-amber-50 text-amber-600 font-black text-[9px] uppercase tracking-wider transition-all ${sendingEmail === uid ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-100'}`}
                 >
                   {sendingEmail === uid ? '⏳' : '📧'} Email
                 </button>
                 <button 
                   onClick={() => setDeletingUser(u)}
-                  className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
+                  className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
                 >
                   🗑️ Xóa
                 </button>
