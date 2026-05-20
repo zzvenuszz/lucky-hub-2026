@@ -14,9 +14,13 @@ interface NotificationPanelProps {
   onMarkAllRead: () => void;
   onNotificationClick: (notif: NotificationItem) => void;
   onClose: () => void;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
 }
 
-const NotificationPanel: React.FC<NotificationPanelProps> = memo(({ notifications, onMarkAllRead, onNotificationClick, onClose }) => {
+const NotificationPanel: React.FC<NotificationPanelProps> = memo(({ 
+  notifications, onMarkAllRead, onNotificationClick, onClose, isMuted, onToggleMute 
+}) => {
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const formatTime = (timestamp: string) => {
@@ -50,7 +54,20 @@ const NotificationPanel: React.FC<NotificationPanelProps> = memo(({ notification
             {unreadCount > 0 ? `${unreadCount} chưa đọc` : 'Không có thông báo mới'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {onToggleMute && (
+            <label className="flex items-center gap-1 cursor-pointer select-none" title={isMuted ? 'Bật popup thông báo' : 'Tắt popup thông báo'}>
+              <input
+                type="checkbox"
+                checked={!isMuted}
+                onChange={onToggleMute}
+                className="rounded accent-emerald-600 w-3 h-3"
+              />
+              <span className={`text-[9px] font-black uppercase tracking-wider ${isMuted ? 'text-slate-400' : 'text-emerald-600'}`}>
+                {isMuted ? '🔕' : '🔔'}
+              </span>
+            </label>
+          )}
           {unreadCount > 0 && (
             <button
               onClick={onMarkAllRead}

@@ -14,6 +14,7 @@ import Register from './components/auth/Register.tsx';
 import AuthContainer from './components/auth/AuthContainer.tsx';
 import SystemLog from './components/system/SystemLog.tsx';
 import ErrorBoundary from './components/system/ErrorBoundary.tsx';
+import ToastProvider from './components/system/ToastProvider.tsx';
 import CoachDashboard from './components/coach/CoachDashboard.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
@@ -440,6 +441,7 @@ const App: React.FC = () => {
   // ChatSystem UI chỉ render khi isChatOpen = true
   return (
     <ErrorBoundary>
+      <ToastProvider>
       <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
         <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={() => setIsChatOpen(!isChatOpen)}>
         {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
@@ -495,6 +497,7 @@ const App: React.FC = () => {
         {newEarnedBadge && <BadgeCongratulation badge={newEarnedBadge} onClose={() => setNewEarnedBadge(null)} />}
         </Layout>
       </ChatProvider>
+      </ToastProvider>
     </ErrorBoundary>
   );
 };

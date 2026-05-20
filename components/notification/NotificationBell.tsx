@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { User } from '../../types.ts';
 import NotificationPanel, { NotificationItem } from './NotificationPanel.tsx';
+import { useToast } from '../system/ToastProvider.tsx';
 
 interface NotificationBellProps {
   currentUser: User;
@@ -15,6 +16,8 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
   const panelRef = useRef<HTMLDivElement>(null);
   const pollTimerRef = useRef<number | null>(null);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
+  const { addToast, isMuted, setMuted } = useToast();
+  const prevUnreadRef = useRef<number>(0);
 
   // Fetch notifications từ API
   const fetchNotifications = useCallback(async () => {
@@ -24,7 +27,28 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
       const resp = await fetch(`/api/notifications/${currentUserId}`);
       if (resp.ok) {
         const data: NotificationItem[] = await resp.json();
-        setNotifications(data);
+        setNotifications(prev => {
+          // Phát hiện notification mới để show popup (nếu không mute)
+          const prevUnread = prevUnreadRef.current;
+          const newUnread = data.filter(n => !n.read).length;
+          if (newUnread > prevUnread && !isMuted) {
+            const newNotifs = data.filter(n => !n.read);
+            // So sánh với prev để tìm cái mới
+            const prevIds = new Set(prev.map(n => n.id));
+            const freshNotifs = newNotifs.filter(n => !prevIds.has(n.id));
+            if (freshNotifs.length > 0) {
+              const latest = freshNotifs[freshNotifs.length - 1];
+              addToast({
+                type: 'info',
+                title: 'Thông báo mới',
+                message: latest.message?.substring(0, 120),
+                duration: 4000,
+              });
+            }
+          }
+          prevUnreadRef.current = newUnread;
+          return data;
+        });
         console.log(`[NotificationBell] Fetched ${data.length} notifications, unread: ${data.filter(n => !n.read).length}`);
       }
     } catch (err: any) {
@@ -32,7 +56,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
     } finally {
       setIsLoading(false);
     }
-  }, [currentUserId]);
+  }, [currentUserId, addToast, isMuted]);
 
   // Fetch khi mount + polling định kỳ
   useEffect(() => {
@@ -116,7 +140,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
         {isLoading ? (
           <span className="inline-block w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         ) : (
-          <span className="text-lg">🔔</span>
+          <span className="text-lg">{isMuted ? '🔕' : '🔔'}</span>
         )}
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-lg shadow-rose-200">
@@ -126,12 +150,16 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
       </button>
 
       {isOpen && (
-        <NotificationPanel
-          notifications={chatFilteredNotifications}
-          onMarkAllRead={handleMarkAllRead}
-          onNotificationClick={handleNotificationClick}
-          onClose={handleClose}
-        />
+        <>
+          <NotificationPanel
+            notifications={chatFilteredNotifications}
+            onMarkAllRead={handleMarkAllRead}
+            onNotificationClick={handleNotificationClick}
+            onClose={handleClose}
+            isMuted={isMuted}
+            onToggleMute={() => setMuted(!isMuted)}
+          />
+        </>
       )}
     </div>
   );

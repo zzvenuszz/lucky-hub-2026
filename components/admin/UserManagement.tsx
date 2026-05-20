@@ -1,6 +1,7 @@
 import React, { useState, useEffect, memo, useCallback } from 'react';
 import { User, UserRole, AccountStatus } from '../../types.ts';
 import { Database } from '../../services/database.ts';
+import { useToast } from '../system/ToastProvider.tsx';
 
 interface UserManagementProps {
   users: User[];
@@ -22,7 +23,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [userGroupIds, setUserGroupIds] = useState<string[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const { addToast } = useToast();
 
   // Lấy userId an toàn
   const getUserId = useCallback((u: any): string => u.id || u._id, []);
@@ -35,7 +37,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
         Database.getUserGroups(userId)
       ]);
       setGroups(allGroups || []);
-      setUserGroupIds((userGroups || []).map((g: any) => g._id || g.id));
+      // Lấy group ID đầu tiên user thuộc về (single group)
+      const currentGroup = (userGroups || [])[0];
+      setSelectedGroupId(currentGroup ? (currentGroup._id || currentGroup.id) : '');
     } catch (err: any) {
       console.error('[UserManagement] Load groups error:', err);
     }
@@ -45,35 +49,52 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
     e.preventDefault();
     if (!editingUser) return;
     const uid = getUserId(editingUser);
-    await Database.updateUser(uid, editingUser);
-    
-    // Cập nhật group membership cho user
+
+    // Chỉ update những field cần thiết, KHÔNG gửi role
+    const updateData: any = {
+      fullName: editingUser.fullName,
+      status: editingUser.status,
+    };
+    if ((editingUser as any).password && (editingUser as any).password.trim() !== '') {
+      updateData.password = (editingUser as any).password;
+    }
+
     try {
-      // Với mỗi group, thêm/xóa user khỏi members
-      for (const group of groups) {
-        const gid = group.id || group._id;
-        const currentMembers = await Database.getGroups().then(all => {
-          const g = all.find((grp: any) => (grp.id || grp._id) === gid);
-          return g ? g.members?.map((m: any) => m._id || m) || [] : [];
-        });
-        
-        const shouldBeMember = userGroupIds.includes(gid);
-        const isCurrentlyMember = currentMembers.includes(uid);
-        
-        if (shouldBeMember && !isCurrentlyMember) {
-          // Thêm user vào group
-          await Database.updateGroupMembers(gid, [...currentMembers, uid]);
-        } else if (!shouldBeMember && isCurrentlyMember) {
-          // Xóa user khỏi group
-          await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
+      await Database.updateUser(uid, updateData);
+
+      // Cập nhật group membership (single group)
+      if (selectedGroupId) {
+        // Xóa user khỏi tất cả groups
+        for (const group of groups) {
+          const gid = group.id || group._id;
+          const allGroupsData = await Database.getGroups();
+          const fullGroup = allGroupsData.find((grp: any) => (grp.id || grp._id) === gid);
+          if (fullGroup) {
+            const currentMembers = fullGroup.members?.map((m: any) => m._id || m) || [];
+            if (currentMembers.includes(uid) && gid !== selectedGroupId) {
+              await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
+            }
+          }
+        }
+        // Thêm user vào group được chọn
+        const targetGroup = groups.find(g => (g.id || g._id) === selectedGroupId);
+        if (targetGroup) {
+          const tgtId = targetGroup.id || targetGroup._id;
+          const allGroupsData = await Database.getGroups();
+          const fullTarget = allGroupsData.find((grp: any) => (grp.id || grp._id) === tgtId);
+          const targetMembers = fullTarget ? fullTarget.members?.map((m: any) => m._id || m) || [] : [];
+          if (!targetMembers.includes(uid)) {
+            await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
+          }
         }
       }
+
+      setEditingUser(null);
+      addToast({ type: 'success', title: 'Đã cập nhật', message: `Thông tin hội viên đã được lưu.` });
+      onRefresh();
     } catch (err: any) {
-      console.error('[UserManagement] Update group membership error:', err);
+      addToast({ type: 'error', title: 'Lỗi', message: err.message || 'Không thể cập nhật.' });
     }
-    
-    setEditingUser(null);
-    onRefresh();
   };
 
   // Gửi email khôi phục mật khẩu cho người dùng
@@ -89,7 +110,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
       });
       const data = await res.json();
       if (data.success) {
-        setActionMessage({ type: 'success', text: `📧 Email khôi phục đã gửi đến ${user.email}` });
+        addToast({ type: 'success', title: 'Email đã gửi', message: `Email khôi phục đã gửi đến ${user.email}` });
         console.log(`[UserManagement] Reset email sent to ${user.email}`);
       } else {
         setActionMessage({ type: 'error', text: data.message || 'Không thể gửi email' });
@@ -115,7 +136,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
       });
       const data = await res.json();
       if (data.success) {
-        setActionMessage({ type: 'success', text: `🗑️ Đã xóa người dùng ${deletingUser.fullName}` });
+        addToast({ type: 'success', title: 'Đã xóa', message: `Người dùng ${deletingUser.fullName} đã được xóa.` });
         console.log(`[UserManagement] Deleted user ${deletingUser.username}`);
       } else {
         setActionMessage({ type: 'error', text: data.message || 'Không thể xóa người dùng' });
@@ -242,21 +263,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
 
       {editingUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-          <form onSubmit={handleUpdateUser} className="bg-white w-full max-w-2xl rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
+          <form onSubmit={handleUpdateUser} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật Hội viên</h4>
             
             {/* Thông tin cơ bản */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Họ tên</label>
-                <input value={editingUser.fullName} onChange={e => setEditingUser({...editingUser, fullName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Vai trò</label>
-                <select value={editingUser.role} onChange={e => setEditingUser({...editingUser, role: e.target.value as UserRole})} className="w-full px-4 py-3 bg-emerald-50 text-emerald-700 rounded-xl font-bold text-xs">
-                  {Object.values(UserRole).map(role => <option key={role} value={role}>{role}</option>)}
-                </select>
-              </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Họ tên</label>
+              <input value={editingUser.fullName} onChange={e => setEditingUser({...editingUser, fullName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
             </div>
             
             <div className="space-y-1">
@@ -276,36 +289,31 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
               />
             </div>
 
-            {/* Group Selector */}
+            {/* Group Selector - Single select */}
             <div className="space-y-2">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1 flex items-center gap-2">
                 👥 Nhóm
-                <span className="font-normal text-[9px] text-slate-300">(chọn nhóm cho hội viên này)</span>
+                <span className="font-normal text-[9px] text-slate-300">(chọn 1 nhóm cho hội viên)</span>
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="space-y-1.5">
                 {groups.map(group => {
                   const gid = group.id || group._id;
-                  const isSelected = userGroupIds.includes(gid);
+                  const isSelected = selectedGroupId === gid;
                   return (
                     <label 
                       key={gid} 
                       className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${
                         isSelected 
-                          ? 'bg-emerald-50 border-emerald-200' 
+                          ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200' 
                           : 'bg-slate-50 border-transparent hover:border-slate-200'
                       }`}
                     >
                       <input 
-                        type="checkbox" 
+                        type="radio" 
+                        name="userGroup"
                         checked={isSelected}
-                        onChange={() => {
-                          setUserGroupIds(prev =>
-                            prev.includes(gid) 
-                              ? prev.filter(id => id !== gid) 
-                              : [...prev, gid]
-                          );
-                        }}
-                        className="rounded"
+                        onChange={() => setSelectedGroupId(gid)}
+                        className="accent-emerald-600"
                       />
                       <div>
                         <div className="font-bold text-xs text-slate-700 flex items-center gap-2">
@@ -319,7 +327,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                   );
                 })}
                 {groups.length === 0 && (
-                  <div className="col-span-full p-4 text-center text-slate-400 text-[10px] italic">
+                  <div className="p-4 text-center text-slate-400 text-[10px] italic">
                     Chưa có nhóm nào. Vào "Quản lý nhóm" để tạo nhóm trước.
                   </div>
                 )}
