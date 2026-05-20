@@ -136,7 +136,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
                     <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
                       <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
                     </button>
-                    {user.role === UserRole.ADMIN && (
+                    {(user as any).permissions?.includes('admin:panel') && (
                       <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
                         <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Admin Panel
                       </button>

@@ -211,7 +211,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                   </div>
                 </td>
                 <td>
-                  {groupName ? (
+                  {allGroups.length === 0 ? (
+                    <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase inline-flex items-center gap-1">
+                      <span className="inline-block w-2.5 h-2.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                      Đang tải...
+                    </span>
+                  ) : groupName ? (
                     <span className={`px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider inline-flex items-center gap-1 ${
                       groupName.toLowerCase().includes('admin') ? 'bg-red-50 text-red-600' :
                       groupName.toLowerCase().includes('coach') ? 'bg-amber-50 text-amber-600' :
@@ -223,7 +228,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                     </span>
                   ) : (
                     <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase">
-                      {u.role}
+                      Chưa có nhóm
                     </span>
                   )}
                 </td>

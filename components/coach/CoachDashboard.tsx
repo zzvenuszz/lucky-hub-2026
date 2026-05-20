@@ -32,11 +32,15 @@ const CoachDashboard: React.FC<CoachDashboardProps> = memo(({ currentUser }) => 
           Database.getRules()
         ]);
         if (allUsers) {
-          const memberUsers = allUsers.filter(u => u.role === UserRole.MEMBER);
-          setMembers(memberUsers);
+          const otherUsers = allUsers.filter(u => {
+            const uid = (u as any).id || (u as any)._id;
+            const myUid = (currentUser as any).id || (currentUser as any)._id;
+            return uid !== myUid;
+          });
+          setMembers(otherUsers);
           setKnowledge(knowledgeData || []);
           setRules(rulesData || []);
-          console.log(`[CoachDashboard] Loaded ${memberUsers.length} members, ${knowledgeData?.length || 0} knowledge, ${rulesData?.length || 0} rules`);
+          console.log(`[CoachDashboard] Loaded ${otherUsers.length} members, ${knowledgeData?.length || 0} knowledge, ${rulesData?.length || 0} rules`);
         }
       } catch (error) {
         console.error('[CoachDashboard] Error fetching members:', error);

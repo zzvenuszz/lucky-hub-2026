@@ -75,7 +75,7 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Trung tâm điều khiển</h2>
-          {user.role !== UserRole.MEMBER ? (
+          {(user as any).permissions?.includes('metrics:view:any') ? (
             <div className="mt-2 flex items-center space-x-2">
               <span className="text-sm text-slate-500 font-medium">Hội viên:</span>
               <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} className="bg-emerald-50 text-emerald-700 font-bold px-3 py-1.5 rounded-xl border-none text-sm outline-none ring-1 ring-emerald-100">

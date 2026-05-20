@@ -435,7 +435,7 @@ const App: React.FC = () => {
     />;
   }
 
-  const isAdmin = currentUser.role === UserRole.ADMIN;
+  const isAdmin = (currentUser as any).permissions?.includes('admin:panel');
 
   // ChatProvider luôn active 24/7 để lắng nghe WebSocket,
   // ChatSystem UI chỉ render khi isChatOpen = true

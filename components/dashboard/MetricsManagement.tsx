@@ -22,13 +22,13 @@ const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
   );
 };
 
-// Helper kiểm tra quyền
+// Helper kiểm tra quyền (chỉ dùng permissions từ group)
 const canEdit = (user: User): boolean => {
-  return user.role === UserRole.COACH || user.role === UserRole.ADMIN || user.permissions?.includes('metrics:update:any');
+  return (user as any).permissions?.includes('metrics:update:any');
 };
 
 const canDelete = (user: User): boolean => {
-  return user.role === UserRole.COACH || user.role === UserRole.ADMIN || user.permissions?.includes('metrics:delete:any');
+  return (user as any).permissions?.includes('metrics:delete:any');
 };
 
 const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
@@ -40,14 +40,15 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadMetrics = async () => {
-    const targetId = user.role === UserRole.MEMBER ? currentUid : selectedUserId;
+    const canViewAny = (user as any).permissions?.includes('metrics:view:any');
+    const targetId = !canViewAny ? currentUid : selectedUserId;
     const data = await Database.getMetrics(targetId);
     setMetrics(data || []);
   };
 
   useEffect(() => {
     loadMetrics();
-  }, [selectedUserId, refreshTrigger, user.role, currentUid]);
+  }, [selectedUserId, refreshTrigger, user, currentUid]);
 
   // Xác định xem user đang xem của ai
   const isViewingOwn = selectedUserId === currentUid;
@@ -100,7 +101,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           <p className="text-slate-400 text-xs font-medium mt-1 uppercase tracking-widest">Lịch sử đo lường chi tiết</p>
         </div>
         <div className="flex items-center gap-4">
-          {user.role !== UserRole.MEMBER && (
+          {(user as any).permissions?.includes('metrics:view:any') && (
             <select 
               value={selectedUserId} 
               onChange={e => setSelectedUserId(e.target.value)} 

@@ -44,7 +44,7 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmi
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {user.role === UserRole.ADMIN && (
+      {(user as any).permissions?.includes('admin:panel') && (
         <div className="bg-amber-50 border border-amber-200 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center text-3xl shadow-lg shadow-amber-200">🛡️</div>

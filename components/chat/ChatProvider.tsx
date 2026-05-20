@@ -125,14 +125,10 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         
         const allChats = preloadedChats.length > 0 ? preloadedChats : (await Database.getChats() || []);
         
-        // Build chat list from contacts
+        // Build chat list from contacts (tất cả users đều có thể chat, không phân biệt role)
         const contacts = users.filter(u => {
           const uId = String((u as any).id || (u as any)._id);
-          if (uId === currentUid) return false;
-          if (currentUser.role === UserRole.MEMBER) {
-            return u.role === UserRole.ADMIN || u.role === UserRole.COACH;
-          }
-          return true;
+          return uId !== currentUid;
         });
 
         const myId = String(currentUid);
