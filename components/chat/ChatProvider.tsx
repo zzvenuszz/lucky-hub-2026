@@ -116,19 +116,34 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   useEffect(() => {
     const load = async () => {
       try {
-        console.log(`[ChatProvider] Loading data for user ${currentUid}`);
-        const metrics = await Database.getMetrics(currentUid);
-        if (metrics?.length) {
-          const sorted = [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setLatestMetric(sorted[0]);
+        console.log(`[ChatProvider] Loading data for user ${currentUid}, role=${currentUser.role}`);
+        
+        // Load metrics riêng - nếu lỗi thì bỏ qua, không ảnh hưởng đến chat
+        try {
+          const metrics = await Database.getMetrics(currentUid);
+          if (metrics?.length) {
+            const sorted = [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            setLatestMetric(sorted[0]);
+          }
+        } catch (metricErr) {
+          console.warn(`[ChatProvider] Failed to load metrics, continuing without them:`, metricErr);
         }
         
         const allChats = preloadedChats.length > 0 ? preloadedChats : (await Database.getChats() || []);
         
-        // Build chat list from contacts (tất cả users đều có thể chat, không phân biệt role)
+        // Build contact list based on user role
+        // - ADMIN: thấy tất cả users
+        // - COACH: thấy tất cả users
+        // - MEMBER: chỉ thấy ADMIN + COACH (không thấy MEMBER khác)
         const contacts = users.filter(u => {
           const uId = String((u as any).id || (u as any)._id);
-          return uId !== currentUid;
+          if (uId === currentUid) return false;
+          if (currentUser.role === UserRole.MEMBER) {
+            // MEMBER chỉ thấy ADMIN và COACH
+            return (u as any).role === UserRole.ADMIN || (u as any).role === UserRole.COACH;
+          }
+          // ADMIN/COACH thấy tất cả
+          return true;
         });
 
         const myId = String(currentUid);
@@ -148,7 +163,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         const newChats = [aiChat, ...activeChats];
         setChats(newChats);
 
-        console.log(`[ChatProvider] Loaded ${newChats.length} chats`);
+        console.log(`[ChatProvider] Loaded ${newChats.length} chats (role=${currentUser.role}, contacts=${contacts.length})`);
       } catch (error) {
         console.error(`[ChatProvider] Error loading data:`, error);
       }

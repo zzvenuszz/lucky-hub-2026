@@ -7,7 +7,13 @@ router.use(authMiddleware);
 
 // GET /api/chats
 router.get('/', async (req: Request, res: Response) => {
-  const chats = await Chat.find();
+  const userId = (req as any).user?.userId;
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  const chats = await Chat.find({
+    $or: [{ memberId: userId }, { coachId: userId }]
+  });
   res.json(chats);
 });
 

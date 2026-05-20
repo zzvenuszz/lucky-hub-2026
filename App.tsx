@@ -271,24 +271,45 @@ const App: React.FC = () => {
   }, [currentUser, handleLogout]);
 
   const fetchData = async () => {
+    // Tách riêng từng API call để một lỗi không làm hỏng các call khác
     try {
-      const [u, k, r, c] = await Promise.all([
-        Database.getUsers(), 
-        Database.getKnowledge(),
-        Database.getRules(),
-        Database.getChats()
-      ]);
+      const u = await Database.getUsers();
       setUsers(u || []);
-      setPreloadedChats(c || []);
-      if (window.debugLog) window.debugLog(`[App] Nhận dữ liệu: ${u?.length || 0} users, ${k?.length || 0} kiến thức, ${r?.length || 0} quy tắc, ${c?.length || 0} chats`, "system");
+    } catch (err) {
+      console.warn('[App] Failed to load users:', err);
+    }
+    
+    try {
+      const k = await Database.getKnowledge();
       setKnowledge(k || []);
+    } catch (err) {
+      console.warn('[App] Failed to load knowledge:', err);
+    }
+    
+    try {
+      const r = await Database.getRules();
       setRules(r || []);
-      if (currentUser) {
+    } catch (err) {
+      console.warn('[App] Failed to load rules:', err);
+    }
+    
+    try {
+      const c = await Database.getChats();
+      setPreloadedChats(c || []);
+      if (window.debugLog) window.debugLog(`[App] Nhận dữ liệu: ${users.length || 0} users, ${knowledge.length || 0} kiến thức, ${rules.length || 0} quy tắc, ${c?.length || 0} chats`, "system");
+    } catch (err) {
+      console.warn('[App] Failed to load chats:', err);
+    }
+
+    if (currentUser) {
+      try {
         const uid = (currentUser as any).id || (currentUser as any)._id;
         const m = await Database.getMetrics(uid);
         setExistingMetrics(m || []);
+      } catch (err) {
+        console.warn('[App] Failed to load metrics:', err);
       }
-    } catch (err) {}
+    }
   };
 
   useEffect(() => { 
