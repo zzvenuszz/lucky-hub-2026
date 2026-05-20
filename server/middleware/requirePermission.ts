@@ -60,7 +60,6 @@ export function requirePermission(
  */
 export function can(user: Express.Request['user'] | undefined, permission: string): boolean {
   if (!user) return false;
-  // ADMIN luôn có tất cả quyền (không cần check DB)
-  if (user.role === 'ADMIN') return true;
+  // Chỉ check permissions (đã được gộp từ groups khi login)
   return user.permissions.includes(permission);
 }

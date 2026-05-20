@@ -57,41 +57,8 @@ export const ALL_PERMISSIONS: string[] = Object.values(RESOURCES).flatMap(
   (resource) => Object.values(resource)
 );
 
-/**
- * Permissions mặc định cho từng Role
- */
-export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  [UserRole.MEMBER]: [
-    RESOURCES.METRICS.VIEW_OWN,
-    RESOURCES.METRICS.CREATE_OWN,
-    RESOURCES.METRICS.UPDATE_OWN,
-    RESOURCES.POSTS.VIEW,
-    RESOURCES.POSTS.CREATE,
-    RESOURCES.POSTS.UPDATE_OWN,
-    RESOURCES.POSTS.DELETE_OWN,
-    RESOURCES.CHATS.VIEW,
-    RESOURCES.CHATS.SEND,
-  ],
-  [UserRole.COACH]: [
-    RESOURCES.METRICS.VIEW_OWN,
-    RESOURCES.METRICS.CREATE_OWN,
-    RESOURCES.METRICS.UPDATE_OWN,
-    RESOURCES.METRICS.VIEW_ANY,
-    RESOURCES.METRICS.CREATE_ANY,
-    RESOURCES.METRICS.UPDATE_ANY,
-    RESOURCES.METRICS.DELETE_ANY,
-    RESOURCES.USERS.VIEW,
-    RESOURCES.POSTS.VIEW,
-    RESOURCES.POSTS.CREATE,
-    RESOURCES.POSTS.UPDATE_OWN,
-    RESOURCES.POSTS.DELETE_OWN,
-    RESOURCES.CHATS.VIEW,
-    RESOURCES.CHATS.SEND,
-    RESOURCES.AI.VIEW,
-    RESOURCES.COACH.ACCESS,
-  ],
-  [UserRole.ADMIN]: ALL_PERMISSIONS,
-};
+// ROLE_PERMISSIONS đã được thay thế hoàn toàn bằng hệ thống Group-based.
+// Phân quyền được quản lý qua Group.permissions[] và gán user vào Group.
 
 /**
  * Map permission -> mô tả tiếng Việt (dùng cho UI)

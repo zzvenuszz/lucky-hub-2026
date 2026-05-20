@@ -6,7 +6,6 @@ import { ActiveSession } from '../models/ActiveSession.ts';
 import { PasswordResetToken } from '../models/PasswordResetToken.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { AuditLogType, AccountStatus, UserRole } from '../../types.ts';
-import { ROLE_PERMISSIONS } from '../config/permissions.ts';
 import { cryptoUtils } from '../../src/utils/cryptoUtils.ts';
 import { uploadToImgBB } from '../utils/imageUtils.ts';
 import { validateBody, sanitizeText } from '../../services/validationService.ts';
@@ -60,8 +59,7 @@ router.post('/register', validateBody(
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    const roleDefaults = ROLE_PERMISSIONS[UserRole.MEMBER] || [];
-
+    // User mới không có permissions mặc định — sẽ được gán qua group
     const newUser = new User({
       ...rest,
       username: username.toLowerCase().trim(),
@@ -74,7 +72,7 @@ router.post('/register', validateBody(
       isEmailVerified: false,
       emailVerificationToken: verificationToken,
       emailVerificationExpires: verificationExpires,
-      permissions: roleDefaults,
+      permissions: [],
     });
     await newUser.save();
 
@@ -186,8 +184,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const u = user.toObject();
     delete u.password;
     
-    // Tính permissions hiệu dụng (gộp role defaults + user-specific + group permissions)
-    const roleDefaults = ROLE_PERMISSIONS[user.role as UserRole] || [];
+    // Chỉ dùng group permissions (đã replace ROLE_PERMISSIONS hoàn toàn)
     const userSpecific = user.permissions || [];
     
     // Lấy group permissions
@@ -202,7 +199,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     // Gộp và loại bỏ trùng lặp
-    const effectivePermissions = [...new Set([...roleDefaults, ...userSpecific, ...groupPerms])];
+    const effectivePermissions = [...new Set([...userSpecific, ...groupPerms])];
 
     res.json({
       ...u,

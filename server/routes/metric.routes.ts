@@ -16,16 +16,13 @@ router.use(authMiddleware);
 
 /**
  * GET /api/metrics/:userId - Lấy metrics của user
- * MEMBER: chỉ xem của mình (metrics:view:own)
- * COACH/ADMIN: xem của bất kỳ (metrics:view:any)
  */
 router.get('/:userId', async (req: Request, res: Response) => {
   try {
     const targetUserId = req.params.userId;
     const currentUserId = req.user!.userId;
 
-    // Kiểm tra quyền
-    const canViewAny = req.user!.permissions.includes(RESOURCES.METRICS.VIEW_ANY) || req.user!.role === 'ADMIN';
+    const canViewAny = req.user!.permissions.includes(RESOURCES.METRICS.VIEW_ANY);
     const canViewOwn = req.user!.permissions.includes(RESOURCES.METRICS.VIEW_OWN);
 
     if (!canViewAny && (!canViewOwn || targetUserId !== currentUserId)) {
@@ -41,8 +38,6 @@ router.get('/:userId', async (req: Request, res: Response) => {
 
 /**
  * POST /api/metrics - Tạo metric mới
- * MEMBER: chỉ tạo cho mình (metrics:create:own)
- * COACH/ADMIN: tạo cho bất kỳ (metrics:create:any)
  */
 router.post('/', validateBody(
   { field: 'userId', type: 'string', required: true },
@@ -61,8 +56,7 @@ router.post('/', validateBody(
     const { actorId, actorName, ...metricData } = req.body;
     const currentUserId = req.user!.userId;
 
-    // Kiểm tra quyền
-    const canCreateAny = req.user!.permissions.includes(RESOURCES.METRICS.CREATE_ANY) || req.user!.role === 'ADMIN';
+    const canCreateAny = req.user!.permissions.includes(RESOURCES.METRICS.CREATE_ANY);
     const canCreateOwn = req.user!.permissions.includes(RESOURCES.METRICS.CREATE_OWN);
 
     if (!canCreateAny && (!canCreateOwn || metricData.userId !== currentUserId)) {
@@ -87,7 +81,6 @@ router.post('/', validateBody(
     });
     await log.save();
 
-    // Gửi notification cho member khi coach/admin cập nhật metrics giúp
     if (isHelp && metricData.userId) {
       const notification = new Notification({
         userId: metricData.userId,
@@ -106,8 +99,6 @@ router.post('/', validateBody(
 
 /**
  * PUT /api/metrics/:id - Cập nhật metric
- * MEMBER: chỉ sửa của mình (metrics:update:own)
- * COACH/ADMIN: sửa được tất cả (metrics:update:any)
  */
 router.put('/:id', async (req: Request, res: Response) => {
   try {
@@ -117,8 +108,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     const metric = await Metric.findById(metricId);
     if (!metric) return res.status(404).json({ message: 'Không tìm thấy chỉ số' });
 
-    // Kiểm tra quyền
-    const canUpdateAny = req.user!.permissions.includes(RESOURCES.METRICS.UPDATE_ANY) || req.user!.role === 'ADMIN';
+    const canUpdateAny = req.user!.permissions.includes(RESOURCES.METRICS.UPDATE_ANY);
     const canUpdateOwn = req.user!.permissions.includes(RESOURCES.METRICS.UPDATE_OWN);
     const isOwner = metric.userId.toString() === currentUserId;
 
@@ -129,7 +119,6 @@ router.put('/:id', async (req: Request, res: Response) => {
     const updatedMetric = await Metric.findByIdAndUpdate(metricId, req.body, { new: true });
     if (!updatedMetric) return res.status(404).json({ message: 'Không tìm thấy chỉ số' });
 
-    // Audit log
     const target = await User.findById(metric.userId);
     const log = new AuditLog({
       actorId: currentUserId, actorName: req.user?.fullName || 'User',
@@ -150,15 +139,13 @@ router.put('/:id', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/metrics/:id - Xóa metric
- * Chỉ COACH/ADMIN mới có quyền xóa (metrics:delete:any)
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const metricId = req.params.id;
     const currentUserId = req.user!.userId;
 
-    // Chỉ COACH/ADMIN mới được xóa
-    const canDeleteAny = req.user!.permissions.includes(RESOURCES.METRICS.DELETE_ANY) || req.user!.role === 'ADMIN';
+    const canDeleteAny = req.user!.permissions.includes(RESOURCES.METRICS.DELETE_ANY);
     if (!canDeleteAny) {
       return res.status(403).json({ message: 'Bạn không có quyền xóa chỉ số' });
     }
@@ -168,7 +155,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     await Metric.findByIdAndDelete(metricId);
 
-    // Audit log
     const target = await User.findById(metric.userId);
     const log = new AuditLog({
       actorId: currentUserId, actorName: req.user?.fullName || 'User',
@@ -189,11 +175,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 /**
  * POST /api/metrics/delete-bulk - Xóa hàng loạt metrics
- * Chỉ COACH/ADMIN
  */
 router.post('/delete-bulk', async (req: Request, res: Response) => {
   try {
-    const canDeleteAny = req.user!.permissions.includes(RESOURCES.METRICS.DELETE_ANY) || req.user!.role === 'ADMIN';
+    const canDeleteAny = req.user!.permissions.includes(RESOURCES.METRICS.DELETE_ANY);
     if (!canDeleteAny) {
       return res.status(403).json({ message: 'Bạn không có quyền xóa chỉ số' });
     }
@@ -214,11 +199,10 @@ router.post('/delete-bulk', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/metrics/all/:userId - Xóa toàn bộ metrics của user
- * Chỉ COACH/ADMIN
  */
 router.delete('/all/:userId', async (req: Request, res: Response) => {
   try {
-    const canDeleteAny = req.user!.permissions.includes(RESOURCES.METRICS.DELETE_ANY) || req.user!.role === 'ADMIN';
+    const canDeleteAny = req.user!.permissions.includes(RESOURCES.METRICS.DELETE_ANY);
     if (!canDeleteAny) {
       return res.status(403).json({ message: 'Bạn không có quyền xóa chỉ số' });
     }
@@ -245,7 +229,6 @@ router.delete('/all/:userId', async (req: Request, res: Response) => {
 
 /**
  * GET /api/metrics/export/:userId - Export metrics
- * Kiểm tra quyền xem
  */
 router.get('/export/:userId', async (req: Request, res: Response) => {
   try {
@@ -255,7 +238,7 @@ router.get('/export/:userId', async (req: Request, res: Response) => {
     const fromDate = req.query.from as string;
     const toDate = req.query.to as string;
 
-    const canViewAny = req.user!.permissions.includes(RESOURCES.METRICS.VIEW_ANY) || req.user!.role === 'ADMIN';
+    const canViewAny = req.user!.permissions.includes(RESOURCES.METRICS.VIEW_ANY);
     const canViewOwn = req.user!.permissions.includes(RESOURCES.METRICS.VIEW_OWN);
 
     if (!canViewAny && (!canViewOwn || userId !== currentUserId)) {
@@ -301,7 +284,7 @@ router.post('/bulk', async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Dữ liệu không hợp lệ' });
     }
 
-    const canCreateAny = req.user!.permissions.includes(RESOURCES.METRICS.CREATE_ANY) || req.user!.role === 'ADMIN';
+    const canCreateAny = req.user!.permissions.includes(RESOURCES.METRICS.CREATE_ANY);
     const canCreateOwn = req.user!.permissions.includes(RESOURCES.METRICS.CREATE_OWN);
 
     const firstUserId = metrics[0].userId;
