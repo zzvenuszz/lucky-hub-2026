@@ -220,8 +220,11 @@ router.post('/login', async (req: Request, res: Response) => {
     // Gộp và loại bỏ trùng lặp
     const effectivePermissions = [...new Set([...userSpecific, ...groupPerms])];
 
+    // Xóa role khỏi response - hoàn toàn dùng group-based
+    const { role, ...userWithoutRole } = u;
+
     res.json({
-      ...u,
+      ...userWithoutRole,
       id: user._id,
       email: user.email,
       sessionId,

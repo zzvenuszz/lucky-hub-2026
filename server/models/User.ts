@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { UserRole, AccountStatus } from '../../types.ts';
+import { AccountStatus } from '../../types.ts';
 
 const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -12,7 +12,6 @@ const UserSchema = new mongoose.Schema({
   weight: { type: Number, default: 0 },
   gender: { type: String, default: 'Nam' },
   healthGoals: { type: [String], default: [] },
-  role: { type: String, enum: Object.values(UserRole), default: UserRole.MEMBER },
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
   permissions: { type: [String], default: [] },
   avatar: String,

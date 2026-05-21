@@ -27,6 +27,8 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [newGroup, setNewGroup] = useState({ name: '', ownerId: '', address: '' });
 
+  const [coachIds, setCoachIds] = useState<string[]>([]);
+
   const loadGroups = useCallback(async () => {
     try {
       const data = await Database.getAllNutritionGroups();
@@ -36,7 +38,21 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
     }
   }, []);
 
-  useEffect(() => { loadGroups(); }, [loadGroups]);
+  // Lấy danh sách user thuộc group HLV
+  const loadCoachIds = useCallback(async () => {
+    try {
+      const allGroups = await Database.getGroups();
+      const hlvGroup = allGroups.find((g: any) => g.name?.toLowerCase() === 'hlv');
+      if (hlvGroup) {
+        const memberIds = (hlvGroup.members || []).map((m: any) => m._id || m);
+        setCoachIds(memberIds);
+      }
+    } catch (err) {
+      console.error('[NutritionGroupManager] Load coach ids error:', err);
+    }
+  }, []);
+
+  useEffect(() => { loadGroups(); loadCoachIds(); }, [loadGroups, loadCoachIds]);
 
   const handleCreate = async () => {
     if (!newGroup.name.trim()) {
@@ -148,7 +164,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
             <input placeholder="Tên NDD *" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} className="px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
             <select value={newGroup.ownerId} onChange={e => setNewGroup({...newGroup, ownerId: e.target.value})} className="px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs">
               <option value="">-- Chọn chủ vận hành --</option>
-              {users.filter(u => u.role === 'COACH').map(u => {
+              {users.filter(u => coachIds.includes(u.id || u._id)).map(u => {
                 const uid = u.id || u._id;
                 return <option key={uid} value={uid}>{u.fullName} (@{u.username})</option>;
               })}
@@ -288,7 +304,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
                   const owner = users.find(u => (u.id || u._id) === e.target.value);
                   setEditingGroup({...editingGroup, ownerId: e.target.value, ownerName: owner?.fullName || ''});
                 }} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs mt-1">
-                  {users.filter(u => u.role === 'COACH').map(u => {
+                  {users.filter(u => coachIds.includes(u.id || u._id)).map(u => {
                     const uid = u.id || u._id;
                     return <option key={uid} value={uid} selected={uid === editingGroup.ownerId}>{u.fullName}</option>;
                   })}

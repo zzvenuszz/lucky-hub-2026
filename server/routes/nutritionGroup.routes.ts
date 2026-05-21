@@ -5,6 +5,7 @@ import { authMiddleware, optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { UserRole } from '../../types.ts';
+import { Group } from '../models/Group.ts';
 
 const router = Router();
 
@@ -110,11 +111,11 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
       return res.status(400).json({ message: 'Tên NDD đã tồn tại' });
     }
 
-    // Kiểm tra owner phải là COACH
+    // Kiểm tra owner phải thuộc group HLV
     if (ownerId) {
-      const ownerUser = await User.findById(ownerId);
-      if (!ownerUser || ownerUser.role !== UserRole.COACH) {
-        return res.status(400).json({ message: 'Chủ vận hành phải là HLV (COACH)' });
+      const isHlv = await isUserInGroup(ownerId, 'HLV');
+      if (!isHlv) {
+        return res.status(400).json({ message: 'Chủ vận hành phải thuộc nhóm HLV' });
       }
     }
 
@@ -137,6 +138,17 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
   }
 });
 
+// Helper: kiểm tra user có trong group không
+async function isUserInGroup(userId: string, groupName: string): Promise<boolean> {
+  try {
+    const group = await Group.findOne({ name: { $regex: new RegExp(`^${groupName}$`, 'i') }, isActive: true });
+    if (!group) return false;
+    return group.members?.some((m: any) => m.toString() === userId) ?? false;
+  } catch {
+    return false;
+  }
+}
+
 // POST /api/nutrition-groups/:id/co-owners - Thêm/bớt đồng vận hành (owner hoặc admin)
 router.post('/:id/co-owners', async (req: Request, res: Response) => {
   try {
@@ -151,12 +163,12 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Chỉ chủ vận hành mới có quyền này' });
     }
 
-    // Validate tất cả đều là COACH
+    // Validate tất cả đều thuộc group HLV
     if (coOwnerIds && Array.isArray(coOwnerIds)) {
       for (const id of coOwnerIds) {
-        const user = await User.findById(id);
-        if (!user || user.role !== UserRole.COACH) {
-          return res.status(400).json({ message: 'Người đồng vận hành phải là HLV (COACH)' });
+        const isHlv = await isUserInGroup(id, 'HLV');
+        if (!isHlv) {
+          return res.status(400).json({ message: 'Người đồng vận hành phải thuộc nhóm HLV' });
         }
       }
       group.coOwners = coOwnerIds;
@@ -164,7 +176,7 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
 
     await group.save();
     const populated = await NutritionGroup.findById(group._id)
-      .populate('coOwners', 'fullName username role');
+      .populate('coOwners', 'fullName username');
     res.json({ coOwners: populated?.coOwners || [] });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -193,11 +205,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Chỉ admin hoặc chủ vận hành mới được đổi chủ' });
     }
 
-    // Kiểm tra owner mới phải là COACH
+    // Kiểm tra owner mới phải thuộc group HLV
     if (ownerId) {
-      const ownerUser = await User.findById(ownerId);
-      if (!ownerUser || ownerUser.role !== UserRole.COACH) {
-        return res.status(400).json({ message: 'Chủ vận hành phải là HLV (COACH)' });
+      const isHlv = await isUserInGroup(ownerId, 'HLV');
+      if (!isHlv) {
+        return res.status(400).json({ message: 'Chủ vận hành phải thuộc nhóm HLV' });
       }
     }
 

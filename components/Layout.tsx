@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { User, UserRole } from '../types.ts';
+import { User } from '../types.ts';
+import { hasGroup } from '../utils/permissions.ts';
 import BadgeDisplay from './system/BadgeDisplay.tsx';
 
 interface LayoutProps {
@@ -69,7 +70,9 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
                 <span className="text-sm font-black text-slate-800">{user.fullName}</span>
                 <BadgeDisplay badgeIds={user.badges} />
               </div>
-              <div className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">{user.role}</div>
+              <div className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">
+                {(user as any).userGroups?.map((g: any) => g.name).join(', ') || 'Hội viên'}
+              </div>
             </div>
             
             <div className="relative" ref={menuRef}>
@@ -97,12 +100,12 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
                     <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
                       <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
                     </button>
-              {user.role === UserRole.COACH && (
+              {hasGroup(user, 'HLV') && (
                 <button onClick={() => handleMenuClick('ndd')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 transition-all text-sm font-bold group">
                   <span className="text-lg group-hover:scale-110 transition-transform">🏥</span> Quản lý NDD
                 </button>
               )}
-              {user.role === UserRole.ADMIN && (
+              {hasGroup(user, 'Admin') && (
                 <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
                   <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Quản trị Lucky Hub
                 </button>
