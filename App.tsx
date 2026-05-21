@@ -13,6 +13,7 @@ import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
 import AuthContainer from './components/auth/AuthContainer.tsx';
 import SystemLog from './components/system/SystemLog.tsx';
+import SystemNDDOverview from './components/admin/nutrition/SystemNDDOverview.tsx';
 import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
 import CoachDashboard from './components/coach/CoachDashboard.tsx';
@@ -517,6 +518,7 @@ const App: React.FC = () => {
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
         {activeTab === 'coach' && (currentUser as any).permissions?.includes('coach:access') && <CoachDashboard currentUser={currentUser!} />}
         {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} />}
+        {activeTab === 'systemndd' && <SystemNDDOverview />}
         
         {/* ChatSystem UI - chỉ hiển thị khung chat khi mở */}
         {isChatOpen && <ChatSystem currentUser={currentUser!} onClose={() => setIsChatOpen(false)} />}

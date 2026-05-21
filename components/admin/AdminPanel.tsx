@@ -108,7 +108,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'systemndd' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">🌐</span>
-            Hệ thống NDD
+            Nhánh NDD
           </button>
           <button 
             onClick={() => {

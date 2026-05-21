@@ -61,13 +61,17 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
   const roleInfo = useMemo(() => getRoleInfo(user.role), [user.role]);
 
   const availableNavItems = useMemo(() => {
-    const items = NAV_ITEMS.filter(item => {
+    const items = [
+      ...NAV_ITEMS,
+      ...((user as any).isNddManager ? [{ id: 'ndd', label: '🏥', text: 'NDD' }] : []),
+      ...((user as any).permissions?.includes('ndd:system') ? [{ id: 'systemndd', label: '🌐', text: 'Nhánh NDD' }] : []),
+    ];
+    return items.filter(item => {
       if (item.id === 'coach') {
         return (user as any).permissions?.includes('coach:access');
       }
       return true;
     });
-    return items;
   }, [user]);
 
   console.log(`[Layout] Render: user=${user.fullName}, role=${user.role}, activeTab=${activeTab}`);
@@ -136,6 +140,16 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
                     <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
                       <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
                     </button>
+                    {(user as any).isNddManager && (
+                      <button onClick={() => handleMenuClick('ndd')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 transition-all text-sm font-bold group">
+                        <span className="text-lg group-hover:scale-110 transition-transform">🏥</span> Quản lý NDD
+                      </button>
+                    )}
+                    {(user as any).permissions?.includes('ndd:system') && (
+                      <button onClick={() => handleMenuClick('systemndd')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-indigo-600 hover:bg-indigo-50 transition-all text-sm font-bold group">
+                        <span className="text-lg group-hover:scale-110 transition-transform">🌐</span> Nhánh NDD
+                      </button>
+                    )}
                     {(user as any).permissions?.includes('admin:panel') && (
                       <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
                         <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Admin Panel

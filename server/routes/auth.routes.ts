@@ -220,6 +220,24 @@ router.post('/login', async (req: Request, res: Response) => {
     // Gộp và loại bỏ trùng lặp
     const effectivePermissions = [...new Set([...userSpecific, ...groupPerms])];
 
+    // Kiểm tra user có thuộc group "HLV" và là owner/co-owner của NDD
+    const isHlvGroup = userGroupInfo.some((g: any) => g.name?.toLowerCase() === 'hlv');
+    let isNddManager = false;
+    if (isHlvGroup) {
+      try {
+        const nddCount = await NutritionGroup.countDocuments({
+          $or: [
+            { ownerId: user._id },
+            { coOwners: user._id }
+          ],
+          isActive: true
+        });
+        isNddManager = nddCount > 0;
+      } catch (nddErr: any) {
+        console.warn(`[Auth] Could not check NDD ownership:`, nddErr.message);
+      }
+    }
+
     // Xóa role khỏi response - hoàn toàn dùng group-based
     const { role, ...userWithoutRole } = u;
 
@@ -230,6 +248,7 @@ router.post('/login', async (req: Request, res: Response) => {
       sessionId,
       permissions: effectivePermissions,
       userGroups: userGroupInfo,
+      isNddManager,
       invalidatedOldSessions: invalidatedCount
     });
   } catch (err) {

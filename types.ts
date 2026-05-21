@@ -210,6 +210,7 @@ export interface User {
   avatar?: string;
   isPasswordEncrypted?: boolean; 
   badges: string[];
+  isNddManager?: boolean;
   nutritionGroupId?: string;
   nutritionGroupName?: string;
   pendingNutritionGroupId?: string;
