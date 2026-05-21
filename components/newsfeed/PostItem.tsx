@@ -1,7 +1,8 @@
 import React, { memo, useState, useCallback } from 'react';
-import { Post, User, UserRole } from '../../types.ts';
+import { Post, User, UserRole, Comment } from '../../types.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import { formatTimeAgo } from '../../utils/formatters.ts';
+import CommentSection from './CommentSection.tsx';
 
 interface PostItemProps {
   post: Post;
@@ -14,6 +15,8 @@ interface PostItemProps {
   setShowReactions: (id: string | null) => void;
   reactionTypes: any[];
   onHashtagClick?: (hashtag: string) => void;
+  onViewDetail?: (postId: string) => void;
+  users?: User[];
 }
 
 interface ReactionDetail {

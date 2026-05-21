@@ -219,6 +219,59 @@ export function initChatWebSocket(wss: WebSocketServer) {
             break;
           }
 
+          case 'comment:new': {
+            const { postId, targetUserId, actorId, actorName, commentId, parentId } = payload;
+            if (targetUserId && targetUserId !== userId) {
+              const type = parentId ? 'reply' : 'comment';
+              const msg = parentId 
+                ? `${actorName} đã trả lời bình luận của bạn.`
+                : `${actorName} đã bình luận về bài viết của bạn.`;
+              sendToUser(targetUserId, { 
+                event: 'notification:new', 
+                payload: { type, message: msg, link: `/posts/${postId}`, timestamp: new Date().toISOString(), referenceId: postId, actorId, actorName } 
+              });
+            }
+            break;
+          }
+
+          case 'tag:new': {
+            const { postId, targetUserId, actorName, context } = payload;
+            if (targetUserId && targetUserId !== userId) {
+              const msg = `${actorName} đã tag bạn trong ${context || 'một bài viết'}.`;
+              sendToUser(targetUserId, { 
+                event: 'notification:new', 
+                payload: { type: 'tag', message: msg, link: `/posts/${postId}`, timestamp: new Date().toISOString(), referenceId: postId, actorId: userId, actorName } 
+              });
+            }
+            break;
+          }
+
+          case 'goal:completed': {
+            const { targetUserId, goalType } = payload;
+            if (targetUserId) {
+              const msg = `🎉 Chúc mừng! Bạn đã hoàn thành mục tiêu "${goalType}"!`;
+              sendToUser(targetUserId, { 
+                event: 'notification:new', 
+                payload: { type: 'goal_completed', message: msg, link: '/goals', timestamp: new Date().toISOString() } 
+              });
+            }
+            break;
+          }
+
+          case 'goal:reminder': {
+            const { targetUserId, goalType, daysLeft } = payload;
+            if (targetUserId) {
+              const msg = daysLeft > 0
+                ? `⏰ Còn ${daysLeft} ngày để hoàn thành mục tiêu "${goalType}"!`
+                : `⚠️ Mục tiêu "${goalType}" đã quá hạn! Hãy cập nhật ngay.`;
+              sendToUser(targetUserId, { 
+                event: 'notification:new', 
+                payload: { type: 'goal_reminder', message: msg, link: '/goals', timestamp: new Date().toISOString() } 
+              });
+            }
+            break;
+          }
+
           case 'notification:send': {
             const { targetUserId, type, message, link } = payload;
             const notif = new Notification({ userId: targetUserId, type, message, link, read: false });

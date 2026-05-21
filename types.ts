@@ -76,6 +76,17 @@ export enum WsEvent {
   METRIC_UPDATED = 'metric:updated',
   // Session events
   SESSION_INVALIDATED = 'session:invalidated',
+  // Comment events
+  COMMENT_NEW = 'comment:new',
+  COMMENT_REPLY = 'comment:reply',
+  COMMENT_REACTION = 'comment:reaction',
+  // Tag events
+  TAG_NEW = 'tag:new',
+  // Goal events
+  GOAL_COMPLETED = 'goal:completed',
+  GOAL_REMINDER = 'goal:reminder',
+  // Chat Group events
+  CHAT_GROUP_MESSAGE = 'chatGroup:message',
 }
 
 export interface GeminiKey {
@@ -122,6 +133,30 @@ export interface PostReaction {
   count: number; 
 }
 
+export interface TaggedUser {
+  userId: string;
+  userName: string;
+}
+
+export interface CommentReaction {
+  userId: string;
+  type: string;
+}
+
+export interface Comment {
+  id: string;
+  postId: string;
+  userId: string;
+  userFullName: string;
+  userAvatar?: string;
+  content: string;
+  timestamp: string;
+  editedAt?: string;
+  parentId?: string | null;
+  taggedUsers?: TaggedUser[];
+  reactions?: CommentReaction[];
+}
+
 export interface Post {
   id: string;
   _id?: string;
@@ -135,6 +170,8 @@ export interface Post {
   timestamp: string;
   reactions?: PostReaction[];
   hashtags?: string[];
+  comments?: Comment[];
+  commentCount?: number;
 }
 
 export interface HealthMetric {
@@ -173,6 +210,10 @@ export interface User {
   avatar?: string;
   isPasswordEncrypted?: boolean; 
   badges: string[];
+  nutritionGroupId?: string;
+  nutritionGroupName?: string;
+  pendingNutritionGroupId?: string;
+  userGroups?: { id: string; name: string }[];
 }
 
 export interface MessageReaction {
@@ -219,6 +260,27 @@ export interface ChatSession {
   lastReadBy?: Record<string, string>; // userId -> lastReadMessageId
 }
 
+export interface ChatGroupMessage {
+  id: string;
+  groupId: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  timestamp: string;
+  type: MessageType;
+}
+
+export interface ChatGroup {
+  id: string;
+  name: string;
+  nutritionGroupIds: string[];
+  memberIds: string[];
+  createdBy: string;
+  isActive: boolean;
+  messages: ChatGroupMessage[];
+  lastMessage?: { content: string; senderName: string; timestamp: string };
+}
+
 export interface AIKnowledge {
   id: string;
   keyword: string;
@@ -237,3 +299,22 @@ export interface WsMessage {
   timestamp: string;
   fromUserId: string;
 }
+
+export interface NutritionGroup {
+  id: string;
+  _id?: string;
+  name: string;
+  ownerId: string;
+  ownerName: string;
+  address: string;
+  members: string[];
+  isActive: boolean;
+  pendingMembers: {
+    userId: string;
+    userName?: string;
+    fromNutritionGroupId: string;
+    requestedAt: string;
+  }[];
+}
+
+export type NotificationType = 'reaction' | 'comment' | 'reply' | 'tag' | 'message' | 'metric_help' | 'badge' | 'system' | 'goal_completed' | 'goal_reminder';

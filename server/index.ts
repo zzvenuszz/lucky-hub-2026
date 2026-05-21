@@ -31,6 +31,8 @@ import ruleRoutes from './routes/rule.routes.ts';
 import groupRoutes from './routes/group.routes.ts';
 import aiRoutes from './routes/ai.routes.ts';
 import mirrorRoutes from './routes/mirror.routes.ts';
+import nutritionGroupRoutes from './routes/nutritionGroup.routes.ts';
+import chatGroupRoutes from './routes/chatGroup.routes.ts';
 
 // Services
 import { discoverAvailableModels } from './services/aiService.ts';
@@ -115,6 +117,12 @@ app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/rules', ruleRoutes);
 app.use('/api/admin/groups', groupRoutes);
 app.use('/api/ai', aiRoutes);
+
+// Nutrition Group routes
+app.use('/api/nutrition-groups', nutritionGroupRoutes);
+
+// Chat Group routes
+app.use('/api/chat-groups', chatGroupRoutes);
 
 // Magic Mirror routes - KHÔNG auth
 app.use('/MM', mirrorRoutes);

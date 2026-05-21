@@ -1,6 +1,6 @@
 
-import React, { useState, memo } from 'react';
-import { HealthGoal } from '../../types.ts';
+import React, { useState, useEffect, memo } from 'react';
+import { HealthGoal, NutritionGroup } from '../../types.ts';
 
 interface RegisterProps {
   onRegister: (data: any) => void;
@@ -14,10 +14,35 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchLogin, isLoadin
   const [regData, setRegData] = useState({
     username: '', email: '', password: '', fullName: '', phoneNumber: '',
     birthDate: '', height: 170, weight: 65,
-    gender: 'Nam' as 'Nam'|'Nữ', healthGoals: [] as HealthGoal[]
+    gender: 'Nam' as 'Nam'|'Nữ', healthGoals: [] as HealthGoal[],
+    nutritionGroupId: ''
   });
+  const [nutritionGroups, setNutritionGroups] = useState<NutritionGroup[]>([]);
   const [showPass, setShowPass] = useState(false);
   const [step, setStep] = useState(1);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+
+  // Fetch NDD list for registration
+  useEffect(() => {
+    const fetchGroups = async () => {
+      setLoadingGroups(true);
+      try {
+        const sessionId = localStorage.getItem('lucky_hub_session');
+        const resp = await fetch('/api/nutrition-groups', {
+          headers: sessionId ? { 'Authorization': `Bearer ${sessionId}` } : {}
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          setNutritionGroups(data || []);
+        }
+      } catch (err) {
+        console.error('[Register] Failed to load nutrition groups:', err);
+      } finally {
+        setLoadingGroups(false);
+      }
+    };
+    fetchGroups();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,6 +135,35 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchLogin, isLoadin
                 </label>
               ))}
             </div>
+          </div>
+
+          {/* Nutrition Group Selection */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Nhóm Dinh Dưỡng (NDD)</label>
+            <select
+              value={regData.nutritionGroupId}
+              onChange={e => setRegData({...regData, nutritionGroupId: e.target.value})}
+              className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner"
+              disabled={loadingGroups}
+            >
+              <option value="">-- Chọn NDD của bạn --</option>
+              {nutritionGroups.map(g => {
+                const gid = (g as any).id || (g as any)._id;
+                return (
+                  <option key={gid} value={gid}>
+                    {g.name} - {g.address} ({g.memberCount || 0} hội viên)
+                  </option>
+                );
+              })}
+              {nutritionGroups.length === 0 && !loadingGroups && (
+                <option value="" disabled>Chưa có NDD nào. Vui lòng liên hệ Admin.</option>
+              )}
+            </select>
+            {regData.nutritionGroupId && (
+              <p className="text-[9px] text-emerald-600 font-bold ml-1">
+                ✅ Bạn sẽ được thêm vào NDD này sau khi đăng ký
+              </p>
+            )}
           </div>
 
           <div className="flex gap-4">

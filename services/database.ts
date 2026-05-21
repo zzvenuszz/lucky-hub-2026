@@ -136,6 +136,38 @@ export const Database = {
   toggleGeminiKey: (id: string, isActive: boolean) => request(`${API_BASE}/admin/gemini-keys/${id}/toggle`, 'PUT', { isActive }),
   checkKeyHealth: (key: string) => request<{ status: string }>(`${API_BASE}/admin/gemini-keys/check`, 'POST', { key }),
 
+  // Nutrition Groups (NDD)
+  getNutritionGroups: async () => (await request<any[]>(`${API_BASE}/nutrition-groups`)) ?? [],
+  getMyNutritionGroup: async () => (await request<{ group: any, pendingGroup: any }>(`${API_BASE}/nutrition-groups/mine`)) ?? { group: null, pendingGroup: null },
+  getAllNutritionGroups: async () => (await request<any[]>(`${API_BASE}/nutrition-groups/all`)) ?? [],
+  createNutritionGroup: (data: { name: string, ownerId?: string, ownerName?: string, address?: string }) => request<any>(`${API_BASE}/nutrition-groups`, 'POST', data),
+  updateNutritionGroup: (id: string, data: any) => request<any>(`${API_BASE}/nutrition-groups/${id}`, 'PUT', data),
+  deleteNutritionGroup: (id: string) => request(`${API_BASE}/nutrition-groups/${id}`, 'DELETE'),
+  joinNutritionGroup: (id: string) => request<any>(`${API_BASE}/nutrition-groups/${id}/join-request`, 'POST'),
+  cancelNutritionGroupRequest: (id: string) => request<any>(`${API_BASE}/nutrition-groups/${id}/cancel-request`, 'POST'),
+  approveNutritionGroupMember: (groupId: string, userId: string) => request<any>(`${API_BASE}/nutrition-groups/${groupId}/approve/${userId}`, 'POST'),
+  rejectNutritionGroupMember: (groupId: string, userId: string) => request<any>(`${API_BASE}/nutrition-groups/${groupId}/reject/${userId}`, 'POST'),
+  removeNutritionGroupMember: (groupId: string, userId: string) => request<any>(`${API_BASE}/nutrition-groups/${groupId}/remove-member/${userId}`, 'POST'),
+
+  // Chat Groups
+  getChatGroups: async () => (await request<any[]>(`${API_BASE}/chat-groups`)) ?? [],
+  getAllChatGroups: async () => (await request<any[]>(`${API_BASE}/chat-groups/all`)) ?? [],
+  createChatGroup: (data: { name: string, nutritionGroupIds?: string[], memberIds?: string[] }) => request<any>(`${API_BASE}/chat-groups`, 'POST', data),
+  updateChatGroup: (id: string, data: any) => request<any>(`${API_BASE}/chat-groups/${id}`, 'PUT', data),
+  deleteChatGroup: (id: string) => request(`${API_BASE}/chat-groups/${id}`, 'DELETE'),
+  getChatGroupMessages: (id: string) => request<{ groupName: string, messages: any[] }>(`${API_BASE}/chat-groups/${id}/messages`),
+  sendChatGroupMessage: (id: string, content: string) => request<any>(`${API_BASE}/chat-groups/${id}/message`, 'POST', { content }),
+
+  // Comments
+  addComment: (postId: string, data: { content: string, parentId?: string | null, taggedUsers?: { userId: string, userName: string }[] }) => request<any>(`${API_BASE}/posts/${postId}/comments`, 'POST', data),
+  editComment: (postId: string, commentId: string, content: string) => request<any>(`${API_BASE}/posts/${postId}/comments/${commentId}`, 'PUT', { content }),
+  deleteComment: (postId: string, commentId: string) => request(`${API_BASE}/posts/${postId}/comments/${commentId}`, 'DELETE'),
+  reactToComment: (postId: string, commentId: string, type: string) => request<{ reactions: any[] }>(`${API_BASE}/posts/${postId}/comments/${commentId}/react`, 'POST', { type }),
+
+  // Goal Reminders
+  checkGoalReminders: (userId: string) => request<{ reminders: any[] }>(`${API_BASE}/goals/check-reminders/${userId}`, 'POST'),
+  notifyGoalCompleted: (goalId: string) => request<any>(`${API_BASE}/goals/${goalId}/notify-completed`, 'POST'),
+
   // Groups Management
   getGroups: async () => (await request<any[]>(`${API_BASE}/admin/groups`)) ?? [],
   createGroup: (data: { name: string, description?: string, permissions?: string[] }) => 

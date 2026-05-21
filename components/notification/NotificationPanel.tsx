@@ -2,11 +2,14 @@ import React, { memo } from 'react';
 
 export interface NotificationItem {
   id: string;
-  type: 'reaction' | 'message' | 'metric_help' | 'badge' | 'system';
+  type: 'reaction' | 'comment' | 'reply' | 'tag' | 'message' | 'metric_help' | 'badge' | 'system' | 'goal_completed' | 'goal_reminder';
   message: string;
   timestamp: string;
   read: boolean;
   link?: string;
+  referenceId?: string;
+  actorId?: string;
+  actorName?: string;
 }
 
 interface NotificationPanelProps {
@@ -36,10 +39,15 @@ const NotificationPanel: React.FC<NotificationPanelProps> = memo(({
   const getIcon = (type: string) => {
     switch (type) {
       case 'reaction': return '❤️';
-      case 'message': return '💬';
+      case 'comment': return '💬';
+      case 'reply': return '↩️';
+      case 'tag': return '@';
+      case 'message': return '📩';
       case 'metric_help': return '📊';
       case 'badge': return '🏆';
       case 'system': return '🔔';
+      case 'goal_completed': return '🎉';
+      case 'goal_reminder': return '⏰';
       default: return '📌';
     }
   };

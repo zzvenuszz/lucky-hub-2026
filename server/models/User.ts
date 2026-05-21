@@ -22,6 +22,8 @@ const UserSchema = new mongoose.Schema({
   isEmailVerified: { type: Boolean, default: false },
   emailVerificationToken: String,
   emailVerificationExpires: Date,
+  nutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
+  pendingNutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);

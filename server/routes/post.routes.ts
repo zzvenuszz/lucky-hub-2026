@@ -205,6 +205,181 @@ router.delete('/:postId/react', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/posts/:postId - Get post detail with comments
+router.get('/:postId', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const post = await Post.findById(req.params.postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+    res.json({ ...post.toObject(), id: post._id });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ===== COMMENT ROUTES =====
+
+// POST /api/posts/:postId/comments - Add comment
+router.post('/:postId/comments', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { postId } = req.params;
+    const { content, parentId, taggedUsers } = req.body;
+
+    if (!content?.trim()) return res.status(400).json({ message: 'Nội dung bình luận là bắt buộc' });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const commentId = `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const newComment = {
+      _id: commentId,
+      userId: req.user!.userId,
+      userFullName: req.user!.fullName,
+      userAvatar: req.user!.avatar || '',
+      content: content.trim(),
+      timestamp: new Date().toISOString(),
+      parentId: parentId || null,
+      taggedUsers: taggedUsers || [],
+      reactions: [],
+    };
+
+    post.comments!.push(newComment as any);
+    post.commentCount = (post.commentCount || 0) + 1;
+    await post.save();
+
+    // Notification cho chủ bài viết
+    if (post.userId && post.userId !== req.user!.userId) {
+      const notif = new Notification({
+        userId: post.userId, type: 'comment',
+        message: `${req.user!.fullName} đã bình luận về bài viết của bạn.`,
+        link: `/posts/${postId}`,
+        referenceId: postId,
+        actorId: req.user!.userId,
+        actorName: req.user!.fullName,
+      });
+      await notif.save();
+    }
+
+    // Notification cho tagged users
+    if (taggedUsers?.length) {
+      for (const tag of taggedUsers) {
+        if (tag.userId !== req.user!.userId) {
+          const notif = new Notification({
+            userId: tag.userId, type: 'tag',
+            message: `${req.user!.fullName} đã tag bạn trong một bình luận.`,
+            link: `/posts/${postId}`,
+            referenceId: postId,
+            actorId: req.user!.userId,
+            actorName: req.user!.fullName,
+          });
+          await notif.save();
+        }
+      }
+    }
+
+    // Notification nếu là reply
+    if (parentId) {
+      const parentComment = post.comments?.find((c: any) => c._id === parentId);
+      if (parentComment && parentComment.userId !== req.user!.userId) {
+        const notif = new Notification({
+          userId: parentComment.userId, type: 'reply',
+          message: `${req.user!.fullName} đã trả lời bình luận của bạn.`,
+          link: `/posts/${postId}`,
+          referenceId: postId,
+          actorId: req.user!.userId,
+          actorName: req.user!.fullName,
+        });
+        await notif.save();
+      }
+    }
+
+    console.log(`[Comment] ✅ ${parentId ? 'Reply' : 'Comment'} by ${req.user?.fullName} on post ${postId}`);
+    res.json(newComment);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/posts/:postId/comments/:commentId - Edit comment
+router.put('/:postId/comments/:commentId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ message: 'Nội dung bình luận là bắt buộc' });
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const comment = (post.comments as any)?.find((c: any) => c._id === commentId);
+    if (!comment) return res.status(404).json({ message: 'Comment not found' });
+
+    if (comment.userId !== req.user!.userId && !req.user!.permissions.includes(RESOURCES.POSTS.UPDATE_ANY)) {
+      return res.status(403).json({ message: 'Bạn không có quyền sửa bình luận này' });
+    }
+
+    comment.content = content.trim();
+    comment.editedAt = new Date().toISOString();
+    await post.save();
+
+    res.json(comment);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/posts/:postId/comments/:commentId - Delete comment
+router.delete('/:postId/comments/:commentId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { postId, commentId } = req.params;
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const commentIndex = (post.comments as any)?.findIndex((c: any) => c._id === commentId);
+    if (commentIndex === -1 || commentIndex === undefined) return res.status(404).json({ message: 'Comment not found' });
+
+    const comment = post.comments![commentIndex];
+    if (comment.userId !== req.user!.userId && !req.user!.permissions.includes(RESOURCES.POSTS.DELETE_ANY)) {
+      return res.status(403).json({ message: 'Bạn không có quyền xóa bình luận này' });
+    }
+
+    post.comments!.splice(commentIndex, 1);
+    post.commentCount = Math.max(0, (post.commentCount || 1) - 1);
+    await post.save();
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/posts/:postId/comments/:commentId/react - Reaction comment
+router.post('/:postId/comments/:commentId/react', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const { postId, commentId } = req.params;
+    const { type } = req.body;
+
+    const post = await Post.findById(postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const comment = (post.comments as any)?.find((c: any) => c._id === commentId);
+    if (!comment) return res.status(404).json({ message: 'Comment not found' });
+
+    if (!Array.isArray(comment.reactions)) comment.reactions = [];
+
+    const existingIdx = comment.reactions.findIndex((r: any) => r.userId === req.user!.userId && r.type === type);
+    if (existingIdx >= 0) {
+      comment.reactions.splice(existingIdx, 1);
+    } else {
+      comment.reactions.push({ userId: req.user!.userId, type });
+    }
+
+    await post.save();
+    res.json({ reactions: comment.reactions });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET /api/hashtags - Popular hashtags
 router.get('/hashtags/all', async (req: Request, res: Response) => {
   try {

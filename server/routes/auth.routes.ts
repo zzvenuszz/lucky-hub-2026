@@ -10,6 +10,7 @@ import { cryptoUtils } from '../../src/utils/cryptoUtils.ts';
 import { uploadToImgBB } from '../utils/imageUtils.ts';
 import { validateBody, sanitizeText } from '../../services/validationService.ts';
 import { Group } from '../models/Group.ts';
+import { NutritionGroup } from '../models/NutritionGroup.ts';
 
 const router = Router();
 
@@ -60,6 +61,7 @@ router.post('/register', validateBody(
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     // User mới không có permissions mặc định — sẽ được gán qua group
+    const nutritionGroupId = rest.nutritionGroupId || null;
     const newUser = new User({
       ...rest,
       username: username.toLowerCase().trim(),
@@ -73,8 +75,25 @@ router.post('/register', validateBody(
       emailVerificationToken: verificationToken,
       emailVerificationExpires: verificationExpires,
       permissions: [],
+      nutritionGroupId,
     });
     await newUser.save();
+
+    // Tự động thêm user vào NDD nếu có chọn
+    if (nutritionGroupId) {
+      try {
+        const ndd = await NutritionGroup.findById(nutritionGroupId);
+        if (ndd && ndd.isActive) {
+          if (!ndd.members.includes(newUser._id)) {
+            ndd.members.push(newUser._id);
+            await ndd.save();
+            console.log(`[Auth] ✅ User @${newUser.username} added to NDD "${ndd.name}"`);
+          }
+        }
+      } catch (nddErr: any) {
+        console.warn(`[Auth] Could not add to NDD:`, nddErr.message);
+      }
+    }
 
     // Tự động gán user vào nhóm mặc định (nếu có)
     try {

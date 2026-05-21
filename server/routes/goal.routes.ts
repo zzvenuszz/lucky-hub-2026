@@ -55,6 +55,69 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/goals/check-reminders/:userId - Kiểm tra và gửi reminder
+router.post('/check-reminders/:userId', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const now = new Date();
+    const goals = await Goal.find({ userId, status: 'active' });
+    const reminders: any[] = [];
+
+    for (const goal of goals) {
+      const targetDate = new Date(goal.targetDate);
+      const diffDays = Math.ceil((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Gửi reminder khi còn 3 ngày, 1 ngày
+      if (diffDays === 3 || diffDays === 1) {
+        reminders.push({
+          goalId: goal._id,
+          type: goal.type,
+          daysLeft: diffDays,
+          progress: goal.progress,
+        });
+      }
+
+      // Kiểm tra nếu đã quá hạn và chưa hoàn thành
+      if (diffDays < 0 && goal.progress < 100) {
+        reminders.push({
+          goalId: goal._id,
+          type: goal.type,
+          daysLeft: diffDays,
+          overdue: true,
+          progress: goal.progress,
+        });
+      }
+    }
+
+    res.json({ reminders });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/goals/:goalId/notify-completed - Thông báo hoàn thành goal
+router.post('/:goalId/notify-completed', async (req: Request, res: Response) => {
+  try {
+    const { goalId } = req.params;
+    const goal = await Goal.findById(goalId);
+    if (!goal) return res.status(404).json({ message: 'Goal not found' });
+
+    if (goal.status !== 'completed') return res.json({ message: 'Goal chưa hoàn thành' });
+
+    const notif = new Notification({
+      userId: goal.userId, type: 'goal_completed',
+      message: `🎉 Chúc mừng! Bạn đã hoàn thành mục tiêu "${goal.type}"!`,
+      link: '/goals',
+      referenceId: goal._id.toString(),
+    });
+    await notif.save();
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/goals/recalculate/:userId
 router.post('/recalculate/:userId', async (req: Request, res: Response) => {
   try {

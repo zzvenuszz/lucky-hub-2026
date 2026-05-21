@@ -131,18 +131,37 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         
         const allChats = preloadedChats.length > 0 ? preloadedChats : (await Database.getChats() || []);
         
-        // Build contact list based on user role
+        // Build contact list based on user role + NDD
         // - ADMIN: thấy tất cả users
-        // - COACH: thấy tất cả users
-        // - MEMBER: chỉ thấy ADMIN + COACH (không thấy MEMBER khác)
+        // - COACH: thấy tất cả users (coaches are NDD owners)
+        // - MEMBER: chỉ thấy ADMIN + người trong cùng NDD (coach hoặc member khác)
+        const userNutritionGroup = (currentUser as any).nutritionGroupId;
+        
         const contacts = users.filter(u => {
           const uId = String((u as any).id || (u as any)._id);
           if (uId === currentUid) return false;
-          if (currentUser.role === UserRole.MEMBER) {
-            // MEMBER chỉ thấy ADMIN và COACH
-            return (u as any).role === UserRole.ADMIN || (u as any).role === UserRole.COACH;
-          }
+          
           // ADMIN/COACH thấy tất cả
+          if (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.COACH) {
+            return true;
+          }
+          
+          // MEMBER: chỉ thấy ADMIN + người cùng NDD
+          if (currentUser.role === UserRole.MEMBER) {
+            // Luôn thấy ADMIN
+            if ((u as any).role === UserRole.ADMIN) return true;
+            
+            // MEMBER chỉ thấy người cùng NDD
+            if (userNutritionGroup) {
+              const otherNutritionGroup = (u as any).nutritionGroupId;
+              if (otherNutritionGroup && String(otherNutritionGroup) === String(userNutritionGroup)) {
+                return true;
+              }
+            }
+            
+            return false;
+          }
+          
           return true;
         });
 

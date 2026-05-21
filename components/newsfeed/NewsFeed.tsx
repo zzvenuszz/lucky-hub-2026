@@ -6,9 +6,11 @@ import { compressImage } from '../../utils/imageUtils.ts';
 import PostCreator from './PostCreator.tsx';
 import PostItem from './PostItem.tsx';
 import PostEditor from './PostEditor.tsx';
+import PostDetail from './PostDetail.tsx';
 
 interface NewsFeedProps {
   currentUser: User;
+  users?: User[];
 }
 
 const REACTION_TYPES = [
@@ -18,7 +20,7 @@ const REACTION_TYPES = [
 
 const PER_PAGE = 10;
 
-const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser }) => {
+const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser, users = [] }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);

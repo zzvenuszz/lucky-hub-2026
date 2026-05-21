@@ -197,6 +197,42 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
+  // Goal reminder: kiểm tra mỗi 60 giây
+  useEffect(() => {
+    if (!currentUser) return;
+    const uid = (currentUser as any).id || (currentUser as any)._id;
+
+    const checkReminders = async () => {
+      try {
+        const result = await Database.checkGoalReminders(uid);
+        if (result?.reminders?.length > 0) {
+          for (const reminder of result.reminders) {
+            if (reminder.overdue) {
+              wsService.send('goal:reminder', {
+                targetUserId: uid,
+                goalType: reminder.type,
+                daysLeft: reminder.daysLeft,
+              });
+            } else if (reminder.daysLeft === 3 || reminder.daysLeft === 1) {
+              wsService.send('goal:reminder', {
+                targetUserId: uid,
+                goalType: reminder.type,
+                daysLeft: reminder.daysLeft,
+              });
+            }
+          }
+          console.log(`[App] Goal reminders checked: ${result.reminders.length} reminders`);
+        }
+      } catch (err) {
+        // Silent fail
+      }
+    };
+
+    checkReminders();
+    const reminderInterval = setInterval(checkReminders, 60000);
+    return () => clearInterval(reminderInterval);
+  }, [currentUser]);
+
   // Lắng nghe sự kiện session bị vô hiệu hóa từ database.ts
   useEffect(() => {
     const handleSessionInvalidated = (e: Event) => {
@@ -466,7 +502,7 @@ const App: React.FC = () => {
       <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
         <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={() => setIsChatOpen(!isChatOpen)}>
         {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
-        {activeTab === 'community' && <NewsFeed currentUser={currentUser!} />}
+        {activeTab === 'community' && <NewsFeed currentUser={currentUser!} users={users} />}
         {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
         {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { 
           const uid = (currentUser as any).id || (currentUser as any)._id; 

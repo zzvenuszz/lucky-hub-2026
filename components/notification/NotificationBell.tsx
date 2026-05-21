@@ -5,11 +5,13 @@ import { useToast } from '../system/ToastProvider.tsx';
 
 interface NotificationBellProps {
   currentUser: User;
+  onNavigate?: (tab: string, data?: any) => void;
 }
 
 const POLL_INTERVAL = 30000; // Poll mỗi 30 giây
+const SEEN_NOTIFS_KEY = 'lucky_hub_seen_notifications';
 
-const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser }) => {
+const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, onNavigate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -18,6 +20,23 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const { addToast, isMuted, setMuted } = useToast();
   const prevUnreadRef = useRef<number>(0);
+
+  // Lấy danh sách ID đã "seen" (đã hiển thị popup) từ localStorage
+  const getSeenIds = useCallback((): Set<string> => {
+    try {
+      const saved = localStorage.getItem(`${SEEN_NOTIFS_KEY}_${currentUserId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch { return new Set(); }
+  }, [currentUserId]);
+
+  // Lưu ID đã seen
+  const addSeenIds = useCallback((ids: string[]) => {
+    try {
+      const seen = getSeenIds();
+      ids.forEach(id => seen.add(id));
+      localStorage.setItem(`${SEEN_NOTIFS_KEY}_${currentUserId}`, JSON.stringify(Array.from(seen)));
+    } catch { /* ignore */ }
+  }, [currentUserId, getSeenIds]);
 
   // Fetch notifications từ API
   const fetchNotifications = useCallback(async () => {
@@ -31,14 +50,13 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
       if (resp.ok) {
         const data: NotificationItem[] = await resp.json();
         setNotifications(prev => {
-          // Phát hiện notification mới để show popup (nếu không mute)
+          // Fix bug: dùng Set seenIds để tránh popup lại thông báo cũ
           const prevUnread = prevUnreadRef.current;
           const newUnread = data.filter(n => !n.read).length;
+          const seenIds = getSeenIds();
+          
           if (newUnread > prevUnread && !isMuted) {
-            const newNotifs = data.filter(n => !n.read);
-            // So sánh với prev để tìm cái mới
-            const prevIds = new Set(prev.map(n => n.id));
-            const freshNotifs = newNotifs.filter(n => !prevIds.has(n.id));
+            const freshNotifs = data.filter(n => !n.read && !seenIds.has(n.id));
             if (freshNotifs.length > 0) {
               const latest = freshNotifs[freshNotifs.length - 1];
               addToast({
@@ -47,6 +65,8 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
                 message: latest.message?.substring(0, 120),
                 duration: 4000,
               });
+              // Đánh dấu là đã seen
+              addSeenIds(freshNotifs.map(n => n.id));
             }
           }
           prevUnreadRef.current = newUnread;
@@ -59,7 +79,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
     } finally {
       setIsLoading(false);
     }
-  }, [currentUserId, addToast, isMuted]);
+  }, [currentUserId, addToast, isMuted, getSeenIds, addSeenIds]);
 
   // Fetch khi mount + polling định kỳ
   useEffect(() => {
@@ -72,6 +92,19 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
       }
     };
   }, [fetchNotifications]);
+
+  // Listen for real-time notifications via WS
+  useEffect(() => {
+    const handleNewNotif = (e: CustomEvent) => {
+      const detail = e.detail;
+      if (detail && detail.userId === currentUserId) {
+        // Trigger fetch immediately
+        fetchNotifications();
+      }
+    };
+    window.addEventListener('notification:received' as any, handleNewNotif as any);
+    return () => window.removeEventListener('notification:received' as any, handleNewNotif as any);
+  }, [currentUserId, fetchNotifications]);
 
   // Close panel khi click outside
   useEffect(() => {
@@ -118,12 +151,25 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser })
     }
     setIsOpen(false);
 
-    // Navigate nếu có link
+    // Navigate dựa trên type và link
     if (notif.link) {
-      // Có thể trigger tab switch hoặc navigation ở đây
+      // Chuyển đến tab community nếu link là bài viết
+      if (notif.link.startsWith('/posts/')) {
+        // Dispatch event để App.tsx bắt và mở PostDetail
+        window.dispatchEvent(new CustomEvent('navigate:post', { 
+          detail: { postId: notif.link.replace('/posts/', ''), notificationId: notif.id } 
+        }));
+        if (onNavigate) onNavigate('community', { postId: notif.link.replace('/posts/', '') });
+      } else if (notif.link === '/goals') {
+        if (onNavigate) onNavigate('dashboard');
+      } else if (notif.link.startsWith('/chat/')) {
+        if (onNavigate) onNavigate('chat');
+      } else if (notif.link === '/metrics') {
+        if (onNavigate) onNavigate('metrics');
+      }
       console.log('[NotificationBell] Navigate to:', notif.link);
     }
-  }, []);
+  }, [onNavigate]);
 
   const handleClose = useCallback(() => {
     setIsOpen(false);

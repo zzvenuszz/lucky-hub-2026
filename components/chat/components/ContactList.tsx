@@ -3,9 +3,10 @@
  * Sắp xếp: Trợ lý AI → Coach → Người dùng khác
  * Trong cùng nhóm: unread > 0 lên trước → tin nhắn gần nhất
  */
-import React, { memo, useMemo, useState, useCallback } from 'react';
-import { ChatSession } from '../../../types.ts';
+import React, { memo, useMemo, useState, useCallback, useEffect } from 'react';
+import { ChatSession, ChatGroup } from '../../../types.ts';
 import { useChat } from '../ChatProvider.tsx';
+import { Database } from '../../../services/database.ts';
 
 interface ContactListProps {
   onSelectContact?: (chat: ChatSession) => void;
@@ -22,6 +23,21 @@ const getPriority = (chat: ChatSession, other: any): number => {
 const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
   const { chats, selectedChat, selectChat, getOtherUser, onlineUsers, unreadCounts } = useChat();
   const [searchTerm, setSearchTerm] = useState('');
+  const [chatGroups, setChatGroups] = useState<any[]>([]);
+  const [showGroups, setShowGroups] = useState(false);
+
+  // Fetch chat groups
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const data = await Database.getChatGroups();
+        setChatGroups(data || []);
+      } catch (err) {
+        console.error('[ContactList] Failed to load chat groups:', err);
+      }
+    };
+    fetchGroups();
+  }, []);
 
   const handleSelect = useCallback((chat: ChatSession) => {
     selectChat(chat);
@@ -189,6 +205,43 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
           </div>
         );
       })}
+
+      {/* Chat Groups Section */}
+      {chatGroups.length > 0 && (
+        <>
+          <div className="px-4 mb-2 mt-4">
+            <button
+              onClick={() => setShowGroups(!showGroups)}
+              className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 hover:text-slate-600 transition-colors"
+            >
+              👥 Nhóm ({chatGroups.length}) {showGroups ? '▲' : '▼'}
+            </button>
+          </div>
+          {showGroups && chatGroups.map((g: any) => (
+            <div
+              key={g.id || g._id}
+              className="mx-4 mb-2 p-4 rounded-2xl bg-indigo-50 border border-indigo-100 cursor-pointer hover:shadow-md hover:scale-[1.02] transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-sm shrink-0">
+                  👥
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-xs text-indigo-700 truncate">{g.name}</div>
+                  {g.lastMessage && (
+                    <p className="text-[10px] text-indigo-400 mt-0.5 truncate">
+                      {g.lastMessage.senderName}: {g.lastMessage.content?.substring(0, 40)}
+                    </p>
+                  )}
+                  {!g.lastMessage && (
+                    <p className="text-[10px] text-indigo-300 mt-0.5">{g.memberIds?.length || 0} thành viên</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 });
