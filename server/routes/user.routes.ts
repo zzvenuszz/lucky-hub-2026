@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import crypto from 'crypto';
 import { User } from '../models/User.ts';
 import { Metric } from '../models/Metric.ts';
@@ -8,6 +9,7 @@ import { Post } from '../models/Post.ts';
 import { Chat } from '../models/Chat.ts';
 import { ActiveSession } from '../models/ActiveSession.ts';
 import { PasswordResetToken } from '../models/PasswordResetToken.ts';
+import { LoginAttempt } from '../models/LoginAttempt.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { AuditLogType, UserRole } from '../../types.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
@@ -15,6 +17,11 @@ import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { cryptoUtils } from '../../src/utils/cryptoUtils.ts';
 import { uploadToImgBB } from '../utils/imageUtils.ts';
+
+// Import models để đảm bảo chúng được register với Mongoose trước khi dùng mongoose.model()
+import '../models/Group.ts';
+import '../models/NutritionGroup.ts';
+import '../models/NutritionBranch.ts';
 
 const router = Router();
 
@@ -90,10 +97,44 @@ router.delete('/:id',
       await Chat.deleteMany({ coachId: userId });
       await ActiveSession.deleteMany({ userId });
       await PasswordResetToken.deleteMany({ userId });
+      await LoginAttempt.deleteMany({ $or: [{ identifier: user.email }, { identifier: user.username }] });
+
+      // Xóa user khỏi Group hệ thống
+      try {
+        const GroupModel = mongoose.model('Group');
+        await GroupModel.updateMany(
+          { members: userId },
+          { $pull: { members: userId } }
+        );
+      } catch (e: any) {
+        console.error('[UserRoutes] Failed to remove from Group:', e.message);
+      }
+
+      // Xóa user khỏi NutritionGroup (members, coOwners, pendingMembers)
+      try {
+        const NGModel = mongoose.model('NutritionGroup');
+        await NGModel.updateMany(
+          {},
+          { $pull: { members: userId, coOwners: userId, 'pendingMembers': { userId: userId } } }
+        );
+      } catch (e: any) {
+        console.error('[UserRoutes] Failed to remove from NutritionGroup:', e.message);
+      }
+
+      // Xóa userId khỏi NutritionBranch memberIds
+      try {
+        const NBModel = mongoose.model('NutritionBranch');
+        await NBModel.updateMany(
+          {},
+          { $pull: { memberIds: userId } }
+        );
+      } catch (e: any) {
+        console.error('[UserRoutes] Failed to remove from NutritionBranch:', e.message);
+      }
 
       const log = new AuditLog({
-        actorId: req.body.actorId || req.user?.userId || 'admin',
-        actorName: req.body.actorName || req.user?.fullName || 'Admin',
+        actorId: req.user?.userId || 'admin',
+        actorName: req.user?.fullName || 'Admin',
         targetId: userId,
         targetName: user.fullName,
         type: AuditLogType.REGISTER,
@@ -101,10 +142,14 @@ router.delete('/:id',
         timestamp: new Date().toISOString()
       });
       await log.save();
+      console.log(`[UserRoutes] Audit log created for user deletion: ${user.fullName} (${userId})`);
 
       await User.findByIdAndDelete(userId);
+      console.log(`[UserRoutes] ✅ User deleted: @${user.username} (${userId})`);
+
       res.json({ success: true, message: 'Đã xóa người dùng thành công' });
     } catch (err: any) {
+      console.error(`[UserRoutes] Delete error: ${err.message}`);
       res.status(500).json({ message: err.message });
     }
   }

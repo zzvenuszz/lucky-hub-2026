@@ -47,8 +47,8 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/nutrition-groups/all - Tất cả NDD (admin only)
-router.get('/all', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request, res: Response) => {
+// GET /api/nutrition-groups/all - Tất cả NDD
+router.get('/all', async (req: Request, res: Response) => {
   try {
     const groups = await NutritionGroup.find()
       .populate('ownerId', 'fullName username role')

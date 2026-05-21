@@ -1653,7 +1653,8 @@ app.post('/api/resend-verification', async (req, res) => {
   }
 });
 
-app.delete('/api/users/:id', async (req, res) => {
+// DELETE /api/users/:id - Xóa người dùng (yêu cầu auth + permission)
+app.delete('/api/users/:id', authMiddleware, requirePermission(RESOURCES.USERS.DELETE), async (req, res) => {
   try {
     const userId = req.params.id;
     
@@ -1671,7 +1672,7 @@ app.delete('/api/users/:id', async (req, res) => {
       }
     }
 
-    // Delete all related data
+    // Xóa tất cả dữ liệu liên quan
     await Metric.deleteMany({ userId });
     await Goal.deleteMany({ userId });
     await Notification.deleteMany({ userId });
@@ -1680,11 +1681,40 @@ app.delete('/api/users/:id', async (req, res) => {
     await Chat.deleteMany({ coachId: userId });
     await ActiveSession.deleteMany({ userId });
     await PasswordResetToken.deleteMany({ userId });
+    await LoginAttempt.deleteMany({ $or: [{ identifier: user.email }, { identifier: user.username }] });
+
+    // Xóa user khỏi tất cả Group hệ thống
+    const GroupModel = mongoose.model('Group');
+    await GroupModel.updateMany(
+      { members: userId },
+      { $pull: { members: userId } }
+    ).catch(() => {}); // Bỏ qua nếu Group model chưa được load
+
+    // Xóa user khỏi NutritionGroup (nếu có)
+    const NutritionGroupModel = mongoose.model('NutritionGroup');
+    await NutritionGroupModel.updateMany(
+      {},
+      { 
+        $pull: { 
+          members: userId,
+          coOwners: userId,
+          'pendingMembers': { userId: userId }
+        } 
+      }
+    ).catch(() => {});
+
+    // Xóa userId khỏi NutritionBranch memberIds
+    const NutritionBranchModel = mongoose.model('NutritionBranch');
+    await NutritionBranchModel.updateMany(
+      {},
+      { $pull: { memberIds: userId } }
+    ).catch(() => {});
 
     // Audit log before deleting user
+    const actorName = req.user?.fullName || 'Admin';
     const log = new AuditLog({
-      actorId: req.body.actorId || 'admin',
-      actorName: req.body.actorName || 'Admin',
+      actorId: req.user?.userId || 'admin',
+      actorName: actorName,
       targetId: userId,
       targetName: user.fullName,
       type: AuditLogType.REGISTER,

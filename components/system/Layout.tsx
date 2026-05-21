@@ -16,9 +16,9 @@ interface LayoutProps {
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: '📊', text: 'Tổng quan' },
-  { id: 'community', label: '🌍', text: 'Cộng đồng' },
+  { id: 'community', label: '📰', text: 'Cộng đồng' },
   { id: 'metrics', label: '📈', text: 'Chỉ số' },
-  { id: 'coach', label: '🎯', text: 'Coach' },
+  { id: 'coach', label: '📝', text: 'Coach' },
 ];
 
 const getRoleInfo = (role: UserRole): { icon: string; label: string; color: string } => {
@@ -26,7 +26,7 @@ const getRoleInfo = (role: UserRole): { icon: string; label: string; color: stri
     case UserRole.ADMIN:
       return { icon: '🔑', label: 'Quản trị viên', color: 'text-red-600' };
     case UserRole.COACH:
-      return { icon: '📋', label: 'Huấn luyện viên', color: 'text-amber-600' };
+      return { icon: '📝', label: 'Huấn luyện viên', color: 'text-amber-600' };
     default:
       return { icon: '🌱', label: 'Hội viên', color: 'text-emerald-600' };
   }
@@ -63,7 +63,8 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
   const availableNavItems = useMemo(() => {
     const items = [
       ...NAV_ITEMS,
-      ...((user as any).isNddManager ? [{ id: 'ndd', label: '🏥', text: 'NDD' }] : []),
+      // Hiển thị tab NDD cho user có role Coach (HLV) hoặc có permission quản lý NDD
+      ...((user.role === UserRole.COACH || (user as any).permissions?.includes('ndd:manage')) ? [{ id: 'ndd', label: '🍀', text: 'NDD' }] : []),
       ...((user as any).permissions?.includes('ndd:system') ? [{ id: 'systemndd', label: '🌐', text: 'Nhánh NDD' }] : []),
     ];
     return items.filter(item => {
@@ -140,9 +141,9 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
                     <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
                       <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
                     </button>
-                    {(user as any).isNddManager && (
+                    {(user.role === UserRole.COACH || (user as any).permissions?.includes('ndd:manage')) && (
                       <button onClick={() => handleMenuClick('ndd')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 transition-all text-sm font-bold group">
-                        <span className="text-lg group-hover:scale-110 transition-transform">🏥</span> Quản lý NDD
+                        <span className="text-lg group-hover:scale-110 transition-transform">🍀</span> Quản lý NDD
                       </button>
                     )}
                     {(user as any).permissions?.includes('ndd:system') && (
@@ -159,7 +160,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
 
                   <div className="mt-2 pt-2 border-t border-slate-50 px-2">
                     <button onClick={onLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-rose-500 hover:bg-rose-50 transition-all text-sm font-black uppercase tracking-widest group">
-                      <span className="text-lg group-hover:translate-x-1 transition-transform">🚪</span> Thoát tài khoản
+                      <span className="text-lg group-hover:translate-x-1 transition-transform">🔒</span> Thoát tài khoản
                     </button>
                   </div>
                 </div>
