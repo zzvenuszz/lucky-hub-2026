@@ -5,6 +5,7 @@ const NutritionGroupSchema = new mongoose.Schema({
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   ownerName: { type: String, required: true },
   address: { type: String, default: '' },
+  coOwners: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   isActive: { type: Boolean, default: true },
   pendingMembers: [{

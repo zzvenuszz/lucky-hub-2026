@@ -27,10 +27,7 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchLogin, isLoadin
     const fetchGroups = async () => {
       setLoadingGroups(true);
       try {
-        const sessionId = localStorage.getItem('lucky_hub_session');
-        const resp = await fetch('/api/nutrition-groups', {
-          headers: sessionId ? { 'Authorization': `Bearer ${sessionId}` } : {}
-        });
+        const resp = await fetch('/api/nutrition-groups/public');
         if (resp.ok) {
           const data = await resp.json();
           setNutritionGroups(data || []);

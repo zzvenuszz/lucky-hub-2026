@@ -16,6 +16,7 @@ import SystemLog from './components/system/SystemLog.tsx';
 import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
 import CoachDashboard from './components/coach/CoachDashboard.tsx';
+import NDDDashboard from './components/ndd/NDDDashboard.tsx';
 import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 import wsService from './services/wsService.ts';
@@ -515,6 +516,7 @@ const App: React.FC = () => {
         }} />}
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
         {activeTab === 'coach' && (currentUser as any).permissions?.includes('coach:access') && <CoachDashboard currentUser={currentUser!} />}
+        {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} />}
         
         {/* ChatSystem UI - chỉ hiển thị khung chat khi mở */}
         {isChatOpen && <ChatSystem currentUser={currentUser!} onClose={() => setIsChatOpen(false)} />}

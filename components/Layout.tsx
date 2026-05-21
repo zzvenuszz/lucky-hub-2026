@@ -97,11 +97,16 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout, children, activeTab, se
                     <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
                       <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
                     </button>
-                    {user.role === UserRole.ADMIN && (
-                      <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
-                        <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Quản trị Lucky Hub
-                      </button>
-                    )}
+              {user.role === UserRole.COACH && (
+                <button onClick={() => handleMenuClick('ndd')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 transition-all text-sm font-bold group">
+                  <span className="text-lg group-hover:scale-110 transition-transform">🏥</span> Quản lý NDD
+                </button>
+              )}
+              {user.role === UserRole.ADMIN && (
+                <button onClick={() => handleMenuClick('admin')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-amber-600 hover:bg-amber-50 transition-all text-sm font-bold group">
+                  <span className="text-lg group-hover:scale-110 transition-transform">🛡️</span> Quản trị Lucky Hub
+                </button>
+              )}
                   </div>
 
                   <div className="mt-2 pt-2 border-t border-slate-50 px-2">
