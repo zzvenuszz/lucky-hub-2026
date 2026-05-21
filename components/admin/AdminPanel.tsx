@@ -10,6 +10,8 @@ import AITraining from './AITraining.tsx';
 import AuditLogs from './AuditLogs.tsx';
 import GeminiKeyManager from './ai/GeminiKeyManager.tsx';
 import GroupManager from './groups/GroupManager.tsx';
+import NutritionGroupManager from './nutrition/NutritionGroupManager.tsx';
+import ChatGroupManager from './nutrition/ChatGroupManager.tsx';
 
 interface AdminPanelProps {
   currentUser: User;
@@ -20,7 +22,8 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, rules, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai' | 'audit' | 'config' | 'groups'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai' | 'audit' | 'config' | 'groups' | 'ndd' | 'chatgroups'>('users');
+  const [nutritionGroups, setNutritionGroups] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   // Tải nhật ký hệ thống khi chuyển sang tab Audit
@@ -87,6 +90,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <span className="block md:hidden text-base mb-0.5">📋</span>
             Nhật ký
           </button>
+          <button 
+            onClick={() => {
+              setActiveTab('ndd');
+              Database.getAllNutritionGroups().then(setNutritionGroups).catch(() => {});
+            }} 
+            className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'ndd' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <span className="block md:hidden text-base mb-0.5">🏥</span>
+            NDD
+          </button>
+          <button 
+            onClick={() => {
+              setActiveTab('chatgroups');
+              Database.getAllNutritionGroups().then(setNutritionGroups).catch(() => {});
+            }} 
+            className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'chatgroups' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <span className="block md:hidden text-base mb-0.5">👥</span>
+            Nhóm Chat
+          </button>
         </div>
       </div>
 
@@ -116,6 +139,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
 
         {activeTab === 'audit' && (
           <AuditLogs logs={auditLogs} />
+        )}
+
+        {activeTab === 'ndd' && (
+          <NutritionGroupManager users={users} onRefresh={onRefresh} />
+        )}
+
+        {activeTab === 'chatgroups' && (
+          <ChatGroupManager users={users} nutritionGroups={nutritionGroups} onRefresh={onRefresh} />
         )}
       </div>
     </div>
