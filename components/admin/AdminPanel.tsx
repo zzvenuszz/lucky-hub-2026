@@ -11,8 +11,7 @@ import AuditLogs from './AuditLogs.tsx';
 import GeminiKeyManager from './ai/GeminiKeyManager.tsx';
 import GroupManager from './groups/GroupManager.tsx';
 import NutritionGroupManager from './nutrition/NutritionGroupManager.tsx';
-import ChatGroupManager from './nutrition/ChatGroupManager.tsx';
-import SystemNDDOverview from './nutrition/SystemNDDOverview.tsx';
+import BranchManager from './nutrition/BranchManager.tsx';
 
 interface AdminPanelProps {
   currentUser: User;
@@ -23,7 +22,7 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, rules, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai' | 'audit' | 'config' | 'groups' | 'ndd' | 'chatgroups' | 'systemndd'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'metrics' | 'ai' | 'audit' | 'config' | 'groups' | 'ndd' | 'systemndd'>('users');
   const [nutritionGroups, setNutritionGroups] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
@@ -110,16 +109,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <span className="block md:hidden text-base mb-0.5">🌐</span>
             Nhánh NDD
           </button>
-          <button 
-            onClick={() => {
-              setActiveTab('chatgroups');
-              Database.getAllNutritionGroups().then(setNutritionGroups).catch(() => {});
-            }} 
-            className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'chatgroups' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <span className="block md:hidden text-base mb-0.5">👥</span>
-            Nhóm Chat
-          </button>
         </div>
       </div>
 
@@ -156,11 +145,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         )}
 
         {activeTab === 'systemndd' && (
-          <SystemNDDOverview />
-        )}
-
-        {activeTab === 'chatgroups' && (
-          <ChatGroupManager users={users} nutritionGroups={nutritionGroups} onRefresh={onRefresh} />
+          <BranchManager />
         )}
       </div>
     </div>

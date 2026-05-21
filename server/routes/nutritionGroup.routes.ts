@@ -62,12 +62,12 @@ router.get('/all', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Reque
   }
 });
 
-// GET /api/nutrition-groups/my-dashboard - Dashboard NDD cho HLV
+// GET /api/nutrition-groups/my-dashboard - Dashboard NDD cho HLV (trả về mảng)
 router.get('/my-dashboard', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    // Tìm NDD mà user là owner hoặc co-owner
-    const group = await NutritionGroup.findOne({
+    // Tìm tất cả NDD mà user là owner hoặc co-owner
+    const groups = await NutritionGroup.find({
       $or: [{ ownerId: userId }, { coOwners: userId }],
       isActive: true,
     })
@@ -76,11 +76,43 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       .populate('members', 'fullName username email phoneNumber role avatar')
       .sort({ createdAt: -1 });
 
-    if (!group) {
-      return res.json({ group: null, message: 'Bạn chưa thuộc NDD nào hoặc không có quyền quản lý' });
+    if (groups.length === 0) {
+      return res.json({ groups: [], message: 'Bạn chưa thuộc NDD nào hoặc không có quyền quản lý' });
     }
 
-    // Lấy chỉ số mới nhất cho mỗi member
+    // Lấy chỉ số mới nhất cho member của từng group
+    const { Metric } = await import('../models/Metric.ts');
+    const result = await Promise.all(groups.map(async (group) => {
+      const memberMetrics: any[] = [];
+      for (const member of group.members) {
+        const latestMetric = await Metric.findOne({ userId: (member as any)._id }).sort({ date: -1 }).lean();
+        memberMetrics.push({
+          user: member,
+          latestMetric: latestMetric || null,
+        });
+      }
+      return {
+        group: { ...group.toObject(), id: group._id },
+        memberMetrics,
+      };
+    }));
+
+    res.json({ groups: result, message: null });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/nutrition-groups/:id/members - Chi tiết NDD với member metrics
+router.get('/:id/members', async (req: Request, res: Response) => {
+  try {
+    const group = await NutritionGroup.findById(req.params.id)
+      .populate('ownerId', 'fullName username role')
+      .populate('coOwners', 'fullName username role')
+      .populate('members', 'fullName username email phoneNumber role avatar');
+
+    if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
+
     const { Metric } = await import('../models/Metric.ts');
     const memberMetrics: any[] = [];
     for (const member of group.members) {
@@ -91,7 +123,10 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({ group: { ...group.toObject(), id: group._id }, memberMetrics });
+    res.json({
+      group: { ...group.toObject(), id: group._id },
+      memberMetrics,
+    });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }

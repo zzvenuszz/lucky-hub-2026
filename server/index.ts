@@ -32,6 +32,7 @@ import groupRoutes from './routes/group.routes.ts';
 import aiRoutes from './routes/ai.routes.ts';
 import mirrorRoutes from './routes/mirror.routes.ts';
 import nutritionGroupRoutes from './routes/nutritionGroup.routes.ts';
+import nutritionBranchRoutes from './routes/nutritionBranch.routes.ts';
 import chatGroupRoutes from './routes/chatGroup.routes.ts';
 
 // Services
@@ -120,6 +121,9 @@ app.use('/api/ai', aiRoutes);
 
 // Nutrition Group routes
 app.use('/api/nutrition-groups', nutritionGroupRoutes);
+
+// Nutrition Branch routes
+app.use('/api/nutrition-branches', nutritionBranchRoutes);
 
 // Chat Group routes
 app.use('/api/chat-groups', chatGroupRoutes);

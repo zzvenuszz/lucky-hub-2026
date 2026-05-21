@@ -178,4 +178,18 @@ export const Database = {
     request<any>(`${API_BASE}/admin/groups/${id}/members`, 'POST', { memberIds }),
   getGroupPermissionsList: async () => (await request<{ key: string, description: string }[]>(`${API_BASE}/admin/groups/permissions-list`)) ?? [],
   getUserGroups: async (userId: string) => (await request<any[]>(`${API_BASE}/admin/groups/user/${userId}`)) ?? [],
+
+  // Nutrition Branches
+  getAllNutritionBranches: async () => (await request<any[]>(`${API_BASE}/nutrition-branches`)) ?? [],
+  getMyNutritionBranches: async () => (await request<any[]>(`${API_BASE}/nutrition-branches/my-branches`)) ?? [],
+  createNutritionBranch: (data: { name: string; nutritionGroupIds: string[] }) =>
+    request<any>(`${API_BASE}/nutrition-branches`, 'POST', data),
+  updateNutritionBranch: (id: string, data: any) => request<any>(`${API_BASE}/nutrition-branches/${id}`, 'PUT', data),
+  deleteNutritionBranch: (id: string) => request(`${API_BASE}/nutrition-branches/${id}`, 'DELETE'),
+  sendNutritionBranchMessage: (branchId: string, content: string) =>
+    request<any>(`${API_BASE}/nutrition-branches/${branchId}/message`, 'POST', { content }),
+  getNutritionBranchMessages: async (branchId: string) =>
+    (await request<any[]>(`${API_BASE}/nutrition-branches/${branchId}/messages`)) ?? [],
+  getNutritionBranchMembersMetrics: async (branchId: string) =>
+    (await request<any[]>(`${API_BASE}/nutrition-branches/${branchId}/members-metrics`)) ?? [],
 };

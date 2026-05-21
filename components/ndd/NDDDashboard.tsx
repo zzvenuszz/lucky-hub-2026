@@ -7,12 +7,20 @@ interface NDDDashboardProps {
 }
 
 const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
-  const [dashboard, setDashboard] = useState<any>(null);
+  const [dashboardData, setDashboardData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedNdd, setSelectedNdd] = useState<any | null>(null);
+  const [selectedMember, setSelectedMember] = useState<any | null>(null);
   const [coOwnerIds, setCoOwnerIds] = useState<string[]>([]);
   const [showCoOwnerEditor, setShowCoOwnerEditor] = useState(false);
   const [showPending, setShowPending] = useState(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [chatBox, setChatBox] = useState<{ userId: string; userName: string } | null>(null);
+  const [chatMessage, setChatMessage] = useState('');
+  const [metricForm, setMetricForm] = useState<{ userId: string; userName: string } | null>(null);
+  const [metricWeight, setMetricWeight] = useState('');
+  const [metricBodyFat, setMetricBodyFat] = useState('');
+  const [metricMuscleMass, setMetricMuscleMass] = useState('');
 
   const fetchDashboard = useCallback(async () => {
     setIsLoading(true);
@@ -22,9 +30,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       });
       if (resp.ok) {
         const data = await resp.json();
-        setDashboard(data);
-        if (data?.group?.coOwners) {
-          setCoOwnerIds(data.group.coOwners.map((c: any) => c._id || c));
+        setDashboardData(data.groups || []);
+        if (data.groups?.[0]?.group?.coOwners) {
+          setCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
         }
       }
     } catch (err) {
@@ -37,16 +45,16 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
   const handleUpdateCoOwners = async () => {
-    if (!dashboard?.group?.id) return;
+    if (!selectedNdd?.group?.id) return;
     try {
-      const resp = await fetch(`/api/nutrition-groups/${dashboard.group.id}/co-owners`, {
+      const resp = await fetch(`/api/nutrition-groups/${selectedNdd.group.id}/co-owners`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('lucky_hub_session')}` },
         body: JSON.stringify({ coOwnerIds }),
       });
       if (resp.ok) {
         const data = await resp.json();
-        setDashboard((prev: any) => ({ ...prev, group: { ...prev.group, coOwners: data.coOwners } }));
+        setSelectedNdd((prev: any) => ({ ...prev, group: { ...prev.group, coOwners: data.coOwners } }));
         setShowCoOwnerEditor(false);
         setActionMsg({ type: 'success', text: '✅ Đã cập nhật đồng vận hành' });
       } else {
@@ -59,9 +67,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   };
 
   const handleApprove = async (userId: string, userName: string) => {
-    if (!dashboard?.group?.id) return;
+    if (!selectedNdd?.group?.id) return;
     try {
-      await Database.approveNutritionGroupMember(dashboard.group.id, userId);
+      await Database.approveNutritionGroupMember(selectedNdd.group.id, userId);
       setActionMsg({ type: 'success', text: `✅ Đã duyệt ${userName}` });
       fetchDashboard();
     } catch (err: any) {
@@ -70,13 +78,54 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   };
 
   const handleReject = async (userId: string) => {
-    if (!dashboard?.group?.id) return;
+    if (!selectedNdd?.group?.id) return;
     try {
-      await Database.rejectNutritionGroupMember(dashboard.group.id, userId);
+      await Database.rejectNutritionGroupMember(selectedNdd.group.id, userId);
       setActionMsg({ type: 'success', text: '✅ Đã từ chối' });
       fetchDashboard();
     } catch (err: any) {
       setActionMsg({ type: 'error', text: '❌ ' + err.message });
+    }
+  };
+
+  const handleSendMetric = async () => {
+    if (!metricForm || !metricWeight) return;
+    try {
+      const actorId = (currentUser as any).id || (currentUser as any)._id;
+      await Database.saveMetric({
+        userId: metricForm.userId,
+        weight: parseFloat(metricWeight),
+        bodyFat: metricBodyFat ? parseFloat(metricBodyFat) : undefined,
+        muscleMass: metricMuscleMass ? parseFloat(metricMuscleMass) : undefined,
+        date: new Date().toISOString().split('T')[0],
+        actorId,
+        actorName: currentUser?.fullName,
+      });
+      setActionMsg({ type: 'success', text: `✅ Đã cập nhật chỉ số cho ${metricForm.userName}` });
+      setMetricForm(null);
+      setMetricWeight('');
+      setMetricBodyFat('');
+      setMetricMuscleMass('');
+      fetchDashboard();
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: '❌ Lỗi: ' + err.message });
+    }
+  };
+
+  const handleSendChat = async () => {
+    if (!chatBox || !chatMessage.trim()) return;
+    try {
+      // Gửi tin nhắn đến member qua API chat
+      await fetch('/api/chats/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('lucky_hub_session')}` },
+        body: JSON.stringify({ receiverId: chatBox.userId, content: chatMessage.trim() }),
+      });
+      setActionMsg({ type: 'success', text: `✅ Đã gửi tin nhắn đến ${chatBox.userName}` });
+      setChatBox(null);
+      setChatMessage('');
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: '❌ Lỗi: ' + err.message });
     }
   };
 
@@ -89,7 +138,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
     );
   }
 
-  if (!dashboard?.group) {
+  if (dashboardData.length === 0) {
     return (
       <div className="max-w-4xl mx-auto py-20 text-center">
         <div className="text-6xl mb-4">🏥</div>
@@ -99,11 +148,63 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
     );
   }
 
-  const group = dashboard.group;
-  const memberMetrics = dashboard.memberMetrics || [];
+  // Nếu chưa chọn NDD, hiển thị danh sách
+  if (!selectedNdd) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6 pb-20">
+        {actionMsg && (
+          <div className={`px-6 py-4 rounded-2xl shadow-lg font-bold text-sm flex items-center justify-between ${
+            actionMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+          }`}>
+            <span>{actionMsg.text}</span>
+            <button onClick={() => setActionMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
+          </div>
+        )}
+
+        <h2 className="font-black text-slate-800 text-lg uppercase tracking-widest">🏥 Danh sách NDD</h2>
+        <p className="text-xs text-slate-400">Chọn NDD để quản lý hội viên</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {dashboardData.map((item: any, idx: number) => {
+            const group = item.group;
+            const memberMetrics = item.memberMetrics || [];
+            return (
+              <div
+                key={idx}
+                onClick={() => {
+                  setSelectedNdd(item);
+                  setShowCoOwnerEditor(false);
+                  setShowPending(false);
+                }}
+                className="bg-white rounded-[2rem] border border-emerald-200 shadow-sm overflow-hidden hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer group"
+              >
+                <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-4">
+                  <h3 className="text-white font-black text-sm">{group.name}</h3>
+                  <p className="text-emerald-100 text-[10px] mt-0.5">{group.address || 'Chưa có địa chỉ'}</p>
+                </div>
+                <div className="p-4 flex items-center justify-between text-xs">
+                  <span className="text-slate-600">
+                    👥 <strong>{memberMetrics.length}</strong> hội viên
+                  </span>
+                  <span className="text-emerald-600 font-bold group-hover:translate-x-1 transition-transform">
+                    Xem chi tiết →
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Đã chọn NDD → hiển thị chi tiết
+  const group = selectedNdd.group;
+  const memberMetrics = selectedNdd.memberMetrics || [];
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const isOwner = group.ownerId?._id === currentUserId || group.ownerId === currentUserId;
   const pendingMembers = group.pendingMembers || [];
+  const groupId = group.id || group._id;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
@@ -115,6 +216,14 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
           <button onClick={() => setActionMsg(null)} className="opacity-50 hover:opacity-100">✕</button>
         </div>
       )}
+
+      {/* Back button */}
+      <button
+        onClick={() => { setSelectedNdd(null); setSelectedMember(null); }}
+        className="flex items-center gap-2 text-sm text-slate-500 hover:text-emerald-600 font-bold transition-all"
+      >
+        ← Quay lại danh sách NDD
+      </button>
 
       {/* NDD Info Card */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-emerald-200 overflow-hidden">
@@ -138,7 +247,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
             </div>
             <div className="bg-amber-50 rounded-2xl p-4">
               <p className="text-[10px] font-black text-amber-500 uppercase tracking-wider">Hội viên</p>
-              <p className="font-bold text-slate-800 text-sm mt-1">{group.members?.length || 0} người</p>
+              <p className="font-bold text-slate-800 text-sm mt-1">{memberMetrics.length} người</p>
             </div>
           </div>
 
@@ -200,6 +309,8 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
           ) : memberMetrics.map((item: any, idx: number) => {
             const user = item.user;
             const metric = item.latestMetric;
+            const uid = user._id || user.id;
+
             return (
               <div key={idx} className="p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-3">
@@ -245,11 +356,106 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
                     <span>💪 {metric.muscleMass}kg</span>
                   </div>
                 )}
+
+                {/* HLV actions */}
+                <div className="flex gap-2 mt-2 pt-2 border-t border-slate-50">
+                  <button
+                    onClick={() => setMetricForm({ userId: uid, userName: user.fullName })}
+                    className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
+                  >
+                    📊 Nhập chỉ số
+                  </button>
+                  <button
+                    onClick={() => setChatBox({ userId: uid, userName: user.fullName })}
+                    className="flex-1 py-2 rounded-xl bg-indigo-50 text-indigo-600 font-black text-[9px] uppercase tracking-wider hover:bg-indigo-100 transition-all"
+                  >
+                    💬 Nhắn tin
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* Metric Form Modal */}
+      {metricForm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">
+              📊 Nhập chỉ số cho {metricForm.userName}
+            </h4>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg) *</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={metricWeight}
+                  onChange={e => setMetricWeight(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1"
+                  placeholder="VD: 65.5"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ cơ thể (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={metricBodyFat}
+                  onChange={e => setMetricBodyFat(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1"
+                  placeholder="VD: 22.5"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ bắp (kg)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={metricMuscleMass}
+                  onChange={e => setMetricMuscleMass(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1"
+                  placeholder="VD: 42.0"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setMetricForm(null)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">
+                Hủy
+              </button>
+              <button onClick={handleSendMetric} className="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[10px] shadow-lg">
+                Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Box Modal */}
+      {chatBox && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
+          <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">
+              💬 Nhắn tin cho {chatBox.userName}
+            </h4>
+            <textarea
+              value={chatMessage}
+              onChange={e => setChatMessage(e.target.value)}
+              className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm h-24 resize-none"
+              placeholder="Nhập nội dung tin nhắn..."
+            />
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setChatBox(null)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">
+                Hủy
+              </button>
+              <button onClick={handleSendChat} className="flex-1 py-3 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] shadow-lg">
+                Gửi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
