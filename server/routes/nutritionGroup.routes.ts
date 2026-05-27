@@ -75,9 +75,9 @@ router.get('/all', async (req: Request, res: Response) => {
 router.get('/my-dashboard', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    // Tìm tất cả NDD mà user là owner hoặc co-owner
+    // Tìm tất cả NDD mà user là owner, co-owner hoặc member
     const groups = await NutritionGroup.find({
-      $or: [{ ownerId: userId }, { coOwners: userId }],
+      $or: [{ ownerId: userId }, { coOwners: userId }, { members: userId }],
       isActive: true,
     })
       .populate('ownerId', 'fullName username role')
@@ -85,10 +85,6 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       .populate('members', 'fullName username email phoneNumber role avatar')
       .populate('pendingMembers.userId', 'fullName username role avatar')
       .sort({ createdAt: -1 });
-
-    if (groups.length === 0) {
-      return res.json({ groups: [], message: 'Bạn chưa thuộc NDD nào hoặc không có quyền quản lý' });
-    }
 
     // Lấy chỉ số mới nhất cho member của từng group
     const { Metric } = await import('../models/Metric.ts');
@@ -107,6 +103,10 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       };
     }));
 
+    console.log(`[NutritionGroup] 📊 my-dashboard for ${userId}: ${result.length} groups`);
+    if (result.length === 0) {
+      return res.json({ groups: [], message: 'Bạn chưa thuộc NDD nào' });
+    }
     res.json({ groups: result, message: null });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -224,26 +224,25 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
     const isOwner = group.ownerId.toString() === req.user!.userId;
     const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
     if (!isOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Chỉ chủ vận hành mới có quyền này' });
+      return res.status(403).json({ message: 'Chỉ chủ vận hành hoặc admin mới có quyền này' });
     }
 
-    // Validate tất cả đều có role COACH
+    // Validate tất cả đều có role COACH và là member của NDD
     if (coOwnerIds && Array.isArray(coOwnerIds)) {
       for (const id of coOwnerIds) {
         const isHlv = await isUserCoach(id);
         if (!isHlv) {
           return res.status(400).json({ message: 'Đồng vận hành phải có vai trò HLV (huấn luyện viên)' });
         }
+        // Kiểm tra người được thêm phải đang là member của NDD
+        const isMemberOfGroup = group.members.some((m: any) => m.toString() === id);
+        if (!isMemberOfGroup) {
+          return res.status(400).json({ message: 'Người được chọn làm đồng vận hành phải đang sinh hoạt trong NDD này' });
+        }
       }
       group.coOwners = coOwnerIds;
-      // Tự động thêm co-owners vào members nếu chưa có
+      // Đồng bộ user.nutritionGroupId cho co-owners
       for (const id of coOwnerIds) {
-        const memberExists = group.members.some((m: any) => m.toString() === id);
-        if (!memberExists) {
-          group.members.push(id);
-          console.log(`[NutritionGroup] Auto-added co-owner ${id} to members`);
-        }
-        // Đồng bộ user.nutritionGroupId
         await User.findByIdAndUpdate(id, { nutritionGroupId: group._id, pendingNutritionGroupId: null });
         console.log(`[NutritionGroup] 🆔 Co-owner ${id} → nutritionGroupId = ${group._id}`);
       }
@@ -473,6 +472,18 @@ router.post('/:id/remove-member/:userId', async (req: Request, res: Response) =>
       return res.status(403).json({ message: 'Bạn không có quyền xóa hội viên' });
     }
 
+    // Chặn xóa chủ vận hành (chỉ admin mới được)
+    const targetIsOwner = group.ownerId.toString() === req.params.userId;
+    if (targetIsOwner && !isAdmin) {
+      return res.status(403).json({ message: 'Không thể xóa chủ vận hành khỏi NDD. Chỉ Admin mới có quyền này.' });
+    }
+
+    // Chặn xóa đồng vận hành nếu không phải admin (chỉ admin mới được)
+    const targetIsCoOwner = group.coOwners?.some((c: any) => c.toString() === req.params.userId);
+    if (targetIsCoOwner && !isAdmin) {
+      return res.status(403).json({ message: 'Không thể xóa đồng vận hành khỏi NDD. Chỉ Admin mới có quyền này.' });
+    }
+
     group.members = group.members.filter((m: any) => m.toString() !== req.params.userId);
     await group.save();
 
@@ -481,6 +492,8 @@ router.post('/:id/remove-member/:userId', async (req: Request, res: Response) =>
       user.nutritionGroupId = null;
       await user.save();
     }
+
+    console.log(`[NutritionGroup] 🗑️ Removed member ${req.params.userId} from "${group.name}"`);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ message: err.message });

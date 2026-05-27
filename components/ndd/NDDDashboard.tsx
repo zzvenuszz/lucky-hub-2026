@@ -296,9 +296,14 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
                     <span className="font-bold text-slate-500">(Không có đồng vận hành)</span>
                   </label>
                   {coachCandidates.filter((c: any) => {
-                    // Không hiển thị bản thân owner
+                    // Chỉ hiển thị người đã là member của NDD này và không phải bản thân owner
                     const cid = c.id || c._id;
-                    return String(cid) !== String(group.ownerId?._id || group.ownerId);
+                    const isNotOwner = String(cid) !== String(group.ownerId?._id || group.ownerId);
+                    const isMemberOfGroup = memberMetrics.some((m: any) => {
+                      const mid = m.user?._id || m.user?.id;
+                      return String(mid) === String(cid);
+                    });
+                    return isNotOwner && isMemberOfGroup;
                   }).map((c: any) => {
                     const cid = String(c.id || c._id);
                     const isChecked = selectedCoOwnerIds.includes(cid);
