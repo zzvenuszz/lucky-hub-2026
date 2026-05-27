@@ -64,7 +64,8 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
     const items = [
       ...NAV_ITEMS,
       // Hiển thị tab NDD cho user có role Coach (HLV) hoặc có permission quản lý NDD
-      ...((user.role === UserRole.COACH || (user as any).permissions?.includes('ndd:manage')) ? [{ id: 'ndd', label: '🍀', text: 'NDD' }] : []),
+      // Tab NDD: hiển thị cho HLV (coach:access) hoặc người có quyền quản lý NDD
+      ...(((user as any).permissions?.includes('coach:access') || (user as any).permissions?.includes('ndd:manage')) ? [{ id: 'ndd', label: '🍀', text: 'NDD' }] : []),
       ...((user as any).permissions?.includes('ndd:system') ? [{ id: 'systemndd', label: '🌐', text: 'Nhánh NDD' }] : []),
     ];
     return items.filter(item => {
@@ -141,7 +142,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
                     <button onClick={() => handleMenuClick('metrics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-sm font-bold group">
                       <span className="text-lg group-hover:scale-110 transition-transform">📊</span> Lịch sử chỉ số
                     </button>
-                    {(user.role === UserRole.COACH || (user as any).permissions?.includes('ndd:manage')) && (
+                    {((user as any).permissions?.includes('coach:access') || (user as any).permissions?.includes('ndd:manage')) && (
                       <button onClick={() => handleMenuClick('ndd')} className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-emerald-600 hover:bg-emerald-50 transition-all text-sm font-bold group">
                         <span className="text-lg group-hover:scale-110 transition-transform">🍀</span> Quản lý NDD
                       </button>
