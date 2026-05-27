@@ -74,6 +74,7 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       .populate('ownerId', 'fullName username role')
       .populate('coOwners', 'fullName username role')
       .populate('members', 'fullName username email phoneNumber role avatar')
+      .populate('pendingMembers.userId', 'fullName username role avatar')
       .sort({ createdAt: -1 });
 
     if (groups.length === 0) {

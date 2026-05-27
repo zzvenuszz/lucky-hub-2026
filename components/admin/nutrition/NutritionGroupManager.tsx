@@ -222,8 +222,13 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
                   <div className="bg-amber-50 rounded-2xl p-4 space-y-2 border border-amber-200">
                     <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Yêu cầu chờ duyệt</p>
                     {group.pendingMembers.map((p: any, idx: number) => {
-                      const userInfo = users.find(u => (u.id || u._id) === p.userId);
-                      const userName = userInfo?.fullName || p.userName || 'Unknown';
+                      // Xác định userId string an toàn (p.userId có thể là object đã populate hoặc string)
+                      const userIdStr = typeof p.userId === 'object' && p.userId !== null
+                        ? (p.userId._id || p.userId.id || p.userId.toString())
+                        : String(p.userId);
+                      const userNameFromObj = typeof p.userId === 'object' ? p.userId?.fullName : '';
+                      const userInfo = users.find(u => (u.id || u._id) === userIdStr);
+                      const userName = userInfo?.fullName || userNameFromObj || p.userName || 'Unknown';
                       return (
                         <div key={idx} className="flex items-center justify-between bg-white rounded-xl p-2">
                           <div className="flex items-center gap-2">
@@ -236,8 +241,8 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
                             </div>
                           </div>
                           <div className="flex gap-1">
-                            <button onClick={() => handleApprove(gid, p.userId, userName)} className="px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-600">Duyệt</button>
-                            <button onClick={() => handleReject(gid, p.userId)} className="px-3 py-1.5 bg-rose-100 text-rose-600 rounded-xl text-[9px] font-bold hover:bg-rose-200">Từ chối</button>
+                            <button onClick={() => handleApprove(gid, userIdStr, userName)} className="px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-600">Duyệt</button>
+                            <button onClick={() => handleReject(gid, userIdStr)} className="px-3 py-1.5 bg-rose-100 text-rose-600 rounded-xl text-[9px] font-bold hover:bg-rose-200">Từ chối</button>
                           </div>
                         </div>
                       );

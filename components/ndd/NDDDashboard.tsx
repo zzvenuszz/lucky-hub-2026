@@ -283,15 +283,22 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
           {showPending && pendingMembers.length > 0 && (
             <div className="bg-amber-50 rounded-2xl p-4 space-y-2">
               <p className="text-[10px] font-black text-amber-700 uppercase">Yêu cầu chờ duyệt</p>
-              {pendingMembers.map((p: any, idx: number) => (
-                <div key={idx} className="flex items-center justify-between bg-white rounded-xl p-2">
-                  <span className="text-xs font-bold text-slate-700">{p.userId?.fullName || 'Unknown'}</span>
-                  <div className="flex gap-1">
-                    <button onClick={() => handleApprove(p.userId?._id || p.userId, p.userId?.fullName || 'Unknown')} className="px-3 py-1 bg-emerald-500 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-600">Duyệt</button>
-                    <button onClick={() => handleReject(p.userId?._id || p.userId)} className="px-3 py-1 bg-rose-100 text-rose-600 rounded-xl text-[9px] font-bold hover:bg-rose-200">Từ chối</button>
+              {pendingMembers.map((p: any, idx: number) => {
+                // Xác định userId string an toàn
+                const userIdStr = typeof p.userId === 'object' && p.userId !== null
+                  ? (p.userId._id || p.userId.id || p.userId.toString())
+                  : String(p.userId);
+                const userName = p.fullName || (typeof p.userId === 'object' ? p.userId?.fullName : '') || p.userName || 'Unknown';
+                return (
+                  <div key={idx} className="flex items-center justify-between bg-white rounded-xl p-2">
+                    <span className="text-xs font-bold text-slate-700">{userName}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => handleApprove(userIdStr, userName)} className="px-3 py-1 bg-emerald-500 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-600">Duyệt</button>
+                      <button onClick={() => handleReject(userIdStr)} className="px-3 py-1 bg-rose-100 text-rose-600 rounded-xl text-[9px] font-bold hover:bg-rose-200">Từ chối</button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
