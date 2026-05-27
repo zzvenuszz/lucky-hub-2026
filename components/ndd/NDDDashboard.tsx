@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
+import MemberMetricsManager from './MemberMetricsManager.tsx';
 
 interface NDDDashboardProps {
   currentUser: User;
@@ -18,6 +19,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [chatBox, setChatBox] = useState<{ userId: string; userName: string } | null>(null);
   const [chatMessage, setChatMessage] = useState('');
+  const [metricsManager, setMetricsManager] = useState<{ userId: string; userName: string } | null>(null);
   const [metricForm, setMetricForm] = useState<{ userId: string; userName: string } | null>(null);
   const [metricWeight, setMetricWeight] = useState('');
   const [metricBodyFat, setMetricBodyFat] = useState('');
@@ -432,10 +434,10 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
                 {/* HLV actions */}
                 <div className="flex gap-2 mt-2 pt-2 border-t border-slate-50">
                   <button
-                    onClick={() => setMetricForm({ userId: uid, userName: user.fullName })}
+                    onClick={() => setMetricsManager({ userId: uid, userName: user.fullName })}
                     className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
                   >
-                    📊 Nhập chỉ số
+                    📊 Quản lý chỉ số
                   </button>
                   <button
                     onClick={() => setChatBox({ userId: uid, userName: user.fullName })}
@@ -527,6 +529,16 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Member Metrics Manager Full Modal */}
+      {metricsManager && (
+        <MemberMetricsManager
+          userId={metricsManager.userId}
+          userName={metricsManager.userName}
+          currentUser={currentUser}
+          onClose={() => setMetricsManager(null)}
+        />
       )}
     </div>
   );

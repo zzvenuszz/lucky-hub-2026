@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { NutritionGroup } from '../models/NutritionGroup.ts';
 import { User } from '../models/User.ts';
 import { authMiddleware, optionalAuth } from '../middleware/authMiddleware.ts';
@@ -75,9 +76,27 @@ router.get('/all', async (req: Request, res: Response) => {
 router.get('/my-dashboard', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
+    console.log(`[NutritionGroup] 🔍 my-dashboard request from userId="${userId}" (type: ${typeof userId})`);
+
+    // DEBUG: Kiểm tra tất cả NDD trong DB để so sánh ownerId
+    const allGroups = await NutritionGroup.find({ isActive: true }).select('name ownerId').lean();
+    console.log(`[NutritionGroup] 📋 Total active NDDs in DB: ${allGroups.length}`);
+    for (const g of allGroups) {
+      const ownerIdStr = g.ownerId?.toString();
+      const isMatch = ownerIdStr === userId;
+      console.log(`[NutritionGroup]   - "${g.name}" ownerId="${ownerIdStr}" ${isMatch ? '✅ MATCH' : '❌ NO MATCH'}`);
+    }
+
     // Tìm tất cả NDD mà user là owner, co-owner hoặc member
+    // Sử dụng ObjectId để so khớp chính xác (tránh lỗi type mismatch)
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    
     const groups = await NutritionGroup.find({
-      $or: [{ ownerId: userId }, { coOwners: userId }, { members: userId }],
+      $or: [
+        { ownerId: userObjectId },
+        { coOwners: userObjectId },
+        { members: userObjectId }
+      ],
       isActive: true,
     })
       .populate('ownerId', 'fullName username role')
@@ -85,6 +104,8 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       .populate('members', 'fullName username email phoneNumber role avatar')
       .populate('pendingMembers.userId', 'fullName username role avatar')
       .sort({ createdAt: -1 });
+
+    console.log(`[NutritionGroup] 📊 Found ${groups.length} groups for userId="${userId}"`);
 
     // Lấy chỉ số mới nhất cho member của từng group
     const { Metric } = await import('../models/Metric.ts');
@@ -103,12 +124,13 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       };
     }));
 
-    console.log(`[NutritionGroup] 📊 my-dashboard for ${userId}: ${result.length} groups`);
+    console.log(`[NutritionGroup] ✅ my-dashboard: ${result.length} groups processed`);
     if (result.length === 0) {
       return res.json({ groups: [], message: 'Bạn chưa thuộc NDD nào' });
     }
     res.json({ groups: result, message: null });
   } catch (err: any) {
+    console.error(`[NutritionGroup] ❌ my-dashboard error:`, err);
     res.status(500).json({ message: err.message });
   }
 });

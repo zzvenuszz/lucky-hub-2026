@@ -18,7 +18,6 @@ const NAV_ITEMS = [
   { id: 'dashboard', label: '📊', text: 'Tổng quan' },
   { id: 'community', label: '📰', text: 'Cộng đồng' },
   { id: 'metrics', label: '📈', text: 'Chỉ số' },
-  { id: 'coach', label: '📝', text: 'Coach' },
 ];
 
 const getRoleInfo = (role: UserRole): { icon: string; label: string; color: string } => {
@@ -68,12 +67,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
       ...(((user as any).permissions?.includes('coach:access') || (user as any).permissions?.includes('ndd:manage')) ? [{ id: 'ndd', label: '🍀', text: 'NDD' }] : []),
       ...((user as any).permissions?.includes('ndd:system') ? [{ id: 'systemndd', label: '🌐', text: 'Nhánh NDD' }] : []),
     ];
-    return items.filter(item => {
-      if (item.id === 'coach') {
-        return (user as any).permissions?.includes('coach:access');
-      }
-      return true;
-    });
+    return items;
   }, [user]);
 
   console.log(`[Layout] Render: user=${user.fullName}, role=${user.role}, activeTab=${activeTab}`);
