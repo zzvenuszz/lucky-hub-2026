@@ -559,7 +559,9 @@ const App: React.FC = () => {
         {/* Cửa sổ Log - CHỈ RENDER CHO ADMIN */}
         {isAdmin && <SystemLog isOpen={isLogOpen} onClose={() => setIsLogOpen(false)} />}
 
-        {isAddingMetric && <MetricForm onSave={async (m) => { 
+        {isAddingMetric && <MetricForm 
+          latestMetrics={existingMetrics.length > 0 ? [...existingMetrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] : undefined}
+          onSave={async (m) => { 
           const actorId = (currentUser as any).id || (currentUser as any)._id;
           await Database.saveMetric({ ...m, userId: metricTargetUserId, actorId, actorName: currentUser?.fullName }); 
           setRefreshTrigger(t => t+1); 

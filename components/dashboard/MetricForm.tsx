@@ -9,9 +9,10 @@ interface MetricFormProps {
   onSaveBulk: (metrics: Omit<HealthMetric, 'id' | 'userId'>[]) => void;
   existingDates?: string[];
   onClose: () => void;
+  latestMetrics?: Partial<HealthMetric>;
 }
 
-const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose }) => {
+const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose, latestMetrics }) => {
   const getTodayISO = () => {
     const now = new Date();
     const offset = now.getTimezoneOffset();
@@ -173,17 +174,20 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     e.target.value = '';
   };
 
-  const metricFields = [
-    { key: 'weight', label: 'Cân nặng (kg)', placeholder: '65.5' },
-    { key: 'bodyFat', label: 'Mỡ cơ thể (%)', placeholder: '20.0' },
-    { key: 'muscleMass', label: 'Lượng cơ (kg)', placeholder: '45.0' },
-    { key: 'balanceIndex', label: 'Cân đối', placeholder: '80' },
-    { key: 'visceralFat', label: 'Mỡ nội tạng', placeholder: '5' },
-    { key: 'boneMinerals', label: 'Khoáng chất (kg)', placeholder: '2.5' },
-    { key: 'waterPercent', label: 'Nước (%)', placeholder: '55.0' },
-    { key: 'energy', label: 'Năng Lượng (kcal)', placeholder: '1500' },
-    { key: 'bioAge', label: 'Tuổi sinh học', placeholder: '25' },
-  ];
+  const metricFields = useMemo(() => {
+    const lm = latestMetrics || {};
+    return [
+      { key: 'weight', label: 'Cân nặng (kg)', placeholder: lm.weight ? `${lm.weight}` : '65.5' },
+      { key: 'bodyFat', label: 'Mỡ cơ thể (%)', placeholder: lm.bodyFat ? `${lm.bodyFat}` : '20.0' },
+      { key: 'muscleMass', label: 'Lượng cơ (kg)', placeholder: lm.muscleMass ? `${lm.muscleMass}` : '45.0' },
+      { key: 'balanceIndex', label: 'Cân đối', placeholder: lm.balanceIndex ? `${lm.balanceIndex}` : '80' },
+      { key: 'visceralFat', label: 'Mỡ nội tạng', placeholder: lm.visceralFat ? `${lm.visceralFat}` : '5' },
+      { key: 'boneMinerals', label: 'Khoáng chất (kg)', placeholder: lm.boneMinerals ? `${lm.boneMinerals}` : '2.5' },
+      { key: 'waterPercent', label: 'Nước (%)', placeholder: lm.waterPercent ? `${lm.waterPercent}` : '55.0' },
+      { key: 'energy', label: 'Năng Lượng (kcal)', placeholder: lm.energy ? `${lm.energy}` : '1500' },
+      { key: 'bioAge', label: 'Tuổi sinh học', placeholder: lm.bioAge ? `${lm.bioAge}` : '25' },
+    ];
+  }, [latestMetrics]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

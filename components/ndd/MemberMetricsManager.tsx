@@ -157,6 +157,7 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
           {showAddForm && (
             <div className="relative">
               <MetricForm
+                latestMetrics={metrics.length > 0 ? [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] : undefined}
                 onSave={handleSaveMetric}
                 onSaveBulk={handleSaveBulk}
                 existingDates={metrics.map(m => m.date)}
