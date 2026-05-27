@@ -43,23 +43,26 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
 
   const fetchDashboard = useCallback(async () => {
     setIsLoading(true);
+    const sessionToken = localStorage.getItem('lucky_hub_session');
+    console.log(`[NDDDashboard] 🔍 fetchDashboard starting...`);
+    console.log(`[NDDDashboard] 📎 Session token exists:`, !!sessionToken);
+    if (sessionToken) {
+      console.log(`[NDDDashboard] 📎 Token prefix: "${sessionToken.substring(0, 12)}..."`);
+    }
     try {
       const resp = await fetch('/api/nutrition-groups/my-dashboard', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('lucky_hub_session')}` }
+        headers: { 'Authorization': `Bearer ${sessionToken}` }
       });
-      if (resp.ok) {
-        const data = await resp.json();
-        console.log(`[NDDDashboard] my-dashboard: ${data.groups?.length || 0} groups, message: ${data.message}`);
-        setDashboardData(data.groups || []);
-        if (data.groups?.[0]?.group?.coOwners) {
-          setSelectedCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
-        }
-        if (!data.groups?.length && data.message) {
-          console.log(`[NDDDashboard] API message: ${data.message}`);
-        }
-      } else {
-        const err = await resp.json();
-        console.error(`[NDDDashboard] API error: ${err.message}`);
+      console.log(`[NDDDashboard] 📡 Response status: ${resp.status} ${resp.statusText}`);
+      const data = await resp.json();
+      console.log(`[NDDDashboard] 📦 Full response data:`, JSON.stringify(data, null, 2));
+      console.log(`[NDDDashboard] my-dashboard: ${data.groups?.length || 0} groups, message: ${data.message}`);
+      setDashboardData(data.groups || []);
+      if (data.groups?.[0]?.group?.coOwners) {
+        setSelectedCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
+      }
+      if (!data.groups?.length && data.message) {
+        console.log(`[NDDDashboard] API message: ${data.message}`);
       }
     } catch (err) {
       console.error('[NDDDashboard] Error:', err);

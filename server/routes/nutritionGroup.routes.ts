@@ -76,7 +76,7 @@ router.get('/all', async (req: Request, res: Response) => {
 router.get('/my-dashboard', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
-    console.log(`[NutritionGroup] 🔍 my-dashboard request from userId="${userId}" (type: ${typeof userId})`);
+    console.log(`[NutritionGroup] 🔍 my-dashboard request from userId="${userId}" (type: ${typeof userId}) length=${userId.length}`);
 
     // 🛠️ FIX: Sử dụng string comparison thay vì ObjectId
     // Vì ownerId/coOwners/members có thể được lưu dưới dạng string (không phải ObjectId)
@@ -89,6 +89,27 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       .sort({ createdAt: -1 });
 
     console.log(`[NutritionGroup] 📋 Total active NDDs in DB: ${allGroups.length}`);
+
+    // ===== DEBUG: Log tất cả NDD + ownerId để so sánh =====
+    console.log(`[NutritionGroup] 🔎 DEBUG: Listing all NDDs in DB:`);
+    for (let i = 0; i < allGroups.length; i++) {
+      const ndd = allGroups[i];
+      const ownerRaw = ndd.ownerId as any;
+      const ownerIdVal = ownerRaw?._id?.toString() || ownerRaw?.toString() || 'EMPTY';
+      const ownerType = typeof ownerRaw;
+      console.log(`[NutritionGroup]   [${i}] NDD="${ndd.name}"`);
+      console.log(`[NutritionGroup]         ownerId raw type=${ownerType} value="${ownerIdVal}"`);
+      console.log(`[NutritionGroup]         ownerId (typeof) = ${typeof ndd.ownerId}`);
+      console.log(`[NutritionGroup]         ownerId === userId? ${ownerIdVal === userId}`);
+      console.log(`[NutritionGroup]         ownerId String() === String()? ${String(ownerRaw || '') === String(userId)}`);
+      console.log(`[NutritionGroup]         coOwners count=${(ndd.coOwners || []).length}`);
+      console.log(`[NutritionGroup]         members count=${(ndd.members || []).length}`);
+      
+      // Test từng cách compare
+      const viaToString = ownerIdVal === userId;
+      const viaString = String(ownerRaw || '') === String(userId);
+      console.log(`[NutritionGroup]         toString match=${viaToString} | String() match=${viaString}`);
+    }
 
     // Filter bằng string comparison để tránh type mismatch ObjectId vs string
     const groups = allGroups.filter(g => {
@@ -106,13 +127,20 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       const isMember = membersStr.includes(userId);
 
       if (isOwner || isCoOwner || isMember) {
-        console.log(`[NutritionGroup] 📊 Match: "${g.name}" ownerMatch=${isOwner} coOwnerMatch=${isCoOwner} memberMatch=${isMember}`);
+        console.log(`[NutritionGroup] 📊 MATCH: "${g.name}" owner=${isOwner} coOwner=${isCoOwner} member=${isMember}`);
+      } else {
+        console.log(`[NutritionGroup] ❌ NO MATCH: "${g.name}" ownerId="${ownerIdStr}" userId="${userId}"`);
       }
 
       return isOwner || isCoOwner || isMember;
     });
 
     console.log(`[NutritionGroup] 📊 Found ${groups.length} groups for userId="${userId}"`);
+    if (groups.length === 0) {
+      console.log(`[NutritionGroup] ❌ ZERO groups matched!`);
+      console.log(`[NutritionGroup]    Possible causes: ownerId is stored as different format (number/string/ObjectId)`);
+      console.log(`[NutritionGroup]    Check the DEBUG output above for the actual ownerId format in DB.`);
+    }
 
     // Lấy chỉ số mới nhất cho member của từng group
     const { Metric } = await import('../models/Metric.ts');
