@@ -165,6 +165,10 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
     }
 
     const ownerUserId = ownerId || req.user!.userId;
+
+    // Cập nhật nutritionGroupId cho owner ngay khi tạo NDD
+    await User.findByIdAndUpdate(ownerUserId, { nutritionGroupId: null, pendingNutritionGroupId: null });
+
     const group = new NutritionGroup({
       name: name.trim(),
       ownerId: ownerUserId,
@@ -177,7 +181,11 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
     });
     await group.save();
 
-    console.log(`[NutritionGroup] ✅ Created "${group.name}" by ${req.user?.fullName} (owner added to members)`);
+    // Đồng bộ user.nutritionGroupId với group._id
+    await User.findByIdAndUpdate(ownerUserId, { nutritionGroupId: group._id });
+
+    console.log(`[NutritionGroup] ✅ Created "${group.name}" by ${req.user?.fullName}`);
+    console.log(`[NutritionGroup] 🆔 Owner ${ownerUserId} → nutritionGroupId = ${group._id}`);
     res.json({ ...group.toObject(), id: group._id });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -235,6 +243,9 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
           group.members.push(id);
           console.log(`[NutritionGroup] Auto-added co-owner ${id} to members`);
         }
+        // Đồng bộ user.nutritionGroupId
+        await User.findByIdAndUpdate(id, { nutritionGroupId: group._id, pendingNutritionGroupId: null });
+        console.log(`[NutritionGroup] 🆔 Co-owner ${id} → nutritionGroupId = ${group._id}`);
       }
     }
 
@@ -287,6 +298,9 @@ router.put('/:id', async (req: Request, res: Response) => {
         updateData.$push = { members: ownerId };
         console.log(`[NutritionGroup] Auto-added new owner ${ownerId} to members`);
       }
+      // Đồng bộ user.nutritionGroupId cho owner mới
+      await User.findByIdAndUpdate(ownerId, { nutritionGroupId: group._id, pendingNutritionGroupId: null });
+      console.log(`[NutritionGroup] 🆔 New owner ${ownerId} → nutritionGroupId = ${group._id}`);
     }
     if (ownerName !== undefined) updateData.ownerName = ownerName;
     if (address !== undefined) updateData.address = address;
