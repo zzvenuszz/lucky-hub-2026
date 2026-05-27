@@ -193,7 +193,7 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
         // Update existing goal
         resp = await fetch(`/api/goals/${editingGoal.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             targetValue: newGoal.targetValue,
             targetDate
@@ -210,7 +210,7 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
 
         resp = await fetch('/api/goals', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(),
           body: JSON.stringify({
             userId: currentUid,
             type: newGoal.type,
@@ -230,7 +230,10 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
         setEditingGoal(null);
         await fetchGoals();
         // Recalculate progress
-        await fetch(`/api/goals/recalculate/${currentUid}`, { method: 'POST' });
+        await fetch(`/api/goals/recalculate/${currentUid}`, { 
+          method: 'POST',
+          headers: getAuthHeaders()
+        });
       }
     } catch (err: any) {
       console.error('[Goals] Save error:', err);
@@ -242,7 +245,7 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
     try {
       await fetch(`/api/goals/${goalId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ status: 'cancelled' })
       });
       fetchGoals();
