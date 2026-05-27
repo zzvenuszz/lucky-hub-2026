@@ -28,6 +28,28 @@ const router = Router();
 // Tất cả user routes đều cần auth
 router.use(authMiddleware);
 
+// GET /api/users/me - Thông tin user hiện tại (refresh permissions từ Groups)
+router.get('/me', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.userId;
+    const user = await User.findById(userId).select('-password');
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+
+    const userObj = user.toObject();
+    
+    // Sử dụng effective permissions từ authMiddleware (đã gộp Group)
+    // req.user.permissions đã được tính trong authMiddleware
+    res.json({
+      ...userObj,
+      id: user._id,
+      permissions: req.user!.permissions,
+      sessionId: req.headers.authorization?.substring(7) || '',
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET /api/users - Danh sách users
 router.get('/', 
   requirePermission(RESOURCES.USERS.VIEW),

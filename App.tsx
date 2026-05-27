@@ -89,7 +89,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Kiểm tra session hết hạn khi mount
+  // Kiểm tra session hết hạn khi mount + refresh permissions từ server
   useEffect(() => {
     Database.checkHealth();
     const savedUser = localStorage.getItem(LS_USER);
@@ -119,6 +119,27 @@ const App: React.FC = () => {
           loginTimestampRef.current = savedLoginTime;
           rememberMeRef.current = savedRemember;
           
+          // Refresh permissions từ server (lấy permissions mới nhất từ Groups)
+          (async () => {
+            try {
+              const resp = await fetch('/api/users/me', {
+                headers: { 'Authorization': `Bearer ${savedSession}` }
+              });
+              if (resp.ok) {
+                const serverUser = await resp.json();
+                // Cập nhật currentUser với permissions mới từ server
+                setCurrentUser(serverUser);
+                localStorage.setItem(LS_USER, JSON.stringify(serverUser));
+                console.log(`[App] ✅ Permissions refreshed: ${serverUser.permissions?.length || 0} permissions`);
+                if (window.debugLog) window.debugLog(`Permissions refreshed: ${serverUser.permissions?.length || 0} permissions`, "auth");
+              } else {
+                console.warn('[App] Failed to refresh permissions, using cached');
+              }
+            } catch (refreshErr) {
+              console.warn('[App] Network error refreshing permissions, using cached:', refreshErr);
+            }
+          })();
+
           // Thiết lập timer logout tự động
           const remaining = maxAge - elapsed;
           if (expireTimerRef.current) clearTimeout(expireTimerRef.current);
