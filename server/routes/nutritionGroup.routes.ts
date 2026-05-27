@@ -78,32 +78,39 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
     const userId = req.user!.userId;
     console.log(`[NutritionGroup] 🔍 my-dashboard request from userId="${userId}" (type: ${typeof userId})`);
 
-    // DEBUG: Kiểm tra tất cả NDD trong DB để so sánh ownerId
-    const allGroups = await NutritionGroup.find({ isActive: true }).select('name ownerId').lean();
-    console.log(`[NutritionGroup] 📋 Total active NDDs in DB: ${allGroups.length}`);
-    for (const g of allGroups) {
-      const ownerIdStr = g.ownerId?.toString();
-      const isMatch = ownerIdStr === userId;
-      console.log(`[NutritionGroup]   - "${g.name}" ownerId="${ownerIdStr}" ${isMatch ? '✅ MATCH' : '❌ NO MATCH'}`);
-    }
-
-    // Tìm tất cả NDD mà user là owner, co-owner hoặc member
-    // Sử dụng ObjectId để so khớp chính xác (tránh lỗi type mismatch)
-    const userObjectId = new mongoose.Types.ObjectId(userId);
-    
-    const groups = await NutritionGroup.find({
-      $or: [
-        { ownerId: userObjectId },
-        { coOwners: userObjectId },
-        { members: userObjectId }
-      ],
-      isActive: true,
-    })
+    // 🛠️ FIX: Sử dụng string comparison thay vì ObjectId
+    // Vì ownerId/coOwners/members có thể được lưu dưới dạng string (không phải ObjectId)
+    // khi admin tạo NDD từ front-end gửi userId dạng string
+    const allGroups = await NutritionGroup.find({ isActive: true })
       .populate('ownerId', 'fullName username role')
       .populate('coOwners', 'fullName username role')
       .populate('members', 'fullName username email phoneNumber role avatar')
       .populate('pendingMembers.userId', 'fullName username role avatar')
       .sort({ createdAt: -1 });
+
+    console.log(`[NutritionGroup] 📋 Total active NDDs in DB: ${allGroups.length}`);
+
+    // Filter bằng string comparison để tránh type mismatch ObjectId vs string
+    const groups = allGroups.filter(g => {
+      // ownerId có thể là object (sau populate) hoặc string/ObjectId
+      const ownerIdStr = (g.ownerId as any)?._id?.toString() || g.ownerId?.toString();
+      
+      // coOwners là array các ObjectId hoặc object sau populate
+      const coOwnersStr = (g.coOwners || []).map((c: any) => c._id?.toString() || c.toString());
+      
+      // members là array các ObjectId hoặc object sau populate
+      const membersStr = (g.members || []).map((m: any) => m._id?.toString() || m.toString());
+
+      const isOwner = ownerIdStr === userId;
+      const isCoOwner = coOwnersStr.includes(userId);
+      const isMember = membersStr.includes(userId);
+
+      if (isOwner || isCoOwner || isMember) {
+        console.log(`[NutritionGroup] 📊 Match: "${g.name}" ownerMatch=${isOwner} coOwnerMatch=${isCoOwner} memberMatch=${isMember}`);
+      }
+
+      return isOwner || isCoOwner || isMember;
+    });
 
     console.log(`[NutritionGroup] 📊 Found ${groups.length} groups for userId="${userId}"`);
 

@@ -106,7 +106,7 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
-      <div className="bg-white w-full max-w-4xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
+      <div className="bg-white w-full max-w-4xl md:max-w-7xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
         {/* Header */}
         <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-5 flex items-center justify-between shrink-0">
           <div>
@@ -207,47 +207,47 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
 
               {/* Desktop table */}
               <div className="hidden md:block overflow-x-auto no-scrollbar">
-                <table className="w-full text-[11px] text-left min-w-[900px]">
+                <table className="w-full text-[11px] text-left">
                   <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50">
                     <tr>
-                      <th className="p-3">Ngày</th>
-                      <th className="p-3">Cân nặng</th>
-                      <th className="p-3">Mỡ %</th>
-                      <th className="p-3">Cơ (kg)</th>
-                      <th className="p-3">Cân đối</th>
-                      <th className="p-3">Mỡ nội tạng</th>
-                      <th className="p-3">Nước %</th>
-                      <th className="p-3">Khoáng</th>
-                      <th className="p-3">Năng lượng</th>
-                      <th className="p-3">Tuổi SH</th>
-                      <th className="p-3 text-right">Thao tác</th>
+                      <th className="p-3 whitespace-nowrap">Ngày</th>
+                      <th className="p-3 whitespace-nowrap">Cân nặng</th>
+                      <th className="p-3 whitespace-nowrap">Mỡ %</th>
+                      <th className="p-3 whitespace-nowrap">Cơ (kg)</th>
+                      <th className="p-3 whitespace-nowrap">Cân đối</th>
+                      <th className="p-3 whitespace-nowrap">Mỡ nội tạng</th>
+                      <th className="p-3 whitespace-nowrap">Nước %</th>
+                      <th className="p-3 whitespace-nowrap">Khoáng</th>
+                      <th className="p-3 whitespace-nowrap">Năng lượng</th>
+                      <th className="p-3 whitespace-nowrap">Tuổi SH</th>
+                      <th className="p-3 text-right sticky right-0 bg-white shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {metrics.map(m => (
                       <tr key={m.id || (m as any)._id} className="hover:bg-slate-50/50">
-                        <td className="p-3 font-bold">{formatDateVN(m.date)}</td>
-                        <td className="p-3 text-emerald-600 font-black">{m.weight}kg</td>
-                        <td className="p-3 text-rose-500 font-bold">{m.bodyFat}%</td>
-                        <td className="p-3 text-blue-600 font-bold">{m.muscleMass}kg</td>
-                        <td className="p-3 font-bold text-indigo-600">{m.balanceIndex ?? 0}</td>
-                        <td className="p-3 font-bold text-amber-600">{m.visceralFat ?? 0}</td>
-                        <td className="p-3 text-sky-600">{m.waterPercent}%</td>
-                        <td className="p-3 text-slate-600">{m.boneMinerals}kg</td>
-                        <td className="p-3 text-slate-600">{m.energy}kcal</td>
-                        <td className="p-3 text-slate-700 font-bold">{m.bioAge}</td>
-                        <td className="p-3 text-right space-x-2">
+                        <td className="p-3 font-bold whitespace-nowrap">{formatDateVN(m.date)}</td>
+                        <td className="p-3 text-emerald-600 font-black whitespace-nowrap">{m.weight}kg</td>
+                        <td className="p-3 text-rose-500 font-bold whitespace-nowrap">{m.bodyFat}%</td>
+                        <td className="p-3 text-blue-600 font-bold whitespace-nowrap">{m.muscleMass}kg</td>
+                        <td className="p-3 font-bold text-indigo-600 whitespace-nowrap">{m.balanceIndex ?? 0}</td>
+                        <td className="p-3 font-bold text-amber-600 whitespace-nowrap">{m.visceralFat ?? 0}</td>
+                        <td className="p-3 text-sky-600 whitespace-nowrap">{m.waterPercent}%</td>
+                        <td className="p-3 text-slate-600 whitespace-nowrap">{m.boneMinerals}kg</td>
+                        <td className="p-3 text-slate-600 whitespace-nowrap">{m.energy}kcal</td>
+                        <td className="p-3 text-slate-700 font-bold whitespace-nowrap">{m.bioAge}</td>
+                        <td className="p-3 text-right whitespace-nowrap sticky right-0 bg-white shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
                           <button
                             onClick={() => setEditingMetric(m)}
-                            className="text-emerald-600 font-black text-[9px] hover:underline uppercase"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider rounded-xl hover:bg-emerald-100 transition-all"
                           >
-                            Sửa
+                            ✏️ Sửa
                           </button>
                           <button
                             onClick={() => setDeletingMetric(m)}
-                            className="text-rose-600 font-black text-[9px] hover:underline uppercase"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider rounded-xl hover:bg-rose-100 transition-all ml-2"
                           >
-                            Xóa
+                            🗑️ Xóa
                           </button>
                         </td>
                       </tr>
