@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { NutritionGroup } from '../models/NutritionGroup.ts';
+import { Metric } from '../models/Metric.ts';
 import { User } from '../models/User.ts';
 import { authMiddleware, optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
@@ -143,7 +144,6 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
     }
 
     // Lấy chỉ số mới nhất cho member của từng group
-    const { Metric } = await import('../models/Metric.ts');
     const result = await Promise.all(groups.map(async (group) => {
       const memberMetrics: any[] = [];
       for (const member of group.members) {
@@ -180,7 +180,6 @@ router.get('/:id/members', async (req: Request, res: Response) => {
 
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
-    const { Metric } = await import('../models/Metric.ts');
     const memberMetrics: any[] = [];
     for (const member of group.members) {
       const latestMetric = await Metric.findOne({ userId: (member as any)._id }).sort({ date: -1 }).lean();
