@@ -47,10 +47,17 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       });
       if (resp.ok) {
         const data = await resp.json();
+        console.log(`[NDDDashboard] my-dashboard: ${data.groups?.length || 0} groups, message: ${data.message}`);
         setDashboardData(data.groups || []);
         if (data.groups?.[0]?.group?.coOwners) {
           setSelectedCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
         }
+        if (!data.groups?.length && data.message) {
+          console.log(`[NDDDashboard] API message: ${data.message}`);
+        }
+      } else {
+        const err = await resp.json();
+        console.error(`[NDDDashboard] API error: ${err.message}`);
       }
     } catch (err) {
       console.error('[NDDDashboard] Error:', err);
