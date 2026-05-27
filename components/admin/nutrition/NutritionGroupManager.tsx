@@ -38,15 +38,28 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
     }
   }, []);
 
-  // Lấy danh sách user thuộc group HLV
+  // Lấy danh sách user có quyền coach:access (dựa trên hệ thống group permissions)
   const loadCoachIds = useCallback(async () => {
     try {
       const allGroups = await Database.getGroups();
-      const hlvGroup = allGroups.find((g: any) => g.name?.toLowerCase() === 'hlv');
-      if (hlvGroup) {
-        const memberIds = (hlvGroup.members || []).map((m: any) => m._id || m);
-        setCoachIds(memberIds);
+      // Tìm tất cả groups có permission coach:access
+      const coachGroups = allGroups.filter((g: any) => 
+        (g.permissions || []).includes('coach:access')
+      );
+      // Union tất cả member ids từ các groups coach
+      const memberIds: string[] = [];
+      const seen = new Set<string>();
+      for (const g of coachGroups) {
+        for (const m of (g.members || [])) {
+          const id = String(m._id || m);
+          if (!seen.has(id)) {
+            seen.add(id);
+            memberIds.push(id);
+          }
+        }
       }
+      console.log(`[NutritionGroupManager] Found ${memberIds.length} users with coach:access from ${coachGroups.length} groups`);
+      setCoachIds(memberIds);
     } catch (err) {
       console.error('[NutritionGroupManager] Load coach ids error:', err);
     }
@@ -60,7 +73,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
       return;
     }
     try {
-      const owner = users.find(u => (u.id || u._id) === newGroup.ownerId);
+      const owner = users.find(u => String(u.id || u._id) === newGroup.ownerId);
       await Database.createNutritionGroup({
         name: newGroup.name.trim(),
         ownerId: newGroup.ownerId || undefined,
@@ -164,8 +177,8 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
             <input placeholder="Tên NDD *" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} className="px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
             <select value={newGroup.ownerId} onChange={e => setNewGroup({...newGroup, ownerId: e.target.value})} className="px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs">
               <option value="">-- Chọn chủ vận hành --</option>
-              {users.filter(u => coachIds.includes(u.id || u._id)).map(u => {
-                const uid = u.id || u._id;
+              {users.filter(u => coachIds.includes(String(u.id || u._id))).map(u => {
+                const uid = String(u.id || u._id);
                 return <option key={uid} value={uid}>{u.fullName} (@{u.username})</option>;
               })}
             </select>
@@ -306,11 +319,11 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Chủ vận hành</label>
                 <select value={editingGroup.ownerId} onChange={e => {
-                  const owner = users.find(u => (u.id || u._id) === e.target.value);
+                  const owner = users.find(u => String(u.id || u._id) === e.target.value);
                   setEditingGroup({...editingGroup, ownerId: e.target.value, ownerName: owner?.fullName || ''});
                 }} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs mt-1">
-                  {users.filter(u => coachIds.includes(u.id || u._id)).map(u => {
-                    const uid = u.id || u._id;
+                  {users.filter(u => coachIds.includes(String(u.id || u._id))).map(u => {
+                    const uid = String(u.id || u._id);
                     return <option key={uid} value={uid} selected={uid === editingGroup.ownerId}>{u.fullName}</option>;
                   })}
                 </select>

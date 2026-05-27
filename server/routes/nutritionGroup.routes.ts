@@ -56,7 +56,16 @@ router.get('/all', async (req: Request, res: Response) => {
       .populate('members', 'fullName username email phoneNumber role avatar')
       .populate('pendingMembers.userId', 'fullName username')
       .sort({ createdAt: -1 });
-    res.json(groups.map(g => ({ ...g.toObject(), id: g._id })));
+    res.json(groups.map(g => {
+      const obj = g.toObject();
+      // Transform ownerId và coOwners từ object sang string để client dùng
+      return { 
+        ...obj, 
+        id: g._id,
+        ownerId: (obj.ownerId as any)?._id || obj.ownerId,
+        coOwners: (obj.coOwners || []).map((c: any) => c._id || c),
+      };
+    }));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
@@ -147,11 +156,11 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
       return res.status(400).json({ message: 'Tên NDD đã tồn tại' });
     }
 
-    // Kiểm tra owner phải thuộc group HLV
+    // Kiểm tra owner phải có role COACH
     if (ownerId) {
-      const isHlv = await isUserInGroup(ownerId, 'HLV');
+      const isHlv = await isUserCoach(ownerId);
       if (!isHlv) {
-        return res.status(400).json({ message: 'Chủ vận hành phải thuộc nhóm HLV' });
+        return res.status(400).json({ message: 'Chủ vận hành phải có vai trò HLV (huấn luyện viên)' });
       }
     }
 
@@ -174,13 +183,23 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
   }
 });
 
-// Helper: kiểm tra user có trong group không
-async function isUserInGroup(userId: string, groupName: string): Promise<boolean> {
+// Helper: kiểm tra user có quyền Coach (coach:access) không
+// Dựa trên hệ thống phân quyền theo group
+async function isUserCoach(userId: string): Promise<boolean> {
   try {
-    const group = await Group.findOne({ name: { $regex: new RegExp(`^${groupName}$`, 'i') }, isActive: true });
-    if (!group) return false;
-    return group.members?.some((m: any) => m.toString() === userId) ?? false;
-  } catch {
+    const user = await User.findById(userId).select('role permissions');
+    if (!user) {
+      console.error(`[isUserCoach] ❌ User "${userId}" không tồn tại`);
+      return false;
+    }
+    // Lấy effective permissions từ groups
+    const { getEffectivePermissions } = await import('../services/permissionService.ts');
+    const effectivePermissions = await getEffectivePermissions(userId, user.role, user.permissions || []);
+    const hasCoachAccess = effectivePermissions.includes(RESOURCES.COACH.ACCESS);
+    console.log(`[isUserCoach] 🔍 User "${userId}" → ${hasCoachAccess ? '✅ Có quyền' : '❌ Không có quyền'} coach:access (${effectivePermissions.length} permissions)`);
+    return hasCoachAccess;
+  } catch (err) {
+    console.error(`[isUserCoach] ❌ Error:`, err);
     return false;
   }
 }
@@ -199,12 +218,12 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Chỉ chủ vận hành mới có quyền này' });
     }
 
-    // Validate tất cả đều thuộc group HLV
+    // Validate tất cả đều có role COACH
     if (coOwnerIds && Array.isArray(coOwnerIds)) {
       for (const id of coOwnerIds) {
-        const isHlv = await isUserInGroup(id, 'HLV');
+        const isHlv = await isUserCoach(id);
         if (!isHlv) {
-          return res.status(400).json({ message: 'Người đồng vận hành phải thuộc nhóm HLV' });
+          return res.status(400).json({ message: 'Đồng vận hành phải có vai trò HLV (huấn luyện viên)' });
         }
       }
       group.coOwners = coOwnerIds;
@@ -241,11 +260,11 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Chỉ admin hoặc chủ vận hành mới được đổi chủ' });
     }
 
-    // Kiểm tra owner mới phải thuộc group HLV
+    // Kiểm tra owner mới phải có role COACH
     if (ownerId) {
-      const isHlv = await isUserInGroup(ownerId, 'HLV');
+      const isHlv = await isUserCoach(ownerId);
       if (!isHlv) {
-        return res.status(400).json({ message: 'Chủ vận hành phải thuộc nhóm HLV' });
+        return res.status(400).json({ message: 'Chủ vận hành phải có vai trò HLV (huấn luyện viên)' });
       }
     }
 
