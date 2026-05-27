@@ -11,7 +11,8 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNdd, setSelectedNdd] = useState<any | null>(null);
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
-  const [coOwnerIds, setCoOwnerIds] = useState<string[]>([]);
+  const [coachCandidates, setCoachCandidates] = useState<any[]>([]);
+  const [selectedCoOwnerIds, setSelectedCoOwnerIds] = useState<string[]>([]);
   const [showCoOwnerEditor, setShowCoOwnerEditor] = useState(false);
   const [showPending, setShowPending] = useState(false);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -21,6 +22,22 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   const [metricWeight, setMetricWeight] = useState('');
   const [metricBodyFat, setMetricBodyFat] = useState('');
   const [metricMuscleMass, setMetricMuscleMass] = useState('');
+
+  // Load danh sách user có quyền coach:access
+  const fetchCoachCandidates = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/users/coach-candidates', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('lucky_hub_session')}` }
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setCoachCandidates(data || []);
+        console.log(`[NDDDashboard] Loaded ${data?.length || 0} coach candidates`);
+      }
+    } catch (err) {
+      console.error('[NDDDashboard] Fetch coach candidates error:', err);
+    }
+  }, []);
 
   const fetchDashboard = useCallback(async () => {
     setIsLoading(true);
@@ -32,7 +49,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
         const data = await resp.json();
         setDashboardData(data.groups || []);
         if (data.groups?.[0]?.group?.coOwners) {
-          setCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
+          setSelectedCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
         }
       }
     } catch (err) {
@@ -42,7 +59,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
     }
   }, []);
 
-  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+  useEffect(() => { fetchDashboard(); fetchCoachCandidates(); }, [fetchDashboard, fetchCoachCandidates]);
 
   const handleUpdateCoOwners = async () => {
     if (!selectedNdd?.group?.id) return;
@@ -50,13 +67,14 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       const resp = await fetch(`/api/nutrition-groups/${selectedNdd.group.id}/co-owners`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('lucky_hub_session')}` },
-        body: JSON.stringify({ coOwnerIds }),
+        body: JSON.stringify({ coOwnerIds: selectedCoOwnerIds }),
       });
       if (resp.ok) {
         const data = await resp.json();
         setSelectedNdd((prev: any) => ({ ...prev, group: { ...prev.group, coOwners: data.coOwners } }));
         setShowCoOwnerEditor(false);
         setActionMsg({ type: 'success', text: '✅ Đã cập nhật đồng vận hành' });
+        fetchDashboard();
       } else {
         const err = await resp.json();
         setActionMsg({ type: 'error', text: '❌ ' + err.message });
@@ -269,13 +287,48 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
           {showCoOwnerEditor && (
             <div className="bg-blue-50 rounded-2xl p-4 space-y-3">
               <p className="text-[10px] font-black text-blue-600 uppercase">Chọn HLV làm đồng vận hành</p>
-              <div className="space-y-1 max-h-40 overflow-y-auto">
-                <label className="flex items-center gap-2 p-2 rounded-xl bg-white cursor-pointer text-xs">
-                  <input type="checkbox" checked={coOwnerIds.length === 0} onChange={() => setCoOwnerIds([])} className="rounded" />
-                  <span className="font-bold text-slate-500">(Không có đồng vận hành)</span>
-                </label>
-              </div>
-              <button onClick={handleUpdateCoOwners} className="px-5 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">Lưu</button>
+              {coachCandidates.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">Đang tải danh sách HLV...</p>
+              ) : (
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  <label className="flex items-center gap-2 p-2 rounded-xl bg-white cursor-pointer text-xs hover:bg-slate-50 transition-colors">
+                    <input type="checkbox" checked={selectedCoOwnerIds.length === 0} onChange={() => setSelectedCoOwnerIds([])} className="rounded" />
+                    <span className="font-bold text-slate-500">(Không có đồng vận hành)</span>
+                  </label>
+                  {coachCandidates.filter((c: any) => {
+                    // Không hiển thị bản thân owner
+                    const cid = c.id || c._id;
+                    return String(cid) !== String(group.ownerId?._id || group.ownerId);
+                  }).map((c: any) => {
+                    const cid = String(c.id || c._id);
+                    const isChecked = selectedCoOwnerIds.includes(cid);
+                    return (
+                      <label key={cid} className="flex items-center gap-2 p-2 rounded-xl bg-white cursor-pointer text-xs hover:bg-slate-50 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              setSelectedCoOwnerIds(selectedCoOwnerIds.filter(id => id !== cid));
+                            } else {
+                              setSelectedCoOwnerIds([...selectedCoOwnerIds, cid]);
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[8px] font-bold text-blue-600 overflow-hidden shrink-0">
+                          {c.avatar ? <img src={c.avatar} className="w-full h-full object-cover" /> : c.fullName?.charAt(0) || '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-bold text-slate-700">{c.fullName}</span>
+                          <span className="text-slate-400 ml-1">@{c.username}</span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <button onClick={handleUpdateCoOwners} className="px-5 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors">Lưu thay đổi</button>
             </div>
           )}
 

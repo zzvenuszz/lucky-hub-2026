@@ -164,19 +164,20 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
       }
     }
 
+    const ownerUserId = ownerId || req.user!.userId;
     const group = new NutritionGroup({
       name: name.trim(),
-      ownerId: ownerId || req.user!.userId,
+      ownerId: ownerUserId,
       ownerName: ownerName || req.user!.fullName,
       address: address || '',
-      members: [],
+      members: [ownerUserId],  // Tự động thêm owner vào members
       coOwners: [],
       isActive: true,
       pendingMembers: [],
     });
     await group.save();
 
-    console.log(`[NutritionGroup] ✅ Created "${group.name}" by ${req.user?.fullName}`);
+    console.log(`[NutritionGroup] ✅ Created "${group.name}" by ${req.user?.fullName} (owner added to members)`);
     res.json({ ...group.toObject(), id: group._id });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -227,6 +228,14 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
         }
       }
       group.coOwners = coOwnerIds;
+      // Tự động thêm co-owners vào members nếu chưa có
+      for (const id of coOwnerIds) {
+        const memberExists = group.members.some((m: any) => m.toString() === id);
+        if (!memberExists) {
+          group.members.push(id);
+          console.log(`[NutritionGroup] Auto-added co-owner ${id} to members`);
+        }
+      }
     }
 
     await group.save();
@@ -270,7 +279,15 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
-    if (ownerId !== undefined) updateData.ownerId = ownerId;
+    if (ownerId !== undefined) {
+      updateData.ownerId = ownerId;
+      // Tự động thêm owner mới vào members nếu chưa có
+      const memberExists = group.members.some((m: any) => m.toString() === ownerId);
+      if (!memberExists) {
+        updateData.$push = { members: ownerId };
+        console.log(`[NutritionGroup] Auto-added new owner ${ownerId} to members`);
+      }
+    }
     if (ownerName !== undefined) updateData.ownerName = ownerName;
     if (address !== undefined) updateData.address = address;
     if (isActive !== undefined && (isAdmin || isOwner)) updateData.isActive = isActive;

@@ -37,6 +37,29 @@ router.get('/',
   }
 );
 
+// GET /api/users/coach-candidates - Danh sách user có quyền coach:access (cho NDD)
+router.get('/coach-candidates', async (req: Request, res: Response) => {
+  try {
+    const { getEffectivePermissions } = await import('../services/permissionService.ts');
+    const allUsers = await User.find({ status: 'ACTIVE' }).select('_id fullName username avatar email phoneNumber permissions');
+    const candidates: any[] = [];
+    for (const u of allUsers) {
+      const perms = await getEffectivePermissions(
+        (u._id as string).toString(),
+        '',  // role không còn dùng
+        u.permissions || []
+      );
+      if (perms.includes(RESOURCES.COACH.ACCESS)) {
+        candidates.push({ ...u.toObject(), id: u._id });
+      }
+    }
+    console.log(`[UserRoutes] Coach candidates: ${candidates.length} users`);
+    res.json(candidates);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // PUT /api/users/:id - Cập nhật user
 router.put('/:id',
   requirePermission(RESOURCES.USERS.UPDATE),
