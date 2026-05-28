@@ -1,7 +1,8 @@
 
-import React, { useState, memo } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import { User, HealthGoal } from '../../types.ts';
 import LoadingButton from '../system/LoadingButton.tsx';
+import { useToast } from '../system/ToastProvider.tsx';
 
 interface ProfileFormProps {
   user: User;
@@ -16,6 +17,8 @@ interface ProfileFormProps {
 const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }) => {
   const [formData, setFormData] = useState(initialData);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { addToast } = useToast();
 
   // Đồng bộ formData khi initialData thay đổi (ví dụ khi AvatarEditor cập nhật avatar)
   React.useEffect(() => {
@@ -48,18 +51,28 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = useCallback(async () => {
     if (emailError) {
       console.warn('[ProfileForm] Cannot submit - email error exists');
+      addToast({ type: 'warning', title: 'Không thể lưu', message: 'Vui lòng sửa lỗi email trước khi lưu.' });
       return;
     }
+    setIsSubmitting(true);
     console.log('[ProfileForm] Submitting form with data:', { fullName: formData.fullName, email: formData.email });
-    onUpdate(formData);
-  };
+    try {
+      await onUpdate(formData);
+      addToast({ type: 'success', title: 'Thành công', message: 'Hồ sơ đã được cập nhật.' });
+      console.log('[ProfileForm] Update successful');
+    } catch (error: any) {
+      console.error('[ProfileForm] Update failed:', error);
+      addToast({ type: 'error', title: 'Lỗi', message: error?.message || 'Có lỗi xảy ra khi cập nhật hồ sơ.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [formData, emailError, onUpdate, addToast]);
 
   return (
-    <form onSubmit={handleSubmit} className="p-8 pt-16 space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="p-8 pt-16 space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Họ và tên</label>
@@ -112,7 +125,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
           </div>
         </div>
       </div>
-      <LoadingButton type="submit" onClick={async () => {}} variant="primary" size="lg" loadingText="Đang lưu..." className="!w-full">
+      <LoadingButton type="button" onClick={handleSubmit} disabled={isSubmitting} variant="primary" size="lg" loadingText="Đang lưu..." className="!w-full">
         Cập nhật hồ sơ hội viên
       </LoadingButton>
     </form>

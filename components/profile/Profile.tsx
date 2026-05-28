@@ -114,9 +114,9 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmi
     });
   }, [user]);
 
-  const handleDataUpdate = (newData: any, shouldSubmit: boolean = true) => {
+  const handleDataUpdate = async (newData: any, shouldSubmit: boolean = true) => {
     setLocalData(prev => ({ ...prev, ...newData }));
-    if (shouldSubmit) onUpdate(newData);
+    if (shouldSubmit) await onUpdate(newData);
   };
 
   return (
