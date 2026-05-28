@@ -7,6 +7,7 @@ import StatCards from './StatCards.tsx';
 import BodyCompositionPie from './BodyCompositionPie.tsx';
 import TrendChart from './TrendChart.tsx';
 import GoalTracking from '../goals/GoalTracking.tsx';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface DashboardProps {
   user: User;
@@ -86,7 +87,9 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
             <p className="text-slate-500 font-medium">Chào {user.fullName}! Mục tiêu: <span className="text-emerald-600 font-bold">{(user.healthGoals || []).join(', ') || 'Chưa đặt mục tiêu'}</span></p>
           )}
         </div>
-        <button onClick={onAddMetric} className="bg-emerald-600 text-white px-6 py-3 rounded-2xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all">+ Cập nhật chỉ số</button>
+        <LoadingButton onClick={onAddMetric} variant="primary" size="md" className="!shadow-lg !shadow-emerald-100">
+          + Cập nhật chỉ số
+        </LoadingButton>
       </div>
 
       <StatCards latestMetric={latestMetric} prevMetric={prevMetric} configs={AVAILABLE_METRICS} />

@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, memo, useMemo } from 'react';
 import { HealthMetric } from '../../types.ts';
 import { extractMetricsFromImage } from '../../services/gemini.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface MetricFormProps {
   onSave: (metric: Omit<HealthMetric, 'id' | 'userId'>) => void;
@@ -331,10 +332,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                   </tbody>
                 </table>
               </div>
-              <button onClick={() => onSaveBulk(bulkPreview)} className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest hover:bg-emerald-700 transition-all">Xác nhận lưu {bulkPreview.length} bản ghi</button>
+              <LoadingButton onClick={() => onSaveBulk(bulkPreview)} variant="primary" size="lg" loadingText="Đang lưu..." className="!w-full">
+                Xác nhận lưu {bulkPreview.length} bản ghi
+              </LoadingButton>
             </div>
           ) : !loadingAI && (
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form id="metric-form" onSubmit={handleSubmit} className="space-y-6">
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="md:col-span-2 lg:col-span-3 space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày đo lường (Ngày/Tháng/Năm)</label>
@@ -367,7 +370,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                   </div>
                 ))}
                </div>
-               <button type="submit" className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest">Lưu kết quả ngay</button>
+               <LoadingButton type="submit" variant="primary" size="lg" loadingText="Đang lưu..." className="!w-full">
+                 Lưu kết quả ngay
+               </LoadingButton>
             </form>
           )}
         </div>

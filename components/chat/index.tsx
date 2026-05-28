@@ -7,6 +7,7 @@ import { User } from '../../types.ts';
 import { useChat } from './ChatProvider.tsx';
 import ContactList from './components/ContactList.tsx';
 import ChatWindow from './components/ChatWindow.tsx';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface ChatSystemProps {
   currentUser: User;
@@ -46,7 +47,9 @@ const ChatSystem: React.FC<ChatSystemProps> = memo(({ onClose, currentUser }) =>
         </div>
         <div className="flex items-center gap-1">
           {!showContacts && selectedChat && (
-            <button onClick={handleClearChat} className="w-8 h-8 flex items-center justify-center hover:bg-red-400/20 rounded-full transition-all text-sm" title="Xóa toàn bộ nội dung chat">🗑️</button>
+            <LoadingButton onClick={handleClearChat} variant="danger" size="sm" loadingText="..." className="!w-8 !h-8 !p-0 !rounded-full !bg-transparent !text-white hover:!bg-red-400/20 !text-sm !shadow-none" title="Xóa toàn bộ nội dung chat">
+              🗑️
+            </LoadingButton>
           )}
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-full font-bold text-xl transition-all">×</button>
         </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import { User, UserRole, AccountStatus } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { useToast } from '../system/ToastProvider.tsx';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface UserManagementProps {
   users: User[];
@@ -466,7 +467,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
 
             <div className="flex gap-3 pt-4">
               <button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
-              <button type="submit" className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg">Lưu thông tin</button>
+              <LoadingButton type="submit" variant="primary" size="md" loadingText="Đang lưu..." className="!flex-1 !py-4 !rounded-2xl !text-[11px]">
+                Lưu thông tin
+              </LoadingButton>
             </div>
           </form>
         </div>

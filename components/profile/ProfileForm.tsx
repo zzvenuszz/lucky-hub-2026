@@ -1,6 +1,7 @@
 
 import React, { useState, memo } from 'react';
 import { User, HealthGoal } from '../../types.ts';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface ProfileFormProps {
   user: User;
@@ -111,9 +112,9 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
           </div>
         </div>
       </div>
-      <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all">
+      <LoadingButton type="submit" onClick={async () => {}} variant="primary" size="lg" loadingText="Đang lưu..." className="!w-full">
         Cập nhật hồ sơ hội viên
-      </button>
+      </LoadingButton>
     </form>
   );
 };

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
 import { User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import MemberMetricsManager from './MemberMetricsManager.tsx';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface NDDDashboardProps {
   currentUser: User;
@@ -24,6 +25,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   const [metricWeight, setMetricWeight] = useState('');
   const [metricBodyFat, setMetricBodyFat] = useState('');
   const [metricMuscleMass, setMetricMuscleMass] = useState('');
+  const [approvingUserId, setApprovingUserId] = useState<string | null>(null);
+  const [rejectingUserId, setRejectingUserId] = useState<string | null>(null);
+  const dashboardDataRef = useRef<any[]>([]);
 
   // Load danh sách user có quyền coach:access
   const fetchCoachCandidates = useCallback(async () => {
@@ -44,25 +48,16 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   const fetchDashboard = useCallback(async () => {
     setIsLoading(true);
     const sessionToken = localStorage.getItem('lucky_hub_session');
-    console.log(`[NDDDashboard] 🔍 fetchDashboard starting...`);
-    console.log(`[NDDDashboard] 📎 Session token exists:`, !!sessionToken);
-    if (sessionToken) {
-      console.log(`[NDDDashboard] 📎 Token prefix: "${sessionToken.substring(0, 12)}..."`);
-    }
     try {
       const resp = await fetch('/api/nutrition-groups/my-dashboard', {
         headers: { 'Authorization': `Bearer ${sessionToken}` }
       });
-      console.log(`[NDDDashboard] 📡 Response status: ${resp.status} ${resp.statusText}`);
       const data = await resp.json();
-      console.log(`[NDDDashboard] 📦 Full response data:`, JSON.stringify(data, null, 2));
-      console.log(`[NDDDashboard] my-dashboard: ${data.groups?.length || 0} groups, message: ${data.message}`);
-      setDashboardData(data.groups || []);
+      const newData = data.groups || [];
+      setDashboardData(newData);
+      dashboardDataRef.current = newData;
       if (data.groups?.[0]?.group?.coOwners) {
         setSelectedCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
-      }
-      if (!data.groups?.length && data.message) {
-        console.log(`[NDDDashboard] API message: ${data.message}`);
       }
     } catch (err) {
       console.error('[NDDDashboard] Error:', err);
@@ -83,10 +78,13 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       });
       if (resp.ok) {
         const data = await resp.json();
-        setSelectedNdd((prev: any) => ({ ...prev, group: { ...prev.group, coOwners: data.coOwners } }));
+        await fetchDashboard();
+        const updatedNdd = dashboardDataRef.current.find(
+          (item: any) => item.group.id === selectedNdd.group.id
+        );
+        if (updatedNdd) setSelectedNdd(updatedNdd);
         setShowCoOwnerEditor(false);
         setActionMsg({ type: 'success', text: '✅ Đã cập nhật đồng vận hành' });
-        fetchDashboard();
       } else {
         const err = await resp.json();
         setActionMsg({ type: 'error', text: '❌ ' + err.message });
@@ -98,23 +96,37 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
 
   const handleApprove = async (userId: string, userName: string) => {
     if (!selectedNdd?.group?.id) return;
+    setApprovingUserId(userId);
     try {
       await Database.approveNutritionGroupMember(selectedNdd.group.id, userId);
+      await fetchDashboard();
+      const updatedNdd = dashboardDataRef.current.find(
+        (item: any) => item.group.id === selectedNdd.group.id
+      );
+      if (updatedNdd) setSelectedNdd(updatedNdd);
       setActionMsg({ type: 'success', text: `✅ Đã duyệt ${userName}` });
-      fetchDashboard();
     } catch (err: any) {
       setActionMsg({ type: 'error', text: '❌ ' + err.message });
+    } finally {
+      setApprovingUserId(null);
     }
   };
 
   const handleReject = async (userId: string) => {
     if (!selectedNdd?.group?.id) return;
+    setRejectingUserId(userId);
     try {
       await Database.rejectNutritionGroupMember(selectedNdd.group.id, userId);
+      await fetchDashboard();
+      const updatedNdd = dashboardDataRef.current.find(
+        (item: any) => item.group.id === selectedNdd.group.id
+      );
+      if (updatedNdd) setSelectedNdd(updatedNdd);
       setActionMsg({ type: 'success', text: '✅ Đã từ chối' });
-      fetchDashboard();
     } catch (err: any) {
       setActionMsg({ type: 'error', text: '❌ ' + err.message });
+    } finally {
+      setRejectingUserId(null);
     }
   };
 
@@ -136,7 +148,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       setMetricWeight('');
       setMetricBodyFat('');
       setMetricMuscleMass('');
-      fetchDashboard();
+      await fetchDashboard();
     } catch (err: any) {
       setActionMsg({ type: 'error', text: '❌ Lỗi: ' + err.message });
     }
@@ -145,7 +157,6 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
   const handleSendChat = async () => {
     if (!chatBox || !chatMessage.trim()) return;
     try {
-      // Gửi tin nhắn đến member qua API chat
       await fetch('/api/chats/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('lucky_hub_session')}` },
@@ -345,7 +356,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
                   })}
                 </div>
               )}
-              <button onClick={handleUpdateCoOwners} className="px-5 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors">Lưu thay đổi</button>
+              <LoadingButton onClick={handleUpdateCoOwners} variant="primary" size="sm" loadingText="Đang lưu..." className="!px-5 !py-2 !rounded-xl !text-xs !bg-blue-600 hover:!bg-blue-700">
+                Lưu thay đổi
+              </LoadingButton>
             </div>
           )}
 
@@ -353,8 +366,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
           {showPending && pendingMembers.length > 0 && (
             <div className="bg-amber-50 rounded-2xl p-4 space-y-2">
               <p className="text-[10px] font-black text-amber-700 uppercase">Yêu cầu chờ duyệt</p>
-              {pendingMembers.map((p: any, idx: number) => {
-                // Xác định userId string an toàn
+                    {pendingMembers.map((p: any, idx: number) => {
                 const userIdStr = typeof p.userId === 'object' && p.userId !== null
                   ? (p.userId._id || p.userId.id || p.userId.toString())
                   : String(p.userId);
@@ -363,8 +375,26 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
                   <div key={idx} className="flex items-center justify-between bg-white rounded-xl p-2">
                     <span className="text-xs font-bold text-slate-700">{userName}</span>
                     <div className="flex gap-1">
-                      <button onClick={() => handleApprove(userIdStr, userName)} className="px-3 py-1 bg-emerald-500 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-600">Duyệt</button>
-                      <button onClick={() => handleReject(userIdStr)} className="px-3 py-1 bg-rose-100 text-rose-600 rounded-xl text-[9px] font-bold hover:bg-rose-200">Từ chối</button>
+                      <LoadingButton
+                        onClick={() => handleApprove(userIdStr, userName)}
+                        variant="success"
+                        size="sm"
+                        loadingText="..."
+                        disabled={approvingUserId === userIdStr || rejectingUserId === userIdStr}
+                        className="!px-3 !py-1 !rounded-xl !text-[9px]"
+                      >
+                        Duyệt
+                      </LoadingButton>
+                      <LoadingButton
+                        onClick={() => handleReject(userIdStr)}
+                        variant="danger"
+                        size="sm"
+                        loadingText="..."
+                        disabled={rejectingUserId === userIdStr || approvingUserId === userIdStr}
+                        className="!px-3 !py-1 !rounded-xl !text-[9px] !bg-rose-100 !text-rose-600 hover:!bg-rose-200"
+                      >
+                        Từ chối
+                      </LoadingButton>
                     </div>
                   </div>
                 );
@@ -501,9 +531,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
               <button onClick={() => setMetricForm(null)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">
                 Hủy
               </button>
-              <button onClick={handleSendMetric} className="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[10px] shadow-lg">
+              <LoadingButton onClick={handleSendMetric} variant="primary" size="lg" loadingText="Đang lưu..." className="!flex-1">
                 Lưu
-              </button>
+              </LoadingButton>
             </div>
           </div>
         </div>
@@ -526,9 +556,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
               <button onClick={() => setChatBox(null)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">
                 Hủy
               </button>
-              <button onClick={handleSendChat} className="flex-1 py-3 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] shadow-lg">
+              <LoadingButton onClick={handleSendChat} variant="primary" size="lg" loadingText="Đang gửi..." className="!flex-1 !bg-indigo-600 hover:!bg-indigo-700">
                 Gửi
-              </button>
+              </LoadingButton>
             </div>
           </div>
         </div>

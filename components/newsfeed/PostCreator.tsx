@@ -1,5 +1,6 @@
 import React, { useRef, memo, useState, useCallback } from 'react';
 import { User } from '../../types.ts';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface PostCreatorProps {
   currentUser: User;
@@ -156,13 +157,11 @@ const PostCreator: React.FC<PostCreatorProps> = ({
               {isProcessingImages && <span className="text-[10px] font-black text-emerald-600 animate-pulse uppercase tracking-widest">⚡ Đang tối ưu ảnh...</span>}
             </div>
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" multiple onChange={onImageChange} />
-            <button onClick={() => {
-              // Pass hashtags to the parent via a custom event or just call onCreate and clear hashtags
-              onCreate();
-              // Hashtags will be cleared after successful creation in parent
-            }} disabled={isLoading || isProcessingImages || (!inputText.trim() && selectedImages.length === 0)} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all disabled:opacity-50">
-              {isLoading ? 'Đang đăng...' : 'Chia sẻ'}
-            </button>
+            <LoadingButton onClick={onCreate} variant="primary" size="sm" loadingText="Đang đăng..." className="!px-6"
+              disabled={isProcessingImages || (!inputText.trim() && selectedImages.length === 0)}
+            >
+              Chia sẻ
+            </LoadingButton>
           </div>
         </div>
       </div>

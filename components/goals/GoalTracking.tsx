@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { User } from '../../types.ts';
+import LoadingButton from '../system/LoadingButton.tsx';
 
 interface Goal {
   id: string;
@@ -268,9 +269,9 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
           <p className="text-slate-400 text-xs font-medium mt-1 uppercase tracking-widest">Theo dõi tiến độ hoàn thành</p>
         </div>
         {!showForm && (
-          <button onClick={handleOpenAddForm} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">
+          <LoadingButton onClick={handleOpenAddForm} variant="primary" size="sm" className="!shadow-lg !shadow-emerald-100">
             + Thêm mục tiêu
-          </button>
+          </LoadingButton>
         )}
       </div>
 
@@ -340,13 +341,16 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
               </p>
             </div>
           </div>
-          <button
+          <LoadingButton
             onClick={handleSaveGoal}
+            variant="primary"
+            size="md"
+            loadingText="Đang lưu..."
             disabled={availableTypes.length === 0 && !editingGoal}
-            className="w-full py-3 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest text-xs disabled:bg-slate-300 disabled:cursor-not-allowed"
+            className="!w-full !py-3 !rounded-xl !text-xs"
           >
             {editingGoal ? '💾 CẬP NHẬT MỤC TIÊU' : '🎯 TẠO MỤC TIÊU'}
-          </button>
+          </LoadingButton>
         </div>
       )}
 
@@ -380,7 +384,9 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
                   ) : (
                     <>
                       <button onClick={() => handleOpenEditForm(goal)} className="text-blue-400 hover:text-blue-600 text-xs font-bold px-2 py-1 rounded-lg hover:bg-blue-50 transition-all">✏️ Sửa</button>
-                      <button onClick={() => handleCancelGoal(goal.id)} className="text-rose-400 hover:text-rose-600 text-xs font-bold px-2 py-1 rounded-lg hover:bg-rose-50 transition-all">✕ Hủy</button>
+                      <LoadingButton onClick={() => handleCancelGoal(goal.id)} variant="danger" size="sm" loadingText="..." className="!px-2 !py-1 !rounded-lg !text-xs !bg-transparent !text-rose-400 hover:!text-rose-600 hover:!bg-rose-50 !shadow-none">
+                        ✕ Hủy
+                      </LoadingButton>
                     </>
                   )}
                 </div>
