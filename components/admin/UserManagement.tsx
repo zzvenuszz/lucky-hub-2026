@@ -27,6 +27,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [allGroups, setAllGroups] = useState<Group[]>([]);
+  const [saving, setSaving] = useState(false);
   const { addToast } = useToast();
 
   // Lấy userId an toàn
@@ -67,9 +68,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
     }
   }, []);
 
-  const handleUpdateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleUpdateUser = async () => {
     if (!editingUser) return;
+    setSaving(true);
     const uid = getUserId(editingUser);
 
     // Chỉ update những field cần thiết, KHÔNG gửi role
@@ -117,6 +118,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
     } catch (err: any) {
       setEditingUser(null);
       addToast({ type: 'error', title: 'Lỗi', message: err.message || 'Không thể cập nhật.' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -391,7 +394,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
 
       {editingUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-          <form onSubmit={handleUpdateUser} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
+          <form onSubmit={(e) => { e.preventDefault(); handleUpdateUser(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật Hội viên</h4>
             
             {/* Thông tin cơ bản */}
@@ -463,8 +466,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
             </div>
 
             <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
-              <LoadingButton type="submit" variant="primary" size="md" loadingText="Đang lưu..." className="!flex-1 !py-4 !rounded-2xl !text-[11px]">
+              <button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px] hover:bg-slate-200 transition-all active:scale-[0.97]">Hủy</button>
+              <LoadingButton type="button" onClick={handleUpdateUser} disabled={saving} variant="primary" size="md" loadingText="Đang lưu..." className="!flex-1 !py-4 !rounded-2xl !text-[11px]">
                 Lưu thông tin
               </LoadingButton>
             </div>
