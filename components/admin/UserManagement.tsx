@@ -89,33 +89,30 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
       addToast({ type: 'success', title: 'Đã cập nhật', message: 'Thông tin hội viên đã được lưu.' });
       onRefresh();
 
-      // Cập nhật group membership (single group) - chạy background
+      // Cập nhật group membership (single group)
       if (selectedGroupId) {
-        (async () => {
-          try {
-            // Xóa user khỏi tất cả group khác
-            const freshGroups = await Database.getGroups();
-            for (const group of freshGroups) {
-              const gid = group.id || group._id;
-              if (gid === selectedGroupId) continue;
-              const currentMembers = group.members?.map((m: any) => m._id || m) || [];
-              if (currentMembers.includes(uid)) {
-                await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
-              }
+        try {
+          const freshGroups = await Database.getGroups();
+          for (const group of freshGroups) {
+            const gid = group.id || group._id;
+            if (gid === selectedGroupId) continue;
+            const currentMembers = group.members?.map((m: any) => m._id || m) || [];
+            if (currentMembers.includes(uid)) {
+              await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
             }
-            // Thêm user vào group được chọn
-            const targetGroup = freshGroups.find((g: any) => (g.id || g._id) === selectedGroupId);
-            if (targetGroup) {
-              const tgtId = targetGroup.id || targetGroup._id;
-              const targetMembers = targetGroup.members?.map((m: any) => m._id || m) || [];
-              if (!targetMembers.includes(uid)) {
-                await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
-              }
-            }
-          } catch (groupErr: any) {
-            console.error('[UserManagement] Background group update error:', groupErr);
           }
-        })();
+          // Thêm user vào group được chọn
+          const targetGroup = freshGroups.find((g: any) => (g.id || g._id) === selectedGroupId);
+          if (targetGroup) {
+            const tgtId = targetGroup.id || targetGroup._id;
+            const targetMembers = targetGroup.members?.map((m: any) => m._id || m) || [];
+            if (!targetMembers.includes(uid)) {
+              await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
+            }
+          }
+        } catch (groupErr: any) {
+          console.error('[UserManagement] Group update error:', groupErr);
+        }
       }
     } catch (err: any) {
       setEditingUser(null);
