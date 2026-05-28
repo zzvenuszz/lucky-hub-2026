@@ -50,14 +50,27 @@ router.get('/me', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/users - Danh sách users
-router.get('/', 
-  requirePermission(RESOURCES.USERS.VIEW),
-  async (req: Request, res: Response) => {
-    const u = await User.find().select('-password');
-    res.json(u.map(item => ({ ...item.toObject(), id: item._id })));
+// GET /api/users - Danh sách users (tất cả user đã đăng nhập đều xem được)
+// Nếu có quyền users:view thì trả đủ thông tin, nếu không thì chỉ basic info
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const hasFullView = req.user?.permissions?.includes(RESOURCES.USERS.VIEW);
+    
+    if (hasFullView) {
+      // Admin: xem tất cả thông tin (trừ password)
+      const u = await User.find().select('-password');
+      return res.json(u.map(item => ({ ...item.toObject(), id: item._id })));
+    } else {
+      // User thường: chỉ xem thông tin cơ bản
+      const u = await User.find({ status: 'ACTIVE' })
+        .select('_id fullName username avatar email role');
+      return res.json(u.map(item => ({ ...item.toObject(), id: item._id })));
+    }
+  } catch (err: any) {
+    console.error('[UserRoutes] Error fetching users:', err.message);
+    return res.status(500).json({ message: err.message });
   }
-);
+});
 
 // GET /api/users/coach-candidates - Danh sách user có quyền coach:access (cho NDD)
 router.get('/coach-candidates', async (req: Request, res: Response) => {
