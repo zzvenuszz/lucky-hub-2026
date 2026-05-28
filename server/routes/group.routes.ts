@@ -151,6 +151,27 @@ router.post('/:id/members', async (req: Request, res: Response) => {
     group.members = memberIds;
     await group.save();
 
+    // QUAN TRỌNG: Cập nhật groupId cho User khi thay đổi membership
+    // User mới được thêm: set groupId = group này
+    const addedMemberIds = memberIds.filter(mId => !oldMemberIds.includes(mId));
+    if (addedMemberIds.length > 0) {
+      await User.updateMany(
+        { _id: { $in: addedMemberIds } },
+        { $set: { groupId: group._id } }
+      );
+      console.log(`[Groups] ✅ Updated groupId for ${addedMemberIds.length} new members to "${group.name}"`);
+    }
+
+    // User bị xóa khỏi group: set groupId = null (sẽ được gán group mặc định sau)
+    const removedMemberIds = oldMemberIds.filter(mId => !memberIds.includes(mId));
+    if (removedMemberIds.length > 0) {
+      await User.updateMany(
+        { _id: { $in: removedMemberIds } },
+        { $set: { groupId: null } }
+      );
+      console.log(`[Groups] ℹ️ Cleared groupId for ${removedMemberIds.length} removed members from "${group.name}"`);
+    }
+
     // Clear cache cho tất cả members khi có thay đổi
     memberIds.forEach(memberId => clearPermissionCache(memberId));
     // Các member cũ bị xóa khỏi group cũng cần clear cache
