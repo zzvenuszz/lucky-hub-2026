@@ -80,7 +80,7 @@ router.get('/coach-candidates', async (req: Request, res: Response) => {
     const candidates: any[] = [];
     for (const u of allUsers) {
       const perms = await getEffectivePermissions(
-        (u._id as string).toString(),
+        String(u._id),
         '',  // role không còn dùng
         u.permissions || []
       );
@@ -96,10 +96,27 @@ router.get('/coach-candidates', async (req: Request, res: Response) => {
 });
 
 // PUT /api/users/:id - Cập nhật user
+// - User thường chỉ được sửa hồ sơ của chính mình
+// - Admin có quyền users:update mới được sửa hồ sơ người khác
 router.put('/:id',
-  requirePermission(RESOURCES.USERS.UPDATE),
   async (req: Request, res: Response) => {
     try {
+      const targetId = req.params.id;
+      const isSelf = targetId === req.user!.userId;
+      const hasUpdatePerm = req.user?.permissions?.includes(RESOURCES.USERS.UPDATE);
+
+      // Chỉ cho phép nếu: user tự sửa hồ sơ của mình, HOẶC có quyền users:update
+      if (!isSelf && !hasUpdatePerm) {
+        console.log(`[Permission] ❌ ${req.user!.fullName} denied: users:update (self=${isSelf})`);
+        return res.status(403).json({
+          message: 'Bạn không có quyền thực hiện thao tác này',
+          reason: 'forbidden',
+          requiredPermissions: [RESOURCES.USERS.UPDATE]
+        });
+      }
+
+      console.log(`[Permission] ✅ ${req.user!.fullName} allowed update user ${targetId} (self=${isSelf})`);
+
       const data = req.body;
       if (data.avatar && data.avatar.startsWith('data:image')) {
         const imgData = await uploadToImgBB(data.avatar);
@@ -139,8 +156,8 @@ router.delete('/:id',
       const user = await User.findById(userId);
       if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
 
-      if (user.role === UserRole.ADMIN) {
-        const adminCount = await User.countDocuments({ role: UserRole.ADMIN });
+      if (user.permissions?.includes(RESOURCES.ADMIN.PANEL)) {
+        const adminCount = await User.countDocuments({ permissions: RESOURCES.ADMIN.PANEL });
         if (adminCount <= 1) {
           return res.status(400).json({ message: 'Không thể xóa quản trị viên cuối cùng' });
         }
