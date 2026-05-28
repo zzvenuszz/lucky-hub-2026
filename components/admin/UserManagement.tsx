@@ -84,11 +84,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
     try {
       await Database.updateUser(uid, updateData);
 
-      // ĐÓNG MODAL NGAY LẬP TỨC
-      setEditingUser(null);
-      addToast({ type: 'success', title: 'Đã cập nhật', message: 'Thông tin hội viên đã được lưu.' });
-      onRefresh();
-
       // Cập nhật group membership (single group)
       if (selectedGroupId) {
         try {
@@ -114,6 +109,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
           console.error('[UserManagement] Group update error:', groupErr);
         }
       }
+
+      // ĐÓNG MODAL VÀ REFRESH SAU CÙNG
+      setEditingUser(null);
+      addToast({ type: 'success', title: 'Đã cập nhật', message: 'Thông tin hội viên đã được lưu.' });
+      onRefresh();
     } catch (err: any) {
       setEditingUser(null);
       addToast({ type: 'error', title: 'Lỗi', message: err.message || 'Không thể cập nhật.' });
