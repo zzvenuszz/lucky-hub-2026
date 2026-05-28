@@ -3,7 +3,7 @@
  * Sử dụng WebSocket thay vì Socket.IO
  */
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, memo } from 'react';
-import { ChatSession, Message, User, MessageType, MessageStatus, WsEvent, AIKnowledge, AIRule, HealthGoal, HealthMetric, UserRole } from '../../types.ts';
+import { ChatSession, Message, User, MessageType, MessageStatus, WsEvent, AIKnowledge, AIRule, HealthGoal, HealthMetric } from '../../types.ts';
 import wsService from '../../services/wsService.ts';
 import { Database } from '../../services/database.ts';
 import { getAICoachResponse } from '../../services/gemini.ts';
@@ -116,7 +116,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   useEffect(() => {
     const load = async () => {
       try {
-        console.log(`[ChatProvider] Loading data for user ${currentUid}, role=${currentUser.role}`);
+        console.log(`[ChatProvider] Loading data for user ${currentUid}`);
         
         // Load metrics riêng - nếu lỗi thì bỏ qua, không ảnh hưởng đến chat
         try {
@@ -141,26 +141,25 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
           const uId = String((u as any).id || (u as any)._id);
           if (uId === currentUid) return false;
           
+          // Kiểm tra permissions từ group để quyết định contact visibility
+          const userPerms = (currentUser as any).permissions || [];
+          const isAdmin = userPerms.includes('admin:panel');
+          const isCoach = userPerms.includes('coach:access');
+          
           // ADMIN/COACH thấy tất cả
-          if (currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.COACH) {
+          if (isAdmin || isCoach) {
             return true;
           }
           
-          // MEMBER: chỉ thấy ADMIN + người cùng NDD
-          if (currentUser.role === UserRole.MEMBER) {
-            // Luôn thấy ADMIN
-            if ((u as any).role === UserRole.ADMIN) return true;
-            
-            // MEMBER chỉ thấy người cùng NDD
-            if (userNutritionGroup) {
-              const otherNutritionGroup = (u as any).nutritionGroupId;
-              if (otherNutritionGroup && String(otherNutritionGroup) === String(userNutritionGroup)) {
-                return true;
-              }
+          // Hội viên: chỉ thấy người cùng NDD
+          if (userNutritionGroup) {
+            const otherNutritionGroup = (u as any).nutritionGroupId;
+            if (otherNutritionGroup && String(otherNutritionGroup) === String(userNutritionGroup)) {
+              return true;
             }
-            
-            return false;
           }
+          
+          return false;
           
           return true;
         });
@@ -182,13 +181,13 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         const newChats = [aiChat, ...activeChats];
         setChats(newChats);
 
-        console.log(`[ChatProvider] Loaded ${newChats.length} chats (role=${currentUser.role}, contacts=${contacts.length})`);
+        console.log(`[ChatProvider] Loaded ${newChats.length} chats (contacts=${contacts.length})`);
       } catch (error) {
         console.error(`[ChatProvider] Error loading data:`, error);
       }
     };
     load();
-  }, [currentUid, users, currentUser.role, preloadedChats]);
+  }, [currentUid, users, preloadedChats]);
 
   // Rebuild unread counts khi chats, lastReadTimestamps, selectedChat hoặc isChatOpen thay đổi
   useEffect(() => {
@@ -438,7 +437,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         id: `m_${Date.now()}`, 
         senderId: currentUid, 
         senderName: currentUser.fullName, 
-        senderRole: currentUser.role, 
+        senderRole: (currentUser as any).groupName || 'Hội viên', 
         content: text || "[Hình ảnh]", 
         type: imageBase64 ? MessageType.IMAGE : MessageType.TEXT,
         status: MessageStatus.SENDING,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
-import { User, UserRole, AccountStatus } from '../../types.ts';
+import { User, AccountStatus } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { useToast } from '../system/ToastProvider.tsx';
 import LoadingButton from '../system/LoadingButton.tsx';

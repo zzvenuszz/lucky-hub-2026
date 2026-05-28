@@ -1,6 +1,5 @@
-
 import React, { useMemo, useState, useEffect } from 'react';
-import { HealthMetric, User, UserRole } from '../types.ts';
+import { HealthMetric, User } from '../types.ts';
 import { Database } from '../services/database.ts';
 
 interface MetricsManagementProps {
@@ -40,14 +39,17 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
 
   useEffect(() => {
     const load = async () => {
-      const targetId = user.role === UserRole.MEMBER ? currentUid : selectedUserId;
+      const canViewAny = (user as any).permissions?.includes('metrics:view:any');
+      const targetId = !canViewAny ? currentUid : selectedUserId;
       const data = await Database.getMetrics(targetId);
       setMetrics(data || []);
     };
     load();
-  }, [selectedUserId, refreshTrigger, user.role, currentUid]);
+  }, [selectedUserId, refreshTrigger]);
 
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
+
+  const canViewAny = (user as any).permissions?.includes('metrics:view:any');
 
   return (
     <div className="space-y-6">
@@ -57,7 +59,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           <p className="text-slate-400 text-xs font-medium mt-1 uppercase tracking-widest">Lịch sử đo lường chi tiết</p>
         </div>
         <div className="flex items-center gap-4">
-          {user.role !== UserRole.MEMBER && (
+          {canViewAny && (
             <select 
               value={selectedUserId} 
               onChange={e => setSelectedUserId(e.target.value)} 

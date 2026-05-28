@@ -17,7 +17,7 @@ import SystemNDDOverview from './components/admin/nutrition/SystemNDDOverview.ts
 import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
 import NDDDashboard from './components/ndd/NDDDashboard.tsx';
-import { User, UserRole, AIRule, HealthMetric, Badge } from './types.ts';
+import { User, AIRule, HealthMetric, Badge, WsEvent } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 import wsService from './services/wsService.ts';
 
@@ -198,7 +198,7 @@ const App: React.FC = () => {
     if (currentUser && sessionIdRef.current) {
       const uid = (currentUser as any).id || (currentUser as any)._id;
       
-      wsService.connect(uid, sessionIdRef.current, currentUser.role);
+      wsService.connect(uid, sessionIdRef.current, (currentUser as any).groupName || '');
       
       console.log(`[App] WebSocket connected for user ${uid}`);
 
@@ -230,13 +230,13 @@ const App: React.FC = () => {
         if (result?.reminders?.length > 0) {
           for (const reminder of result.reminders) {
             if (reminder.overdue) {
-              wsService.send('goal:reminder', {
+              wsService.send(WsEvent.GOAL_REMINDER, {
                 targetUserId: uid,
                 goalType: reminder.type,
                 daysLeft: reminder.daysLeft,
               });
             } else if (reminder.daysLeft === 3 || reminder.daysLeft === 1) {
-              wsService.send('goal:reminder', {
+              wsService.send(WsEvent.GOAL_REMINDER, {
                 targetUserId: uid,
                 goalType: reminder.type,
                 daysLeft: reminder.daysLeft,

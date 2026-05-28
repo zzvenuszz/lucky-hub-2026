@@ -8,7 +8,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { transform } from 'sucrase';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { UserRole, AccountStatus, HealthGoal, Permission, AuditLogType } from './types.ts';
+import { AccountStatus, HealthGoal, AuditLogType } from './types.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
 import { logger } from './src/utils/logger.ts';
@@ -931,16 +931,15 @@ const User = mongoose.model('User', new mongoose.Schema({
   weight: { type: Number, default: 0 },
   gender: { type: String, default: 'Nam' },
   healthGoals: { type: [String], default: [] },
-  role: { type: String, enum: Object.values(UserRole), default: UserRole.MEMBER },
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
-  permissions: { type: [String], default: [] },
   avatar: String,
   avatarHash: String,
   isPasswordEncrypted: { type: Boolean, default: false },
   badges: { type: [String], default: [] },
   isEmailVerified: { type: Boolean, default: false },
   emailVerificationToken: String,
-  emailVerificationExpires: Date
+  emailVerificationExpires: Date,
+  groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', default: null }
 }, { timestamps: true }));
 
 const Metric = mongoose.model('Metric', new mongoose.Schema({
@@ -1022,6 +1021,50 @@ const PasswordResetToken = mongoose.model('PasswordResetToken', new mongoose.Sch
   used: { type: Boolean, default: false }
 }, { timestamps: true }));
 
+const Group = mongoose.model('Group', new mongoose.Schema({
+  name: { type: String, required: true, unique: true, trim: true },
+  description: { type: String, default: '' },
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  permissions: { type: [String], default: [] },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  isActive: { type: Boolean, default: true },
+  isDefault: { type: Boolean, default: false },
+}, { timestamps: true }));
+
+async function seedDefaultGroups() {
+  // Tạo 3 nhóm mặc định nếu chưa tồn tại
+  const existingGroups = await Group.countDocuments();
+  if (existingGroups > 0) return;
+
+  console.log('[SEED] Creating default groups...');
+  
+  await Group.create([
+    {
+      name: 'Quản trị viên',
+      description: 'Có toàn quyền quản trị hệ thống',
+      permissions: ['MANAGE_USERS', 'DELETE_USERS', 'MANAGE_METRICS', 'MANAGE_AI', 'GROUPS_MANAGE'],
+      isActive: true,
+      isDefault: false
+    },
+    {
+      name: 'Huấn luyện viên',
+      description: 'Có thể quản lý chỉ số và tư vấn hội viên',
+      permissions: ['MANAGE_METRICS'],
+      isActive: true,
+      isDefault: false
+    },
+    {
+      name: 'Hội viên',
+      description: 'Người dùng cơ bản, chỉ xem và tự nhập chỉ số',
+      permissions: [],
+      isActive: true,
+      isDefault: true
+    }
+  ]);
+  
+  console.log('[SEED] ✅ Created 3 default groups: Quản trị viên, Huấn luyện viên, Hội viên');
+}
+
 async function initDB() {
   try {
     await mongoose.connect(MONGODB_URI, {
@@ -1030,6 +1073,7 @@ async function initDB() {
       bufferCommands: false // Disable mongoose buffering
     });
     console.log('✅ Connected to MongoDB');
+    await seedDefaultGroups();
   } catch (err: any) {
     console.error('❌ DB Error:', err.message);
     if (MONGODB_URI.includes('mongodb.net')) {
@@ -1073,7 +1117,22 @@ app.post('/api/register', validateBody(
     const { username, email, password, avatar, ...rest } = req.body;
     const imgData = await uploadToImgBB(avatar);
     const finalAvatar = imgData?.url || avatar;
-    const adminExists = await User.exists({ role: UserRole.ADMIN });
+    
+    // Đếm tổng user để xác định người đầu tiên
+    const totalUsers = await User.countDocuments();
+    
+    // Tìm group mặc định và group Quản trị viên
+    const [defaultGroup, adminGroup] = await Promise.all([
+      Group.findOne({ isDefault: true }),
+      Group.findOne({ name: 'Quản trị viên' })
+    ]);
+    
+    // Người dùng đầu tiên được gán vào group "Quản trị viên", còn lại vào group mặc định
+    let assignedGroupId = defaultGroup?._id || null;
+    if (totalUsers === 0 && adminGroup) {
+      assignedGroupId = adminGroup._id;
+    }
+
     // Generate email verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
@@ -1083,7 +1142,7 @@ app.post('/api/register', validateBody(
       username: username.toLowerCase().trim(), 
       email: email.toLowerCase().trim(), 
       password: hashPassword(password), 
-      role: !adminExists ? UserRole.ADMIN : (rest.role || UserRole.MEMBER),
+      groupId: assignedGroupId,
       isPasswordEncrypted: true, 
       avatar: finalAvatar,
       avatarHash: cryptoUtils.generateAvatarHash(finalAvatar),

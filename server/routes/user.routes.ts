@@ -11,7 +11,7 @@ import { ActiveSession } from '../models/ActiveSession.ts';
 import { PasswordResetToken } from '../models/PasswordResetToken.ts';
 import { LoginAttempt } from '../models/LoginAttempt.ts';
 import { AuditLog } from '../models/AuditLog.ts';
-import { AuditLogType, UserRole } from '../../types.ts';
+import { AuditLogType } from '../../types.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
@@ -63,7 +63,7 @@ router.get('/', async (req: Request, res: Response) => {
     } else {
       // User thường: chỉ xem thông tin cơ bản
       const u = await User.find({ status: 'ACTIVE' })
-        .select('_id fullName username avatar email role');
+        .select('_id fullName username avatar email groupId groupName');
       return res.json(u.map(item => ({ ...item.toObject(), id: item._id })));
     }
   } catch (err: any) {
@@ -76,14 +76,10 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/coach-candidates', async (req: Request, res: Response) => {
   try {
     const { getEffectivePermissions } = await import('../services/permissionService.ts');
-    const allUsers = await User.find({ status: 'ACTIVE' }).select('_id fullName username avatar email phoneNumber permissions');
+    const allUsers = await User.find({ status: 'ACTIVE' }).select('_id fullName username avatar email phoneNumber groupId');
     const candidates: any[] = [];
     for (const u of allUsers) {
-      const perms = await getEffectivePermissions(
-        String(u._id),
-        '',  // role không còn dùng
-        u.permissions || []
-      );
+      const perms = await getEffectivePermissions(String(u._id));
       if (perms.includes(RESOURCES.COACH.ACCESS)) {
         candidates.push({ ...u.toObject(), id: u._id });
       }
@@ -156,11 +152,23 @@ router.delete('/:id',
       const user = await User.findById(userId);
       if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
 
-      if (user.permissions?.includes(RESOURCES.ADMIN.PANEL)) {
-        const adminCount = await User.countDocuments({ permissions: RESOURCES.ADMIN.PANEL });
-        if (adminCount <= 1) {
-          return res.status(400).json({ message: 'Không thể xóa quản trị viên cuối cùng' });
+      // Kiểm tra user có quyền admin (từ group) trước khi xóa
+      try {
+        const GroupModel = mongoose.model('Group');
+        const userGroup = user.groupId ? await GroupModel.findById(user.groupId) : null;
+        const isAdmin = userGroup?.permissions?.includes(RESOURCES.ADMIN.PANEL);
+        if (isAdmin) {
+          const adminGroups = await GroupModel.find({ permissions: RESOURCES.ADMIN.PANEL });
+          let adminCount = 0;
+          for (const g of adminGroups) {
+            adminCount += await User.countDocuments({ groupId: g._id });
+          }
+          if (adminCount <= 1) {
+            return res.status(400).json({ message: 'Không thể xóa quản trị viên cuối cùng' });
+          }
         }
+      } catch (e: any) {
+        console.error('[UserRoutes] Failed to check admin count:', e.message);
       }
 
       // Xóa tất cả dữ liệu liên quan

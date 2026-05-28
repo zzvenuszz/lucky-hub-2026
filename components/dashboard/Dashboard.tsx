@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback, memo } from 'react';
-import { HealthMetric, User, UserRole } from '../../types.ts';
+import { HealthMetric, User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { cacheManager } from '../../utils/cacheManager.ts';
 import StatCards from './StatCards.tsx';

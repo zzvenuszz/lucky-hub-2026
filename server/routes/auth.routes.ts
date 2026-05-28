@@ -5,7 +5,7 @@ import { LoginAttempt } from '../models/LoginAttempt.ts';
 import { ActiveSession } from '../models/ActiveSession.ts';
 import { PasswordResetToken } from '../models/PasswordResetToken.ts';
 import { AuditLog } from '../models/AuditLog.ts';
-import { AuditLogType, AccountStatus, UserRole } from '../../types.ts';
+import { AuditLogType, AccountStatus } from '../../types.ts';
 import { cryptoUtils } from '../../src/utils/cryptoUtils.ts';
 import { uploadToImgBB } from '../utils/imageUtils.ts';
 import { validateBody, sanitizeText } from '../../services/validationService.ts';
@@ -56,25 +56,35 @@ router.post('/register', validateBody(
     const { username, email, password, avatar, ...rest } = req.body;
     const imgData = await uploadToImgBB(avatar);
     const finalAvatar = imgData?.url || avatar;
-    const adminExists = await User.exists({ role: UserRole.ADMIN });
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    // User mới không có permissions mặc định — sẽ được gán qua group
+    // Đếm tổng user và tìm group
+    const totalUsers = await User.countDocuments();
+    const [defaultGroup, adminGroup] = await Promise.all([
+      Group.findOne({ isDefault: true, isActive: true }),
+      Group.findOne({ name: 'Quản trị viên', isActive: true })
+    ]);
+
+    // Người đầu tiên vào group Quản trị viên, còn lại vào group mặc định
+    let assignedGroupId = defaultGroup?._id || null;
+    if (totalUsers === 0 && adminGroup) {
+      assignedGroupId = adminGroup._id;
+    }
+
     const nutritionGroupId = rest.nutritionGroupId || null;
     const newUser = new User({
       ...rest,
       username: username.toLowerCase().trim(),
       email: email.toLowerCase().trim(),
       password: hashPassword(password),
-      role: !adminExists ? UserRole.ADMIN : (rest.role || UserRole.MEMBER),
+      groupId: assignedGroupId,
       isPasswordEncrypted: true,
       avatar: finalAvatar,
       avatarHash: cryptoUtils.generateAvatarHash(finalAvatar),
       isEmailVerified: false,
       emailVerificationToken: verificationToken,
       emailVerificationExpires: verificationExpires,
-      permissions: [],
       nutritionGroupId,
     });
     await newUser.save();
@@ -95,19 +105,6 @@ router.post('/register', validateBody(
       }
     }
 
-    // Tự động gán user vào nhóm mặc định (nếu có)
-    try {
-      const defaultGroup = await Group.findOne({ isDefault: true, isActive: true });
-      if (defaultGroup) {
-        if (!defaultGroup.members.includes(newUser._id)) {
-          defaultGroup.members.push(newUser._id);
-          await defaultGroup.save();
-          console.log(`[Auth] ✅ User @${newUser.username} added to default group "${defaultGroup.name}"`);
-        }
-      }
-    } catch (groupErr: any) {
-      console.warn(`[Auth] Could not assign default group:`, groupErr.message);
-    }
 
     // Audit Log
     const log = new AuditLog({
@@ -203,51 +200,44 @@ router.post('/login', async (req: Request, res: Response) => {
     const u = user.toObject();
     delete u.password;
     
-    // Chỉ dùng group permissions (đã replace ROLE_PERMISSIONS hoàn toàn)
-    const userSpecific = user.permissions || [];
-    
-    // Lấy group permissions
+    // Lấy group permissions từ groupId duy nhất
     let groupPerms: string[] = [];
-    let userGroupInfo: { id: string; name: string }[] = [];
+    let groupName: string = '';
     try {
-      const userGroups = await Group.find({ members: user._id, isActive: true }).select('permissions name');
-      groupPerms = userGroups.flatMap(g => g.permissions || []);
-      userGroupInfo = userGroups.map(g => ({ id: g._id as string, name: g.name }));
+      if (user.groupId) {
+        const userGroup = await Group.findById(user.groupId).select('permissions name');
+        if (userGroup) {
+          groupPerms = userGroup.permissions || [];
+          groupName = userGroup.name;
+        }
+      }
     } catch (groupErr: any) {
       console.warn(`[Auth] Could not load group permissions:`, groupErr.message);
     }
 
-    // Gộp và loại bỏ trùng lặp
-    const effectivePermissions = [...new Set([...userSpecific, ...groupPerms])];
-
-    // Kiểm tra user có thuộc group "HLV" và là owner/co-owner của NDD
-    const isHlvGroup = userGroupInfo.some((g: any) => g.name?.toLowerCase() === 'hlv');
+    // Kiểm tra user có quyền quản lý NDD
     let isNddManager = false;
-    if (isHlvGroup) {
-      try {
-        const nddCount = await NutritionGroup.countDocuments({
-          $or: [
-            { ownerId: user._id },
-            { coOwners: user._id }
-          ],
-          isActive: true
-        });
-        isNddManager = nddCount > 0;
-      } catch (nddErr: any) {
-        console.warn(`[Auth] Could not check NDD ownership:`, nddErr.message);
-      }
+    try {
+      const nddCount = await NutritionGroup.countDocuments({
+        $or: [
+          { ownerId: user._id },
+          { coOwners: user._id }
+        ],
+        isActive: true
+      });
+      isNddManager = nddCount > 0;
+    } catch (nddErr: any) {
+      console.warn(`[Auth] Could not check NDD ownership:`, nddErr.message);
     }
 
-    // Xóa role khỏi response - hoàn toàn dùng group-based
-    const { role, ...userWithoutRole } = u;
-
     res.json({
-      ...userWithoutRole,
+      ...u,
       id: user._id,
       email: user.email,
       sessionId,
-      permissions: effectivePermissions,
-      userGroups: userGroupInfo,
+      groupId: user.groupId,
+      groupName,
+      groupPermissions: groupPerms,
       isNddManager,
       invalidatedOldSessions: invalidatedCount
     });

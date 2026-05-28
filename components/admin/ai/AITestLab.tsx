@@ -1,5 +1,5 @@
 import React, { useState, memo } from 'react';
-import { Message, AIKnowledge, AIRule, UserRole, HealthGoal, MessageType, MessageStatus } from '../../../types.ts';
+import { Message, AIKnowledge, AIRule, HealthGoal, MessageType, MessageStatus } from '../../../types.ts';
 import { getAICoachResponse } from '../../../services/gemini.ts';
 
 interface AITestLabProps {
@@ -16,7 +16,7 @@ const AITestLab: React.FC<AITestLabProps> = ({ knowledge, rules }) => {
     if (!input.trim()) return;
     const userMsg: Message = { 
       id: Date.now().toString(), senderId: 'tester', senderName: 'Admin', 
-      senderRole: UserRole.ADMIN, content: input, type: MessageType.TEXT, status: MessageStatus.SENT, timestamp: new Date().toISOString() 
+      senderRole: 'Quản trị viên', content: input, type: MessageType.TEXT, status: MessageStatus.SENT, timestamp: new Date().toISOString() 
     };
     setMessages(prev => [...prev, userMsg]);
     setInput('');

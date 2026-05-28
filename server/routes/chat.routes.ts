@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Chat } from '../models/Chat.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 
@@ -52,11 +53,18 @@ router.post('/send', async (req: Request, res: Response) => {
       });
     }
 
+    // Lấy group name của người gửi để làm senderRole
+    const { getEffectivePermissions } = await import('../services/permissionService.ts');
+    const GroupModel = mongoose.model('Group');
+    const sender = await mongoose.model('User').findById(senderId).select('groupId groupName');
+    const senderGroup = sender?.groupId ? await GroupModel.findById(sender.groupId).select('name') : null;
+    const senderRole = senderGroup?.name || sender?.groupName || 'Hội viên';
+
     const newMessage = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       senderId,
       senderName,
-      senderRole: 'COACH',
+      senderRole,
       content,
       timestamp: new Date().toISOString(),
       type: 'text',

@@ -13,7 +13,6 @@ const UserSchema = new mongoose.Schema({
   gender: { type: String, default: 'Nam' },
   healthGoals: { type: [String], default: [] },
   status: { type: String, enum: Object.values(AccountStatus), default: AccountStatus.ACTIVE },
-  permissions: { type: [String], default: [] },
   avatar: String,
   avatarHash: String,
   isPasswordEncrypted: { type: Boolean, default: false },
@@ -21,6 +20,7 @@ const UserSchema = new mongoose.Schema({
   isEmailVerified: { type: Boolean, default: false },
   emailVerificationToken: String,
   emailVerificationExpires: Date,
+  groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', default: null },
   nutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
   pendingNutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
 }, { timestamps: true });

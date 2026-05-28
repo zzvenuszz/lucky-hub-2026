@@ -6,7 +6,6 @@ import { User } from '../models/User.ts';
 import { authMiddleware, optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
-import { UserRole } from '../../types.ts';
 import { Group } from '../models/Group.ts';
 
 const router = Router();
@@ -53,9 +52,9 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/all', async (req: Request, res: Response) => {
   try {
     const groups = await NutritionGroup.find()
-      .populate('ownerId', 'fullName username role')
-      .populate('coOwners', 'fullName username role')
-      .populate('members', 'fullName username email phoneNumber role avatar')
+      .populate('ownerId', 'fullName username groupId groupName')
+      .populate('coOwners', 'fullName username groupId groupName')
+      .populate('members', 'fullName username email phoneNumber groupId groupName avatar')
       .populate('pendingMembers.userId', 'fullName username')
       .sort({ createdAt: -1 });
     res.json(groups.map(g => {
@@ -83,10 +82,10 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
     // Vì ownerId/coOwners/members có thể được lưu dưới dạng string (không phải ObjectId)
     // khi admin tạo NDD từ front-end gửi userId dạng string
     const allGroups = await NutritionGroup.find({ isActive: true })
-      .populate('ownerId', 'fullName username role')
-      .populate('coOwners', 'fullName username role')
-      .populate('members', 'fullName username email phoneNumber role avatar')
-      .populate('pendingMembers.userId', 'fullName username role avatar')
+      .populate('ownerId', 'fullName username groupId groupName')
+      .populate('coOwners', 'fullName username groupId groupName')
+      .populate('members', 'fullName username email phoneNumber groupId groupName avatar')
+      .populate('pendingMembers.userId', 'fullName username groupId groupName avatar')
       .sort({ createdAt: -1 });
 
     console.log(`[NutritionGroup] 📋 Total active NDDs in DB: ${allGroups.length}`);
@@ -174,9 +173,9 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
 router.get('/:id/members', async (req: Request, res: Response) => {
   try {
     const group = await NutritionGroup.findById(req.params.id)
-      .populate('ownerId', 'fullName username role')
-      .populate('coOwners', 'fullName username role')
-      .populate('members', 'fullName username email phoneNumber role avatar');
+      .populate('ownerId', 'fullName username groupId groupName')
+      .populate('coOwners', 'fullName username groupId groupName')
+      .populate('members', 'fullName username email phoneNumber groupId groupName avatar');
 
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
@@ -252,14 +251,14 @@ router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request
 // Dựa trên hệ thống phân quyền theo group
 async function isUserCoach(userId: string): Promise<boolean> {
   try {
-    const user = await User.findById(userId).select('role permissions');
+    const user = await User.findById(userId).select('groupId');
     if (!user) {
       console.error(`[isUserCoach] ❌ User "${userId}" không tồn tại`);
       return false;
     }
     // Lấy effective permissions từ groups
     const { getEffectivePermissions } = await import('../services/permissionService.ts');
-    const effectivePermissions = await getEffectivePermissions(userId, user.role, user.permissions || []);
+    const effectivePermissions = await getEffectivePermissions(userId);
     const hasCoachAccess = effectivePermissions.includes(RESOURCES.COACH.ACCESS);
     console.log(`[isUserCoach] 🔍 User "${userId}" → ${hasCoachAccess ? '✅ Có quyền' : '❌ Không có quyền'} coach:access (${effectivePermissions.length} permissions)`);
     return hasCoachAccess;

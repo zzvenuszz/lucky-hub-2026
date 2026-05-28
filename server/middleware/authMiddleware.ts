@@ -9,7 +9,7 @@ declare global {
     interface Request {
       user?: {
         userId: string;
-        role: string;
+        groupName?: string;
         permissions: string[];
         fullName: string;
         email: string;
@@ -69,7 +69,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     });
 
     // Lấy thông tin user
-    const user = await User.findById(session.userId).select('role permissions fullName email username status');
+    const user = await User.findById(session.userId).select('groupId groupName fullName email username status');
     
     if (!user) {
       return res.status(401).json({ 
@@ -85,17 +85,15 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       });
     }
 
-    // Gộp permissions từ user-specific + groups (có cache TTL)
+    // Lấy permissions từ group (có cache TTL)
     const effectivePermissions = await getEffectivePermissions(
-      (user._id as string).toString(),
-      user.role,
-      user.permissions || []
+      String(user._id)
     );
 
     // Gắn user info vào request
     req.user = {
-      userId: (user._id as string).toString(),
-      role: user.role,
+      userId: String(user._id),
+      groupName: (user as any).groupName || '',
       permissions: effectivePermissions,
       fullName: user.fullName,
       email: user.email,
@@ -140,12 +138,14 @@ export async function optionalAuth(req: Request, res: Response, next: NextFuncti
       return;
     }
 
-    const user = await User.findById(session.userId).select('role permissions fullName email username status');
+    const user = await User.findById(session.userId).select('groupId groupName fullName email username status');
     if (user && user.status === 'ACTIVE') {
+      const { getEffectivePermissions } = await import('../services/permissionService.ts');
+      const effectivePermissions = await getEffectivePermissions(String(user._id));
       req.user = {
-        userId: (user._id as string).toString(),
-        role: user.role,
-        permissions: user.permissions || [],
+        userId: String(user._id),
+        groupName: (user as any).groupName || '',
+        permissions: effectivePermissions,
         fullName: user.fullName,
         email: user.email,
         username: user.username,

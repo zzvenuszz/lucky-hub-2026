@@ -1,5 +1,5 @@
 import React, { useState, useCallback, memo } from 'react';
-import { Comment, User, UserRole, TaggedUser } from '../../types.ts';
+import { Comment, User, TaggedUser } from '../../types.ts';
 import { formatTimeAgo } from '../../utils/formatters.ts';
 import CommentForm from './CommentForm.tsx';
 
@@ -22,7 +22,7 @@ const CommentItem: React.FC<CommentItemProps> = memo(({
   const [isEditing, setIsEditing] = useState(false);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const isOwner = comment.userId === currentUserId;
-  const isAdmin = currentUser.role === UserRole.ADMIN;
+  const isAdmin = (currentUser as any).permissions?.includes('admin:panel');
   const maxNestingLevel = 3;
 
   // Render content with @tag highlighting

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { Post, User, UserRole } from '../../types.ts';
+import { Post, User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatTimeAgo } from '../../utils/formatters.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, memo } from 'react';
-import { Comment, User, UserRole, TaggedUser } from '../../types.ts';
+import { Comment, User, TaggedUser } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import CommentItem from './CommentItem.tsx';
 import CommentForm from './CommentForm.tsx';

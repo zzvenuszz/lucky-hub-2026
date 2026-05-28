@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
-import { User, Post, UserRole } from '../../types.ts';
+import { User, Post } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { cacheManager } from '../../utils/cacheManager.ts';
 import { compressImage } from '../../utils/imageUtils.ts';

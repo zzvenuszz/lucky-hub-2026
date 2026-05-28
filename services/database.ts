@@ -1,4 +1,4 @@
-import { User, HealthMetric, AIKnowledge, UserRole, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog, GeminiKey } from '../types.ts';
+import { User, HealthMetric, AIKnowledge, AccountStatus, HealthGoal, ChatSession, AIRule, Post, Badge, AuditLog, GeminiKey } from '../types.ts';
 
 const API_BASE = '/api';
 let isOfflineMode = false;

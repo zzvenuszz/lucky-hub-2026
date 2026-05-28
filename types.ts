@@ -1,19 +1,6 @@
-export enum UserRole {
-  MEMBER = 'MEMBER',
-  COACH = 'COACH',
-  ADMIN = 'ADMIN'
-}
-
 export enum AccountStatus {
   ACTIVE = 'ACTIVE',
   SUSPENDED = 'SUSPENDED'
-}
-
-export enum Permission {
-  MANAGE_USERS = 'MANAGE_USERS',
-  DELETE_USERS = 'DELETE_USERS',
-  MANAGE_METRICS = 'MANAGE_METRICS',
-  MANAGE_AI = 'MANAGE_AI'
 }
 
 export enum HealthGoal {
@@ -204,9 +191,7 @@ export interface User {
   phoneNumber: string;
   gender: 'Nam' | 'Nữ';
   healthGoals: HealthGoal[];
-  role: UserRole;
   status: AccountStatus;
-  permissions: Permission[];
   avatar?: string;
   isPasswordEncrypted?: boolean; 
   badges: string[];
@@ -214,7 +199,9 @@ export interface User {
   nutritionGroupId?: string;
   nutritionGroupName?: string;
   pendingNutritionGroupId?: string;
-  userGroups?: { id: string; name: string }[];
+  groupId?: string;
+  groupName?: string;
+  groupPermissions?: string[];
 }
 
 export interface MessageReaction {
@@ -228,7 +215,7 @@ export interface Message {
   id: string;
   senderId: string;
   senderName: string;
-  senderRole: UserRole | 'AI';
+  senderRole: string;
   content: string;
   timestamp: string;
   type: MessageType;

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { HealthMetric, User, UserRole } from '../../types.ts';
+import { HealthMetric, User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
 

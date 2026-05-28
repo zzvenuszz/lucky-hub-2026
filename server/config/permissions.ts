@@ -1,5 +1,3 @@
-import { UserRole } from '../../types.ts';
-
 /**
  * Định nghĩa tất cả resource/actions trong hệ thống
  */

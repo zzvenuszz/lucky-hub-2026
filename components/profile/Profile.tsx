@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { User, UserRole, NutritionGroup } from '../../types.ts';
+import { User, NutritionGroup } from '../../types.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import AvatarEditor from './AvatarEditor.tsx';
 import ProfileForm from './ProfileForm.tsx';

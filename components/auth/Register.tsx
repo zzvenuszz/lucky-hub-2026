@@ -148,7 +148,7 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchLogin, isLoadin
                 const gid = (g as any).id || (g as any)._id;
                 return (
                   <option key={gid} value={gid}>
-                    {g.name} - {g.address} ({g.memberCount || 0} hội viên)
+                    {g.name} - {g.address} ({(g as any).memberCount || 0} hội viên)
                   </option>
                 );
               })}

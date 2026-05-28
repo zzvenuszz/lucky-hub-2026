@@ -1,5 +1,5 @@
 import React, { memo, useState, useCallback } from 'react';
-import { Post, User, UserRole, Comment } from '../../types.ts';
+import { Post, User, Comment } from '../../types.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import { formatTimeAgo } from '../../utils/formatters.ts';
 import CommentSection from './CommentSection.tsx';
@@ -165,7 +165,7 @@ const PostItem: React.FC<PostItemProps> = ({
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const postId = post.id || (post as any)._id;
   const isOwner = currentUserId === post.userId;
-  const isAdmin = currentUser.role === UserRole.ADMIN;
+  const isAdmin = (currentUser as any).permissions?.includes('admin:panel');
   const reactions: ReactionDetail[] = post.reactions || [];
   const totalReacts = reactions.reduce((sum, curr) => sum + curr.count, 0) || 0;
 

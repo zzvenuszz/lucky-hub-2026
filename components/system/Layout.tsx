@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from 'react';
-import { User, UserRole } from '../../types.ts';
+import { User } from '../../types.ts';
 import BadgeDisplay from './BadgeDisplay.tsx';
 import NotificationBell from '../notification/NotificationBell.tsx';
 import ChatToggle from '../chat/components/ChatToggle.tsx';
@@ -20,14 +20,15 @@ const NAV_ITEMS = [
   { id: 'metrics', label: '📈', text: 'Chỉ số' },
 ];
 
-const getRoleInfo = (role: UserRole): { icon: string; label: string; color: string } => {
-  switch (role) {
-    case UserRole.ADMIN:
+const getRoleInfo = (groupName?: string): { icon: string; label: string; color: string } => {
+  // Sử dụng groupName từ user để hiển thị vai trò
+  switch (groupName) {
+    case 'Quản trị viên':
       return { icon: '🔑', label: 'Quản trị viên', color: 'text-red-600' };
-    case UserRole.COACH:
+    case 'Huấn luyện viên':
       return { icon: '📝', label: 'Huấn luyện viên', color: 'text-amber-600' };
     default:
-      return { icon: '🌱', label: 'Hội viên', color: 'text-emerald-600' };
+      return { icon: '🌱', label: groupName || 'Hội viên', color: 'text-emerald-600' };
   }
 };
 
@@ -57,7 +58,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
     setIsMenuOpen(false);
   }, [setActiveTab]);
 
-  const roleInfo = useMemo(() => getRoleInfo(user.role), [user.role]);
+  const roleInfo = useMemo(() => getRoleInfo((user as any).groupName), [(user as any).groupName]);
 
   const availableNavItems = useMemo(() => {
     const items = [
@@ -70,7 +71,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
     return items;
   }, [user]);
 
-  console.log(`[Layout] Render: user=${user.fullName}, role=${user.role}, activeTab=${activeTab}`);
+  console.log(`[Layout] Render: user=${user.fullName}, group=${(user as any).groupName}, activeTab=${activeTab}`);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50/50">

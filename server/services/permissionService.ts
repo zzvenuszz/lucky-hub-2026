@@ -1,4 +1,6 @@
+import { User } from '../models/User.ts';
 import { Group } from '../models/Group.ts';
+import mongoose from 'mongoose';
 
 // Cache permissions với TTL 60 giây
 const permissionsCache = new Map<string, { permissions: string[]; expiresAt: number }>();
@@ -20,17 +22,13 @@ export function clearAllPermissionCache(): void {
 
 /**
  * Tính toán permissions hiệu dụng cho user
- * Công thức: EffectivePermissions = UserSpecificPermissions ∪ GroupPermissions
+ * Chỉ dựa trên Group permissions - KHÔNG còn user-specific permissions
  * 
  * @param userId - ID của user
- * @param role - Role của user (KHÔNG còn dùng cho permissions)
- * @param userPermissions - Permissions riêng của user (từ User.permissions)
- * @returns Mảng permissions đã được gộp từ groups, loại bỏ trùng lặp
+ * @returns Mảng permissions từ group của user
  */
 export async function getEffectivePermissions(
-  userId: string,
-  role: string,
-  userPermissions: string[]
+  userId: string
 ): Promise<string[]> {
   // Kiểm tra cache trước
   const cached = permissionsCache.get(userId);
@@ -38,30 +36,25 @@ export async function getEffectivePermissions(
     return cached.permissions;
   }
 
-  // User-specific permissions
-  const specificPerms = userPermissions || [];
-
-  // Group permissions (nếu user thuộc group nào đó)
+  // Lấy user để biết groupId
   let groupPermissions: string[] = [];
   try {
-    const groups = await Group.find({
-      members: userId,
-      isActive: true
-    }).select('permissions');
-    
-    groupPermissions = groups.flatMap(g => g.permissions || []);
+    const user = await User.findById(userId).select('groupId');
+    if (user && user.groupId) {
+      const group = await Group.findById(user.groupId).select('permissions');
+      if (group) {
+        groupPermissions = group.permissions || [];
+      }
+    }
   } catch (err: any) {
-    console.error(`[PermissionService] Error fetching groups: ${err.message}`);
+    console.error(`[PermissionService] Error fetching group: ${err.message}`);
   }
 
-  // Gộp và loại bỏ trùng lặp
-  const effective = [...new Set([...specificPerms, ...groupPermissions])];
-  
   // Lưu vào cache
   permissionsCache.set(userId, {
-    permissions: effective,
+    permissions: groupPermissions,
     expiresAt: Date.now() + CACHE_TTL
   });
 
-  return effective;
+  return groupPermissions;
 }
