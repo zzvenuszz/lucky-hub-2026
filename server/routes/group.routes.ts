@@ -14,7 +14,7 @@ router.use(requirePermission(RESOURCES.GROUPS.MANAGE));
 // GET /api/admin/groups - Danh sách nhóm
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const groups = await Group.find().populate('members', 'fullName username email role avatar').sort({ createdAt: -1 });
+    const groups = await Group.find().populate('members', 'fullName username email avatar').sort({ createdAt: -1 });
     res.json(groups.map(g => ({ ...g.toObject(), id: g._id })));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -181,7 +181,7 @@ router.post('/:id/members', async (req: Request, res: Response) => {
       }
     });
 
-    const populatedGroup = await Group.findById(group._id).populate('members', 'fullName username email role avatar');
+    const populatedGroup = await Group.findById(group._id).populate('members', 'fullName username email avatar');
     console.log(`[Groups] ✅ Updated members for group "${group.name}": ${memberIds.length} members`);
     res.json({ ...populatedGroup!.toObject(), id: populatedGroup!._id });
   } catch (err: any) {

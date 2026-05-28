@@ -329,7 +329,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
                           <div className="font-bold text-xs text-slate-800">{u.fullName}</div>
                           <div className="text-[9px] text-slate-400">@{u.username}</div>
                         </div>
-                        <span className="ml-auto text-[8px] font-black uppercase text-slate-400">{u.role}</span>
+                        
                       </label>
                     );
                   })}

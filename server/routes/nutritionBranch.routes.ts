@@ -182,7 +182,7 @@ router.get('/:id/messages', async (req: Request, res: Response) => {
 router.get('/:id/members-metrics', async (req: Request, res: Response) => {
   try {
     const branch = await NutritionBranch.findById(req.params.id)
-      .populate('memberIds', 'fullName username avatar role');
+      .populate('memberIds', 'fullName username avatar');
     if (!branch) return res.status(404).json({ message: 'Không tìm thấy nhánh' });
 
     // Lấy chỉ số mới nhất cho mỗi member
