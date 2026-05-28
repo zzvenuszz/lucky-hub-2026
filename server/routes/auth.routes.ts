@@ -238,6 +238,7 @@ router.post('/login', async (req: Request, res: Response) => {
       groupId: user.groupId,
       groupName,
       groupPermissions: groupPerms,
+      permissions: groupPerms,
       isNddManager,
       invalidatedOldSessions: invalidatedCount
     });
