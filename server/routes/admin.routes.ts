@@ -42,14 +42,27 @@ router.post('/gemini-keys', requirePermission(RESOURCES.AI.MANAGE), validateBody
   { field: 'key', type: 'string', required: true },
   { field: 'label', type: 'string', required: false, max: 100 }
 ), async (req: Request, res: Response) => {
-  try {
-    const { key, label } = req.body;
-    const newKey = new GeminiKey({ key, label });
-    await newKey.save();
-    res.json({ ...newKey.toObject(), id: newKey._id });
-  } catch (err: any) {
-    res.status(400).json({ message: 'KEY ĐÃ TỒN TẠI HOẶC KHÔNG HỢP LỆ' });
-  }
+    try {
+      const { key, label } = req.body;
+
+      // Check trùng lặp với ENV keys
+      const ENV_API_KEYS = [
+        process.env.API_KEY,
+        process.env.API_KEY_2,
+        process.env.API_KEY_3,
+        process.env.GEMINI_API_KEY
+      ].filter(k => !!k);
+      
+      if (ENV_API_KEYS.includes(key)) {
+        return res.status(400).json({ message: 'KEY ĐÃ TỒN TẠI TRONG DANH SÁCH ENV' });
+      }
+
+      const newKey = new GeminiKey({ key, label });
+      await newKey.save();
+      res.json({ ...newKey.toObject(), id: newKey._id });
+    } catch (err: any) {
+      res.status(400).json({ message: 'KEY ĐÃ TỒN TẠI HOẶC KHÔNG HỢP LỆ' });
+    }
 });
 
 // DELETE /api/admin/gemini-keys/:id

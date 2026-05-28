@@ -1,23 +1,5 @@
 import { Group } from '../models/Group.ts';
 
-// Cache permissions với TTL 60 giây
-const permissionsCache = new Map<string, { permissions: string[]; expiresAt: number }>();
-const CACHE_TTL = 60000; // 60 seconds
-
-/**
- * Xóa cache permissions của user (gọi khi group membership thay đổi)
- */
-export function clearPermissionCache(userId: string): void {
-  permissionsCache.delete(userId);
-}
-
-/**
- * Xóa toàn bộ cache permissions
- */
-export function clearAllPermissionCache(): void {
-  permissionsCache.clear();
-}
-
 /**
  * Tính toán permissions hiệu dụng cho user
  * Công thức: EffectivePermissions = UserSpecificPermissions ∪ GroupPermissions
@@ -32,12 +14,6 @@ export async function getEffectivePermissions(
   role: string,
   userPermissions: string[]
 ): Promise<string[]> {
-  // Kiểm tra cache trước
-  const cached = permissionsCache.get(userId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.permissions;
-  }
-
   // User-specific permissions
   const specificPerms = userPermissions || [];
 
@@ -57,11 +33,19 @@ export async function getEffectivePermissions(
   // Gộp và loại bỏ trùng lặp
   const effective = [...new Set([...specificPerms, ...groupPermissions])];
   
-  // Lưu vào cache
-  permissionsCache.set(userId, {
-    permissions: effective,
-    expiresAt: Date.now() + CACHE_TTL
-  });
-
+  console.log(`[PermissionService] Effective perms for ${userId}: ${effective.length} permissions`);
   return effective;
+}
+
+/**
+ * Kiểm tra user có quyền cụ thể không (sync, không cần await)
+ * Dùng cho client-side hoặc check nhanh không cần tính group
+ */
+export function hasPermission(
+  role: string,
+  userPermissions: string[],
+  requiredPermission: string
+): boolean {
+  const combined = [...new Set([...(userPermissions || [])])];
+  return combined.includes(requiredPermission);
 }

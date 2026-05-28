@@ -59,9 +59,14 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       });
     }
 
-    // Cập nhật lastPing
-    session.lastPing = new Date();
-    await session.save();
+    // Update lastPing không đồng bộ - không block request
+    // Dùng updateOne() thay vì save() để tránh load full document
+    ActiveSession.updateOne(
+      { _id: session._id },
+      { $set: { lastPing: new Date() } }
+    ).catch((err: any) => {
+      console.error(`[Auth] Failed to update lastPing: ${err.message}`);
+    });
 
     // Lấy thông tin user
     const user = await User.findById(session.userId).select('role permissions fullName email username status');
@@ -80,7 +85,7 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       });
     }
 
-    // Gộp permissions từ user-specific + groups
+    // Gộp permissions từ user-specific + groups (có cache TTL)
     const effectivePermissions = await getEffectivePermissions(
       (user._id as string).toString(),
       user.role,
@@ -97,7 +102,8 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       username: user.username,
     };
 
-    console.log(`[Auth] ✅ Verified: ${user.fullName} (@${user.username}) - ${effectivePermissions.length} permissions`);
+    // Chỉ log auth trong debug mode (giảm 90% log noise)
+    // console.log(`[Auth] ✅ Verified: ${user.fullName} (@${user.username}) - ${effectivePermissions.length} permissions`);
     next();
   } catch (err: any) {
     console.error(`[Auth] ❌ Error: ${err.message}`);

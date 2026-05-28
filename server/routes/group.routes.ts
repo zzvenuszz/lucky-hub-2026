@@ -5,6 +5,7 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { PERMISSION_DESCRIPTIONS } from '../config/permissions.ts';
+import { clearPermissionCache } from '../services/permissionService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -87,6 +88,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     const group = await Group.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!group) return res.status(404).json({ message: 'Không tìm thấy nhóm' });
 
+    // Clear cache cho tất cả members của group khi permissions thay đổi
+    if (permissions !== undefined) {
+      const memberIds = group.members || [];
+      memberIds.forEach(memberId => clearPermissionCache(String(memberId)));
+    }
+
     console.log(`[Groups] ✅ Updated group "${group.name}" by ${req.user?.fullName}`);
     res.json({ ...group.toObject(), id: group._id });
   } catch (err: any) {
@@ -138,8 +145,20 @@ router.post('/:id/members', async (req: Request, res: Response) => {
     const group = await Group.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy nhóm' });
 
+    // Lưu danh sách members cũ TRƯỚC KHI ghi đè
+    const oldMemberIds = (group.members || []).map(m => String(m));
+
     group.members = memberIds;
     await group.save();
+
+    // Clear cache cho tất cả members khi có thay đổi
+    memberIds.forEach(memberId => clearPermissionCache(memberId));
+    // Các member cũ bị xóa khỏi group cũng cần clear cache
+    oldMemberIds.forEach(memberId => {
+      if (!memberIds.includes(memberId)) {
+        clearPermissionCache(memberId);
+      }
+    });
 
     const populatedGroup = await Group.findById(group._id).populate('members', 'fullName username email role avatar');
     console.log(`[Groups] ✅ Updated members for group "${group.name}": ${memberIds.length} members`);
