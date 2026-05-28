@@ -40,14 +40,14 @@ const LoadingButton: React.FC<LoadingButtonProps> = memo(({
   const [isLoading, setIsLoading] = useState(false);
 
   const handleClick = useCallback(async () => {
-    if (isLoading || disabled || !onClick) return;
+    if (isLoading || !onClick) return;
     setIsLoading(true);
     try {
       await onClick();
     } finally {
       setIsLoading(false);
     }
-  }, [onClick, isLoading, disabled]);
+  }, [onClick, isLoading]);
 
   const baseClass = `${variantClasses[variant]} ${sizeClasses[size]} font-black uppercase tracking-wider transition-all duration-200 active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2`;
 

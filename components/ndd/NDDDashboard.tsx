@@ -66,6 +66,28 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
     }
   }, []);
 
+  const refreshDashboard = useCallback(async () => {
+    const sessionToken = localStorage.getItem('lucky_hub_session');
+    try {
+      const resp = await fetch('/api/nutrition-groups/my-dashboard', {
+        headers: { 'Authorization': `Bearer ${sessionToken}` }
+      });
+      const data = await resp.json();
+      const newData = data.groups || [];
+      setDashboardData(newData);
+      dashboardDataRef.current = newData;
+      // Cập nhật selectedNdd NGAY từ dữ liệu mới
+      if (selectedNdd) {
+        const updated = newData.find((item: any) => 
+          item.group.id === selectedNdd.group.id
+        );
+        if (updated) setSelectedNdd(updated);
+      }
+    } catch (err) {
+      console.error('[NDDDashboard] Refresh error:', err);
+    }
+  }, [selectedNdd]);
+
   useEffect(() => { fetchDashboard(); fetchCoachCandidates(); }, [fetchDashboard, fetchCoachCandidates]);
 
   const handleUpdateCoOwners = async () => {
@@ -77,12 +99,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
         body: JSON.stringify({ coOwnerIds: selectedCoOwnerIds }),
       });
       if (resp.ok) {
-        const data = await resp.json();
-        await fetchDashboard();
-        const updatedNdd = dashboardDataRef.current.find(
-          (item: any) => item.group.id === selectedNdd.group.id
-        );
-        if (updatedNdd) setSelectedNdd(updatedNdd);
+        await refreshDashboard();
         setShowCoOwnerEditor(false);
         setActionMsg({ type: 'success', text: '✅ Đã cập nhật đồng vận hành' });
       } else {
@@ -99,11 +116,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
     setApprovingUserId(userId);
     try {
       await Database.approveNutritionGroupMember(selectedNdd.group.id, userId);
-      await fetchDashboard();
-      const updatedNdd = dashboardDataRef.current.find(
-        (item: any) => item.group.id === selectedNdd.group.id
-      );
-      if (updatedNdd) setSelectedNdd(updatedNdd);
+      await refreshDashboard();
       setActionMsg({ type: 'success', text: `✅ Đã duyệt ${userName}` });
     } catch (err: any) {
       setActionMsg({ type: 'error', text: '❌ ' + err.message });
@@ -117,11 +130,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
     setRejectingUserId(userId);
     try {
       await Database.rejectNutritionGroupMember(selectedNdd.group.id, userId);
-      await fetchDashboard();
-      const updatedNdd = dashboardDataRef.current.find(
-        (item: any) => item.group.id === selectedNdd.group.id
-      );
-      if (updatedNdd) setSelectedNdd(updatedNdd);
+      await refreshDashboard();
       setActionMsg({ type: 'success', text: '✅ Đã từ chối' });
     } catch (err: any) {
       setActionMsg({ type: 'error', text: '❌ ' + err.message });
