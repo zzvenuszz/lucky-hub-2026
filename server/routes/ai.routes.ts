@@ -8,33 +8,52 @@ import { Type } from "@google/genai";
 const router = Router();
 
 // POST /api/ai/verify-avatar - Kiểm tra ảnh đại diện bằng AI (không cần auth)
-// Xác định ảnh có phải người thật hay không
+// Xác định ảnh có phải ảnh chụp người thật hay không (không phải hoạt hình, AI, phong cảnh, ...)
 router.post('/verify-avatar', async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
   try {
     const { imageBase64 } = req.body;
     if (!imageBase64) return res.status(400).json({ isValid: false, reason: 'Thiếu dữ liệu ảnh' });
 
-    const prompt = `You are an AI avatar validator. Analyze the given image and determine if it is a REAL HUMAN PHOTO (a photograph of an actual human person).
-    
-Rules:
-- isValid = true: The image is a real photo of a human person (can be any age, any gender, any ethnicity)
-- isValid = false if ANY of these apply:
-  * Cartoon, anime, manga, or illustrated character
-  * AI-generated/synthetic human face (not a real person)
-  * Drawing, painting, sketch, or digital art
-  * Animal, object, landscape, or any non-human subject
-  * Meme, composite image, or edited fiction character
-  * Statue, mannequin, doll, or wax figure
-  * Celebrity/public figure photo that is clearly not the user themselves (e.g. a famous actor photo used as avatar)
+    const prompt = `Bạn là chuyên gia xác thực ảnh đại diện. Hãy phân tích ảnh được cung cấp và xác định xem đó có phải là ẢNH CHỤP NGƯỜI THẬT hay không.
 
-Return JSON strictly with this format: { "isValid": boolean, "reason": "short explanation in Vietnamese" }
-reason must be a short Vietnamese string explaining why (max 100 chars).`;
+⚠️ YÊU CẦU NGHIÊM NGẶT: Chỉ chấp nhận ẢNH CHỤP THẬT bằng máy ảnh/điện thoại của MỘT NGƯỜI duy nhất, có khuôn mặt rõ ràng.
+
+✅ ĐƯỢC CHẤP NHẬN (isValid = true):
+- Ảnh chụp thật bằng camera/điện thoại của một người (mọi lứa tuổi, giới tính, dân tộc)
+- Ảnh selfie hoặc ảnh chân dung chụp từ máy ảnh thật
+- Có thể nhìn rõ mặt người trong ảnh
+- Background có thể là phông nền thật bất kỳ
+
+❌ KHÔNG ĐƯỢC CHẤP NHẬN (isValid = false) nếu ẢNH thuộc MỘT trong các trường hợp sau:
+1. 🎨 HOẠT HÌNH/ANIME/MANGA: Nhân vật hoạt hình, anime, manga, truyện tranh, game, hình vẽ
+2. 🤖 AI GENERATED: Ảnh được tạo bởi AI/Deepfake, khuôn mặt không phải người thật
+3. 🖼️ TRANH VẼ: Tranh vẽ tay, sketch, digital art, ảnh minh họa
+4. 🌄 PHONG CẢNH/ĐỒ VẬT: Ảnh chụp phong cảnh, đồ vật, con vật, cây cối, nhà cửa
+5. 🗿 TƯỢNG/MÔ HÌNH: Tượng sáp, mannequin, búp bê, tượng thạch cao
+6. 👥 NHIỀU NGƯỜI: Ảnh group có từ 2 người trở lên
+7. 🙈 KHUÔN MẶT MỜ/KHÔNG RÕ: Ảnh quá mờ, không thấy rõ khuôn mặt, chụp từ xa, chụp sau gáy
+8. 🆔 ẢNH GIẤY TỜ: Ảnh chụp CMND/CCCD, passport, bằng lái xe
+9. 📸 ẢNH NGƯỜI NỔI TIẾNG: Ảnh diễn viên, ca sĩ, người mẫu nổi tiếng rõ ràng không phải người dùng
+10. 🎭 ẢNH CÓ FILTER QUÁ MỨC: Ảnh đã qua chỉnh sửa/lọc quá nhiều khiến không nhận dạng được người thật
+
+Trả về JSON đúng format: { "isValid": boolean, "reason": "string" }
+- reason: giải thích ngắn gọn bằng tiếng Việt (tối đa 120 ký tự). Nếu hợp lệ thì reason = "Ảnh người thật hợp lệ".`;
 
     console.log(`[AvatarVerify] Request ${requestId}: Verifying avatar...`);
 
     const payload = {
       contents: [{ parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            isValid: { type: Type.BOOLEAN },
+            reason: { type: Type.STRING }
+          }
+        }
+      }
     };
     const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
 
