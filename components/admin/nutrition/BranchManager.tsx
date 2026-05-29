@@ -88,9 +88,14 @@ const BranchManager: React.FC = () => {
     }
   };
 
-  const getNddNames = (ids: string[]) => {
-    return ids.map(id => {
-      const ng = nutritionGroups.find(g => (g.id || g._id) === id);
+  const getNddNames = (ids: any[]) => {
+    return ids.map((item: any) => {
+      // Nếu item là object đã populate (có name, _id)
+      if (typeof item === 'object' && item !== null) {
+        return item.name || 'Unknown';
+      }
+      // Nếu item là string ID -> lookup trong nutritionGroups
+      const ng = nutritionGroups.find(g => (g.id || g._id) === item);
       return ng?.name || 'Unknown';
     }).join(', ');
   };
