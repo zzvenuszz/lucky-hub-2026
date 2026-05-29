@@ -13,7 +13,7 @@ import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
 import AuthContainer from './components/auth/AuthContainer.tsx';
 import SystemLog from './components/system/SystemLog.tsx';
-import SystemNDDOverview from './components/admin/nutrition/SystemNDDOverview.tsx';
+import BranchManager from './components/admin/nutrition/BranchManager.tsx';
 import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
 import NDDDashboard from './components/ndd/NDDDashboard.tsx';
@@ -543,7 +543,7 @@ const App: React.FC = () => {
         }} />}
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
         {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} />}
-        {activeTab === 'systemndd' && <SystemNDDOverview />}
+        {activeTab === 'systemndd' && <BranchManager />}
         
         {/* ChatSystem UI - chỉ hiển thị khung chat khi mở */}
         {isChatOpen && <ChatSystem currentUser={currentUser!} onClose={() => setIsChatOpen(false)} />}

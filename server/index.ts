@@ -58,7 +58,7 @@ app.use(express.json({ limit: '50mb' }) as any);
 // Rate Limiting
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 500,
   message: { message: 'Quá nhiều yêu cầu. Vui lòng thử lại sau 15 phút.' },
   standardHeaders: true,
   legacyHeaders: false,

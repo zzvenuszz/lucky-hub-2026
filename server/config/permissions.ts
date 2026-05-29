@@ -93,5 +93,5 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.CHATS.SEND]: 'Gửi tin nhắn chat',
   [RESOURCES.COACH.ACCESS]: 'Vận hành NDD',
   [RESOURCES.NDD.MANAGE]: 'Quản lý NDD',
-  [RESOURCES.NDD.SYSTEM]: 'Q.Lý Hệ thống NDD',
+  [RESOURCES.NDD.SYSTEM]: 'Q.Lý Nhánh NDD',
 };
