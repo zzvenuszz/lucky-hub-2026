@@ -6,8 +6,57 @@ import { callAIWithRetry } from '../services/aiService.ts';
 import { Type } from "@google/genai";
 
 const router = Router();
-router.use(authMiddleware);
 
+// POST /api/ai/verify-avatar - Kiểm tra ảnh đại diện bằng AI (không cần auth)
+// Xác định ảnh có phải người thật hay không
+router.post('/verify-avatar', async (req: Request, res: Response) => {
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ isValid: false, reason: 'Thiếu dữ liệu ảnh' });
+
+    const prompt = `You are an AI avatar validator. Analyze the given image and determine if it is a REAL HUMAN PHOTO (a photograph of an actual human person).
+    
+Rules:
+- isValid = true: The image is a real photo of a human person (can be any age, any gender, any ethnicity)
+- isValid = false if ANY of these apply:
+  * Cartoon, anime, manga, or illustrated character
+  * AI-generated/synthetic human face (not a real person)
+  * Drawing, painting, sketch, or digital art
+  * Animal, object, landscape, or any non-human subject
+  * Meme, composite image, or edited fiction character
+  * Statue, mannequin, doll, or wax figure
+  * Celebrity/public figure photo that is clearly not the user themselves (e.g. a famous actor photo used as avatar)
+
+Return JSON strictly with this format: { "isValid": boolean, "reason": "short explanation in Vietnamese" }
+reason must be a short Vietnamese string explaining why (max 100 chars).`;
+
+    console.log(`[AvatarVerify] Request ${requestId}: Verifying avatar...`);
+
+    const payload = {
+      contents: [{ parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
+    };
+    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
+
+    let result;
+    try {
+      result = JSON.parse(response.text);
+    } catch {
+      // Nếu AI không trả về JSON hợp lệ, fallback
+      console.warn(`[AvatarVerify] Request ${requestId}: Failed to parse AI response: ${response.text}`);
+      result = { isValid: true, reason: 'Không thể xác thực, chấp nhận ảnh này.' };
+    }
+
+    console.log(`[AvatarVerify] Request ${requestId}: Result - isValid=${result.isValid}, reason=${result.reason}`);
+    res.json(result);
+  } catch (err: any) {
+    console.error(`[AvatarVerify] Request ${requestId}: Error:`, err.message);
+    // Fallback: nếu lỗi thì cho phép ảnh (không block user vì lỗi hệ thống)
+    res.json({ isValid: true, reason: 'Lỗi hệ thống xác thực, ảnh đã được chấp nhận.' });
+  }
+});
+
+router.use(authMiddleware);
 // POST /api/ai/extract - Trích xuất chỉ số từ ảnh
 router.post('/extract', async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();

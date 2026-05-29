@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, memo } from 'react';
 import { HealthGoal, NutritionGroup } from '../../types.ts';
+import AvatarUpload from './AvatarUpload';
 
 interface RegisterProps {
   onRegister: (data: any) => void;
@@ -15,8 +16,11 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchLogin, isLoadin
     username: '', email: '', password: '', fullName: '', phoneNumber: '',
     birthDate: '', height: 170, weight: 65,
     gender: 'Nam' as 'Nam'|'Nữ', healthGoals: [] as HealthGoal[],
-    nutritionGroupId: ''
+    nutritionGroupId: '',
+    avatar: '' as string
   });
+  const [avatarValid, setAvatarValid] = useState<boolean | null>(null);
+  const [avatarValidationReason, setAvatarValidationReason] = useState<string>('');
   const [nutritionGroups, setNutritionGroups] = useState<NutritionGroup[]>([]);
   const [showPass, setShowPass] = useState(false);
   const [step, setStep] = useState(1);
@@ -41,9 +45,37 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchLogin, isLoadin
     fetchGroups();
   }, []);
 
+  // Xử lý khi avatar thay đổi
+  const handleAvatarChange = (base64: string | null) => {
+    setRegData(prev => ({ ...prev, avatar: base64 || '' }));
+  };
+
+  // Xử lý kết quả validation avatar
+  const handleAvatarValidation = (valid: boolean | null, reason?: string) => {
+    setAvatarValid(valid);
+    if (!valid && reason) {
+      setAvatarValidationReason(reason);
+    } else {
+      setAvatarValidationReason('');
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (step === 1) {
+      // Kiểm tra avatar trước khi qua bước 2
+      if (!regData.avatar) {
+        alert('Vui lòng chọn ảnh đại diện');
+        return;
+      }
+      if (avatarValid !== true) {
+        if (avatarValid === null) {
+          alert('Vui lòng đợi xác thực ảnh đại diện hoặc chọn ảnh khác');
+        } else {
+          alert('Ảnh đại diện không hợp lệ. Vui lòng chọn ảnh khác.\n' + avatarValidationReason);
+        }
+        return;
+      }
       setStep(2);
     } else {
       onRegister(regData);
@@ -54,6 +86,12 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchLogin, isLoadin
     <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in zoom-in-95">
       {step === 1 ? (
         <>
+          {/* Avatar Upload Section */}
+          <AvatarUpload
+            onAvatarChange={handleAvatarChange}
+            isValid={avatarValid}
+            onValidationChange={handleAvatarValidation}
+          />
           <input required placeholder="Họ và tên" value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
           <input required placeholder="Tên đăng nhập" value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} className="w-full px-5 py-3.5 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm shadow-inner" />
           <input 
