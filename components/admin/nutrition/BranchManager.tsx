@@ -13,15 +13,22 @@ const BranchManager: React.FC = () => {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
+    // Tải danh sách NDD riêng, không phụ thuộc vào branches
+    Database.getAllNutritionGroups()
+      .then(nddData => {
+        setNutritionGroups(nddData || []);
+        console.log(`[BranchManager] Loaded ${nddData?.length || 0} NDD groups`);
+      })
+      .catch(err => {
+        console.error('[BranchManager] Error loading NDD groups:', err);
+      });
+
     try {
-      const [branchData, nddData] = await Promise.all([
-        Database.getAllNutritionBranches(),
-        Database.getAllNutritionGroups(),
-      ]);
+      const branchData = await Database.getAllNutritionBranches();
       setBranches(branchData || []);
-      setNutritionGroups(nddData || []);
+      console.log(`[BranchManager] Loaded ${branchData?.length || 0} branches`);
     } catch (err) {
-      console.error('[BranchManager] Error:', err);
+      console.error('[BranchManager] Error loading branches:', err);
     } finally {
       setIsLoading(false);
     }
