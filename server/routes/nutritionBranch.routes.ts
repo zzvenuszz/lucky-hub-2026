@@ -1,10 +1,15 @@
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { NutritionBranch } from '../models/NutritionBranch.ts';
 import { NutritionGroup } from '../models/NutritionGroup.ts';
+import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 
 const router = Router();
+
+// Middleware xác thực cho tất cả routes trong file này
+router.use(authMiddleware);
 
 // GET /api/nutrition-branches - Danh sách tất cả nhánh (admin)
 router.get('/', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, res: Response) => {
@@ -72,7 +77,7 @@ router.post('/', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, r
     const branch = new NutritionBranch({
       name: name.trim(),
       nutritionGroupIds,
-      memberIds: Array.from(memberIds),
+      memberIds: Array.from(memberIds).map(id => new mongoose.Types.ObjectId(id)),
       createdBy: (req as any).user?.userId,
       isActive: true,
     });
@@ -106,7 +111,7 @@ router.put('/:id', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request,
         if (ndd.ownerId) memberIds.add(ndd.ownerId.toString());
         (ndd.coOwners || []).forEach((c: any) => memberIds.add(c._id ? c._id.toString() : c.toString()));
       });
-      branch.memberIds = Array.from(memberIds);
+      branch.memberIds = Array.from(memberIds).map(id => new mongoose.Types.ObjectId(id));
     }
     if (typeof isActive === 'boolean') branch.isActive = isActive;
     await branch.save();
