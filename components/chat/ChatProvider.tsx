@@ -66,6 +66,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   const [pendingQueue, setPendingQueue] = useState<string[]>([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [latestMetric, setLatestMetric] = useState<HealthMetric | undefined>(undefined);
+  const [contactsMap, setContactsMap] = useState<Record<string, any>>({});
   
   const currentUid = String((currentUser as any).id || (currentUser as any)._id);
   const chatsRef = useRef<ChatSession[]>([]);
@@ -131,47 +132,68 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         
         const allChats = preloadedChats.length > 0 ? preloadedChats : (await Database.getChats() || []);
         
-        // Build contact list based on user role + NDD
-        // - ADMIN: thấy tất cả users
-        // - COACH: thấy tất cả users (coaches are NDD owners)
-        // - MEMBER: chỉ thấy ADMIN + người trong cùng NDD (coach hoặc member khác)
-        const userNutritionGroup = (currentUser as any).nutritionGroupId;
-        
-        const contacts = users.filter(u => {
-          const uId = String((u as any).id || (u as any)._id);
-          if (uId === currentUid) return false;
-          
-          // Kiểm tra permissions từ group để quyết định contact visibility
-          const userPerms = (currentUser as any).permissions || [];
+        // Gọi API lấy danh sách contacts được phép chat (dựa trên backend permissions)
+        let contacts: any[] = [];
+        try {
+          const sessionId = localStorage.getItem('lucky_hub_session');
+          const res = await fetch('/api/chats/contacts', {
+            headers: {
+              'Authorization': `Bearer ${sessionId}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (res.ok) {
+            contacts = await res.json();
+            console.log(`[ChatProvider] Loaded ${contacts.length} contacts from API`);
+          } else {
+            throw new Error('Failed to fetch contacts');
+          }
+        } catch (err) {
+          console.warn(`[ChatProvider] Failed to load contacts from API, falling back to local logic:`, err);
+          // Fallback: sử dụng logic cũ nếu API fail
+          const userNutritionGroup = (currentUser as any).nutritionGroupId;
+          const userPerms = (currentUser as any).groupPermissions || [];
           const isAdmin = userPerms.includes('admin:panel');
           const isCoach = userPerms.includes('coach:access');
           
-          // ADMIN/COACH thấy tất cả
-          if (isAdmin || isCoach) {
-            return true;
-          }
-          
-          // Hội viên: chỉ thấy người cùng NDD
-          if (userNutritionGroup) {
-            const otherNutritionGroup = (u as any).nutritionGroupId;
-            if (otherNutritionGroup && String(otherNutritionGroup) === String(userNutritionGroup)) {
-              return true;
+          contacts = users.filter(u => {
+            const uId = String((u as any).id || (u as any)._id);
+            if (uId === currentUid) return false;
+            if (isAdmin || isCoach) return true;
+            if (userNutritionGroup) {
+              const otherNutritionGroup = (u as any).nutritionGroupId;
+              if (otherNutritionGroup && String(otherNutritionGroup) === String(userNutritionGroup)) {
+                return true;
+              }
             }
-          }
+            return false;
+          }).map(u => ({
+            userId: String((u as any).id || (u as any)._id),
+            fullName: u.fullName,
+            role: isAdmin ? 'ADMIN' : isCoach ? 'COACH' : 'MEMBER',
+            avatar: u.avatar,
+          }));
           
-          return false;
+          // Thêm AI coach vào fallback contacts
+          contacts.unshift({
+            userId: 'ai_coach',
+            fullName: '🍀Trợ lý Lucky',
+            role: 'AI',
+          });
           
-          return true;
-        });
+          console.log(`[ChatProvider] Fallback: ${contacts.length} contacts`);
+        }
 
         const myId = String(currentUid);
-        const activeChats = contacts.map(contact => {
-          const cId = String((contact as any).id || (contact as any)._id);
-          return allChats.find((c: ChatSession) => 
-            (String(c.memberId) === myId && String(c.coachId) === cId) || 
-            (String(c.memberId) === cId && String(c.coachId) === myId)
-          ) || { id: `chat_${myId}_${cId}`, memberId: myId, coachId: cId, messages: [] };
-        });
+        const activeChats = contacts
+          .filter(c => c.userId !== 'ai_coach') // AI sẽ được xử lý riêng
+          .map(contact => {
+            const cId = contact.userId;
+            return allChats.find((c: ChatSession) => 
+              (String(c.memberId) === myId && String(c.coachId) === cId) || 
+              (String(c.memberId) === cId && String(c.coachId) === myId)
+            ) || { id: `chat_${myId}_${cId}`, memberId: myId, coachId: cId, messages: [] };
+          });
         
         const aiChatId = `chat_ai_${String(currentUid)}`;
         const aiChat = allChats.find((c: ChatSession) => c.id === aiChatId) || { 
@@ -180,6 +202,13 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         
         const newChats = [aiChat, ...activeChats];
         setChats(newChats);
+
+        // Lưu contacts map để getOtherUser fallback
+        const cmap: Record<string, any> = {};
+        contacts.forEach(c => {
+          cmap[c.userId] = { fullName: c.fullName, role: c.role, id: c.userId, avatar: c.avatar };
+        });
+        setContactsMap(cmap);
 
         console.log(`[ChatProvider] Loaded ${newChats.length} chats (contacts=${contacts.length})`);
       } catch (error) {
@@ -626,8 +655,12 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   const getOtherUser = useCallback((chat: ChatSession) => {
     if (chat.coachId === 'ai_coach') return { fullName: '🍀Trợ lý Lucky', role: 'AI', id: 'ai_coach' };
     const otherId = String(currentUid) === String(chat.memberId) ? String(chat.coachId) : String(chat.memberId);
-    return users.find(u => String((u as any).id || (u as any)._id) === otherId);
-  }, [currentUid, users]);
+    // Ưu tiên tìm trong users prop (danh sách đầy đủ từ App)
+    const fromUsers = users.find(u => String((u as any).id || (u as any)._id) === otherId);
+    if (fromUsers) return fromUsers;
+    // Fallback: tìm trong contactsMap (từ API /api/chats/contacts)
+    return contactsMap[otherId];
+  }, [currentUid, users, contactsMap]);
 
   const contextValue: ChatContextType = {
     chats, selectedChat, isTypingAI, onlineUsers, unreadCounts, aiPromptText: AI_PROMPT_TEXT,

@@ -89,8 +89,9 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
     try {
       const resp = await fetch(`/api/goals/${currentUid}`, { headers: getAuthHeaders() });
       const data = await resp.json();
-      setGoals(data || []);
-      console.log(`[Goals] Loaded ${data?.length || 0} goals`);
+      // Đảm bảo goals luôn là array, tránh lỗi "goals.filter is not a function" nếu API trả về object lỗi
+      setGoals(Array.isArray(data) ? data : []);
+      console.log(`[Goals] Loaded ${Array.isArray(data) ? data.length : 0} goals`);
     } catch (err: any) {
       console.error('[Goals] Fetch error:', err);
     }

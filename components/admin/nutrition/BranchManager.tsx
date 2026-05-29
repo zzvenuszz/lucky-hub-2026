@@ -10,6 +10,8 @@ const BranchManager: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [newBranch, setNewBranch] = useState({ name: '', nutritionGroupIds: [] as string[] });
   const [expandedBranch, setExpandedBranch] = useState<string | null>(null);
+  const [editingNdds, setEditingNdds] = useState<string[]>([]);
+  const [editNddError, setEditNddError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -61,14 +63,20 @@ const BranchManager: React.FC = () => {
 
   const handleUpdate = async () => {
     if (!editingBranch) return;
+    if (editingNdds.length < 2) {
+      setEditNddError('Cần chọn ít nhất 2 NDD');
+      return;
+    }
     const bid = editingBranch.id || editingBranch._id;
     try {
       await Database.updateNutritionBranch(bid, {
         name: editingBranch.name,
-        nutritionGroupIds: editingBranch.nutritionGroupIds,
+        nutritionGroupIds: editingNdds,
         isActive: editingBranch.isActive,
       });
       setEditingBranch(null);
+      setEditingNdds([]);
+      setEditNddError(null);
       setActionMsg({ type: 'success', text: '✅ Đã cập nhật nhánh' });
       loadData();
     } catch (err: any) {
@@ -233,7 +241,17 @@ const BranchManager: React.FC = () => {
                     {/* Actions */}
                     <div className="flex gap-2 pt-2 border-t border-indigo-100">
                       <button
-                        onClick={(e) => { e.stopPropagation(); setEditingBranch({...branch}); }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setEditingBranch({...branch});
+                          // Khởi tạo editingNdds với danh sách ID NDD hiện tại
+                          const currentIds = (branch.nutritionGroupIds || []).map((item: any) => {
+                            if (typeof item === 'object' && item !== null) return item._id || item.id;
+                            return item;
+                          });
+                          setEditingNdds(currentIds);
+                          setEditNddError(null);
+                        }}
                         className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
                       >
                         ✏️ Sửa
@@ -261,7 +279,7 @@ const BranchManager: React.FC = () => {
       {/* Edit Modal */}
       {editingBranch && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
-          <div className="bg-white w-full max-w-lg rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
+          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa nhánh: {editingBranch.name}</h4>
             <div>
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tên nhánh</label>
@@ -271,6 +289,45 @@ const BranchManager: React.FC = () => {
                 className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs mt-1"
               />
             </div>
+
+            <div>
+              <p className="text-[10px] font-black text-slate-400 uppercase mb-2">
+                Chọn NDD tham gia <span className="text-rose-500">(tối thiểu 2)</span>
+              </p>
+              {editNddError && (
+                <p className="text-[9px] text-rose-600 font-bold mb-1">{editNddError}</p>
+              )}
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {nutritionGroups.filter(g => g.isActive !== false).map(ng => {
+                  const ngId = ng.id || ng._id;
+                  const isSelected = editingNdds.includes(ngId);
+                  return (
+                    <label key={ngId} className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-xs">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          setEditNddError(null);
+                          const updated = isSelected
+                            ? editingNdds.filter(id => id !== ngId)
+                            : [...editingNdds, ngId];
+                          setEditingNdds(updated);
+                        }}
+                        className="rounded"
+                      />
+                      <span className="font-bold text-slate-700">{ng.name}</span>
+                      <span className="text-[9px] text-slate-400">({ng.members?.length || 0} hội viên)</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {editingNdds.length > 0 && (
+                <p className="text-[9px] text-emerald-600 font-bold mt-2">
+                  ✅ Đã chọn {editingNdds.length} NDD
+                </p>
+              )}
+            </div>
+
             <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer">
               <input
                 type="checkbox"
@@ -281,7 +338,7 @@ const BranchManager: React.FC = () => {
               <span className="text-xs font-bold text-slate-700">Đang hoạt động</span>
             </label>
             <div className="flex gap-3 pt-2">
-              <button onClick={() => setEditingBranch(null)} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">Hủy</button>
+              <button onClick={() => { setEditingBranch(null); setEditingNdds([]); setEditNddError(null); }} className="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">Hủy</button>
               <button onClick={handleUpdate} className="flex-1 py-3 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] shadow-lg">Lưu</button>
             </div>
           </div>

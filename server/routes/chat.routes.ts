@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { Chat } from '../models/Chat.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
+import { getChatContactIds, getChatContacts } from '../services/chatPermissionService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -12,10 +13,39 @@ router.get('/', async (req: Request, res: Response) => {
   if (!userId) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
+  
+  // Lấy danh sách contact được phép chat
+  const contactIds = await getChatContactIds(userId);
+  
   const chats = await Chat.find({
     $or: [{ memberId: userId }, { coachId: userId }]
   });
-  res.json(chats);
+  
+  // Chỉ giữ lại chats với người nằm trong contact list
+  const filteredChats = chats.filter(chat => {
+    const otherId = String(chat.memberId) === userId ? String(chat.coachId) : String(chat.memberId);
+    return contactIds.includes(otherId);
+  });
+  
+  console.log(`[Chat] User ${userId}: ${filteredChats.length}/${chats.length} chats after permission filter`);
+  res.json(filteredChats);
+});
+
+// GET /api/chats/contacts - Danh sách người dùng được phép chat
+router.get('/contacts', async (req: Request, res: Response) => {
+  const userId = (req as any).user?.userId;
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  
+  try {
+    const contacts = await getChatContacts(userId);
+    console.log(`[Chat] Contacts for ${userId}: ${contacts.length} contacts`);
+    res.json(contacts);
+  } catch (err: any) {
+    console.error('[Chat] Error fetching contacts:', err.message);
+    res.status(500).json({ message: 'Lỗi khi tải danh sách liên hệ' });
+  }
 });
 
 // POST /api/chats
