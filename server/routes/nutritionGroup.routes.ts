@@ -425,7 +425,7 @@ router.post('/:id/cancel-request', async (req: Request, res: Response) => {
     const targetGroup = await NutritionGroup.findById(req.params.id);
     if (!targetGroup) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
-    targetGroup.pendingMembers = targetGroup.pendingMembers.filter(
+    (targetGroup as any).pendingMembers = (targetGroup.pendingMembers || []).filter(
       (p: any) => p.userId.toString() !== req.user!.userId
     );
     await targetGroup.save();
@@ -473,7 +473,7 @@ router.post('/:id/approve/:userId', async (req: Request, res: Response) => {
     if (!group.members.includes(user._id)) {
       group.members.push(user._id);
     }
-    group.pendingMembers = group.pendingMembers.filter((p: any) => p.userId.toString() !== req.params.userId);
+    (group as any).pendingMembers = (group.pendingMembers || []).filter((p: any) => p.userId.toString() !== req.params.userId);
     await group.save();
 
     user.nutritionGroupId = group._id;
@@ -500,7 +500,7 @@ router.post('/:id/reject/:userId', async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Bạn không có quyền từ chối yêu cầu này' });
     }
 
-    group.pendingMembers = group.pendingMembers.filter((p: any) => p.userId.toString() !== req.params.userId);
+    (group as any).pendingMembers = (group.pendingMembers || []).filter((p: any) => p.userId.toString() !== req.params.userId);
     await group.save();
 
     const user = await User.findById(req.params.userId);
