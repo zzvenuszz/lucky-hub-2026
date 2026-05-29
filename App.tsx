@@ -455,6 +455,8 @@ const App: React.FC = () => {
   };
 
   const [isVerifyMode, setIsVerifyMode] = useState(false);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
 
   const handleRegister = async (data: any) => {
     if (emailError) return alert('Email không hợp lệ');
@@ -467,8 +469,9 @@ const App: React.FC = () => {
       });
       if (response.ok) {
         if (window.debugLog) window.debugLog(`Đăng ký tài khoản mới thành công: @${data.username}`, "auth");
-        // Chuyển sang màn hình thông báo xác thực email
-        setIsVerifyMode(true);
+        // Lưu email đã đăng ký và chuyển sang màn hình chúc mừng
+        setRegisteredEmail(data.email);
+        setRegistrationSuccess(true);
       } else {
         const res = await response.json();
         if (window.debugLog) window.debugLog(`Lỗi đăng ký: ${res.message}`, "error");
@@ -511,6 +514,9 @@ const App: React.FC = () => {
       lockUntil={lockUntil}
       verifyMode={isVerifyMode}
       onBackFromVerify={() => setIsVerifyMode(false)}
+      registrationSuccess={registrationSuccess}
+      registeredEmail={registeredEmail}
+      onClearRegistrationSuccess={() => setRegistrationSuccess(false)}
     />;
   }
 

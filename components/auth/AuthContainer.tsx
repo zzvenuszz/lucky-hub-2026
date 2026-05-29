@@ -4,8 +4,9 @@ import Register from './Register';
 import ForgotPasswordForm from './ForgotPasswordForm';
 import ResetPasswordForm from './ResetPasswordForm';
 import EmailVerification from './EmailVerification';
+import RegistrationSuccess from './RegistrationSuccess';
 
-type AuthMode = 'login' | 'register' | 'forgot-password' | 'reset-password' | 'verify-email' | 'verify-success';
+type AuthMode = 'login' | 'register' | 'forgot-password' | 'reset-password' | 'verify-email' | 'verify-success' | 'register-success';
 
 interface AuthContainerProps {
   onLogin: (data: any) => void;
@@ -17,10 +18,13 @@ interface AuthContainerProps {
   lockUntil?: string | null;
   verifyMode?: boolean;
   onBackFromVerify?: () => void;
+  registeredEmail?: string;
+  registrationSuccess?: boolean;
+  onClearRegistrationSuccess?: () => void;
 }
 
-const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail, errorMessage, lockUntil, verifyMode, onBackFromVerify }) => {
-  const [mode, setMode] = useState<AuthMode>(verifyMode ? 'verify-success' : 'login');
+const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister, isLoading, emailError, onCheckEmail, errorMessage, lockUntil, verifyMode, onBackFromVerify, registeredEmail, registrationSuccess, onClearRegistrationSuccess }) => {
+  const [mode, setMode] = useState<AuthMode>(registrationSuccess ? 'register-success' : verifyMode ? 'verify-success' : 'login');
   const [resetToken, setResetToken] = useState<string>('');
 
   const handleSwitchToRegister = () => setMode('register');
@@ -39,6 +43,17 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister,
       setMode('verify-success');
     }
   }, [verifyMode, mode]);
+
+  // Sync registrationSuccess prop - chuyển sang register-success
+  React.useEffect(() => {
+    if (registrationSuccess) {
+      setMode('register-success');
+      // Báo cho App biết đã xử lý để tránh vòng lặp
+      if (onClearRegistrationSuccess) {
+        onClearRegistrationSuccess();
+      }
+    }
+  }, [registrationSuccess, onClearRegistrationSuccess]);
 
   // Check if we have a reset token or verify token in URL
   React.useEffect(() => {
@@ -97,8 +112,15 @@ const AuthContainer: React.FC<AuthContainerProps> = memo(({ onLogin, onRegister,
         return (
           <EmailVerification
             token=""
-            onVerified={onBackFromVerify || handleSwitchToLogin}
-            onBackToLogin={onBackFromVerify || handleSwitchToLogin}
+            onVerified={() => setMode('login')}
+            onBackToLogin={() => setMode('login')}
+          />
+        );
+      case 'register-success':
+        return (
+          <RegistrationSuccess
+            email={registeredEmail || ''}
+            onBackToLogin={() => setMode('login')}
           />
         );
       default:

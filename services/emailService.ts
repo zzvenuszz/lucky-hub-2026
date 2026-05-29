@@ -436,6 +436,97 @@ class EmailService {
     `;
   }
 
+  /**
+   * Send registration success email with login credentials
+   */
+  public async sendRegistrationEmail(email: string, userName: string, loginId: string, password: string): Promise<boolean> {
+    console.log('[EMAIL-SERVICE] sendRegistrationEmail called:', { email, userName });
+
+    const loginUrl = `${this.appBaseUrl}/login`;
+    const homeUrl = this.appBaseUrl;
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Đăng ký thành công - Lucky Hub</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
+          .container { max-width: 600px; margin: 0 auto; background-color: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+          .header { background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 40px 30px; text-align: center; }
+          .logo { font-size: 32px; margin-bottom: 10px; }
+          .title { font-size: 24px; font-weight: bold; margin: 0; }
+          .content { padding: 40px 30px; color: #374151; line-height: 1.6; }
+          .greeting { font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #059669; }
+          .info-box { background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 10px; padding: 20px; margin: 20px 0; }
+          .info-box h3 { color: #059669; margin: 0 0 15px 0; font-size: 16px; }
+          .info-row { display: flex; padding: 8px 0; border-bottom: 1px dashed #d1fae5; }
+          .info-row:last-child { border-bottom: none; }
+          .info-label { font-weight: bold; color: #065f46; width: 120px; min-width: 120px; }
+          .info-value { color: #374151; word-break: break-all; }
+          .login-button { display: inline-block; background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; }
+          .warning { background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0; font-size: 14px; }
+          .footer { background-color: #f9fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">🍀</div>
+            <h1 class="title">Đăng ký thành công!</h1>
+          </div>
+          <div class="content">
+            <div class="greeting">Xin chào ${userName}!</div>
+            <p>Cảm ơn bạn đã đăng ký tài khoản <strong>Lucky Hub</strong> - Nền tảng quản lý dinh dưỡng thông minh.</p>
+
+            <div class="info-box">
+              <h3>📋 Thông tin tài khoản</h3>
+              <div class="info-row">
+                <span class="info-label">Tên đăng nhập:</span>
+                <span class="info-value">${loginId}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Mật khẩu:</span>
+                <span class="info-value">${password}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Trang chủ:</span>
+                <span class="info-value"><a href="${homeUrl}" style="color:#059669;">${homeUrl}</a></span>
+              </div>
+            </div>
+
+            <div style="text-align: center;">
+              <a href="${loginUrl}" class="login-button">ĐĂNG NHẬP NGAY</a>
+            </div>
+
+            <div class="warning">
+              <strong>🔒 Vui lòng bảo mật thông tin này.</strong><br>
+              Không chia sẻ mật khẩu cho người khác. Nếu bạn nhận được email này do nhầm lẫn, vui lòng bỏ qua.
+            </div>
+
+            <p>Trân trọng,<br><strong>Đội ngũ Lucky Hub</strong></p>
+          </div>
+          <div class="footer">
+            <p><strong>Lucky Hub</strong> - Chuyên gia sức khỏe của bạn</p>
+            <p style="margin-top: 15px; font-size: 12px; color: #9ca3af;">© 2026 Lucky Hub. Tất cả quyền được bảo lưu.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const text = `Xin chào ${userName}!\n\nCảm ơn bạn đã đăng ký tài khoản Lucky Hub.\n\nThông tin tài khoản:\n- Tên đăng nhập: ${loginId}\n- Mật khẩu: ${password}\n- Trang chủ: ${homeUrl}\n\nVui lòng đăng nhập tại: ${loginUrl}\n\n🔒 Vui lòng bảo mật thông tin này.\n\nTrân trọng,\nĐội ngũ Lucky Hub`;
+
+    return await this.sendEmail({
+      to: email,
+      subject: 'Đăng ký thành công - Lucky Hub',
+      html,
+      text
+    });
+  }
+
   private stripHtml(html: string): string {
     return html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
   }

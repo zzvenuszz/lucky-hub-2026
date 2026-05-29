@@ -11,6 +11,7 @@ import { uploadToImgBB } from '../utils/imageUtils.ts';
 import { validateBody, sanitizeText } from '../../services/validationService.ts';
 import { Group } from '../models/Group.ts';
 import { NutritionGroup } from '../models/NutritionGroup.ts';
+import { Notification } from '../models/Notification.ts';
 
 const router = Router();
 
@@ -89,22 +90,72 @@ router.post('/register', validateBody(
     });
     await newUser.save();
 
-    // Tự động thêm user vào NDD nếu có chọn
+    // Gửi email thông tin đăng ký
+    try {
+      if (emailService && typeof emailService.sendRegistrationEmail === 'function') {
+        await emailService.sendRegistrationEmail(
+          newUser.email,
+          newUser.fullName,
+          newUser.username,
+          password // plaintext password
+        );
+        console.log(`[Auth] 📧 Registration email sent to ${newUser.email}`);
+      } else {
+        console.warn(`[Auth] Email service not ready, skipping registration email`);
+      }
+    } catch (emailErr: any) {
+      console.warn(`[Auth] Failed to send registration email:`, emailErr.message);
+    }
+
+    // Gửi yêu cầu tham gia NDD (pending, không auto-add)
     if (nutritionGroupId) {
       try {
         const ndd = await NutritionGroup.findById(nutritionGroupId);
         if (ndd && ndd.isActive) {
-          if (!ndd.members.includes(newUser._id)) {
-            ndd.members.push(newUser._id);
-            await ndd.save();
-            console.log(`[Auth] ✅ User @${newUser.username} added to NDD "${ndd.name}"`);
+          // Kiểm tra xem user đã có pending chưa
+          const alreadyPending = ndd.pendingMembers?.some(
+            (p: any) => p.userId?.toString() === newUser._id.toString()
+          );
+          if (!alreadyPending) {
+            // Thêm vào pendingMembers bằng $push updateOne để tránh lỗi type
+            await NutritionGroup.updateOne(
+              { _id: ndd._id },
+              {
+                $push: {
+                  pendingMembers: {
+                    userId: newUser._id,
+                    requestedAt: new Date(),
+                  },
+                },
+              }
+            );
+            console.log(`[Auth] ⏳ User @${newUser.username} sent join request to NDD "${ndd.name}" (pending approval)`);
+
+            // Gửi notification cho owner và co-owners
+            const notifyTargets = [ndd.ownerId, ...(ndd.coOwners || [])];
+            for (const targetId of notifyTargets) {
+              if (targetId) {
+                try {
+                  const notif = new Notification({
+                    userId: targetId,
+                    type: 'system',
+                    message: `📋 ${newUser.fullName} (@${newUser.username}) đã gửi yêu cầu tham gia NDD "${ndd.name}". Vui lòng xét duyệt.`,
+                    link: `/admin/ndd/${ndd._id}/members`,
+                    actorId: newUser._id,
+                    actorName: newUser.fullName,
+                  });
+                  await notif.save();
+                } catch (notifErr: any) {
+                  console.warn(`[Auth] Could not send notification to NDD owner:`, notifErr.message);
+                }
+              }
+            }
           }
         }
       } catch (nddErr: any) {
-        console.warn(`[Auth] Could not add to NDD:`, nddErr.message);
+        console.warn(`[Auth] Could not add pending to NDD:`, nddErr.message);
       }
     }
-
 
     // Audit Log
     const log = new AuditLog({
