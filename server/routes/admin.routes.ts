@@ -86,17 +86,21 @@ router.put('/gemini-keys/:id/toggle', requirePermission(RESOURCES.AI.MANAGE), as
 });
 
 /**
- * Tự động tìm model Gemini tốt nhất hỗ trợ generateContent
- * Ưu tiên: Flash (nhanh, nhẹ) > Pro, version mới > cũ
+ * Kiểm tra key Gemini bằng ListModels API - KHÔNG tốn quota generateContent
+ * Trả về model tốt nhất tìm được nếu key hợp lệ, hoặc throw error nếu key lỗi
  */
-async function findBestGeminiModel(apiKey: string): Promise<string> {
+async function verifyGeminiKey(apiKey: string): Promise<{ valid: boolean; bestModel?: string; error?: string }> {
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
     );
     const data = await response.json();
 
-    if (data.models) {
+    if (!response.ok || data.error) {
+      return { valid: false, error: data.error?.message || `HTTP ${response.status}` };
+    }
+
+    if (data.models && data.models.length > 0) {
       // Lọc model Gemini hỗ trợ generateContent
       const availableModels = data.models
         .filter((m: any) =>
@@ -118,45 +122,32 @@ async function findBestGeminiModel(apiKey: string): Promise<string> {
           return b.localeCompare(a);
         });
 
-        console.log(`[GeminiCheck] Auto-selected model: ${availableModels[0]}`);
-        return availableModels[0];
+        console.log(`[GeminiCheck] Key valid, best model: ${availableModels[0]}`);
+        return { valid: true, bestModel: availableModels[0] };
       }
     }
-  } catch (err) {
-    console.warn('[GeminiCheck] ListModels failed, using default:', err);
+
+    return { valid: true, bestModel: 'gemini-2.0-flash' };
+  } catch (err: any) {
+    console.warn('[GeminiCheck] ListModels request failed:', err.message);
+    return { valid: false, error: err.message };
   }
-  // Fallback an toàn
-  return 'gemini-2.0-flash';
 }
 
 // POST /api/admin/gemini-keys/check
 router.post('/gemini-keys/check', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
   try {
     const { key } = req.body;
+    console.log(`[GeminiCheck] Testing key...`);
     
-    // 1. Tự động tìm model tốt nhất cho key này
-    const bestModel = await findBestGeminiModel(key);
-    console.log(`[GeminiCheck] Testing key with model: ${bestModel}`);
+    // Kiểm tra key bằng ListModels API - giống curl test, KHÔNG tốn quota
+    const result = await verifyGeminiKey(key);
     
-    // 2. Gọi REST API trực tiếp để test (không phụ thuộc SDK version)
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${bestModel}:generateContent?key=${key}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'ping' }] }]
-        })
-      }
-    );
-
-    const data = await response.json();
-
-    if (response.ok && !data.error) {
-      console.log(`[GeminiCheck] Key is valid (model: ${bestModel})`);
-      res.json({ status: 'ok', modelUsed: bestModel });
+    if (result.valid) {
+      console.log(`[GeminiCheck] Key is valid (model: ${result.bestModel})`);
+      res.json({ status: 'ok', modelUsed: result.bestModel });
     } else {
-      throw new Error(data.error?.message || 'Key không hoạt động');
+      throw new Error(result.error || 'Key không hoạt động');
     }
   } catch (err: any) {
     console.error(`[GeminiCheck] Key test failed:`, err.message);
