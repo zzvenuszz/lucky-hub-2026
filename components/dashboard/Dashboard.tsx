@@ -37,7 +37,18 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
   useEffect(() => {
     const cacheKey = `metrics_${selectedUserId}`;
     
-    // Check cache first
+    // Nếu có refreshTrigger > 0 (vừa lưu dữ liệu mới), bỏ qua cache, fetch từ API luôn
+    if (refreshTrigger && refreshTrigger > 0) {
+      Database.getMetrics(selectedUserId).then(data => {
+        if (data) {
+          cacheManager.set(cacheKey, data, 5); // Cache for 5 minutes
+          setMetrics(data);
+        }
+      });
+      return;
+    }
+
+    // Check cache first (chỉ khi không có refreshTrigger, tức lần mount đầu tiên)
     const cachedMetrics = cacheManager.get<HealthMetric[]>(cacheKey);
     if (cachedMetrics) {
       console.log(`[Dashboard] Using cached metrics for ${selectedUserId}`);

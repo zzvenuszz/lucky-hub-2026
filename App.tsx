@@ -19,6 +19,7 @@ import ToastProvider from './components/system/ToastProvider.tsx';
 import NDDDashboard from './components/ndd/NDDDashboard.tsx';
 import { User, AIRule, HealthMetric, Badge, WsEvent } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
+import { cacheManager } from './utils/cacheManager.ts';
 import wsService from './services/wsService.ts';
 
 // Hằng số thời gian logout
@@ -569,16 +570,22 @@ const App: React.FC = () => {
           latestMetrics={existingMetrics.length > 0 ? [...existingMetrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0] : undefined}
           onSave={async (m) => { 
           const actorId = (currentUser as any).id || (currentUser as any)._id;
-          await Database.saveMetric({ ...m, userId: metricTargetUserId, actorId, actorName: currentUser?.fullName }); 
+          const targetId = metricTargetUserId || actorId;
+          await Database.saveMetric({ ...m, userId: targetId, actorId, actorName: currentUser?.fullName });
+          // Xóa cache metrics để Dashboard/component khác fetch dữ liệu mới
+          cacheManager.remove(`metrics_${targetId}`);
           setRefreshTrigger(t => t+1); 
           setIsAddingMetric(false); 
         }} onSaveBulk={async (l) => { 
           const actorId = (currentUser as any).id || (currentUser as any)._id;
+          const targetId = metricTargetUserId || actorId;
           await Database.saveMetricsBulk({
-            metrics: l.map(m => ({...m, userId: metricTargetUserId})),
+            metrics: l.map(m => ({...m, userId: targetId})),
             actorId,
             actorName: currentUser?.fullName
-          }); 
+          });
+          // Xóa cache metrics để Dashboard/component khác fetch dữ liệu mới
+          cacheManager.remove(`metrics_${targetId}`);
           setRefreshTrigger(t => t+1); 
           setIsAddingMetric(false); 
         }} onClose={() => setIsAddingMetric(false)} />}

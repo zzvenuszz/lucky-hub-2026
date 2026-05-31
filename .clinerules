@@ -1,16 +1,47 @@
-# Cline Construction Rules for Handling Skipped Commands & Thinking Loops
+# ============================================================================
+# CLINE & ROO CODE SYSTEM RULES - LUCKY-HUB-2026
+# ============================================================================
 
-## 1. CRITICAL: Handle "Skipped" or "Empty" Command Results
-- If a command (e.g., `grep`, `find`, `ls`) returns NO output, is explicitly marked as "Skipped", or returns an error, DO NOT enter an endless inner thinking loop trying to re-execute the exact same logic.
-- Acknowledge immediately that the criteria was not met or the file/pattern does not exist, then instantly pivot to an alternative approach.
+# 1. NGÔN NGỮ GIAO TIẾP (COMMUNICATION LANGUAGE)
+# ----------------------------------------------------------------------------
+- Luôn luôn trả lời, giải thích và giao tiếp bằng Tiếng Việt trong mọi tình huống.
 
-## 2. Anti-Loop & Thinking Timeout Rules
-- You are forbidden from spending more than 2 consecutive thinking cycles on the same failed/skipped step.
-- If you find yourself overthinking a skipped command, STOP and communicate with the user. Ask for clarification or propose a manual check instead of getting stuck.
-- NEVER generate complex regex or escaped shell commands (e.g., matching HTML tags like `</write_to_file>` combined with pipes `\|`) that are prone to shell parsing failures. Break them down into simpler, sequential commands.
+# 2. QUY TRÌNH PHÂN TÍCH VÀ THAY ĐỔI CODE (BẮT BUỘC)
+# ----------------------------------------------------------------------------
+- Khi nhận yêu cầu, luôn luôn phân tích nguyên nhân gốc rễ và đưa ra hướng giải quyết chi tiết trước.
+- **TUYỆT ĐỐI KHÔNG** tự ý gọi công cụ sửa đổi file (`write_to_file`, `apply_diff`...) ngay lập tức.
+- Phải đưa ra giải pháp rõ ràng và yêu cầu người dùng xác nhận. **CHỈ KHI** người dùng đồng ý/cho phép mới được tiến hành sửa đổi.
 
-## 3. Execution & Progress Recovery
-- When a command is skipped or yields no results:
-  1. Print a clear summary of what failed or returned empty in your response.
-  2. Change your strategy (e.g., read the file directly using `view_file` instead of filtering via `grep`).
-  3. Move forward with the next logical step in the task progress. Do not let the agent freeze.
+# 3. TÍNH TOÀN VẸN VÀ PHẠM VI CHỈNH SỬA CODE
+# ----------------------------------------------------------------------------
+- Phải kiểm tra kỹ lưỡng code hiện tại và đối chiếu với code sau khi sửa để đảm bảo tính toàn vẹn của hệ thống.
+- **Chỉ làm đúng và đủ công việc được yêu cầu.** Tuyệt đối không tự ý thêm/bớt chức năng, không tự ý sửa giao diện, không thay đổi bất kỳ vị trí nào không liên quan.
+- **NGHIÊM CẤM** tự ý xóa bớt endpoint, không thay đổi chức năng hay các logic đang hoạt động tốt ở các phần khác.
+
+# 4. GỢI Ý VÀ TỐI ƯU HÓA (KHÔNG TỰ Ý ÁP DỤNG)
+# ----------------------------------------------------------------------------
+- Nếu phát hiện điểm chưa hợp lý (thiếu endpoint, lỗi tiềm ẩn, bảo mật, hiệu năng), hãy cảnh báo và gợi ý tối ưu.
+- **LƯU Ý:** Chỉ dừng lại ở mức độ gợi ý trong câu thoại chat, tuyệt đối không tự ý áp dụng vào code khi chưa có yêu cầu cụ thể từ người dùng.
+
+# 5. KIẾN TRÚC MODULE, TỔ CHỨC THƯ MỤC VÀ HIỆU NĂNG
+# ----------------------------------------------------------------------------
+- **Tách biệt Module:** Luôn tách các chức năng thành các file phụ riêng biệt, đặt tên file rõ ràng theo chức năng, sau đó include/import vào file chính. Tạo các thư mục con gọn gàng để chứa các file này.
+- Khi chỉnh sửa một chức năng, chỉ sửa đúng file liên quan, không động vào các file khác.
+- **Tối ưu hiệu năng React:** Bắt buộc áp dụng `React.memo` cho các component phụ để tránh re-render. Đồng thời, phải sử dụng `useCallback` cho các hàm và `useMemo` cho các object/array truyền từ component cha xuống các component phụ này để đảm bảo `React.memo` hoạt động chính xác.
+
+# 6. GHI LOG HỆ THỐNG (LOGGING)
+# ----------------------------------------------------------------------------
+- Luôn tạo logs chi tiết cho các chức năng và luồng xử lý để tiện theo dõi và debug.
+- Hãy viết log có cấu trúc rõ ràng (bao gồm thời gian, tên chức năng và trạng thái thành công/thất bại).
+
+# 7. QUY ĐỊNH TRẢ VỀ CODE (BẮT BUỘC SAO CHÉP DỄ DÀNG)
+# ----------------------------------------------------------------------------
+- Khi gửi code sau khi đã được xác nhận sửa đổi, **phải gửi TOÀN BỘ nội dung file đầy đủ**.
+- Tuyệt đối không cắt xén code, không viết tắt, không để lại các dấu chấm lửng dạng `// ... code cũ giữ nguyên`. Người dùng cần một file hoàn chỉnh để có thể copy và paste đè trực tiếp.
+
+# 8. XỬ LÝ LỆNH TERMINAL & CHỐNG VÒNG LẶP SUY NGHĨ (ANTI-THINKING LOOP)
+# ----------------------------------------------------------------------------
+- **Xử lý kết quả Trống/Bị bỏ qua:** Nếu một lệnh (`grep`, `find`, `ls`) không trả về kết quả (No output), hoặc bị đánh dấu là "Skipped", DO NOT enter an endless inner thinking loop trying to re-execute the exact same logic. Hãy lập tức chuyển sang chiến lược khác (ví dụ: dùng `view_file` thay vì `grep`).
+- **Xử lý Lệnh Kiểm Thử (TSC/Compilation):** Đối với các lệnh như `npx tsc`, `npm run build`... Nếu lệnh thực thi xong và trả về **KẾT QUẢ TRỐNG (BLANK/EMPTY OUTPUT)** không có log lỗi, hãy hiểu rằng đây là một **SỰ XÁC THỰC THÀNH CÔNG (Silent Success)**. Hãy lập tức công nhận code không có lỗi và chuyển sang bước tiếp theo, KHÔNG ĐỨNG IM CHỜ ĐỢI.
+- **Giới hạn chu kỳ nghĩ:** Nghiêm cấm dành quá 2 chu kỳ suy nghĩ (`thinking`) liên tiếp cho cùng một bước bị lỗi hoặc trống kết quả. Nếu bị tắc, phải dừng lại và hỏi ý kiến người dùng ngay.
+- **Đơn giản hóa lệnh:** Không tạo ra các lệnh regex phức tạp kết hợp với ký tự shell (như pipe `\|`, tag `</write_to_file>`) dễ gây lỗi biên dịch của Terminal. Hãy chia nhỏ thành các lệnh tuần tự đơn giản.
