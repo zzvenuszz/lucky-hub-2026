@@ -5,7 +5,6 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { validateBody } from '../../services/validationService.ts';
-import { GoogleGenAI } from "@google/genai";
 
 const router = Router();
 router.use(authMiddleware);
@@ -86,18 +85,81 @@ router.put('/gemini-keys/:id/toggle', requirePermission(RESOURCES.AI.MANAGE), as
   }
 });
 
+/**
+ * Tự động tìm model Gemini tốt nhất hỗ trợ generateContent
+ * Ưu tiên: Flash (nhanh, nhẹ) > Pro, version mới > cũ
+ */
+async function findBestGeminiModel(apiKey: string): Promise<string> {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+    );
+    const data = await response.json();
+
+    if (data.models) {
+      // Lọc model Gemini hỗ trợ generateContent
+      const availableModels = data.models
+        .filter((m: any) =>
+          m.name?.startsWith('models/gemini-') &&
+          m.supportedMethods?.includes('generateContent')
+        )
+        .map((m: any) => m.name.replace('models/', ''));
+
+      if (availableModels.length > 0) {
+        // Sắp xếp ưu tiên: flash > pro, version mới > cũ
+        availableModels.sort((a: string, b: string) => {
+          const getPriority = (name: string) => {
+            if (name.includes('flash')) return 2;
+            if (name.includes('pro') || name.includes('exp')) return 1;
+            return 0;
+          };
+          const pA = getPriority(a), pB = getPriority(b);
+          if (pA !== pB) return pB - pA;
+          return b.localeCompare(a);
+        });
+
+        console.log(`[GeminiCheck] Auto-selected model: ${availableModels[0]}`);
+        return availableModels[0];
+      }
+    }
+  } catch (err) {
+    console.warn('[GeminiCheck] ListModels failed, using default:', err);
+  }
+  // Fallback an toàn
+  return 'gemini-2.0-flash';
+}
+
 // POST /api/admin/gemini-keys/check
 router.post('/gemini-keys/check', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
   try {
     const { key } = req.body;
-    const ai = new GoogleGenAI({ apiKey: key });
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: 'ping',
-    });
-    if (response && response.text) res.json({ status: 'ok' });
-    else throw new Error("No response");
+    
+    // 1. Tự động tìm model tốt nhất cho key này
+    const bestModel = await findBestGeminiModel(key);
+    console.log(`[GeminiCheck] Testing key with model: ${bestModel}`);
+    
+    // 2. Gọi REST API trực tiếp để test (không phụ thuộc SDK version)
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${bestModel}:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'ping' }] }]
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    if (response.ok && !data.error) {
+      console.log(`[GeminiCheck] Key is valid (model: ${bestModel})`);
+      res.json({ status: 'ok', modelUsed: bestModel });
+    } else {
+      throw new Error(data.error?.message || 'Key không hoạt động');
+    }
   } catch (err: any) {
+    console.error(`[GeminiCheck] Key test failed:`, err.message);
     res.status(400).json({ message: "Key không hoạt động: " + err.message });
   }
 });
