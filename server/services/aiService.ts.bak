@@ -49,7 +49,7 @@ export function selectModelForTask(taskType: AITaskType): string {
     return discoveredModels[0];
   }
   
-  return 'gemini-2.0-flash';
+  return 'gemini-1.5-flash';
 }
 
 /**
@@ -237,9 +237,8 @@ export async function callAIWithRetry(
   const modelRegistry = [
     actualModelName,
     ...discoveredModels,
-    'gemini-2.0-flash',
-    'gemini-1.5-flash-8b',
-    'gemini-2.0-flash-lite'
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash'
   ].filter((v, i, a) => a.indexOf(v) === i);
 
   let lastError: any = null;
