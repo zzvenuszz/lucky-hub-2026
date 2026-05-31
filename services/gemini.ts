@@ -1,4 +1,3 @@
-
 import { HealthMetric, Message, AIKnowledge, AIRule, HealthGoal } from "../types.ts";
 
 const processYearLogic = (extractedDate: string) => {
@@ -20,6 +19,15 @@ const processYearLogic = (extractedDate: string) => {
   return now.toISOString().split('T')[0];
 };
 
+const getAuthHeaders = () => {
+  const sessionId = localStorage.getItem('lucky_hub_session');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (sessionId) {
+    headers['Authorization'] = `Bearer ${sessionId}`;
+  }
+  return headers;
+};
+
 export const extractMetricsFromImage = async (base64Image: string, selectedYear?: string): Promise<Partial<HealthMetric> | null> => {
   const startTime = Date.now();
   const log = (msg: string, type: string = 'ai', duration?: number) => {
@@ -34,7 +42,7 @@ export const extractMetricsFromImage = async (base64Image: string, selectedYear?
   try {
     const res = await fetch('/api/ai/extract', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ 
         imageBase64: base64Image,
         selectedYear: selectedYear && selectedYear !== 'auto' ? selectedYear : undefined
@@ -112,7 +120,7 @@ PHONG CÁCH:
 
     const res = await fetch('/api/ai/coach', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         history: formattedHistory,
         systemInstruction,

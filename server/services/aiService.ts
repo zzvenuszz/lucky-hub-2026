@@ -15,8 +15,128 @@ const GEMINI_PROXY_URL = process.env.GEMINI_PROXY_URL;
 // Biến lưu danh sách model khả dụng
 export let discoveredModels: string[] = [];
 
+// Cache health check status để tránh gọi liên tục
+let lastHealthCheckTime = 0;
+const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // 5 phút
+
 /**
- * Khám phá các model khả dụng
+ * Task types để lựa chọn model phù hợp
+ */
+export type AITaskType = 'chat' | 'vision' | 'coach' | 'verify';
+
+const MODEL_RECOMMENDATIONS: Record<AITaskType, string[]> = {
+  chat: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'],
+  coach: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'],
+  vision: ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'],
+  verify: ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'],
+};
+
+/**
+ * Chọn model ưu tiên dựa trên task type và danh sách model khả dụng
+ */
+export function selectModelForTask(taskType: AITaskType): string {
+  const recommendations = MODEL_RECOMMENDATIONS[taskType] || MODEL_RECOMMENDATIONS.chat;
+  
+  // Tìm model đầu tiên trong recommendations có trong discoveredModels
+  for (const model of recommendations) {
+    if (discoveredModels.includes(model)) {
+      return model;
+    }
+  }
+  
+  // Fallback: trả về model đầu tiên trong discoveredModels hoặc hardcode
+  if (discoveredModels.length > 0) {
+    return discoveredModels[0];
+  }
+  
+  return 'gemini-1.5-flash';
+}
+
+/**
+ * Cập nhật health status cho một key trong DB
+ */
+async function updateKeyHealthStatus(keyId: string | null, status: string, models: string[], isFromDb: boolean) {
+  if (!isFromDb || !keyId) return;
+  try {
+    await GeminiKey.findByIdAndUpdate(keyId, {
+      healthStatus: status,
+      workingModels: models,
+      lastHealthCheck: new Date(),
+    });
+  } catch (err: any) {
+    console.error(`[GEMINI] Failed to update health status for key ${keyId}:`, err?.message || err);
+  }
+}
+
+/**
+ * Kiểm tra nhanh một key (parallel-friendly)
+ * Chỉ test 1-2 model đại diện
+ */
+async function quickKeyHealthCheck(key: string): Promise<{ valid: boolean; models: string[]; status: string }> {
+  const baseEndpoint = (GEMINI_PROXY_URL || "https://generativelanguage.googleapis.com").replace(/\/$/, "");
+  const testModels = ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  const workingModels: string[] = [];
+
+  try {
+    // Kiểm tra danh sách model trước
+    const listUrl = `${baseEndpoint}/v1beta/models?key=${key}`;
+    const listResp = await fetch(listUrl);
+    const listData: any = await listResp.json();
+
+    if (listData.error) {
+      const msg = listData.error.message || "Unknown error";
+      if (msg.toLowerCase().includes('location')) {
+        return { valid: false, models: [], status: 'location_blocked' };
+      }
+      if (msg.toLowerCase().includes('key') || msg.toLowerCase().includes('api key')) {
+        return { valid: false, models: [], status: 'error' };
+      }
+      return { valid: false, models: [], status: 'error' };
+    }
+
+    const candidates = (listData.models || [])
+      .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+      .map((m: any) => m.name.replace('models/', ''))
+      .filter((m: string) => m.includes('gemini'))
+      .slice(0, 5); // Chỉ lấy 5 model đầu
+
+    // Test nhanh 1 model đại diện (gemini-1.5-flash)
+    const testModel = candidates.find((m: string) => m.includes('1.5-flash') || m.includes('2.0-flash')) || candidates[0];
+    if (testModel) {
+      const testUrl = `${baseEndpoint}/v1beta/models/${testModel}:generateContent?key=${key}`;
+      const testResp = await fetch(testUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping' }] }] })
+      });
+      const testResults: any = await testResp.json();
+
+      if (testResults.candidates) {
+        workingModels.push(testModel);
+        // Thêm các model khác vào danh sách working nếu có
+        candidates.forEach((m: string) => {
+          if (m !== testModel && !workingModels.includes(m)) {
+            workingModels.push(m);
+          }
+        });
+        return { valid: true, models: workingModels, status: 'healthy' };
+      } else if (testResults.error) {
+        const msg = testResults.error.message || "";
+        if (msg.toLowerCase().includes('quota')) {
+          return { valid: false, models: candidates, status: 'quota_exceeded' };
+        }
+        return { valid: false, models: candidates, status: 'error' };
+      }
+    }
+
+    return { valid: false, models: workingModels, status: 'error' };
+  } catch (err: any) {
+    return { valid: false, models: [], status: 'error' };
+  }
+}
+
+/**
+ * Khám phá các model khả dụng - sử dụng parallel health check
  */
 export async function discoverAvailableModels() {
   const ANSI = {
@@ -26,6 +146,12 @@ export async function discoverAvailableModels() {
   };
 
   console.log(`\n${ANSI.cyan}========== GEMINI SYSTEM DISCOVERY ==========${ANSI.reset}\n`);
+
+  // Kiểm tra cache - Nếu đã check gần đây thì không chạy lại
+  if (lastHealthCheckTime > 0 && Date.now() - lastHealthCheckTime < HEALTH_CHECK_INTERVAL) {
+    console.log(`${ANSI.gray}↳ Bỏ qua health check (đã check cách đây ${Math.round((Date.now() - lastHealthCheckTime) / 1000)}s)${ANSI.reset}`);
+    return;
+  }
 
   let dbKeys: any[] = [];
   try {
@@ -41,68 +167,36 @@ export async function discoverAvailableModels() {
   }
 
   discoveredModels = [];
-  const baseEndpoint = (GEMINI_PROXY_URL || "https://generativelanguage.googleapis.com").replace(/\/$/, "");
+  const healthyKeys: string[] = [];
 
-  for (let i = 0; i < allKeys.length; i++) {
-    const key = allKeys[i];
-    const keyLabel = i === 0 ? "ENV Primary" : `Key ${i + 1}`;
-    console.log(`${ANSI.blue}Kiểm tra [${keyLabel}]: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}${ANSI.reset}`);
+  // Parallel health check với Promise.allSettled
+  console.log(`${ANSI.blue}Kiểm tra ${allKeys.length} key song song...${ANSI.reset}`);
+  const healthResults = await Promise.allSettled(
+    allKeys.map(async (key, index) => {
+      const keyLabel = index === 0 ? "ENV Primary" : `Key ${index + 1}`;
+      const result = await quickKeyHealthCheck(key);
+      
+      // Tìm DB key tương ứng để cập nhật
+      const dbKey = dbKeys.find(k => k.key === key);
+      const dbKeyId = dbKey?._id?.toString() || null;
+      const isFromDb = !!dbKey;
 
-    try {
-      const listUrl = `${baseEndpoint}/v1beta/models?key=${key}`;
-      const listResp = await fetch(listUrl);
-      const listData: any = await listResp.json();
-
-      if (listData.error) {
-        const msg = listData.error.message || "Unknown error";
-        const code = listData.error.code || "?";
-        let status = `${ANSI.red}[✗ LỖI KEY]${ANSI.reset}`;
-        if (msg.toLowerCase().includes('location')) status = `${ANSI.magenta}[⚠ LOCATION]${ANSI.reset}`;
-        console.log(`    ${status} ${msg} ${ANSI.gray}(code:${code})${ANSI.reset}`);
-        continue;
+      if (result.valid) {
+        console.log(`    ${ANSI.green}[✓ WORKING]${ANSI.reset} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}`);
+        healthyKeys.push(key);
+        // Cập nhật DB
+        await updateKeyHealthStatus(dbKeyId, 'healthy', result.models, isFromDb);
+        // Thêm models vào danh sách
+        result.models.forEach((m: string) => {
+          if (!discoveredModels.includes(m)) discoveredModels.push(m);
+        });
+      } else {
+        let status = `${ANSI.red}[✗ ${result.status.toUpperCase()}]${ANSI.reset}`;
+        console.log(`    ${status} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}`);
+        await updateKeyHealthStatus(dbKeyId, result.status, result.models, isFromDb);
       }
-
-      const candidates = (listData.models || [])
-        .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
-        .map((m: any) => m.name.replace('models/', ''))
-        .filter((m: string) => m.includes('gemini'));
-
-      if (candidates.length === 0) {
-        console.log(`    ${ANSI.gray}↳ Không tìm thấy model hỗ trợ generateContent cho key này.${ANSI.reset}`);
-        continue;
-      }
-
-      const testList = candidates.slice(0, 10);
-      for (const model of testList) {
-        try {
-          const testUrl = `${baseEndpoint}/v1beta/models/${model}:generateContent?key=${key}`;
-          const testResp = await fetch(testUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: 'Ping' }] }] })
-          });
-          const testResults: any = await testResp.json();
-
-          if (testResults.candidates) {
-            console.log(`    ${ANSI.green}[✓ WORKING]${ANSI.reset} ${model.padEnd(45)}`);
-            if (!discoveredModels.includes(model)) discoveredModels.push(model);
-          } else if (testResults.error) {
-            const msg = testResults.error.message || "Unknown error";
-            const code = testResults.error.code || "?";
-            let status = `${ANSI.red}[✗ ERROR]${ANSI.reset}`;
-            if (msg.toLowerCase().includes('quota')) status = `${ANSI.yellow}[⚠ QUOTA]${ANSI.reset}`;
-            else if (msg.toLowerCase().includes('location')) status = `${ANSI.magenta}[⚠ LOCATION]${ANSI.reset}`;
-            else if (msg.toLowerCase().includes('permission')) status = `${ANSI.blue}[⚠ PERM]${ANSI.reset}`;
-            console.log(`    ${status} ${model.padEnd(45)} ${ANSI.gray}(code:${code})${ANSI.reset}`);
-          }
-        } catch (e: any) {
-          console.log(`    ${ANSI.red}[✗ FAIL]${ANSI.reset} ${model.padEnd(45)} ${ANSI.gray}(Connection Fail)${ANSI.reset}`);
-        }
-      }
-    } catch (err: any) {
-      console.log(`    ${ANSI.red}✗ LỖI HỆ THỐNG:${ANSI.reset} ${err.message}`);
-    }
-  }
+    })
+  );
 
   if (discoveredModels.length === 0) {
     console.log(`\n${ANSI.red}🚨 [BÁO ĐỘNG]: Server đang bị chặn toàn bộ bởi Google (Location/Keys).${ANSI.reset}`);
@@ -123,25 +217,33 @@ export async function discoverAvailableModels() {
     console.log(`\n${ANSI.green}✅ AI DISCOVERY HOÀN TẤT. Sẵn sàng: ${ANSI.reset}${discoveredModels.join(', ')}`);
   }
   console.log(`\n${ANSI.cyan}=============================================${ANSI.reset}\n`);
+
+  lastHealthCheckTime = Date.now();
 }
 
 /**
- * Gọi AI với retry logic
+ * Gọi AI với retry logic, hỗ trợ lựa chọn model theo task type
  */
 export async function callAIWithRetry(
   requestId: string,
   modelName: string,
   payload: any,
-  retries = 3
+  retries = 3,
+  taskType: AITaskType = 'vision'
 ): Promise<any> {
+  // Nếu modelName là 'auto' thì tự động chọn model dựa trên taskType
+  const actualModelName = modelName === 'auto' ? selectModelForTask(taskType) : modelName;
+
   const modelRegistry = [
-    modelName,
+    actualModelName,
     ...discoveredModels,
     'gemini-1.5-flash-latest',
     'gemini-1.5-flash'
   ].filter((v, i, a) => a.indexOf(v) === i);
 
   let lastError: any = null;
+
+  logger.info('AI', `[${requestId}] Task: ${taskType}, Starting with model: ${actualModelName}, Registry: [${modelRegistry.slice(0, 3).join(', ')}...]`);
 
   for (const currentModel of modelRegistry) {
     let attempt = 0;
@@ -215,7 +317,7 @@ export async function callAIWithRetry(
         const isRateLimited = errMsg.includes('429') || errMsg.includes('quota');
 
         if (isLocationError || isVersionError) {
-          logger.warn('AI', `Model ${currentModel} bị từ chối. Đang thử model fallback... (ID: ${requestId})`);
+          logger.warn('AI', `[${requestId}] Model ${currentModel} bị từ chối (location/version). Đang thử model fallback...`);
           break;
         }
 
@@ -229,6 +331,7 @@ export async function callAIWithRetry(
           } else {
             keyCooldowns.set(selectedKey.key, cooldownTime);
           }
+          logger.warn('AI', `[${requestId}] Key bị rate limit (attempt ${attempt}/${retries}). Cooldown 60s.`);
           if (attempt < retries) continue;
         }
 
@@ -237,5 +340,6 @@ export async function callAIWithRetry(
     }
   }
 
+  logger.error('AI', `[${requestId}] All models/keys exhausted. Last error: ${lastError?.message || 'Unknown'}`);
   throw lastError || new Error("Không thể kết nối với bất kỳ model Gemini nào khả dụng.");
 }

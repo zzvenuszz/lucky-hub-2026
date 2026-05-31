@@ -114,9 +114,14 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         } else {
           try {
             log(`Đang gọi endpoint /api/ai/bulk-extract với năm: ${selectedYearAI}...`, "ai");
+            const sessionId = localStorage.getItem('lucky_hub_session');
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (sessionId) {
+              headers['Authorization'] = `Bearer ${sessionId}`;
+            }
             const res = await fetch('/api/ai/bulk-extract', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers,
               body: JSON.stringify({ 
                 imageBase64: compressedBase64,
                 selectedYear: selectedYearAI !== 'auto' ? selectedYearAI : undefined

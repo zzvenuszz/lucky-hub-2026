@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
+import { optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
-import { callAIWithRetry } from '../services/aiService.ts';
+import { callAIWithRetry, AITaskType } from '../services/aiService.ts';
 import { Type } from "@google/genai";
 
 const router = Router();
@@ -55,7 +56,7 @@ Trả về JSON đúng format: { "isValid": boolean, "reason": "string" }
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
+    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'verify');
 
     let result;
     try {
@@ -75,7 +76,9 @@ Trả về JSON đúng format: { "isValid": boolean, "reason": "string" }
   }
 });
 
-router.use(authMiddleware);
+// Áp dụng optionalAuth cho tất cả AI routes (cho phép cả có hoặc không có token)
+router.use(optionalAuth);
+
 // POST /api/ai/extract - Trích xuất chỉ số từ ảnh
 router.post('/extract', async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
@@ -103,7 +106,7 @@ router.post('/extract', async (req: Request, res: Response) => {
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
+    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'vision');
     res.json(JSON.parse(response.text));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -140,7 +143,7 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
+    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'vision');
     res.json(JSON.parse(response.text));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -155,7 +158,7 @@ router.post('/coach', async (req: Request, res: Response) => {
     const parts: any[] = [{ text: latestUserMessage }];
     if (imageBase64) parts.push({ inlineData: { data: imageBase64, mimeType: 'image/jpeg' } });
     const payload = { contents: [...history, { role: 'user', parts }], config: { systemInstruction } };
-    const response = await callAIWithRetry(requestId, 'gemini-1.5-flash', payload);
+    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'coach');
     res.json({ text: response.text });
   } catch (err: any) {
     res.status(500).json({ message: err.message });

@@ -63,7 +63,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [pendingQueue, setPendingQueue] = useState<string[]>([]);
+  const [pendingQueue, setPendingQueue] = useState<{ chatId: string; text: string }[]>([]);
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [latestMetric, setLatestMetric] = useState<HealthMetric | undefined>(undefined);
   const [contactsMap, setContactsMap] = useState<Record<string, any>>({});
@@ -72,6 +72,20 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   const chatsRef = useRef<ChatSession[]>([]);
   const selectedChatRef = useRef<ChatSession | null>(null);
   const processedAiMsgIds = useRef<Set<string>>(new Set());
+
+  // Queue processing refs - độc lập với selectedChat
+  const isProcessingRef = useRef(false);
+  const pendingQueueRef = useRef<{ chatId: string; text: string }[]>([]);
+  const currentUserRef = useRef(currentUser);
+  const knowledgeRef = useRef(knowledge);
+  const rulesRef = useRef(rules);
+  const latestMetricRef = useRef(latestMetric);
+
+  // Sync refs
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  useEffect(() => { knowledgeRef.current = knowledge; }, [knowledge]);
+  useEffect(() => { rulesRef.current = rules; }, [rules]);
+  useEffect(() => { latestMetricRef.current = latestMetric; }, [latestMetric]);
 
   // Lưu lastReadTimestamps: chatId -> timestamp của tin nhắn cuối cùng đã đọc
   const [lastReadTimestamps, setLastReadTimestamps] = useState<Record<string, string>>(() => {
@@ -227,17 +241,41 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
     }
   }, [chats, lastReadTimestamps, selectedChat?.id, isChatOpen, rebuildUnreadCounts]);
 
-  // ===== Process AI response queue =====
+  // ===== Process AI response queue (độc lập với selectedChat) =====
+  // Sử dụng refs để queue vẫn chạy ngay cả khi người dùng chuyển chat
   useEffect(() => {
-    if (pendingQueue.length > 0 && !isProcessingQueue && selectedChat) {
-      processNextInQueue();
-    }
-  }, [pendingQueue, isProcessingQueue, selectedChat?.id]);
+    pendingQueueRef.current = pendingQueue;
+  }, [pendingQueue]);
 
-  const processNextInQueue = async () => {
-    if (pendingQueue.length === 0 || !selectedChat) return;
+  useEffect(() => {
+    isProcessingRef.current = isProcessingQueue;
+  }, [isProcessingQueue]);
+
+  // Effect monitor queue - chạy độc lập với selectedChat bằng cách dùng refs
+  useEffect(() => {
+    if (pendingQueue.length > 0 && !isProcessingQueue) {
+      processNextInQueueIndependent();
+    }
+  }, [pendingQueue, isProcessingQueue]);
+
+  const processNextInQueueIndependent = async () => {
+    if (pendingQueueRef.current.length === 0 || isProcessingRef.current) return;
+    
     setIsProcessingQueue(true);
-    const textToDisplay = pendingQueue[0];
+    const queueItem = pendingQueueRef.current[0];
+    const { chatId, text: textToDisplay } = queueItem;
+    
+    // Tìm chat từ chatsRef (không phụ thuộc selectedChat)
+    const chatToUpdate = chatsRef.current.find(c => c.id === chatId);
+    if (!chatToUpdate) {
+      // Chat không tồn tại, bỏ qua item này
+      setPendingQueue(prev => prev.slice(1));
+      setIsProcessingQueue(false);
+      if (pendingQueueRef.current.length <= 1) setIsTypingAI(false);
+      return;
+    }
+    
+    // Delay để mô phỏng typing
     await new Promise(resolve => setTimeout(resolve, Math.min(Math.max(textToDisplay.length * 20, 800), 2500)));
     
     const aiMsg: Message = { 
@@ -251,28 +289,35 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
       status: MessageStatus.SENT,
     };
     
-    const updated = { ...selectedChat, messages: [...selectedChat.messages, aiMsg] };
+    const updated = { ...chatToUpdate, messages: [...chatToUpdate.messages, aiMsg] };
     
     // Gửi qua WebSocket
-    const myId = currentUid;
-    const recipientId = selectedChat.coachId === 'ai_coach' 
+    const recipientId = chatToUpdate.coachId === 'ai_coach' 
       ? currentUid 
-      : (String(myId) === String(selectedChat.memberId) ? selectedChat.coachId : selectedChat.memberId);
+      : (String(currentUid) === String(chatToUpdate.memberId) ? chatToUpdate.coachId : chatToUpdate.memberId);
     
     wsService.send(WsEvent.CHAT_MESSAGE, {
-      chatId: selectedChat.id,
+      chatId: chatToUpdate.id,
       message: aiMsg,
       recipientId,
-      memberId: selectedChat.memberId,
-      coachId: selectedChat.coachId,
+      memberId: chatToUpdate.memberId,
+      coachId: chatToUpdate.coachId,
     });
     
     await Database.saveChat(updated);
-    setSelectedChat(updated);
+    
+    // Update chats state
     setChats(prev => prev.map(c => c.id === updated.id ? updated : c));
+    
+    // Nếu chat này đang được chọn, update selectedChat luôn
+    setSelectedChat(prev => {
+      if (prev?.id === updated.id) return updated;
+      return prev;
+    });
+    
     setPendingQueue(prev => prev.slice(1));
     setIsProcessingQueue(false);
-    if (pendingQueue.length <= 1) setIsTypingAI(false);
+    if (pendingQueueRef.current.length <= 1) setIsTypingAI(false);
   };
 
   // ===== WebSocket Listeners =====
@@ -517,8 +562,9 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
           userGoal, latestMetric, imageBase64?.split(',')[1]
         );
         if (res) {
-          setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter((c: string) => c.trim())]);
-          console.log(`[ChatProvider] AI response generated with ${res.split(/\n\n+/).length} parts`);
+          const parts = res.split(/\n\n+/).filter((c: string) => c.trim());
+          setPendingQueue(prev => [...prev, ...parts.map(text => ({ chatId: selectedChat.id, text }))]);
+          console.log(`[ChatProvider] AI response generated with ${parts.length} parts`);
         } else {
           setIsTypingAI(false);
         }
@@ -645,7 +691,8 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
       const userGoal = currentUser.healthGoals?.[0] || HealthGoal.OTHER;
       const res = await getAICoachResponse(updatedChat.messages, knowledge, rules, "Cung cấp thông tin khoa học liên quan", userGoal, latestMetric);
       if (res) {
-        setPendingQueue(prev => [...prev, ...res.split(/\n\n+/).filter((c: string) => c.trim())]);
+        const parts = res.split(/\n\n+/).filter((c: string) => c.trim());
+        setPendingQueue(prev => [...prev, ...parts.map(text => ({ chatId: chat.id, text }))]);
       } else {
         setIsTypingAI(false);
       }
