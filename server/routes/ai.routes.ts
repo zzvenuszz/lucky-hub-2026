@@ -8,6 +8,24 @@ import { Type } from "@google/genai";
 
 const router = Router();
 
+/**
+ * Sanitize response text từ AI: loại bỏ markdown code block (```json ... ```)
+ * để đảm bảo JSON.parse không bị lỗi
+ */
+function sanitizeJSON(text: string): string {
+  if (!text) return text;
+  let cleaned = text.trim();
+  // Loại bỏ ```json ... ``` hoặc ``` ... ``` (có thể có xuống dòng)
+  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
+  cleaned = cleaned.replace(/\n?```\s*$/i, '');
+  // Fallback: tìm object/array JSON đầu tiên nếu vẫn còn ký tự lạ
+  if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
+    const objMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (objMatch) cleaned = objMatch[1];
+  }
+  return cleaned.trim();
+}
+
 // POST /api/ai/verify-avatar - Kiểm tra ảnh đại diện bằng AI (không cần auth)
 router.post('/verify-avatar', async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
@@ -57,7 +75,7 @@ Trả về JSON đúng format: { "isValid": boolean, "reason": "string" }
 
     let result;
     try {
-      result = JSON.parse(response.text);
+      result = JSON.parse(sanitizeJSON(response.text));
     } catch {
       console.warn(`[AvatarVerify] Request ${requestId}: Failed to parse AI response: ${response.text}`);
       result = { isValid: true, reason: 'Không thể xác thực, chấp nhận ảnh này.' };
@@ -104,7 +122,7 @@ router.post('/extract', async (req: Request, res: Response) => {
       }
     };
     const response = await callAI(requestId, 'vision', payload, { userId, modelName: 'auto' });
-    res.json(JSON.parse(response.text));
+    res.json(JSON.parse(sanitizeJSON(response.text)));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
@@ -143,7 +161,7 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
       }
     };
     const response = await callAI(requestId, 'vision', payload, { userId, modelName: 'auto' });
-    res.json(JSON.parse(response.text));
+    res.json(JSON.parse(sanitizeJSON(response.text)));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
