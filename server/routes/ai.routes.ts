@@ -3,7 +3,7 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
-import { callAIWithRetry, AITaskType } from '../services/aiService.ts';
+import { callAIWithRetry, AITaskType, getActiveProvider, getProviderLabel } from '../services/aiService.ts';
 import { Type } from "@google/genai";
 
 const router = Router();
@@ -15,6 +15,11 @@ router.post('/verify-avatar', async (req: Request, res: Response) => {
   try {
     const { imageBase64 } = req.body;
     if (!imageBase64) return res.status(400).json({ isValid: false, reason: 'Thiếu dữ liệu ảnh' });
+
+    const provider = await getActiveProvider();
+    const providerLabel = getProviderLabel(provider);
+    const userId = (req as any).user?.userId || 'anonymous';
+    console.log(`[AI] User: ${userId} request AI [${providerLabel}] (Xác thực ảnh đại diện) - ID: ${requestId}`);
 
     const prompt = `Bạn là chuyên gia xác thực ảnh đại diện. Hãy phân tích ảnh được cung cấp và xác định xem đó có phải là ẢNH CHỤP NGƯỜI THẬT hay không.
 
@@ -40,8 +45,6 @@ router.post('/verify-avatar', async (req: Request, res: Response) => {
 
 Trả về JSON đúng format: { "isValid": boolean, "reason": "string" }
 - reason: giải thích ngắn gọn bằng tiếng Việt (tối đa 120 ký tự). Nếu hợp lệ thì reason = "Ảnh người thật hợp lệ".`;
-
-    console.log(`[AvatarVerify] Request ${requestId}: Verifying avatar...`);
 
     const payload = {
       contents: [{ parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
@@ -85,6 +88,11 @@ router.post('/extract', async (req: Request, res: Response) => {
   try {
     const { imageBase64, selectedYear } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+
+    const provider = await getActiveProvider();
+    const providerLabel = getProviderLabel(provider);
+    const userId = (req as any).user?.userId || 'anonymous';
+    console.log(`[AI] User: ${userId} request AI [${providerLabel}] (Phân tích chỉ số từ ảnh) - ID: ${requestId}`);
 
     let prompt = "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON.";
     if (selectedYear) {

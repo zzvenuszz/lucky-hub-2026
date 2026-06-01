@@ -192,4 +192,10 @@ export const Database = {
     (await request<any[]>(`${API_BASE}/nutrition-branches/${branchId}/messages`)) ?? [],
   getNutritionBranchMembersMetrics: async (branchId: string) =>
     (await request<any[]>(`${API_BASE}/nutrition-branches/${branchId}/members-metrics`)) ?? [],
+
+  // AI Config
+  getAIConfig: async () => (await request<{ activeProvider: string; clineKeys: any[]; visionModels: any[] }>(`${API_BASE}/admin/ai-config`)) ?? { activeProvider: 'gemini', clineKeys: [], visionModels: [] },
+  setAIConfig: (activeProvider: string) => request<{ success: boolean }>(`${API_BASE}/admin/ai-config`, 'PUT', { activeProvider }),
+  testClineVision: (data: { apiKey: string; model: string; imageBase64: string; prompt: string }) =>
+    request<{ success: boolean; text?: string; error?: string; cost?: string; resolvedModel?: string }>(`${API_BASE}/admin/ai/test-vision`, 'POST', data),
 };

@@ -9,6 +9,7 @@ import MetricAdmin from './MetricAdmin.tsx';
 import AITraining from './AITraining.tsx';
 import AuditLogs from './AuditLogs.tsx';
 import GeminiKeyManager from './ai/GeminiKeyManager.tsx';
+import AIConfigPanel from './ai/AIConfigPanel.tsx';
 import GroupManager from './groups/GroupManager.tsx';
 import NutritionGroupManager from './nutrition/NutritionGroupManager.tsx';
 import BranchManager from './nutrition/BranchManager.tsx';
@@ -127,8 +128,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
         )}
 
         {activeTab === 'config' && (
-          <div className="animate-in fade-in">
-            <GeminiKeyManager />
+          <div className="animate-in fade-in space-y-8">
+            <AIConfigPanel />
+            <div className="border-t border-slate-100 pt-8">
+              <GeminiKeyManager />
+            </div>
           </div>
         )}
 

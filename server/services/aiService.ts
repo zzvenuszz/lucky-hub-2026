@@ -1,7 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiKey } from '../models/GeminiKey.ts';
 import { logger } from '../../src/utils/logger.ts';
-import { testClineKey } from './clineService.ts';
+import { testClineKey, callCline, callClineVision, CLINE_VISION_MODELS } from './clineService.ts';
+import { getConfigValue, CONFIG_KEYS, AI_PROVIDERS, AIProvider } from '../models/AIConfig.ts';
 
 const ENV_API_KEYS = [
   process.env.API_KEY,
@@ -30,6 +31,40 @@ const ANSI = {
  * Task types để lựa chọn model phù hợp
  */
 export type AITaskType = 'chat' | 'vision' | 'coach' | 'verify';
+
+/**
+ * Cache provider chính (refresh mỗi 60s)
+ */
+let cachedActiveProvider: AIProvider | null = null;
+let lastProviderCheck = 0;
+const PROVIDER_REFRESH_MS = 60000;
+
+/**
+ * Lấy AI provider đang active, có cache
+ */
+export async function getActiveProvider(): Promise<AIProvider> {
+  const now = Date.now();
+  if (cachedActiveProvider && (now - lastProviderCheck < PROVIDER_REFRESH_MS)) {
+    return cachedActiveProvider;
+  }
+  
+  try {
+    const value = await getConfigValue(CONFIG_KEYS.ACTIVE_PROVIDER);
+    cachedActiveProvider = (value === AI_PROVIDERS.CLINE) ? AI_PROVIDERS.CLINE : AI_PROVIDERS.GEMINI;
+    lastProviderCheck = now;
+    console.log(`[AI Router] Active provider: ${cachedActiveProvider?.toUpperCase()}`);
+    return cachedActiveProvider;
+  } catch (err) {
+    return AI_PROVIDERS.GEMINI; // fallback to Gemini
+  }
+}
+
+/**
+ * Lấy nhãn provider cho logging
+ */
+export function getProviderLabel(provider: AIProvider): string {
+  return provider === AI_PROVIDERS.CLINE ? 'CLINE' : 'GEMINI';
+}
 
 const MODEL_RECOMMENDATIONS: Record<AITaskType, string[]> = {
   chat: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'],

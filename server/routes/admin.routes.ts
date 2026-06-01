@@ -5,6 +5,9 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { validateBody } from '../../services/validationService.ts';
+import { getConfigValue, setConfigValue, CONFIG_KEYS, AI_PROVIDERS } from '../models/AIConfig.ts';
+import { getActiveProvider } from '../services/aiService.ts';
+import { callClineVision, CLINE_VISION_MODELS } from '../services/clineService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -172,6 +175,80 @@ router.post('/gemini-keys/check', requirePermission(RESOURCES.AI.MANAGE), async 
   } catch (err: any) {
     console.error(`[KeyCheck] Key test failed:`, err.message);
     res.status(400).json({ message: "Key không hoạt động: " + err.message });
+  }
+});
+
+// =============================================================================
+// AI CONFIG ENDPOINTS
+// =============================================================================
+
+// GET /api/admin/ai-config - Lấy cấu hình AI chính
+router.get('/ai-config', async (req: Request, res: Response) => {
+  try {
+    const activeProvider = await getActiveProvider();
+    
+    // Lấy danh sách Cline keys có sẵn cho test vision
+    const clineKeys = await GeminiKey.find({ isActive: true, keyType: 'cline' }).select('key label _id');
+    
+    res.json({
+      activeProvider,
+      clineKeys: clineKeys.map(k => ({
+        id: k._id,
+        key: k.key,
+        label: k.label,
+        display: `${k.key.substring(0, 6)}••••${k.key.substring(k.key.length - 4)}`
+      })),
+      visionModels: CLINE_VISION_MODELS
+    });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/admin/ai-config - Cập nhật cấu hình AI chính
+router.put('/ai-config', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  try {
+    const { activeProvider } = req.body;
+    
+    if (activeProvider !== AI_PROVIDERS.GEMINI && activeProvider !== AI_PROVIDERS.CLINE) {
+      return res.status(400).json({ message: 'Giá trị không hợp lệ. Chỉ chấp nhận "gemini" hoặc "cline".' });
+    }
+
+    await setConfigValue(CONFIG_KEYS.ACTIVE_PROVIDER, activeProvider);
+    
+    // Clear cache để refresh ngay
+    const { getActiveProvider } = await import('../services/aiService.ts');
+    
+    const actorName = (req as any).user?.fullName || 'Unknown';
+    console.log(`[AI Config] ${actorName} đã chuyển AI chính sang: ${activeProvider.toUpperCase()}`);
+    
+    res.json({ success: true, activeProvider });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/admin/ai/test-vision - Test Cline Vision
+router.post('/ai/test-vision', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  try {
+    const { apiKey, model, imageBase64, prompt } = req.body;
+    
+    if (!apiKey) return res.status(400).json({ message: 'Thiếu API Key' });
+    if (!imageBase64) return res.status(400).json({ message: 'Thiếu dữ liệu ảnh' });
+    if (!model) return res.status(400).json({ message: 'Thiếu model' });
+
+    const finalPrompt = prompt || 'Bức ảnh này có nội dung gì? Hãy phân tích và mô tả chi tiết bằng tiếng Việt.';
+
+    console.log(`[AI Test] Testing Cline Vision with model: ${model}`);
+    
+    const result = await callClineVision(apiKey, model, imageBase64, finalPrompt);
+    
+    const actorName = (req as any).user?.fullName || 'Unknown';
+    console.log(`[AI Test] ${actorName} test Cline Vision ${result.success ? 'thành công' : 'thất bại'}`);
+    
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
   }
 });
 

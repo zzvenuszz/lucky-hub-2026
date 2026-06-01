@@ -119,6 +119,8 @@ export async function testClineKey(
   }
 }
 
+export type ClineMessage = { role: string; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> };
+
 /**
  * Gọi Cline API với payload đầy đủ
  * Dùng cho các tác vụ thực tế sau này
@@ -126,7 +128,7 @@ export async function testClineKey(
 export async function callCline(
   requestId: string,
   apiKey: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: ClineMessage[],
   options?: {
     model?: string;
     maxTokens?: number;
@@ -193,9 +195,117 @@ export async function callCline(
       throw new Error(`Cline API timeout after ${CLINE_API_TIMEOUT}ms`);
     }
 
+  console.error(
+    `[${getTimestamp()}] ${ANSI.red}[✗ CLINE FAILED]${ANSI.reset} [${requestId}] ${err.message}`
+  );
+  throw err;
+  }
+}
+
+/**
+ * Các model vision hỗ trợ trên Cline API
+ */
+export const CLINE_VISION_MODELS = [
+  { id: 'meta-llama/llama-3.2-11b-vision-instruct', label: '🦙 Llama 3.2 11B Vision (Khuyên dùng)' },
+  { id: 'google/gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash' },
+  { id: 'qwen/qwen-2.5-vl', label: '🐉 Qwen 2.5 VL' },
+];
+
+/**
+ * Gọi Cline API cho tác vụ Vision (phân tích ảnh)
+ * Sử dụng format OpenAI-compatible image_url
+ */
+export async function callClineVision(
+  apiKey: string,
+  model: string,
+  imageBase64: string,
+  prompt: string
+): Promise<{ success: boolean; text?: string; error?: string; cost?: string; resolvedModel?: string }> {
+  const startTime = Date.now();
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+
+  console.log(
+    `[${getTimestamp()}] ${ANSI.purple}[CLINE VISION]${ANSI.reset} [${requestId}] Model: ${model}`
+  );
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch(CLINE_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              { type: 'image_url', image_url: { url: imageBase64 } }
+            ]
+          }
+        ],
+        stream: false
+      }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(
+        `[${getTimestamp()}] ${ANSI.red}[✗ CLINE VISION ERROR]${ANSI.reset} [${requestId}] HTTP ${response.status}: ${errorText.substring(0, 200)}`
+      );
+      return {
+        success: false,
+        error: `HTTP ${response.status}: ${errorText.substring(0, 200)}`
+      };
+    }
+
+    const data = await response.json();
+
+    if (data?.success === true && data?.data?.choices?.[0]?.message?.content) {
+      const content = data.data.choices[0].message.content;
+      const cost = data.data.choices[0].message.provider_metadata?.gateway?.cost || '0';
+      const resolvedModel = data.data.choices[0].message.provider_metadata?.gateway?.routing?.resolvedProvider || model;
+
+      console.log(
+        `[${getTimestamp()}] ${ANSI.green}[✓ CLINE VISION OK]${ANSI.reset} [${requestId}] ${duration}ms | Cost: $${cost} | Model: ${resolvedModel}`
+      );
+
+      return {
+        success: true,
+        text: content,
+        cost: String(cost),
+        resolvedModel
+      };
+    }
+
     console.error(
-      `[${getTimestamp()}] ${ANSI.red}[✗ CLINE FAILED]${ANSI.reset} [${requestId}] ${err.message}`
+      `[${getTimestamp()}] ${ANSI.red}[✗ CLINE VISION INVALID]${ANSI.reset} [${requestId}] Unexpected response format`
     );
-    throw err;
+    return {
+      success: false,
+      error: 'Invalid response format from Cline Vision API'
+    };
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    const isTimeout = err.name === 'AbortError';
+    const errorMsg = isTimeout ? 'Request timeout after 60s' : (err.message || 'Unknown error');
+
+    console.error(
+      `[${getTimestamp()}] ${ANSI.red}[✗ CLINE VISION FAILED]${ANSI.reset} [${requestId}] ${errorMsg}`
+    );
+
+    return {
+      success: false,
+      error: errorMsg
+    };
   }
 }
