@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { HealthMetric, User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
@@ -23,12 +23,26 @@ const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
 };
 
 // Helper kiểm tra quyền (chỉ dùng permissions từ group)
-const canEdit = (user: User): boolean => {
-  return (user as any).permissions?.includes('metrics:update:any');
+const canEdit = (currentUser: User): boolean => {
+  return (currentUser as any).permissions?.includes('metrics:update:any');
 };
 
-const canDelete = (user: User): boolean => {
-  return (user as any).permissions?.includes('metrics:delete:any');
+const canDelete = (currentUser: User): boolean => {
+  return (currentUser as any).permissions?.includes('metrics:delete:any');
+};
+
+const canViewAny = (currentUser: User): boolean => {
+  return (currentUser as any).permissions?.includes('metrics:view:any');
+};
+
+// Kiểm tra target user có phải HLV không
+const isTargetUserCoach = (targetUser: User | undefined): boolean => {
+  if (!targetUser) return false;
+  return (
+    (targetUser as any).permissions?.includes('coach:access') ||
+    (targetUser as any).permissions?.includes('ndd:manage') ||
+    (targetUser as any).permissions?.includes('admin:panel')
+  );
 };
 
 const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAddMetric, refreshTrigger }) => {
@@ -37,21 +51,43 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
   const [deletingMetric, setDeletingMetric] = useState<HealthMetric | null>(null);
+  const [deletingAllConfirm, setDeletingAllConfirm] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
-  const loadMetrics = async () => {
-    const canViewAny = (user as any).permissions?.includes('metrics:view:any');
-    const targetId = !canViewAny ? currentUid : selectedUserId;
+  const loadMetrics = useCallback(async () => {
+    const targetId = !canViewAny(user) ? currentUid : selectedUserId;
     const data = await Database.getMetrics(targetId);
     setMetrics(data || []);
-  };
+  }, [selectedUserId, user, currentUid]);
 
   useEffect(() => {
     loadMetrics();
-  }, [selectedUserId, refreshTrigger, user, currentUid]);
+  }, [selectedUserId, refreshTrigger, user, currentUid, loadMetrics]);
+
+  // Tìm target user từ selectedUserId
+  const targetUser = useMemo(() => {
+    return users.find(u => {
+      const uid = (u as any).id || (u as any)._id;
+      return uid === selectedUserId;
+    });
+  }, [users, selectedUserId]);
 
   // Xác định xem user đang xem của ai
   const isViewingOwn = selectedUserId === currentUid;
+  const isTargetCoach = useMemo(() => isTargetUserCoach(targetUser), [targetUser]);
+
+  // Quyền: HLV có thể sửa/xóa member, KHÔNG được sửa/xóa HLV khác
+  const canEditTarget = !isTargetCoach && (canEdit(user) || isViewingOwn);
+  const canDeleteTarget = !isTargetCoach && canDelete(user);
+
+  // Xóa chế độ chọn khi chuyển user
+  useEffect(() => {
+    setIsSelectionMode(false);
+    setSelectedIds(new Set());
+  }, [selectedUserId]);
 
   const handleUpdateMetric = async () => {
     if (!editingMetric) return;
@@ -83,6 +119,56 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
     }
   };
 
+  const handleDeleteAllMetrics = async () => {
+    try {
+      console.log(`[MetricsManagement] Deleting all metrics for user ${selectedUserId}`);
+      await Database.deleteAllUserMetrics(selectedUserId);
+      setDeletingAllConfirm(false);
+      setActionMessage({ type: 'success', text: '🗑️ Đã xóa toàn bộ chỉ số' });
+      loadMetrics();
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
+      console.error(`[MetricsManagement] Delete all error:`, err);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      const ids = Array.from(selectedIds);
+      console.log(`[MetricsManagement] Bulk deleting ${ids.length} metrics`);
+      await Database.deleteMetricsBulk(ids);
+      setBulkDeleteConfirm(false);
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+      setActionMessage({ type: 'success', text: `🗑️ Đã xóa ${ids.length} chỉ số` });
+      loadMetrics();
+    } catch (err: any) {
+      setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
+      console.error(`[MetricsManagement] Bulk delete error:`, err);
+    }
+  };
+
+  const toggleSelectMetric = (metricId: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(metricId)) {
+        newSet.delete(metricId);
+      } else {
+        newSet.add(metricId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === metrics.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(metrics.map(m => m.id || (m as any)._id)));
+    }
+  };
+
   const sortedMetrics = useMemo(() => [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [metrics]);
 
   return (
@@ -101,7 +187,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           <p className="text-slate-400 text-xs font-medium mt-1 uppercase tracking-widest">Lịch sử đo lường chi tiết</p>
         </div>
         <div className="flex items-center gap-4">
-          {(user as any).permissions?.includes('metrics:view:any') && (
+          {canViewAny(user) && (
             <select 
               value={selectedUserId} 
               onChange={e => setSelectedUserId(e.target.value)} 
@@ -131,15 +217,77 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
         </div>
       </div>
 
+      {/* HLV Actions Bar - chỉ hiển thị cho HLV đang xem người khác hoặc xem member */}
+      {(canDeleteTarget || canEditTarget) && sortedMetrics.length > 0 && (
+        <div className="bg-amber-50/50 border border-amber-100 p-4 rounded-2xl flex flex-wrap items-center gap-3">
+          {/* Chế độ chọn nhiều */}
+          {canDeleteTarget && (
+            <button
+              onClick={() => {
+                setIsSelectionMode(!isSelectionMode);
+                if (isSelectionMode) setSelectedIds(new Set());
+              }}
+              className={`px-4 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider transition-all border ${isSelectionMode ? 'bg-rose-600 text-white border-rose-600 shadow-lg' : 'bg-white text-amber-600 border-amber-200 hover:bg-amber-50'}`}
+            >
+              {isSelectionMode ? `❌ Hủy chọn` : `☑️ Chọn nhiều`}
+            </button>
+          )}
+
+          {/* Khi đang trong chế độ chọn */}
+          {isSelectionMode && (
+            <>
+              <button
+                onClick={toggleSelectAll}
+                className="px-4 py-2 rounded-xl bg-white text-slate-600 font-black text-[10px] uppercase tracking-wider border border-slate-200 hover:bg-slate-50 transition-all"
+              >
+                {selectedIds.size === metrics.length ? '📋 Bỏ chọn tất cả' : '📋 Chọn tất cả'}
+              </button>
+              <span className="text-[11px] font-bold text-slate-500">
+                Đã chọn {selectedIds.size} / {metrics.length}
+              </span>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={() => setBulkDeleteConfirm(true)}
+                  className="px-4 py-2 rounded-xl bg-rose-600 text-white font-black text-[10px] uppercase tracking-wider shadow-lg hover:bg-rose-700 transition-all"
+                >
+                  🗑️ Xóa đã chọn ({selectedIds.size})
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Nút xóa tất cả - chỉ khi không ở chế độ chọn, đang xem người khác và có quyền */}
+          {!isSelectionMode && canDeleteTarget && !isViewingOwn && (
+            <button
+              onClick={() => setDeletingAllConfirm(true)}
+              className="px-4 py-2 rounded-xl bg-white text-rose-600 font-black text-[10px] uppercase tracking-wider border border-rose-200 hover:bg-rose-50 transition-all ml-auto"
+            >
+              🗑️ Xóa tất cả chỉ số
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 📱 Mobile Card View */}
       <div className="mobile-only space-y-3">
         {sortedMetrics.map((m, idx) => {
           const prev = sortedMetrics[idx + 1];
           const mid = m.id || (m as any)._id;
           return (
-            <div key={mid} className="data-card">
+            <div key={mid} className={`data-card relative ${isSelectionMode ? 'border-2 transition-all' : ''} ${isSelectionMode && selectedIds.has(mid) ? 'border-emerald-500 bg-emerald-50/30' : ''}`}>
+              {/* Checkbox chọn nhiều - Mobile */}
+              {isSelectionMode && canDeleteTarget && (
+                <div className="absolute top-3 left-3 z-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(mid)}
+                    onChange={() => toggleSelectMetric(mid)}
+                    className="w-5 h-5 rounded-lg accent-emerald-600 cursor-pointer"
+                  />
+                </div>
+              )}
               {/* Header: Ngày + các trend */}
-              <div className="data-card-header">
+              <div className={`data-card-header ${isSelectionMode ? 'pl-10' : ''}`}>
                 <div className="flex items-center justify-between">
                   <span className="font-black text-sm text-slate-800">📅 {formatDateVN(m.date)}</span>
                   <span className="font-black text-emerald-600 text-sm">
@@ -195,10 +343,10 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                   </div>
                 </div>
               </div>
-              {/* Actions */}
-              {(canEdit(user) || canDelete(user) || isViewingOwn) && (
+              {/* Actions - chỉ hiện khi không ở chế độ chọn */}
+              {!isSelectionMode && (canEditTarget || canDeleteTarget || isViewingOwn) && (
                 <div className="data-card-actions">
-                  {(canEdit(user) || isViewingOwn) && (
+                  {(canEditTarget || isViewingOwn) && (
                     <button 
                       onClick={() => { setEditingMetric({...m}); console.log(`[MetricsManagement] Edit: ${m.date}`); }}
                       className="flex-1 py-2.5 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
@@ -206,7 +354,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                       ✏️ Sửa
                     </button>
                   )}
-                  {canDelete(user) && (
+                  {canDeleteTarget && (
                     <button 
                       onClick={() => setDeletingMetric(m)}
                       className="flex-1 py-2.5 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
@@ -231,6 +379,17 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             <table className="w-full text-left text-[11px] min-w-[1200px]">
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr className="text-slate-400 font-black uppercase tracking-widest">
+                  {/* Checkbox cho chế độ chọn nhiều */}
+                  {isSelectionMode && canDeleteTarget && (
+                    <th className="p-5 w-12">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === metrics.length && metrics.length > 0}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded accent-emerald-600 cursor-pointer"
+                      />
+                    </th>
+                  )}
                   <th className="p-5">Ngày đo</th>
                   <th className="p-5">Cân nặng (kg)</th>
                   <th className="p-5">Mỡ cơ thể (%)</th>
@@ -241,7 +400,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                   <th className="p-5">Mỡ nội tạng</th>
                   <th className="p-5">Tuổi sinh học</th>
                   <th className="p-5">Năng Lượng (kcal)</th>
-                  {(canEdit(user) || canDelete(user)) && <th className="p-5 text-right">Thao tác</th>}
+                  {!isSelectionMode && (canEditTarget || canDeleteTarget) && <th className="p-5 text-right">Thao tác</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -249,7 +408,18 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                   const prev = sortedMetrics[idx + 1];
                   const mid = m.id || (m as any)._id;
                   return (
-                    <tr key={mid} className="hover:bg-slate-50/50 transition-colors">
+                    <tr key={mid} className={`hover:bg-slate-50/50 transition-colors ${isSelectionMode && selectedIds.has(mid) ? 'bg-emerald-50/50' : ''}`}>
+                      {/* Checkbox cho chế độ chọn nhiều */}
+                      {isSelectionMode && canDeleteTarget && (
+                        <td className="p-5">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(mid)}
+                            onChange={() => toggleSelectMetric(mid)}
+                            className="w-4 h-4 rounded accent-emerald-600 cursor-pointer"
+                          />
+                        </td>
+                      )}
                       <td className="p-5 font-bold text-slate-700">{formatDateVN(m.date)}</td>
                       <td className="p-5 font-black text-emerald-600">
                         {m.weight} {renderTrendIcon(m.weight, prev?.weight, true)}
@@ -279,9 +449,9 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                         {m.bioAge || '--'} {renderTrendIcon(m.bioAge || 0, prev?.bioAge, true)}
                       </td>
                       <td className="p-5 text-slate-500">{m.energy || '--'}</td>
-                      {(canEdit(user) || canDelete(user)) && (
+                      {!isSelectionMode && (canEditTarget || canDeleteTarget) && (
                         <td className="p-5 text-right space-x-2">
-                          {(canEdit(user) || isViewingOwn) && (
+                          {(canEditTarget || isViewingOwn) && (
                             <button 
                               onClick={() => {
                                 setEditingMetric({...m});
@@ -292,7 +462,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                               Sửa
                             </button>
                           )}
-                          {canDelete(user) && (
+                          {canDeleteTarget && (
                             <button 
                               onClick={() => setDeletingMetric(m)} 
                               className="text-rose-600 font-black text-[9px] hover:underline uppercase ml-3"
@@ -307,7 +477,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                 })}
                 {sortedMetrics.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</td>
+                    <td colSpan={isSelectionMode ? 13 : 12} className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</td>
                   </tr>
                 )}
               </tbody>
@@ -364,7 +534,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
         </div>
       )}
 
-      {/* Delete Confirm Dialog */}
+      {/* Delete Confirm Dialog (single) */}
       {deletingMetric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
@@ -380,6 +550,48 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             <div className="flex gap-3 pt-4">
               <button onClick={() => setDeletingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
               <button onClick={handleDeleteMetric} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete All Confirm Dialog */}
+      {deletingAllConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
+            <div className="text-5xl mb-2">🚨</div>
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xóa toàn bộ chỉ số</h4>
+            <p className="text-slate-600 text-sm leading-relaxed">
+              Bạn có chắc chắn muốn xóa <strong>toàn bộ chỉ số</strong> của <strong>{targetUser?.fullName || 'hội viên này'}</strong>?
+              <br />
+              <span className="text-rose-500 text-[10px] font-black mt-2 block">
+                ⚠️ Hành động này không thể hoàn tác! ⚠️
+              </span>
+            </p>
+            <div className="flex gap-3 pt-4">
+              <button onClick={() => setDeletingAllConfirm(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+              <button onClick={handleDeleteAllMetrics} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa tất cả</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirm Dialog */}
+      {bulkDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
+            <div className="text-5xl mb-2">⚠️</div>
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xóa nhiều chỉ số</h4>
+            <p className="text-slate-600 text-sm leading-relaxed">
+              Bạn có chắc chắn muốn xóa <strong>{selectedIds.size} chỉ số</strong> đã chọn?
+              <br />
+              <span className="text-rose-500 text-[10px] font-black mt-2 block">
+                Hành động này không thể hoàn tác!
+              </span>
+            </p>
+            <div className="flex gap-3 pt-4">
+              <button onClick={() => setBulkDeleteConfirm(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+              <button onClick={handleBulkDelete} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa {selectedIds.size} chỉ số</button>
             </div>
           </div>
         </div>
