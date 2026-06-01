@@ -28,6 +28,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   
   const [loadingAI, setLoadingAI] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
+  const bulkModeRef = useRef(false);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
   const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   
@@ -112,6 +113,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             setStatusMsg({ text: "⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh.", type: 'error' });
           }
         } else {
+          // Reset bulkPreview trước khi gọi request để tránh hiển thị dữ liệu cũ
+          setBulkPreview([]);
           try {
             log(`Đang gọi endpoint /api/ai/bulk-extract với năm: ${selectedYearAI}...`, "ai");
             const sessionId = localStorage.getItem('lucky_hub_session');
@@ -236,15 +239,15 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button disabled={loadingAI} onClick={() => { setPendingBulk(false); setBulkMode(false); setShowYearPicker(true); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
+            <button disabled={loadingAI} onClick={() => { setPendingBulk(false); setBulkMode(false); bulkModeRef.current = false; setShowYearPicker(true); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${!bulkMode ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📸</span>
               <span className="font-black text-emerald-800 text-[10px] uppercase tracking-widest">Tải ảnh/Chụp InBody</span>
             </button>
-            <button disabled={loadingAI} onClick={() => { setPendingBulk(true); setBulkMode(true); setShowYearPicker(true); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-slate-200'}`}>
+            <button disabled={loadingAI} onClick={() => { setPendingBulk(true); setBulkMode(true); bulkModeRef.current = true; setShowYearPicker(true); }} className={`p-6 border-2 border-dashed rounded-[2rem] flex flex-col items-center transition-all ${bulkMode ? 'border-amber-500 bg-amber-50' : 'border-slate-200'}`}>
               <span className="text-4xl mb-2">📝</span>
               <span className="font-black text-amber-800 text-[10px] uppercase tracking-widest">Quét sổ tay hàng loạt</span>
             </button>
-            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkMode)} />
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkModeRef.current)} />
           </div>
 
           {showYearPicker && (
