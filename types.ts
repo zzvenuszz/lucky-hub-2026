@@ -81,10 +81,13 @@ export interface GeminiKey {
   _id?: string;
   key: string;
   label: string;
+  keyType?: 'gemini' | 'cline';
   isActive: boolean;
   failCount: number;
   cooldownUntil: string | null;
   lastUsed?: string;
+  healthStatus?: string;
+  workingModels?: string[];
 }
 
 export interface AuditLog {

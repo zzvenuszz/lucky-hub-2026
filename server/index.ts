@@ -224,9 +224,25 @@ async function startServer() {
     logger.info('SYSTEM', `Environment: ${process.env.NODE_ENV || 'development'}`);
     logger.info('SYSTEM', `Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
 
-    // Gemini Health Check
-    discoverAvailableModels().catch((err: any) => {
-      logger.error('SYSTEM', `Gemini health check failed: ${err?.message || err}`);
+    // AI Health Check (Gemini + Cline)
+    console.log('\n\x1b[1;35m══════════ CLINE SERVICE =═════════\x1b[0m');
+    console.log('\x1b[1;35m  🧠 Cline AI Service loaded\x1b[0m');
+    console.log(`\x1b[1;35m  📡 Endpoint: https://api.cline.bot/api/v1/chat/completions\x1b[0m`);
+    console.log(`\x1b[1;35m  🤖 Model: deepseek/deepseek-chat → deepseek/deepseek-v3\x1b[0m`);
+    console.log(`\x1b[1;35m  ⏱️  Timeout: 30s\x1b[0m`);
+    console.log('\x1b[1;35m══════════════════════════════════\x1b[0m\n');
+    
+    discoverAvailableModels().then(() => {
+      // Đếm số lượng key trong DB theo loại
+      import('./models/GeminiKey.ts').then(({ GeminiKey }) => {
+        GeminiKey.find({ isActive: true }).then((keys) => {
+          const geminiCount = keys.filter((k: any) => (k as any).keyType === 'gemini' || !(k as any).keyType).length;
+          const clineCount = keys.filter((k: any) => (k as any).keyType === 'cline').length;
+          console.log(`\n\x1b[1;34m[SYSTEM]\x1b[0m AI Keys Summary: \x1b[32m${geminiCount} Gemini\x1b[0m + \x1b[35m${clineCount} Cline\x1b[0m = \x1b[33m${geminiCount + clineCount} total\x1b[0m\n`);
+        }).catch(() => {});
+      }).catch(() => {});
+    }).catch((err: any) => {
+      logger.error('SYSTEM', `AI health check failed: ${err?.message || err}`);
     });
   });
 }

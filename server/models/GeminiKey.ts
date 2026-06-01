@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const GeminiKeySchema = new mongoose.Schema({
   key: { type: String, required: true, unique: true },
   label: { type: String, default: 'Unnamed Key' },
+  keyType: { type: String, enum: ['gemini', 'cline'], default: 'gemini' },
   isActive: { type: Boolean, default: true },
   failCount: { type: Number, default: 0 },
   cooldownUntil: { type: Date, default: null },

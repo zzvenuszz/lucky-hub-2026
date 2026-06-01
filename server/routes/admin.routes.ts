@@ -39,10 +39,12 @@ router.get('/gemini-keys', requirePermission(RESOURCES.AI.MANAGE), async (req: R
 // POST /api/admin/gemini-keys
 router.post('/gemini-keys', requirePermission(RESOURCES.AI.MANAGE), validateBody(
   { field: 'key', type: 'string', required: true },
-  { field: 'label', type: 'string', required: false, max: 100 }
+  { field: 'label', type: 'string', required: false, max: 100 },
+  { field: 'keyType', type: 'string', required: false, max: 10 }
 ), async (req: Request, res: Response) => {
     try {
-      const { key, label } = req.body;
+      const { key, label, keyType } = req.body;
+      const finalKeyType = (keyType === 'cline') ? 'cline' : 'gemini';
 
       // Check trùng lặp với ENV keys
       const ENV_API_KEYS = [
@@ -56,8 +58,9 @@ router.post('/gemini-keys', requirePermission(RESOURCES.AI.MANAGE), validateBody
         return res.status(400).json({ message: 'KEY ĐÃ TỒN TẠI TRONG DANH SÁCH ENV' });
       }
 
-      const newKey = new GeminiKey({ key, label });
+      const newKey = new GeminiKey({ key, label, keyType: finalKeyType });
       await newKey.save();
+      console.log(`[Admin] Added ${finalKeyType.toUpperCase()} key: ${label} (${key.substring(0, 6)}••••${key.substring(key.length - 4)})`);
       res.json({ ...newKey.toObject(), id: newKey._id });
     } catch (err: any) {
       res.status(400).json({ message: 'KEY ĐÃ TỒN TẠI HOẶC KHÔNG HỢP LỆ' });
@@ -137,20 +140,37 @@ async function verifyGeminiKey(apiKey: string): Promise<{ valid: boolean; bestMo
 // POST /api/admin/gemini-keys/check
 router.post('/gemini-keys/check', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
   try {
-    const { key } = req.body;
-    console.log(`[GeminiCheck] Testing key...`);
+    const { key, keyType } = req.body;
     
-    // Kiểm tra key bằng ListModels API - giống curl test, KHÔNG tốn quota
-    const result = await verifyGeminiKey(key);
+    // Xác định loại key: nếu keyType được gửi lên là 'cline' hoặc key bắt đầu bằng sk_ thì dùng Cline test
+    const isClineKey = keyType === 'cline' || key?.startsWith('sk_');
     
-    if (result.valid) {
-      console.log(`[GeminiCheck] Key is valid (model: ${result.bestModel})`);
-      res.json({ status: 'ok', modelUsed: result.bestModel });
+    if (isClineKey) {
+      console.log(`[ClineCheck] Testing Cline key...`);
+      const { testClineKey } = await import('../services/clineService.ts');
+      const result = await testClineKey(key);
+      
+      if (result.valid) {
+        console.log(`[ClineCheck] Key is valid (models: ${result.models.join(', ')})`);
+        res.json({ status: 'ok', modelUsed: result.models[0] || 'deepseek/deepseek-chat' });
+      } else {
+        throw new Error(result.error || 'Key không hoạt động');
+      }
     } else {
-      throw new Error(result.error || 'Key không hoạt động');
+      console.log(`[GeminiCheck] Testing Gemini key...`);
+      
+      // Kiểm tra key bằng ListModels API - giống curl test, KHÔNG tốn quota
+      const result = await verifyGeminiKey(key);
+      
+      if (result.valid) {
+        console.log(`[GeminiCheck] Key is valid (model: ${result.bestModel})`);
+        res.json({ status: 'ok', modelUsed: result.bestModel });
+      } else {
+        throw new Error(result.error || 'Key không hoạt động');
+      }
     }
   } catch (err: any) {
-    console.error(`[GeminiCheck] Key test failed:`, err.message);
+    console.error(`[KeyCheck] Key test failed:`, err.message);
     res.status(400).json({ message: "Key không hoạt động: " + err.message });
   }
 });

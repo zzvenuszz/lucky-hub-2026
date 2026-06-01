@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiKey } from '../models/GeminiKey.ts';
 import { logger } from '../../src/utils/logger.ts';
+import { testClineKey } from './clineService.ts';
 
 const ENV_API_KEYS = [
   process.env.API_KEY,
@@ -18,6 +19,12 @@ export let discoveredModels: string[] = [];
 // Cache health check status để tránh gọi liên tục
 let lastHealthCheckTime = 0;
 const HEALTH_CHECK_INTERVAL = 5 * 60 * 1000; // 5 phút
+
+const ANSI = {
+  cyan: '\x1b[1;36m', green: '\x1b[1;32m', yellow: '\x1b[1;33m',
+  magenta: '\x1b[1;35m', blue: '\x1b[1;34m', red: '\x1b[1;31m',
+  gray: '\x1b[90m', reset: '\x1b[0m', purple: '\x1b[1;35m'
+};
 
 /**
  * Task types để lựa chọn model phù hợp
@@ -69,12 +76,11 @@ async function updateKeyHealthStatus(keyId: string | null, status: string, model
 }
 
 /**
- * Kiểm tra nhanh một key (parallel-friendly)
+ * Kiểm tra nhanh một key Gemini (parallel-friendly)
  * Chỉ test 1-2 model đại diện
  */
 async function quickKeyHealthCheck(key: string): Promise<{ valid: boolean; models: string[]; status: string }> {
   const baseEndpoint = (GEMINI_PROXY_URL || "https://generativelanguage.googleapis.com").replace(/\/$/, "");
-  const testModels = ['gemini-1.5-flash', 'gemini-2.0-flash'];
   const workingModels: string[] = [];
 
   try {
@@ -137,15 +143,10 @@ async function quickKeyHealthCheck(key: string): Promise<{ valid: boolean; model
 
 /**
  * Khám phá các model khả dụng - sử dụng parallel health check
+ * Hỗ trợ cả Gemini keys và Cline keys
  */
 export async function discoverAvailableModels() {
-  const ANSI = {
-    cyan: '\x1b[1;36m', green: '\x1b[1;32m', yellow: '\x1b[1;33m',
-    magenta: '\x1b[1;35m', blue: '\x1b[1;34m', red: '\x1b[1;31m',
-    gray: '\x1b[90m', reset: '\x1b[0m'
-  };
-
-  console.log(`\n${ANSI.cyan}========== GEMINI SYSTEM DISCOVERY ==========${ANSI.reset}\n`);
+  console.log(`\n${ANSI.cyan}========== AI SYSTEM DISCOVERY ==========${ANSI.reset}\n`);
 
   // Kiểm tra cache - Nếu đã check gần đây thì không chạy lại
   if (lastHealthCheckTime > 0 && Date.now() - lastHealthCheckTime < HEALTH_CHECK_INTERVAL) {
@@ -157,57 +158,112 @@ export async function discoverAvailableModels() {
   try {
     dbKeys = await GeminiKey.find({ isActive: true });
   } catch (err: any) {
-    console.error('[GEMINI] Failed to load API keys from DB:', err?.message || err);
+    console.error('[AI] Failed to load API keys from DB:', err?.message || err);
   }
 
-  const allKeys = [...new Set([...ENV_API_KEYS, ...dbKeys.map(k => k.key as string)])];
-  if (allKeys.length === 0) {
+  // Phân loại keys theo keyType
+  const geminiDbKeys = dbKeys.filter((k: any) => k.keyType === 'gemini' || !k.keyType);
+  const clineDbKeys = dbKeys.filter((k: any) => k.keyType === 'cline');
+  
+  const allGeminiKeys = [...new Set([...ENV_API_KEYS, ...geminiDbKeys.map(k => k.key as string)])];
+  const allClineKeys = [...new Set([...clineDbKeys.map(k => k.key as string)])];
+
+  const totalKeys = allGeminiKeys.length + allClineKeys.length;
+  if (totalKeys === 0) {
     console.log(`${ANSI.yellow}⚠️  CẢNH BÁO: Không tìm thấy bất kỳ API Key nào.${ANSI.reset}`);
     return;
   }
 
   discoveredModels = [];
-  const healthyKeys: string[] = [];
+  const healthyGeminiKeys: string[] = [];
+  const healthyClineKeys: string[] = [];
 
-  // Parallel health check với Promise.allSettled
-  console.log(`${ANSI.blue}Kiểm tra ${allKeys.length} key song song...${ANSI.reset}`);
-  const healthResults = await Promise.allSettled(
-    allKeys.map(async (key, index) => {
-      const keyLabel = index === 0 ? "ENV Primary" : `Key ${index + 1}`;
-      const result = await quickKeyHealthCheck(key);
-      
-      // Tìm DB key tương ứng để cập nhật
-      const dbKey = dbKeys.find(k => k.key === key);
-      const dbKeyId = dbKey?._id?.toString() || null;
-      const isFromDb = !!dbKey;
+  // ============ CHECK GEMINI KEYS ============
+  if (allGeminiKeys.length > 0) {
+    console.log(`\n${ANSI.blue}🔍 Kiểm tra ${allGeminiKeys.length} Gemini key(s)...${ANSI.reset}`);
+    
+    const geminiResults = await Promise.allSettled(
+      allGeminiKeys.map(async (key, index) => {
+        const keyLabel = index === 0 ? "ENV Primary" : `Gemini Key ${index + 1}`;
+        const result = await quickKeyHealthCheck(key);
+        
+        const dbKey = dbKeys.find((k: any) => k.key === key);
+        const dbKeyId = dbKey?._id?.toString() || null;
+        const isFromDb = !!dbKey;
 
-      if (result.valid) {
-        console.log(`    ${ANSI.green}[✓ WORKING]${ANSI.reset} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}`);
-        healthyKeys.push(key);
-        // Cập nhật DB
-        await updateKeyHealthStatus(dbKeyId, 'healthy', result.models, isFromDb);
-        // Thêm models vào danh sách
-        result.models.forEach((m: string) => {
-          if (!discoveredModels.includes(m)) discoveredModels.push(m);
-        });
-      } else {
-        let status = `${ANSI.red}[✗ ${result.status.toUpperCase()}]${ANSI.reset}`;
-        console.log(`    ${status} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}`);
-        await updateKeyHealthStatus(dbKeyId, result.status, result.models, isFromDb);
-      }
-    })
-  );
+        if (result.valid) {
+          console.log(`    ${ANSI.green}[✓ GEMINI WORKING]${ANSI.reset} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}`);
+          healthyGeminiKeys.push(key);
+          await updateKeyHealthStatus(dbKeyId, 'healthy', result.models, isFromDb);
+          result.models.forEach((m: string) => {
+            if (!discoveredModels.includes(m)) discoveredModels.push(m);
+          });
+        } else {
+          console.log(`    ${ANSI.red}[✗ ${result.status.toUpperCase()}]${ANSI.reset} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}`);
+          await updateKeyHealthStatus(dbKeyId, result.status, result.models, isFromDb);
+        }
+      })
+    );
+  }
+
+  // ============ CHECK CLINE KEYS ============
+  if (allClineKeys.length > 0) {
+    console.log(`\n${ANSI.purple}🧠 Kiểm tra ${allClineKeys.length} Cline key(s)...${ANSI.reset}`);
+    
+    const clineResults = await Promise.allSettled(
+      allClineKeys.map(async (key) => {
+        const dbKey = clineDbKeys.find((k: any) => k.key === key);
+        const keyLabel = dbKey?.label || 'Unnamed Cline Key';
+        const dbKeyId = dbKey?._id?.toString() || null;
+        const isFromDb = !!dbKey;
+
+        try {
+          const result = await testClineKey(key);
+
+          if (result.valid) {
+            console.log(`    ${ANSI.green}[✓ CLINE WORKING]${ANSI.reset} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)} | Models: ${result.models.join(', ')}`);
+            healthyClineKeys.push(key);
+            await updateKeyHealthStatus(dbKeyId, 'healthy', result.models, isFromDb);
+            result.models.forEach((m: string) => {
+              if (!discoveredModels.includes(m)) discoveredModels.push(m);
+            });
+          } else {
+            console.log(`    ${ANSI.red}[✗ CLINE ${result.status.toUpperCase()}]${ANSI.reset} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)}${result.error ? ` | ${result.error}` : ''}`);
+            await updateKeyHealthStatus(dbKeyId, result.status, result.models, isFromDb);
+          }
+        } catch (err: any) {
+          console.log(`    ${ANSI.red}[✗ CLINE ERROR]${ANSI.reset} ${keyLabel}: ${key.substring(0, 6)}••••${key.substring(key.length - 4)} | ${err.message}`);
+          await updateKeyHealthStatus(dbKeyId, 'error', [], isFromDb);
+        }
+      })
+    );
+  }
+
+  // ============ SUMMARY ============
+  console.log(`\n${ANSI.cyan}========== AI DISCOVERY SUMMARY ==========${ANSI.reset}`);
+  
+  if (healthyGeminiKeys.length > 0) {
+    console.log(`${ANSI.green}✅ Gemini: ${healthyGeminiKeys.length}/${allGeminiKeys.length} keys working${ANSI.reset}`);
+  } else if (allGeminiKeys.length > 0) {
+    console.log(`${ANSI.red}❌ Gemini: 0/${allGeminiKeys.length} keys working${ANSI.reset}`);
+  }
+  
+  if (healthyClineKeys.length > 0) {
+    console.log(`${ANSI.purple}✅ Cline: ${healthyClineKeys.length}/${allClineKeys.length} keys working${ANSI.reset}`);
+  } else if (allClineKeys.length > 0) {
+    console.log(`${ANSI.red}❌ Cline: 0/${allClineKeys.length} keys working${ANSI.reset}`);
+  }
 
   if (discoveredModels.length === 0) {
-    console.log(`\n${ANSI.red}🚨 [BÁO ĐỘNG]: Server đang bị chặn toàn bộ bởi Google (Location/Keys).${ANSI.reset}`);
-    if (!GEMINI_PROXY_URL) {
+    console.log(`\n${ANSI.red}🚨 [BÁO ĐỘNG]: Không có model nào khả dụng.${ANSI.reset}`);
+    if (allGeminiKeys.length > 0 && !GEMINI_PROXY_URL) {
       console.log(`${ANSI.yellow}💡 Gợi ý: Hãy cấu hình GEMINI_PROXY_URL để vượt rào cản địa lý của Render.${ANSI.reset}`);
     }
   } else {
     discoveredModels.sort((a, b) => {
       const rank = (n: string) => {
-        if (n.includes('2.0-flash')) return 1;
-        if (n.includes('1.5-flash')) return 2;
+        if (n.includes('gemini-2.0-flash') || n.includes('deepseek')) return 1;
+        if (n.includes('gemini-1.5-flash')) return 2;
         if (n.includes('flash')) return 3;
         if (n.includes('pro')) return 4;
         return 5;
@@ -253,9 +309,14 @@ export async function callAIWithRetry(
       const now = Date.now();
 
       let dbKeys = await GeminiKey.find({ isActive: true });
+      
+      // CHỈ lấy Gemini keys cho callAIWithRetry (giữ nguyên logic cũ)
+      // Cline keys sẽ được xử lý riêng sau này
+      const geminiDbKeys = dbKeys.filter((k: any) => k.keyType === 'gemini' || !k.keyType);
+      
       let allPotentialKeys = [
         ...ENV_API_KEYS.map(k => ({ key: k, isFromDb: false, id: null })),
-        ...dbKeys.map(k => ({ key: k.key, isFromDb: true, id: k._id, cooldownUntil: k.cooldownUntil }))
+        ...geminiDbKeys.map(k => ({ key: k.key, isFromDb: true, id: k._id, cooldownUntil: k.cooldownUntil }))
       ];
 
       let availableKeys = allPotentialKeys.filter(k => {

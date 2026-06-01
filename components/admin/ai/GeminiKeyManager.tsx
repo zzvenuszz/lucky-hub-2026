@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo, useCallback } from 'react';
 import { GeminiKey } from '../../../types.ts';
 import { Database } from '../../../services/database.ts';
 
@@ -10,13 +9,13 @@ interface GeminiKeyManagerProps {
 const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
   const [keys, setKeys] = useState<GeminiKey[]>([]);
   const [envKeys, setEnvKeys] = useState<{ label: string, key: string, display: string }[]>([]);
-  const [newKey, setNewKey] = useState({ key: '', label: '' });
+  const [newKey, setNewKey] = useState({ key: '', label: '', keyType: 'gemini' as 'gemini' | 'cline' });
   const [isChecking, setIsChecking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ status: 'none' | 'active' | 'error' }>({ status: 'none' });
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [dbKeys, sysKeys] = await Promise.all([
@@ -30,13 +29,13 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
-  const handleTestKey = async () => {
+  const handleTestKey = useCallback(async () => {
     if (!newKey.key) {
       setError("Vui lòng nhập API Key để kiểm tra.");
       return;
@@ -47,7 +46,7 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
     setTestResult({ status: 'none' });
     
     try {
-      const health = await Database.checkKeyHealth(newKey.key);
+      const health = await Database.checkKeyHealth(newKey.key, newKey.keyType);
       if (health?.status === 'ok') {
         setTestResult({ status: 'active' });
       } else {
@@ -59,9 +58,9 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
     } finally {
       setIsChecking(false);
     }
-  };
+  }, [newKey.key, newKey.keyType]);
 
-  const handleAddKey = async () => {
+  const handleAddKey = useCallback(async () => {
     if (!newKey.key || !newKey.label) {
       setError("Vui lòng nhập đầy đủ nhãn và API Key.");
       return;
@@ -80,11 +79,11 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
     setError(null);
     try {
       // 1. Kiểm tra key trước khi lưu
-      const health = await Database.checkKeyHealth(newKey.key);
+      const health = await Database.checkKeyHealth(newKey.key, newKey.keyType);
       if (health?.status === 'ok') {
         // 2. Lưu vào DB
         await Database.addGeminiKey(newKey);
-        setNewKey({ key: '', label: '' });
+        setNewKey({ key: '', label: '', keyType: 'gemini' });
         setTestResult({ status: 'none' });
         fetchData();
       }
@@ -93,9 +92,9 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
     } finally {
       setIsChecking(false);
     }
-  };
+  }, [newKey, envKeys, keys, fetchData]);
 
-  const handleDeleteKey = async (id: string) => {
+  const handleDeleteKey = useCallback(async (id: string) => {
     if (!confirm("Bạn có chắc chắn muốn xóa Key này không?")) return;
     try {
       await Database.deleteGeminiKey(id);
@@ -103,70 +102,107 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
     } catch (err) {
       alert("Lỗi xóa key.");
     }
-  };
+  }, [fetchData]);
 
-  const handleToggleKey = async (id: string, currentStatus: boolean) => {
+  const handleToggleKey = useCallback(async (id: string, currentStatus: boolean) => {
     try {
       await Database.toggleGeminiKey(id, !currentStatus);
       fetchData();
     } catch (err) {
       alert("Lỗi cập nhật trạng thái.");
     }
-  };
+  }, [fetchData]);
 
   return (
     <div className="space-y-8 pb-10">
       <div className="bg-amber-50/50 p-6 rounded-[2rem] border border-amber-100 space-y-4 shadow-sm">
         <h4 className="font-black text-amber-700 uppercase tracking-widest text-[11px] flex items-center gap-2">
-          <span className="text-lg">⚙️</span> Cấu hình Gemini Key mới
+          <span className="text-lg">⚙️</span> Thêm API Key mới
         </h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        
+        {/* Hàng 1: Label + Loại Key */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <input 
-            placeholder="Tên gợi nhớ (VD: Key dự phòng 1...)" 
+            placeholder="Tên gợi nhớ (VD: Key GPT, Key dự phòng...)" 
             value={newKey.label} 
-            onChange={e => setNewKey({...newKey, label: e.target.value})} 
-            className="px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-amber-500 font-medium" 
-          />
-          <input 
-            type="password"
-            placeholder="Dán API Key vào đây..." 
-            value={newKey.key} 
             onChange={e => {
-              setNewKey({...newKey, key: e.target.value});
-              setTestResult({ status: 'none' });
+              setNewKey({...newKey, label: e.target.value});
               setError(null);
             }} 
-            className="px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-amber-500 font-mono" 
+            className="px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-amber-500 font-medium" 
           />
+          
+          {/* Dropdown chọn Loại Key */}
+          <div className="relative">
+            <select
+              value={newKey.keyType}
+              onChange={e => {
+                setNewKey({...newKey, keyType: e.target.value as 'gemini' | 'cline'});
+                setTestResult({ status: 'none' });
+                setError(null);
+              }}
+              className="w-full px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-amber-500 font-black appearance-none cursor-pointer"
+            >
+              <option value="gemini">🤖 Gemini</option>
+              <option value="cline">🧠 CLINE</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="relative">
+            <input 
+              type="password"
+              placeholder="Dán API Key vào đây..." 
+              value={newKey.key} 
+              onChange={e => {
+                setNewKey({...newKey, key: e.target.value});
+                setTestResult({ status: 'none' });
+                setError(null);
+              }} 
+              className="w-full px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-amber-500 font-mono" 
+            />
+            {/* Tooltip hướng dẫn */}
+            {newKey.keyType === 'cline' && newKey.key.length === 0 && (
+              <div className="absolute -bottom-6 left-0 text-[9px] text-purple-500 font-bold whitespace-nowrap">
+                💡 Key thường bắt đầu bằng <span className="font-mono bg-purple-50 px-1 rounded">sk_</span>
+              </div>
+            )}
+          </div>
         </div>
 
+        {/* Kết quả test */}
         {testResult.status !== 'none' && (
-          <div className="flex items-center gap-2 px-2">
+          <div className="flex items-center gap-2 px-2 mt-2">
              <span className="text-[10px] font-black uppercase">Kết quả: </span>
              {testResult.status === 'active' ? (
-               <span className="text-emerald-600 font-black text-[10px] animate-pulse">HOẠT ĐỘNG</span>
+               <span className="text-emerald-600 font-black text-[10px] animate-pulse">✅ HOẠT ĐỘNG</span>
              ) : (
-               <span className="text-rose-600 font-black text-[10px]">KEY LỖI</span>
+               <span className="text-rose-600 font-black text-[10px]">❌ KEY LỖI</span>
              )}
           </div>
         )}
 
-        {error && <p className="text-[10px] text-rose-500 font-black uppercase px-2 bg-rose-50 py-1 rounded-lg border border-rose-100 inline-block">{error}</p>}
+        {error && <p className="text-[10px] text-rose-500 font-black uppercase px-2 bg-rose-50 py-1 rounded-lg border border-rose-100 inline-block mt-1">{error}</p>}
         
-        <div className="flex flex-col sm:flex-row gap-3">
+        {/* Nút hành động */}
+        <div className="flex flex-col sm:flex-row gap-3 pt-2">
           <button 
             onClick={handleTestKey} 
             disabled={isChecking || !newKey.key}
             className="flex-1 py-4 bg-white border-2 border-amber-200 text-amber-600 rounded-2xl font-black uppercase text-[10px] shadow-sm active:scale-95 transition-all disabled:opacity-50"
           >
-            {isChecking ? '⏳ ĐANG TEST...' : 'KIỂM TRA KEY'}
+            {isChecking ? '⏳ ĐANG TEST...' : '🔍 KIỂM TRA KEY'}
           </button>
           <button 
             onClick={handleAddKey} 
             disabled={isChecking}
             className="flex-[2] py-4 bg-amber-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all disabled:opacity-50"
           >
-            {isChecking ? '⏳ ĐANG XỬ LÝ...' : 'XÁC NHẬN THÊM KEY'}
+            {isChecking ? '⏳ ĐANG XỬ LÝ...' : (newKey.keyType === 'cline' ? '🧠 XÁC NHẬN THÊM CLINE KEY' : '🤖 XÁC NHẬN THÊM GEMINI KEY')}
           </button>
         </div>
       </div>
@@ -184,7 +220,10 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
                 <div className="font-black text-slate-500 text-[10px] uppercase tracking-tight">{k.label}</div>
                 <div className="text-[10px] font-mono text-slate-400 truncate">{k.display}</div>
               </div>
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-black">GEMINI</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              </div>
             </div>
           ))}
         </div>
@@ -198,22 +237,36 @@ const GeminiKeyManager: React.FC<GeminiKeyManagerProps> = () => {
         <div className="space-y-3">
           {keys.map(k => {
             const isCooldown = k.cooldownUntil && new Date(k.cooldownUntil).getTime() > Date.now();
+            const isClineKey = k.keyType === 'cline';
             return (
               <div key={k.id} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 group hover:border-amber-200 transition-all">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className={`w-2 h-2 rounded-full ${k.isActive ? (isCooldown ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500') : 'bg-slate-300'}`}></span>
                     <span className="font-black text-slate-800 text-xs uppercase tracking-tight">{k.label}</span>
+                    
+                    {/* Badge loại key */}
+                    {isClineKey ? (
+                      <span className="text-[8px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded font-black uppercase tracking-wide">🧠 CLINE</span>
+                    ) : (
+                      <span className="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-black uppercase tracking-wide">🤖 GEMINI</span>
+                    )}
+                    
                     {isCooldown && (
-                      <span className="text-[8px] bg-amber-100 text-amber-600 px-2 py-0.5 rounded font-black uppercase">Đang Cooldown</span>
+                      <span className="text-[8px] bg-amber-100 text-amber-600 px-2 py-0.5 rounded font-black uppercase">⏳ Cooldown</span>
                     )}
                   </div>
                   <div className="text-[10px] font-mono text-slate-400 truncate max-w-[200px]">
                     {k.key.substring(0, 6)}••••••••{k.key.substring(k.key.length - 4)}
                   </div>
-                  <div className="flex gap-4 mt-2">
+                  <div className="flex gap-4 mt-2 flex-wrap">
                     <div className="text-[9px] text-slate-400 font-bold uppercase">Lỗi: <span className={k.failCount > 0 ? 'text-rose-500' : ''}>{k.failCount}</span></div>
                     <div className="text-[9px] text-slate-400 font-bold uppercase">Lần dùng: {k.lastUsed ? new Date(k.lastUsed).toLocaleTimeString() : '---'}</div>
+                    {k.healthStatus && k.healthStatus !== 'unknown' && (
+                      <div className={`text-[9px] font-bold uppercase ${k.healthStatus === 'healthy' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        Trạng thái: {k.healthStatus === 'healthy' ? '✅ Tốt' : `❌ ${k.healthStatus}`}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 w-full sm:w-auto border-t sm:border-t-0 pt-3 sm:pt-0">
