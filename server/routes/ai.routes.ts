@@ -101,9 +101,21 @@ router.post('/extract', async (req: Request, res: Response) => {
 
     const userId = (req as any).user?.userId || 'anonymous';
 
-    let prompt = "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON.";
+    let prompt = `Phân tích ẢNH CHỤP KẾT QUẢ ĐO InBody/CÂN ĐIỆN TỬ này.
+QUAN TRỌNG: Chỉ trích xuất các số liệu CÓ THỰC trong ảnh. Nếu không thấy số liệu nào, để mặc định 0.
+YÊU CẦU ĐỊNH DẠNG: Trả về JSON object với các trường là số (number), không phải chuỗi (string).
+- weight (kg, số thực > 0): Cân nặng
+- bodyFat (%, số thực): Mỡ cơ thể
+- muscleMass (kg, số thực): Lượng cơ
+- waterPercent (%, số thực): Tỷ lệ nước
+- boneMinerals (kg, số thực): Khoáng chất
+- visceralFat (số nguyên): Mỡ nội tạng
+- energy (kcal, số nguyên): Năng lượng
+- bioAge (số nguyên): Tuổi sinh học
+- balanceIndex (số nguyên): Cân đối
+- date (YYYY-MM-DD): Ngày đo`;
     if (selectedYear) {
-      prompt += ` Lưu ý: Nếu ngày đo không ghi rõ năm, hãy sử dụng năm ${selectedYear} cho kết quả (định dạng YYYY-MM-DD).`;
+      prompt += `\nLưu ý: Nếu ngày đo không ghi rõ năm, hãy dùng năm ${selectedYear}.`;
     }
 
     const payload = {
@@ -137,9 +149,21 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
 
     const userId = (req as any).user?.userId || 'anonymous';
 
-    let prompt = "Trích xuất danh sách JSON nhiều dòng kết quả sức khỏe từ bảng viết tay.";
+    let prompt = `Bạn là chuyên gia đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe.
+Hãy xem ảnh và trích xuất DANH SÁCH các dòng dữ liệu thành JSON array.
+Mỗi dòng là một ngày đo lường với các thông số.
+
+YÊU CẦU ĐỊNH DẠNG NGHIÊM NGẶT - Trả về JSON array, mỗi phần tử là object:
+{ "date": "YYYY-MM-DD", "weight": 65.5, "bodyFat": 18.5, "muscleMass": 48.0, "waterPercent": 60.0, "boneMinerals": 2.5, "visceralFat": 8, "energy": 1500, "bioAge": 30, "balanceIndex": 80 }
+
+QUAN TRỌNG:
+- Tất cả số liệu phải là kiểu NUMBER (không phải string). Ví dụ: "weight": 65.5, KHÔNG phải "weight": "65.5"
+- weight (cân nặng) PHẢI > 0 cho mỗi dòng hợp lệ
+- Nếu không nhìn thấy giá trị cho trường nào, hãy để null hoặc bỏ qua trường đó
+- date: Nếu thấy ngày dạng DD/MM thì chuyển thành YYYY-MM-DD
+- Nếu không thấy ngày, để ngày hiện tại`;
     if (selectedYear) {
-      prompt += ` RẤT QUAN TRỌNG: Nếu ngày (ví dụ 10/05) không ghi rõ năm trong ảnh, hãy sử dụng năm ${selectedYear} để tạo ngày hoàn chỉnh dạng YYYY-MM-DD.`;
+      prompt += `\nRẤT QUAN TRỌNG VỀ NĂM: Nếu ngày trong ảnh không ghi rõ năm, hãy sử dụng năm ${selectedYear} (ví dụ: thấy "10/05" → "10/05/${selectedYear}").`;
     }
 
     const payload = {
@@ -161,8 +185,13 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
       }
     };
     const response = await callAI(requestId, 'vision', payload, { userId, modelName: 'auto' });
-    res.json(JSON.parse(sanitizeJSON(response.text)));
+    const sanitized = sanitizeJSON(response.text);
+    console.log(`[BulkExtract] Request ${requestId}: Raw AI response (600 chars):`, sanitized.substring(0, 600));
+    const parsed = JSON.parse(sanitized);
+    console.log(`[BulkExtract] Request ${requestId}: Parsed ${parsed.length} items, sample:`, JSON.stringify(parsed[0] || null));
+    res.json(parsed);
   } catch (err: any) {
+    console.error(`[BulkExtract] Request ${requestId}: Error:`, err.message);
     res.status(500).json({ message: err.message });
   }
 });

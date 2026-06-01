@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect, memo, useMemo } from 'react';
+import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from 'react';
 import { HealthMetric } from '../../types.ts';
 import { extractMetricsFromImage } from '../../services/gemini.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
@@ -36,7 +36,50 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [selectedYearAI, setSelectedYearAI] = useState<string>('auto');
   const [pendingBulk, setPendingBulk] = useState(false);
   
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingData, setEditingData] = useState<any>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const handleRemoveBulkItem = useCallback((idx: number) => {
+    setBulkPreview(prev => {
+      const updated = prev.filter((_, i) => i !== idx);
+      return updated;
+    });
+    if (editingIdx === idx) {
+      setEditingIdx(null);
+      setEditingData(null);
+    }
+  }, [editingIdx]);
+
+  const handleStartEditBulkItem = useCallback((idx: number, item: any) => {
+    setEditingIdx(idx);
+    setEditingData({ ...item });
+  }, []);
+
+  const handleCancelEditBulkItem = useCallback(() => {
+    setEditingIdx(null);
+    setEditingData(null);
+  }, []);
+
+  const handleSaveEditBulkItem = useCallback((idx: number) => {
+    if (!editingData) return;
+    // Ép kiểu number cho các trường số
+    const cleaned = { ...editingData };
+    const numFields = ['weight', 'bodyFat', 'muscleMass', 'waterPercent', 'boneMinerals', 'visceralFat', 'energy', 'bioAge', 'balanceIndex'];
+    numFields.forEach(k => {
+      if (cleaned[k] !== undefined && cleaned[k] !== null && cleaned[k] !== '') {
+        cleaned[k] = Number(cleaned[k]);
+      }
+    });
+    setBulkPreview(prev => {
+      const updated = [...prev];
+      updated[idx] = cleaned;
+      return updated;
+    });
+    setEditingIdx(null);
+    setEditingData(null);
+  }, [editingData]);
 
   /**
    * PHÂN TÍCH: Lỗi TypeScript xảy ra vì giá trị 'system' chưa được định nghĩa trong union type của tham số type.
@@ -310,7 +353,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                 <table className="w-full text-[10px] text-left min-w-[1000px]">
                   <thead className="sticky top-0 bg-white/90 backdrop-blur-sm shadow-sm">
                     <tr className="text-slate-400 font-black uppercase border-b border-slate-100">
-                      <th className="p-4">Ngày (DD/MM/YYYY)</th>
+                      <th className="p-4">Ngày</th>
                       <th className="p-4 text-center">Cân nặng (kg)</th>
                       <th className="p-4 text-center">Mỡ cơ thể (%)</th>
                       <th className="p-4 text-center">Lượng cơ (kg)</th>
@@ -320,23 +363,66 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       <th className="p-4 text-center">Nước (%)</th>
                       <th className="p-4 text-center">Năng Lượng</th>
                       <th className="p-4 text-center">Tuổi sinh học</th>
+                      <th className="p-4 text-center">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {bulkPreview.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-white transition-colors">
-                        <td className="p-4 font-bold text-slate-700">{formatDateVN(item.date)}</td>
-                        <td className="p-4 text-center font-black text-emerald-600">{item.weight}</td>
-                        <td className="p-4 text-center font-bold text-rose-500">{item.bodyFat}%</td>
-                        <td className="p-4 text-center font-bold text-blue-600">{item.muscleMass}</td>
-                        <td className="p-4 text-center font-bold text-indigo-600">{item.balanceIndex ?? 0}</td>
-                        <td className="p-4 text-center font-bold text-amber-600">{item.visceralFat}</td>
-                        <td className="p-4 text-center text-slate-500">{item.boneMinerals}</td>
-                        <td className="p-4 text-center text-sky-600">{item.waterPercent}%</td>
-                        <td className="p-4 text-center text-slate-500">{item.energy}</td>
-                        <td className="p-4 text-center font-bold text-slate-700">{item.bioAge}</td>
+                    {bulkPreview.map((item, idx) => {
+                      const isEditing = editingIdx === idx;
+                      const disabled = editingIdx !== null && !isEditing;
+                      return (
+                      <tr key={idx} className={`transition-colors ${isEditing ? 'bg-amber-50/70' : 'hover:bg-white'}`}>
+                        {isEditing ? (
+                          <>
+                            <td className="p-2">
+                              <input type="date" value={editingData?.date || ''} onChange={e => setEditingData({...editingData, date: e.target.value})} className="w-full px-2 py-1.5 bg-white rounded-lg border border-amber-200 outline-none text-[10px] font-bold text-slate-700 focus:ring-2 focus:ring-amber-400" />
+                            </td>
+                            {['weight','bodyFat','muscleMass','balanceIndex','visceralFat','boneMinerals','waterPercent','energy','bioAge'].map(field => (
+                              <td key={field} className="p-2">
+                                <input type="number" step="0.1" value={editingData?.[field] ?? ''} onChange={e => setEditingData({...editingData, [field]: e.target.value})} className="w-full px-2 py-1.5 bg-white rounded-lg border border-amber-200 outline-none text-[10px] text-center font-bold focus:ring-2 focus:ring-amber-400" />
+                              </td>
+                            ))}
+                            <td className="p-2 text-center">
+                              <div className="flex gap-1 justify-center">
+                                <button onClick={() => handleSaveEditBulkItem(idx)} className="px-2.5 py-1.5 bg-amber-500 text-white rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-amber-600 transition-all">💾 Lưu</button>
+                                <button onClick={handleCancelEditBulkItem} className="px-2.5 py-1.5 bg-slate-200 text-slate-500 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-slate-300 transition-all">❌</button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="p-3 font-bold text-slate-700 whitespace-nowrap">{formatDateVN(item.date)}</td>
+                            <td className="p-3 text-center font-black text-emerald-600">{item.weight}</td>
+                            <td className="p-3 text-center font-bold text-rose-500">{item.bodyFat}%</td>
+                            <td className="p-3 text-center font-bold text-blue-600">{item.muscleMass}</td>
+                            <td className="p-3 text-center font-bold text-indigo-600">{item.balanceIndex ?? 0}</td>
+                            <td className="p-3 text-center font-bold text-amber-600">{item.visceralFat}</td>
+                            <td className="p-3 text-center text-slate-500">{item.boneMinerals}</td>
+                            <td className="p-3 text-center text-sky-600">{item.waterPercent}%</td>
+                            <td className="p-3 text-center text-slate-500">{item.energy}</td>
+                            <td className="p-3 text-center font-bold text-slate-700">{item.bioAge}</td>
+                            <td className="p-3 text-center whitespace-nowrap">
+                              <div className="flex gap-1 justify-center">
+                                <button
+                                  onClick={() => handleStartEditBulkItem(idx, item)}
+                                  disabled={disabled}
+                                  className="px-2.5 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-emerald-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                  ✏️ Sửa
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveBulkItem(idx)}
+                                  disabled={disabled}
+                                  className="px-2.5 py-1.5 bg-rose-50 text-rose-600 rounded-lg text-[9px] font-black uppercase tracking-wider hover:bg-rose-100 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        )}
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
               </div>
