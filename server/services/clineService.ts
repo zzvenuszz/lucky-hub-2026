@@ -204,11 +204,13 @@ export async function callCline(
 
 /**
  * Các model vision hỗ trợ trên Cline API
+ * Ưu tiên model dễ hoạt động với vision/image_url
  */
 export const CLINE_VISION_MODELS = [
-  { id: 'meta-llama/llama-3.2-11b-vision-instruct', label: '🦙 Llama 3.2 11B Vision (Khuyên dùng)' },
-  { id: 'google/gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash' },
+  { id: 'google/gemini-2.5-flash', label: '⚡ Gemini 2.5 Flash (Khuyên dùng)' },
+  { id: 'openai/gpt-4o-mini', label: '🤖 OpenAI GPT-4o Mini' },
   { id: 'qwen/qwen-2.5-vl', label: '🐉 Qwen 2.5 VL' },
+  { id: 'meta-llama/llama-3.2-11b-vision-instruct', label: '🦙 Llama 3.2 11B Vision' },
 ];
 
 /**

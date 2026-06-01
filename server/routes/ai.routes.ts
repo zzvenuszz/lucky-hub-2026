@@ -3,23 +3,17 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
-import { callAIWithRetry, AITaskType, getActiveProvider, getProviderLabel } from '../services/aiService.ts';
+import { callAI, callAIWithRetry, AITaskType, getActiveProvider, getProviderLabel } from '../services/aiService.ts';
 import { Type } from "@google/genai";
 
 const router = Router();
 
 // POST /api/ai/verify-avatar - Kiểm tra ảnh đại diện bằng AI (không cần auth)
-// Xác định ảnh có phải ảnh chụp người thật hay không (không phải hoạt hình, AI, phong cảnh, ...)
 router.post('/verify-avatar', async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
   try {
     const { imageBase64 } = req.body;
     if (!imageBase64) return res.status(400).json({ isValid: false, reason: 'Thiếu dữ liệu ảnh' });
-
-    const provider = await getActiveProvider();
-    const providerLabel = getProviderLabel(provider);
-    const userId = (req as any).user?.userId || 'anonymous';
-    console.log(`[AI] User: ${userId} request AI [${providerLabel}] (Xác thực ảnh đại diện) - ID: ${requestId}`);
 
     const prompt = `Bạn là chuyên gia xác thực ảnh đại diện. Hãy phân tích ảnh được cung cấp và xác định xem đó có phải là ẢNH CHỤP NGƯỜI THẬT hay không.
 
@@ -59,13 +53,12 @@ Trả về JSON đúng format: { "isValid": boolean, "reason": "string" }
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'verify');
+    const response = await callAI(requestId, 'verify', payload, { modelName: 'auto' });
 
     let result;
     try {
       result = JSON.parse(response.text);
     } catch {
-      // Nếu AI không trả về JSON hợp lệ, fallback
       console.warn(`[AvatarVerify] Request ${requestId}: Failed to parse AI response: ${response.text}`);
       result = { isValid: true, reason: 'Không thể xác thực, chấp nhận ảnh này.' };
     }
@@ -74,12 +67,11 @@ Trả về JSON đúng format: { "isValid": boolean, "reason": "string" }
     res.json(result);
   } catch (err: any) {
     console.error(`[AvatarVerify] Request ${requestId}: Error:`, err.message);
-    // Fallback: nếu lỗi thì cho phép ảnh (không block user vì lỗi hệ thống)
     res.json({ isValid: true, reason: 'Lỗi hệ thống xác thực, ảnh đã được chấp nhận.' });
   }
 });
 
-// Áp dụng optionalAuth cho tất cả AI routes (cho phép cả có hoặc không có token)
+// Áp dụng optionalAuth cho tất cả AI routes
 router.use(optionalAuth);
 
 // POST /api/ai/extract - Trích xuất chỉ số từ ảnh
@@ -89,10 +81,7 @@ router.post('/extract', async (req: Request, res: Response) => {
     const { imageBase64, selectedYear } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
 
-    const provider = await getActiveProvider();
-    const providerLabel = getProviderLabel(provider);
     const userId = (req as any).user?.userId || 'anonymous';
-    console.log(`[AI] User: ${userId} request AI [${providerLabel}] (Phân tích chỉ số từ ảnh) - ID: ${requestId}`);
 
     let prompt = "Phân tích ảnh kết quả đo chỉ số InBody hoặc cân điện tử này. Trích xuất chính xác các số liệu. Nếu không thấy số liệu, hãy để là 0. Trả về JSON.";
     if (selectedYear) {
@@ -114,7 +103,7 @@ router.post('/extract', async (req: Request, res: Response) => {
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'vision');
+    const response = await callAI(requestId, 'vision', payload, { userId, modelName: 'auto' });
     res.json(JSON.parse(response.text));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -127,6 +116,8 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
   try {
     const { imageBase64, selectedYear } = req.body;
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+
+    const userId = (req as any).user?.userId || 'anonymous';
 
     let prompt = "Trích xuất danh sách JSON nhiều dòng kết quả sức khỏe từ bảng viết tay.";
     if (selectedYear) {
@@ -151,7 +142,7 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
         }
       }
     };
-    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'vision');
+    const response = await callAI(requestId, 'vision', payload, { userId, modelName: 'auto' });
     res.json(JSON.parse(response.text));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -163,10 +154,17 @@ router.post('/coach', async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();
   try {
     const { history, systemInstruction, latestUserMessage, imageBase64 } = req.body;
+    const userId = (req as any).user?.userId || 'anonymous';
+    
     const parts: any[] = [{ text: latestUserMessage }];
     if (imageBase64) parts.push({ inlineData: { data: imageBase64, mimeType: 'image/jpeg' } });
+    
     const payload = { contents: [...history, { role: 'user', parts }], config: { systemInstruction } };
-    const response = await callAIWithRetry(requestId, 'auto', payload, 3, 'coach');
+    
+    // Xác định task type dựa vào có ảnh hay không
+    const taskType: AITaskType = imageBase64 ? 'vision' : 'coach';
+    
+    const response = await callAI(requestId, taskType, payload, { userId, modelName: 'auto' });
     res.json({ text: response.text });
   } catch (err: any) {
     res.status(500).json({ message: err.message });

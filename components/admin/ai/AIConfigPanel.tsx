@@ -24,7 +24,7 @@ const AIConfigPanel: React.FC = memo(() => {
 
   // Vision Test states
   const [selectedKey, setSelectedKey] = useState('');
-  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.2-11b-vision-instruct');
+  const [selectedModel, setSelectedModel] = useState('google/gemini-2.5-flash');
   const [testImage, setTestImage] = useState<string | null>(null);
   const [testPrompt, setTestPrompt] = useState('Bức ảnh này có nội dung gì? Hãy phân tích và mô tả chi tiết bằng tiếng Việt.');
   const [isTesting, setIsTesting] = useState(false);

@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeminiKey } from '../models/GeminiKey.ts';
 import { logger } from '../../src/utils/logger.ts';
-import { testClineKey, callCline, callClineVision, CLINE_VISION_MODELS } from './clineService.ts';
+import { testClineKey, callCline, callClineVision, CLINE_VISION_MODELS, ClineMessage } from './clineService.ts';
 import { getConfigValue, CONFIG_KEYS, AI_PROVIDERS, AIProvider } from '../models/AIConfig.ts';
 
 const ENV_API_KEYS = [
@@ -64,6 +64,259 @@ export async function getActiveProvider(): Promise<AIProvider> {
  */
 export function getProviderLabel(provider: AIProvider): string {
   return provider === AI_PROVIDERS.CLINE ? 'CLINE' : 'GEMINI';
+}
+
+/**
+ * Xóa cache để refresh provider ngay lập tức
+ */
+export function resetProviderCache(): void {
+  cachedActiveProvider = null;
+  lastProviderCheck = 0;
+  console.log(`[AI Router] Provider cache reset`);
+}
+
+/**
+ * Lấy tất cả Cline API key active từ DB, shuffle để load balancing
+ * Trả về mảng các key kèm label, đã lọc bỏ key đang cooldown
+ */
+async function getActiveClineKeys(): Promise<Array<{ key: string; label: string; id: any }>> {
+  try {
+    const now = Date.now();
+    const clineKeys = await GeminiKey.find({ isActive: true, keyType: 'cline' });
+    
+    // Lọc key không cooldown
+    const available = clineKeys
+      .filter(k => !k.cooldownUntil || new Date(k.cooldownUntil).getTime() <= now)
+      .map(k => ({ key: k.key, label: k.label, id: k._id }));
+    
+    // Shuffle Fisher-Yates để load balancing
+    for (let i = available.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [available[i], available[j]] = [available[j], available[i]];
+    }
+    
+    if (clineKeys.length > 0 && available.length === 0) {
+      console.log(`[AI Router] Tất cả ${clineKeys.length} Cline key đều đang cooldown!`);
+    } else if (available.length > 0) {
+      console.log(`[AI Router] Có ${available.length}/${clineKeys.length} Cline key sẵn sàng`);
+    }
+    
+    return available;
+  } catch (err) {
+    console.error('[AI Router] Failed to get Cline keys:', err);
+    return [];
+  }
+}
+
+/**
+ * Đánh dấu Cline key cooldown (khi bị rate limit)
+ */
+async function cooldownClineKey(keyId: any, reason: string): Promise<void> {
+  if (!keyId) return;
+  try {
+    await GeminiKey.findByIdAndUpdate(keyId, {
+      cooldownUntil: new Date(Date.now() + 60000),
+      $inc: { failCount: 1 },
+      lastUsed: new Date()
+    });
+    console.log(`[AI Router] Cline key cooldown 60s (${reason})`);
+  } catch (err) {
+    console.error('[AI Router] Failed to cooldown Cline key:', err);
+  }
+}
+
+/**
+ * Chuyển đổi payload Gemini format sang Cline messages cho text tasks
+ */
+function geminiPayloadToClineMessages(payload: any): ClineMessage[] {
+  const messages: ClineMessage[] = [];
+  
+  // Nếu payload có systemInstruction
+  if (payload.config?.systemInstruction) {
+    messages.push({
+      role: 'system',
+      content: payload.config.systemInstruction
+    });
+  }
+  
+  // Nếu payload có contents
+  if (payload.contents) {
+    for (const content of payload.contents) {
+      const role = content.role === 'model' ? 'assistant' : content.role || 'user';
+      const parts = content.parts || [];
+      
+      const textParts: string[] = [];
+      let hasImage = false;
+      
+      for (const part of parts) {
+        if (part.text) {
+          textParts.push(part.text);
+        }
+        if (part.inlineData) {
+          hasImage = true;
+        }
+      }
+      
+      if (hasImage) {
+        // Vision messages - handled by callClineVision separately
+        messages.push({ role, content: textParts.join('\n') });
+      } else {
+        messages.push({ role, content: textParts.join('\n') });
+      }
+    }
+  }
+  
+  return messages;
+}
+
+/**
+ * Gọi AI routing thống nhất dựa trên activeProvider
+ * Đây là hàm chính thay thế callAIWithRetry trong các route
+ */
+export async function callAI(
+  requestId: string,
+  taskType: AITaskType,
+  payload: any,
+  options?: {
+    userId?: string;
+    modelName?: string;
+    retries?: number;
+  }
+): Promise<any> {
+  const userId = options?.userId || 'anonymous';
+  const retries = options?.retries ?? 3;
+  const startTime = Date.now();
+  
+  // Lấy provider đang active
+  const provider = await getActiveProvider();
+  const providerLabel = getProviderLabel(provider);
+  
+  // Log request
+  const taskLabels: Record<AITaskType, string> = {
+    chat: 'Chat tư vấn',
+    coach: 'Chat tư vấn',
+    vision: 'Phân tích chỉ số từ ảnh',
+    verify: 'Xác thực ảnh đại diện'
+  };
+  
+  const taskLabel = taskLabels[taskType] || taskType;
+  console.log(`\n${ANSI.cyan}╔══════════════════════════════════════════════╗${ANSI.reset}`);
+  console.log(`${ANSI.cyan}║${ANSI.reset}  🟢 [AI] User: ${userId.padEnd(35)}${ANSI.reset}`);
+  console.log(`${ANSI.cyan}║${ANSI.reset}  📡 Provider: [${providerLabel === 'CLINE' ? ANSI.purple + providerLabel : ANSI.blue + providerLabel}${ANSI.reset}]  Task: ${taskLabel.padEnd(20)}`);
+  console.log(`${ANSI.cyan}║${ANSI.reset}  🆔 Request: ${requestId}`);
+  console.log(`${ANSI.cyan}╚══════════════════════════════════════════════╝${ANSI.reset}`);
+  logger.info('AI', `🟢 User: ${userId} → [${providerLabel}] (${taskLabel}) ID: ${requestId}`);
+  
+  try {
+    // ===== NẾU LÀ CLINE =====
+    if (provider === AI_PROVIDERS.CLINE) {
+      const clineKeys = await getActiveClineKeys();
+      if (clineKeys.length === 0) {
+        console.log(`${ANSI.yellow}⚠️ [AI] [${requestId}] Không có Cline key sẵn sàng! Fallback sang Gemini.${ANSI.reset}`);
+        const result = await callAIWithRetry(requestId, options?.modelName || 'auto', payload, retries, taskType);
+        const duration = Date.now() - startTime;
+        console.log(`✅ [AI] User: ${userId} ← [GEMINI] (${taskLabel}) ID: ${requestId} - OK (${duration}ms)`);
+        return result;
+      }
+      
+      console.log(`${ANSI.purple}🔄 [AI] [${requestId}] Cline keys: ${clineKeys.length} available, trying rotation...${ANSI.reset}`);
+      
+      // Thử lần lượt từng Cline key (rotation)
+      for (let ki = 0; ki < clineKeys.length; ki++) {
+        const currentKey = clineKeys[ki];
+        console.log(`${ANSI.purple}▶ [AI] [${requestId}] Cline attempt ${ki + 1}/${clineKeys.length}: "${currentKey.label}"${ANSI.reset}`);
+        
+        try {
+          // Vision tasks (extract, bulk-extract, verify-avatar)
+          if (taskType === 'vision' || taskType === 'verify') {
+            let imageBase64 = '';
+            let prompt = '';
+            
+            if (payload.contents?.[0]?.parts) {
+              for (const part of payload.contents[0].parts) {
+                if (part.inlineData?.data) {
+                  imageBase64 = `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}`;
+                }
+                if (part.text) {
+                  prompt += part.text + '\n';
+                }
+              }
+            }
+            
+            if (!imageBase64) {
+              console.log(`${ANSI.yellow}⚠️ [AI] [${requestId}] Không tìm thấy ảnh trong payload!${ANSI.reset}`);
+              break; // Không cần thử key khác
+            }
+            
+            const visionModel = 'google/gemini-2.5-flash';
+            console.log(`${ANSI.purple}▶ [AI] [${requestId}] Cline Vision: model=${visionModel}${ANSI.reset}`);
+            
+            const visionResult = await callClineVision(currentKey.key, visionModel, imageBase64, prompt || 'Phân tích ảnh này');
+            
+            if (visionResult.success) {
+              const duration = Date.now() - startTime;
+              console.log(`✅ [AI] User: ${userId} ← [CLINE] (${taskLabel}) ID: ${requestId} - OK (${duration}ms)`);
+              return {
+                candidates: [{ content: { parts: [{ text: visionResult.text }] } }],
+                text: visionResult.text
+              };
+            }
+            
+            // Vision thất bại, cooldown key này, thử key tiếp theo
+            console.log(`${ANSI.yellow}⚠️ [AI] [${requestId}] Cline Vision key "${currentKey.label}" lỗi: ${visionResult.error}${ANSI.reset}`);
+            await cooldownClineKey(currentKey.id, `vision_error: ${visionResult.error?.substring(0, 50)}`);
+            continue; // Thử key tiếp theo
+          }
+          
+          // Text tasks (chat, coach)
+          const clineMessages = geminiPayloadToClineMessages(payload);
+          
+          if (clineMessages.length === 0) {
+            console.log(`${ANSI.yellow}⚠️ [AI] [${requestId}] Không thể convert payload!${ANSI.reset}`);
+            break; // Không cần thử key khác
+          }
+          
+          const clineModel = 'deepseek/deepseek-chat';
+          console.log(`${ANSI.purple}▶ [AI] [${requestId}] Cline text: model=${clineModel}, msgs=${clineMessages.length}${ANSI.reset}`);
+          
+          const result = await callCline(requestId, currentKey.key, clineMessages, {
+            model: clineModel,
+            maxTokens: 2048,
+            temperature: 0.7
+          });
+          
+          const duration = Date.now() - startTime;
+          console.log(`✅ [AI] User: ${userId} ← [CLINE] (${taskLabel}) ID: ${requestId} - OK (${duration}ms)`);
+          return {
+            candidates: [{ content: { parts: [{ text: result.text }] } }],
+            text: result.text
+          };
+        } catch (err: any) {
+          console.log(`${ANSI.yellow}⚠️ [AI] [${requestId}] Cline key "${currentKey.label}" thất bại: ${err.message}${ANSI.reset}`);
+          await cooldownClineKey(currentKey.id, `error: ${err.message?.substring(0, 50)}`);
+          // Tiếp tục thử key tiếp theo trong vòng lặp
+        }
+      }
+      
+      // Hết keys Cline, fallback sang Gemini
+      console.log(`${ANSI.yellow}⚠️ [AI] [${requestId}] Đã thử hết ${clineKeys.length} Cline key, fallback sang Gemini!${ANSI.reset}`);
+      const result = await callAIWithRetry(requestId, options?.modelName || 'auto', payload, retries, taskType);
+      const duration = Date.now() - startTime;
+      console.log(`✅ [AI] User: ${userId} ← [GEMINI] (${taskLabel}) ID: ${requestId} - OK (${duration}ms)`);
+      return result;
+    }
+    
+    // ===== NẾU LÀ GEMINI (mặc định) =====
+    console.log(`${ANSI.blue}▶ [AI] [${requestId}] Gemini: model=${options?.modelName || 'auto'}${ANSI.reset}`);
+    const result = await callAIWithRetry(requestId, options?.modelName || 'auto', payload, retries, taskType);
+    const duration = Date.now() - startTime;
+    console.log(`✅ [AI] User: ${userId} ← [GEMINI] (${taskLabel}) ID: ${requestId} - OK (${duration}ms)`);
+    return result;
+  } catch (err: any) {
+    const duration = Date.now() - startTime;
+    console.log(`❌ [AI] User: ${userId} ← [${providerLabel}] (${taskLabel}) ID: ${requestId} - FAILED: ${err.message} (${duration}ms)`);
+    throw err;
+  }
 }
 
 const MODEL_RECOMMENDATIONS: Record<AITaskType, string[]> = {
@@ -313,7 +566,8 @@ export async function discoverAvailableModels() {
 }
 
 /**
- * Gọi AI với retry logic, hỗ trợ lựa chọn model theo task type
+ * Gọi AI với retry logic (CHỈ Gemini - giữ nguyên cho fallback)
+ * Hỗ trợ lựa chọn model theo task type
  */
 export async function callAIWithRetry(
   requestId: string,
@@ -335,7 +589,7 @@ export async function callAIWithRetry(
 
   let lastError: any = null;
 
-  logger.info('AI', `[${requestId}] Task: ${taskType}, Starting with model: ${actualModelName}, Registry: [${modelRegistry.slice(0, 3).join(', ')}...]`);
+  logger.info('AI', `[${requestId}] Gemini Task: ${taskType}, Starting with model: ${actualModelName}, Registry: [${modelRegistry.slice(0, 3).join(', ')}...]`);
 
   for (const currentModel of modelRegistry) {
     let attempt = 0;
@@ -345,8 +599,7 @@ export async function callAIWithRetry(
 
       let dbKeys = await GeminiKey.find({ isActive: true });
       
-      // CHỈ lấy Gemini keys cho callAIWithRetry (giữ nguyên logic cũ)
-      // Cline keys sẽ được xử lý riêng sau này
+      // CHỈ lấy Gemini keys cho callAIWithRetry
       const geminiDbKeys = dbKeys.filter((k: any) => k.keyType === 'gemini' || !k.keyType);
       
       let allPotentialKeys = [
