@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { Database } from '../../../services/database.ts';
+import { useBodyScrollLock, useModalStack } from '../../system/ModalManager.tsx';
 
 interface NutritionGroup {
   _id: string;
@@ -29,6 +30,10 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
 
   const [coachIds, setCoachIds] = useState<string[]>([]);
 
+  const editModalId = useMemo(() => `nutrition-edit_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(!!editingGroup);
+  useModalStack(editModalId, () => setEditingGroup(null));
+
   const loadGroups = useCallback(async () => {
     try {
       const data = await Database.getAllNutritionGroups();
@@ -38,15 +43,10 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
     }
   }, []);
 
-  // Lấy danh sách user có quyền coach:access (dựa trên hệ thống group permissions)
   const loadCoachIds = useCallback(async () => {
     try {
       const allGroups = await Database.getGroups();
-      // Tìm tất cả groups có permission coach:access
-      const coachGroups = allGroups.filter((g: any) => 
-        (g.permissions || []).includes('coach:access')
-      );
-      // Union tất cả member ids từ các groups coach
+      const coachGroups = allGroups.filter((g: any) => (g.permissions || []).includes('coach:access'));
       const memberIds: string[] = [];
       const seen = new Set<string>();
       for (const g of coachGroups) {
@@ -164,12 +164,9 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
 
       <div className="flex justify-between items-center">
         <h2 className="font-black text-slate-800 text-sm uppercase tracking-widest">🏥 Quản lý Nhóm Dinh Dưỡng (NDD)</h2>
-        <button onClick={() => setIsCreating(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl shadow-lg font-bold text-xs hover:bg-emerald-700 transition-all">
-          + Tạo NDD mới
-        </button>
+        <button onClick={() => setIsCreating(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl shadow-lg font-bold text-xs hover:bg-emerald-700 transition-all">+ Tạo NDD mới</button>
       </div>
 
-      {/* Create Form */}
       {isCreating && (
         <div className="bg-white p-6 rounded-[2rem] border border-emerald-200 shadow-sm space-y-4">
           <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Thông tin NDD mới</h3>
@@ -191,124 +188,45 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
         </div>
       )}
 
-      {/* Group List */}
       <div className="space-y-3">
         {groups.map(group => {
           const gid = group.id || group._id;
           const pendingCount = group.pendingMembers?.length || 0;
-
           return (
             <div key={gid} className="bg-white rounded-[2rem] border border-emerald-200 shadow-sm overflow-hidden hover:border-emerald-400 transition-all">
               <div className="px-5 py-4 border-b border-emerald-100">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <h3 className="font-bold text-slate-800 text-sm truncate">{group.name}</h3>
-                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${group.isActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                      {group.isActive ? 'Hoạt động' : 'Tạm dừng'}
-                    </span>
-                    {pendingCount > 0 && (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[8px] font-black">
-                        ⏳ {pendingCount} chờ duyệt
-                      </span>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <h3 className="font-bold text-slate-800 text-sm truncate">{group.name}</h3>
+                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${group.isActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                    {group.isActive ? 'Hoạt động' : 'Tạm dừng'}
+                  </span>
+                  {pendingCount > 0 && <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[8px] font-black">⏳ {pendingCount} chờ duyệt</span>}
                 </div>
               </div>
               <div className="px-5 py-4 bg-emerald-50/30 space-y-3">
                 <div className="grid grid-cols-2 gap-4 text-[11px]">
-                  <div>
-                    <span className="text-slate-400 font-medium">Chủ vận hành:</span>
-                    <span className="ml-1 font-bold text-slate-700">{group.ownerName || 'Chưa có'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-medium">Địa chỉ:</span>
-                    <span className="ml-1 font-bold text-slate-700">{group.address || 'Chưa có'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-medium">Hội viên:</span>
-                    <span className="ml-1 font-bold text-emerald-600">{group.members?.length || 0} người</span>
-                  </div>
+                  <div><span className="text-slate-400 font-medium">Chủ vận hành:</span><span className="ml-1 font-bold text-slate-700">{group.ownerName || 'Chưa có'}</span></div>
+                  <div><span className="text-slate-400 font-medium">Địa chỉ:</span><span className="ml-1 font-bold text-slate-700">{group.address || 'Chưa có'}</span></div>
+                  <div><span className="text-slate-400 font-medium">Hội viên:</span><span className="ml-1 font-bold text-emerald-600">{group.members?.length || 0} người</span></div>
                 </div>
-
-                {/* Pending members */}
-                {viewPending?.id === gid && group.pendingMembers?.length > 0 && (
-                  <div className="bg-amber-50 rounded-2xl p-4 space-y-2 border border-amber-200">
-                    <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Yêu cầu chờ duyệt</p>
-                    {group.pendingMembers.map((p: any, idx: number) => {
-                      // Xác định userId string an toàn (p.userId có thể là object đã populate hoặc string)
-                      const userIdStr = typeof p.userId === 'object' && p.userId !== null
-                        ? (p.userId._id || p.userId.id || p.userId.toString())
-                        : String(p.userId);
-                      const userNameFromObj = typeof p.userId === 'object' ? p.userId?.fullName : '';
-                      const userInfo = users.find(u => (u.id || u._id) === userIdStr);
-                      const userName = userInfo?.fullName || userNameFromObj || p.userName || 'Unknown';
-                      return (
-                        <div key={idx} className="flex items-center justify-between bg-white rounded-xl p-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-600">
-                              {userName.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="text-xs font-bold text-slate-700">{userName}</p>
-                              <p className="text-[9px] text-slate-400">{new Date(p.requestedAt).toLocaleDateString('vi-VN')}</p>
-                            </div>
-                          </div>
-                          <div className="flex gap-1">
-                            <button onClick={() => handleApprove(gid, userIdStr, userName)} className="px-3 py-1.5 bg-emerald-500 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-600">Duyệt</button>
-                            <button onClick={() => handleReject(gid, userIdStr)} className="px-3 py-1.5 bg-rose-100 text-rose-600 rounded-xl text-[9px] font-bold hover:bg-rose-200">Từ chối</button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Member list */}
-                {viewPending?.id === gid && group.members?.length > 0 && (
-                  <div className="bg-slate-50 rounded-2xl p-4 space-y-2">
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Danh sách hội viên</p>
-                    <div className="max-h-40 overflow-y-auto space-y-1">
-                      {group.members.map((m: any, idx: number) => {
-                        const uid = m._id || m;
-                        const userInfo = users.find(u => (u.id || u._id) === uid);
-                        const userName = userInfo?.fullName || 'Unknown';
-                        return (
-                          <div key={idx} className="flex items-center justify-between bg-white rounded-xl p-2">
-                            <span className="text-xs font-medium text-slate-600">{userName}</span>
-                            <button onClick={() => handleRemoveMember(gid, uid, userName)} className="text-[9px] font-bold text-rose-400 hover:text-rose-600">Xóa</button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Actions */}
                 <div className="flex gap-2 pt-2 border-t border-emerald-100">
                   <button onClick={() => setViewPending(viewPending?.id === gid ? null : group)} className="flex-1 py-2 rounded-xl bg-amber-50 text-amber-600 font-black text-[9px] uppercase tracking-wider hover:bg-amber-100 transition-all">
                     👥 {pendingCount > 0 ? `${pendingCount} Chờ duyệt` : 'Hội viên'}
                   </button>
-                  <button onClick={() => setEditingGroup({...group})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">
-                    ✏️ Sửa
-                  </button>
-                  <button onClick={() => handleDelete(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">
-                    🗑️ Xóa
-                  </button>
+                  <button onClick={() => setEditingGroup({...group})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
+                  <button onClick={() => handleDelete(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>
                 </div>
               </div>
             </div>
           );
         })}
         {groups.length === 0 && !isCreating && (
-          <div className="p-16 text-center text-slate-300 italic uppercase text-[10px] font-black tracking-widest">
-            Chưa có NDD nào. Hãy tạo NDD đầu tiên!
-          </div>
+          <div className="p-16 text-center text-slate-300 italic uppercase text-[10px] font-black tracking-widest">Chưa có NDD nào. Hãy tạo NDD đầu tiên!</div>
         )}
       </div>
 
-      {/* Edit Modal */}
       {editingGroup && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={e => e.stopPropagation()}>
           <div className="bg-white w-full max-w-lg rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa NDD: {editingGroup.name}</h4>
             <div className="space-y-4">
@@ -344,8 +262,122 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
           </div>
         </div>
       )}
+
+      {/* View Members / Pending Modal */}
+      {viewPending && <ViewMembersModal group={viewPending} users={users} onApprove={handleApprove} onReject={handleReject} onRemoveMember={handleRemoveMember} onClose={() => setViewPending(null)} />}
     </div>
   );
 };
+
+// ─── View Members Modal ─────────────────────────────────────────
+interface ViewMembersModalProps {
+  group: NutritionGroup;
+  users: any[];
+  onApprove: (groupId: string, userId: string, userName: string) => void;
+  onReject: (groupId: string, userId: string) => void;
+  onRemoveMember: (groupId: string, userId: string, userName: string) => void;
+  onClose: () => void;
+}
+
+const ViewMembersModal: React.FC<ViewMembersModalProps> = memo(({
+  group,
+  users,
+  onApprove,
+  onReject,
+  onRemoveMember,
+  onClose,
+}) => {
+  const modalId = useMemo(() => `view-members_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, onClose);
+
+  const gid = group.id || group._id;
+  const pendingCount = group.pendingMembers?.length || 0;
+
+  // Map member IDs to user objects
+  const memberUsers = useMemo(() => {
+    const memberIds = (group.members || []).map((m: any) => m._id || m);
+    return users.filter((u: any) => memberIds.includes(String(u.id || u._id)));
+  }, [group.members, users]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={onClose}>
+      <div className="bg-white w-full max-w-2xl rounded-[2.5rem] overflow-hidden shadow-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-5 shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-white font-black text-lg">👥 {group.name}</h2>
+              <p className="text-emerald-100 text-xs font-medium mt-0.5">{memberUsers.length} hội viên {pendingCount > 0 ? `· ${pendingCount} chờ duyệt` : ''}</p>
+            </div>
+            <button onClick={onClose} className="text-white text-xl hover:scale-110 transition-all font-bold">✕</button>
+          </div>
+        </div>
+
+        <div className="p-4 md:p-6 overflow-y-auto no-scrollbar flex-1 space-y-6">
+          {/* Pending Members Section */}
+          {pendingCount > 0 && (
+            <div>
+              <h4 className="font-black text-amber-600 text-xs uppercase tracking-widest mb-3">⏳ Chờ duyệt ({pendingCount})</h4>
+              <div className="space-y-2">
+                {group.pendingMembers!.map((pm: any, idx: number) => {
+                  const user = pm.userId || pm;
+                  const uid = user._id || user.id || (typeof user === 'string' ? user : '');
+                  const fullName = user.fullName || (typeof user === 'string' ? 'Không có tên' : 'Không có tên');
+                  const username = user.username || '';
+                  const avatar = user.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${fullName}`;
+                  return (
+                    <div key={uid || idx} className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                      <img src={avatar} className="w-9 h-9 rounded-xl object-cover shrink-0" alt={fullName} />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-bold text-sm text-slate-800 truncate block">{fullName}</span>
+                        <p className="text-[10px] text-slate-400">@{username}</p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button onClick={() => onApprove(gid, uid, fullName)} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-emerald-600 transition-all">Duyệt</button>
+                        <button onClick={() => onReject(gid, uid)} className="px-3 py-2 bg-rose-400 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-rose-500 transition-all">Từ chối</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Members Section */}
+          <div>
+            <h4 className="font-black text-slate-600 text-xs uppercase tracking-widest mb-3">✅ Hội viên ({memberUsers.length})</h4>
+            {memberUsers.length === 0 ? (
+              <div className="p-10 text-center text-slate-400 text-xs font-medium italic">Chưa có hội viên nào</div>
+            ) : (
+              <div className="space-y-2">
+                {memberUsers.map((u: any) => {
+                  const uid = String(u.id || u._id);
+                  return (
+                    <div key={uid} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <img src={u.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${u.fullName}`} className="w-9 h-9 rounded-xl object-cover shrink-0" alt={u.fullName} />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-bold text-sm text-slate-800 truncate block">{u.fullName}</span>
+                        <p className="text-[10px] text-slate-400">@{u.username} · {u.email || ''}</p>
+                      </div>
+                      <button onClick={() => onRemoveMember(gid, uid, u.fullName)} className="px-3 py-2 bg-rose-50 text-rose-600 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-rose-100 transition-all shrink-0">🗑️ Xóa</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-100 shrink-0">
+          <button onClick={onClose} className="w-full py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px] hover:bg-slate-200 transition-all">Đóng</button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+ViewMembersModal.displayName = 'ViewMembersModal';
 
 export default memo(NutritionGroupManager);

@@ -1,8 +1,7 @@
-import React, { useState, useEffect, memo, useMemo } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { User, HealthMetric } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
-import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 
 interface MetricAdminProps {
   users: User[];
@@ -14,11 +13,6 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
   const [userMetrics, setUserMetrics] = useState<HealthMetric[]>([]);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
   const [deletingMetric, setDeletingMetric] = useState<HealthMetric | null>(null);
-  const editModalId = useMemo(() => `metric-edit_${Math.random().toString(36).slice(2, 9)}`, []);
-  const deleteModalId = useMemo(() => `metric-delete_${Math.random().toString(36).slice(2, 9)}`, []);
-  useBodyScrollLock(!!editingMetric || !!deletingMetric);
-  useModalStack(editModalId, () => setEditingMetric(null));
-  useModalStack(deleteModalId, () => setDeletingMetric(null));
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadUserMetrics = async () => {
@@ -209,7 +203,7 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
 
       {/* Edit Modal */}
       {editingMetric && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật chỉ số nhanh</h4>
             <div className="grid grid-cols-2 gap-4">
@@ -240,7 +234,7 @@ const MetricAdmin: React.FC<MetricAdminProps> = ({ users, onRefresh }) => {
 
       {/* Delete Confirm Dialog */}
       {deletingMetric && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
             <div className="text-5xl mb-2">⚠️</div>
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xác nhận xóa</h4>

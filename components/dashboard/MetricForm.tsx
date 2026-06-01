@@ -1,9 +1,9 @@
-
 import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from 'react';
 import { HealthMetric } from '../../types.ts';
 import { extractMetricsFromImage } from '../../services/gemini.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
 import LoadingButton from '../system/LoadingButton.tsx';
+import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 
 interface MetricFormProps {
   onSave: (metric: Omit<HealthMetric, 'id' | 'userId'>) => void;
@@ -14,6 +14,10 @@ interface MetricFormProps {
 }
 
 const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDates = [], onClose, latestMetrics }) => {
+  const modalId = useMemo(() => `metric-form_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, onClose);
+
   const getTodayISO = () => {
     const now = new Date();
     const offset = now.getTimezoneOffset();
@@ -64,7 +68,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
   const handleSaveEditBulkItem = useCallback((idx: number) => {
     if (!editingData) return;
-    // Ép kiểu number cho các trường số
     const cleaned = { ...editingData };
     const numFields = ['weight', 'bodyFat', 'muscleMass', 'waterPercent', 'boneMinerals', 'visceralFat', 'energy', 'bioAge', 'balanceIndex'];
     numFields.forEach(k => {
@@ -81,12 +84,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     setEditingData(null);
   }, [editingData]);
 
-  /**
-   * PHÂN TÍCH: Lỗi TypeScript xảy ra vì giá trị 'system' chưa được định nghĩa trong union type của tham số type.
-   * GIẢI QUYẾT: Mở rộng kiểu dữ liệu cho tham số 'type' để bao gồm 'system', đảm bảo tương thích với window.debugLog.
-   * BÁO CÁO: Đã sửa lỗi tại dòng 62 và 69, code hoạt động ổn định.
-   * GỢI Ý: Nên cân nhắc gom nhóm các kiểu log vào một enum chung trong types.ts để quản lý tập trung.
-   */
   const log = (msg: string, type: 'info' | 'ai' | 'error' | 'success' | 'system' = 'info') => {
     if (window.debugLog) window.debugLog(`[MetricForm] ${msg}`, type);
   };
@@ -128,7 +125,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
 
         if (!isBulk) {
           try {
-            // Sử dụng service đã được cập nhật để gọi /api/ai/extract
             const extracted = await extractMetricsFromImage(compressedBase64, selectedYearAI);
             setLoadingAI(false);
 
@@ -156,7 +152,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             setStatusMsg({ text: "⚠️ Có lỗi xảy ra trong quá trình phân tích ảnh.", type: 'error' });
           }
         } else {
-          // Reset bulkPreview trước khi gọi request để tránh hiển thị dữ liệu cũ
           setBulkPreview([]);
           try {
             log(`Đang gọi endpoint /api/ai/bulk-extract với năm: ${selectedYearAI}...`, "ai");
@@ -293,48 +288,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleAIUpload(e, bulkModeRef.current)} />
           </div>
 
-          {showYearPicker && (
-            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
-              <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm space-y-6 animate-in zoom-in-95 duration-200">
-                <div className="text-center space-y-2">
-                  <h3 className="text-xl font-black text-slate-800">Chọn năm quét dữ liệu</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mặc định AI sẽ tự nhận diện năm</p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="relative">
-                    <select 
-                      value={selectedYearAI} 
-                      onChange={(e) => setSelectedYearAI(e.target.value)}
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 font-bold text-slate-700 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer"
-                    >
-                      <option value="auto">Tự nhận diện (Mặc định)</option>
-                      {[2023, 2024, 2025, 2026, 2027].map(y => (
-                        <option key={y} value={y.toString()}>Năm {y}</option>
-                      ))}
-                    </select>
-                    <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
-                  </div>
-
-                  <button 
-                    onClick={() => {
-                      setShowYearPicker(false);
-                      fileInputRef.current?.click();
-                    }}
-                    className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest"
-                  >
-                    Xác nhận & Chọn ảnh
-                  </button>
-                  <button 
-                    onClick={() => setShowYearPicker(false)}
-                    className="w-full bg-slate-100 text-slate-400 font-bold py-3 rounded-2xl hover:bg-slate-200 transition-all uppercase text-[10px] tracking-widest"
-                  >
-                    Hủy bỏ
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          {showYearPicker && <YearPickerSubModal
+            selectedYearAI={selectedYearAI}
+            setSelectedYearAI={setSelectedYearAI}
+            setShowYearPicker={setShowYearPicker}
+            fileInputRef={fileInputRef}
+          />}
 
           {loadingAI && (
             <div className="flex flex-col items-center justify-center p-12 bg-emerald-50 rounded-3xl border border-emerald-100 animate-pulse">
@@ -474,5 +433,74 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     </div>
   );
 };
+
+/**
+ * YearPicker Sub-Modal
+ * Component riêng để tự quản lý ModalStack
+ */
+interface YearPickerSubModalProps {
+  selectedYearAI: string;
+  setSelectedYearAI: (v: string) => void;
+  setShowYearPicker: (v: boolean) => void;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+}
+
+const YearPickerSubModal: React.FC<YearPickerSubModalProps> = memo(({
+  selectedYearAI,
+  setSelectedYearAI,
+  setShowYearPicker,
+  fileInputRef
+}) => {
+  const subModalId = useMemo(() => `year-picker_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(subModalId, () => setShowYearPicker(false));
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm space-y-6 animate-in zoom-in-95 duration-200"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="text-center space-y-2">
+          <h3 className="text-xl font-black text-slate-800">Chọn năm quét dữ liệu</h3>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mặc định AI sẽ tự nhận diện năm</p>
+        </div>
+
+        <div className="space-y-4">
+          <div className="relative">
+            <select 
+              value={selectedYearAI} 
+              onChange={(e) => setSelectedYearAI(e.target.value)}
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 font-bold text-slate-700 outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+            >
+              <option value="auto">Tự nhận diện (Mặc định)</option>
+              {[2023, 2024, 2025, 2026, 2027].map(y => (
+                <option key={y} value={y.toString()}>Năm {y}</option>
+              ))}
+            </select>
+            <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">▼</div>
+          </div>
+
+          <button 
+            onClick={() => {
+              setShowYearPicker(false);
+              fileInputRef.current?.click();
+            }}
+            className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-widest"
+          >
+            Xác nhận & Chọn ảnh
+          </button>
+          <button 
+            onClick={() => setShowYearPicker(false)}
+            className="w-full bg-slate-100 text-slate-400 font-bold py-3 rounded-2xl hover:bg-slate-200 transition-all uppercase text-[10px] tracking-widest"
+          >
+            Hủy bỏ
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+YearPickerSubModal.displayName = 'YearPickerSubModal';
 
 export default memo(MetricForm);

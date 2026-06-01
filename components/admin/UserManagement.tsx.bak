@@ -2,7 +2,6 @@ import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import { User, AccountStatus } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { useToast } from '../system/ToastProvider.tsx';
-import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 import LoadingButton from '../system/LoadingButton.tsx';
 
 interface UserManagementProps {
@@ -24,11 +23,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
-  const editModalId = useMemo(() => `user-edit_${Math.random().toString(36).slice(2, 9)}`, []);
-  const deleteModalId = useMemo(() => `user-delete_${Math.random().toString(36).slice(2, 9)}`, []);
-  useBodyScrollLock(!!editingUser || !!deletingUser);
-  useModalStack(editModalId, () => setEditingUser(null));
-  useModalStack(deleteModalId, () => setDeletingUser(null));
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
@@ -368,7 +362,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
 
       {/* Confirm Delete Modal */}
       {deletingUser && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
             <div className="text-5xl mb-2">⚠️</div>
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xác nhận xóa</h4>
@@ -399,7 +393,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
       )}
 
       {editingUser && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
           <form onSubmit={(e) => { e.preventDefault(); handleUpdateUser(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật Hội viên</h4>
             

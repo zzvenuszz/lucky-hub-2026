@@ -16,6 +16,7 @@ import SystemLog from './components/system/SystemLog.tsx';
 import BranchManager from './components/admin/nutrition/BranchManager.tsx';
 import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
+import { ModalStackProvider } from './components/system/ModalManager.tsx';
 import NDDDashboard from './components/ndd/NDDDashboard.tsx';
 import { User, AIRule, HealthMetric, Badge, WsEvent } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
@@ -527,6 +528,7 @@ const App: React.FC = () => {
   // ChatSystem UI chỉ render khi isChatOpen = true
   return (
     <ErrorBoundary>
+      <ModalStackProvider>
       <ToastProvider>
       <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
         <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={() => setIsChatOpen(!isChatOpen)}>
@@ -593,6 +595,7 @@ const App: React.FC = () => {
         </Layout>
       </ChatProvider>
       </ToastProvider>
+      </ModalStackProvider>
     </ErrorBoundary>
   );
 };

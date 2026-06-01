@@ -1,4 +1,3 @@
-import { useBodyScrollLock, useModalStack } from '../../system/ModalManager.tsx';
 import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import { Database } from '../../../services/database.ts';
 
@@ -41,9 +40,6 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [permissionsList, setPermissionsList] = useState<{ key: string; description: string }[]>([]);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
-  const editModalId = React.useMemo(() => `group-edit_${Math.random().toString(36).slice(2, 9)}`, []);
-  useBodyScrollLock(!!editingGroup);
-  useModalStack(editModalId, () => setEditingGroup(null));
   const [isCreating, setIsCreating] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', description: '', permissions: [] as string[], isDefault: false });
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
@@ -300,7 +296,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
 
       {/* Edit Group Modal */}
       {editingGroup && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4 overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-2xl rounded-[2rem] md:rounded-[2.5rem] p-4 md:p-8 space-y-6 animate-in zoom-in-95 my-8">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">
               {selectedMembers.length > 0 ? 'Quản lý thành viên' : 'Chỉnh sửa nhóm'}: {editingGroup.name}

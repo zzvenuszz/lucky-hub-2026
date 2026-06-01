@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { HealthMetric } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
 import MetricForm from '../dashboard/MetricForm.tsx';
+import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 
 interface MemberMetricsManagerProps {
   userId: string;
@@ -17,6 +18,10 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
   currentUser,
   onClose
 }) => {
+  const modalId = useMemo(() => `member-metrics_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, onClose);
+
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editingMetric, setEditingMetric] = useState<HealthMetric | null>(null);
@@ -41,7 +46,6 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
 
   useEffect(() => { loadMetrics(); }, [loadMetrics]);
 
-  // Save single metric (từ MetricForm)
   const handleSaveMetric = useCallback(async (metric: Omit<HealthMetric, 'id' | 'userId'>) => {
     try {
       await Database.saveMetric({
@@ -58,7 +62,6 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
     }
   }, [userId, currentUser, loadMetrics]);
 
-  // Save bulk metrics (từ MetricForm - quét ảnh hàng loạt)
   const handleSaveBulk = useCallback(async (metricsData: Omit<HealthMetric, 'id' | 'userId'>[]) => {
     try {
       const bulkData = metricsData.map(m => ({
@@ -76,7 +79,6 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
     }
   }, [userId, currentUser, loadMetrics]);
 
-  // Update metric
   const handleUpdateMetric = useCallback(async () => {
     if (!editingMetric) return;
     const mid = editingMetric.id || (editingMetric as any)._id;
@@ -90,7 +92,6 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
     }
   }, [editingMetric, loadMetrics]);
 
-  // Delete metric
   const handleDeleteMetric = useCallback(async () => {
     if (!deletingMetric) return;
     const mid = deletingMetric.id || (deletingMetric as any)._id;
@@ -114,19 +115,13 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
             <p className="text-emerald-100 text-xs font-medium mt-0.5">{userName}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all"
-            >
-              + Thêm chỉ số
-            </button>
+            <button onClick={() => setShowAddForm(true)} className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all">+ Thêm chỉ số</button>
             <button onClick={onClose} className="text-white text-xl hover:scale-110 transition-all ml-2 font-bold">✕</button>
           </div>
         </div>
 
         {/* Body */}
         <div className="p-4 md:p-6 overflow-y-auto no-scrollbar flex-1">
-          {/* Toast */}
           {actionMsg && (
             <div className={`mb-4 px-5 py-3 rounded-2xl shadow-lg font-bold text-sm flex items-center justify-between ${
               actionMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
@@ -136,7 +131,6 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
             </div>
           )}
 
-          {/* Loading */}
           {isLoading && (
             <div className="flex flex-col items-center justify-center py-20">
               <span className="inline-block w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
@@ -144,7 +138,6 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
             </div>
           )}
 
-          {/* Empty state */}
           {!isLoading && metrics.length === 0 && !showAddForm && (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="text-5xl mb-4">📈</div>
@@ -153,7 +146,6 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
             </div>
           )}
 
-          {/* Metric Form (Add mode) */}
           {showAddForm && (
             <div className="relative">
               <MetricForm
@@ -166,10 +158,8 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
             </div>
           )}
 
-          {/* Metric List (Mobile Cards) */}
           {!isLoading && metrics.length > 0 && !showAddForm && (
             <>
-              {/* Mobile view */}
               <div className="space-y-3 md:hidden">
                 {metrics.map(m => (
                   <div key={m.id || (m as any)._id} className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
@@ -188,24 +178,13 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
                       <div><span className="text-slate-400">🧬 Tuổi SH:</span> <span className="font-bold text-slate-600">{m.bioAge}</span></div>
                     </div>
                     <div className="flex gap-2 pt-2 border-t border-slate-200">
-                      <button
-                        onClick={() => setEditingMetric(m)}
-                        className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all"
-                      >
-                        ✏️ Sửa
-                      </button>
-                      <button
-                        onClick={() => setDeletingMetric(m)}
-                        className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
-                      >
-                        🗑️ Xóa
-                      </button>
+                      <button onClick={() => setEditingMetric(m)} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
+                      <button onClick={() => setDeletingMetric(m)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Desktop table */}
               <div className="hidden md:block overflow-x-auto no-scrollbar">
                 <table className="w-full text-[11px] text-left">
                   <thead className="text-slate-400 font-black uppercase tracking-widest border-b border-slate-50">
@@ -237,18 +216,8 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
                         <td className="p-3 text-slate-600 whitespace-nowrap">{m.energy}kcal</td>
                         <td className="p-3 text-slate-700 font-bold whitespace-nowrap">{m.bioAge}</td>
                         <td className="p-3 text-right whitespace-nowrap sticky right-0 bg-white shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]">
-                          <button
-                            onClick={() => setEditingMetric(m)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider rounded-xl hover:bg-emerald-100 transition-all"
-                          >
-                            ✏️ Sửa
-                          </button>
-                          <button
-                            onClick={() => setDeletingMetric(m)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider rounded-xl hover:bg-rose-100 transition-all ml-2"
-                          >
-                            🗑️ Xóa
-                          </button>
+                          <button onClick={() => setEditingMetric(m)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider rounded-xl hover:bg-emerald-100 transition-all">✏️ Sửa</button>
+                          <button onClick={() => setDeletingMetric(m)} className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider rounded-xl hover:bg-rose-100 transition-all ml-2">🗑️ Xóa</button>
                         </td>
                       </tr>
                     ))}
@@ -264,99 +233,48 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
       {editingMetric && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1300] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 shadow-2xl">
-            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">
-              ✏️ Cập nhật chỉ số - {formatDateVN(editingMetric.date)}
-            </h4>
+            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">✏️ Cập nhật chỉ số - {formatDateVN(editingMetric.date)}</h4>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
-                <input
-                  type="number" step="0.1"
-                  value={editingMetric.weight}
-                  onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ (%)</label>
-                <input
-                  type="number" step="0.1"
-                  value={editingMetric.bodyFat}
-                  onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ (kg)</label>
-                <input
-                  type="number" step="0.1"
-                  value={editingMetric.muscleMass}
-                  onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân đối</label>
-                <input
-                  type="number"
-                  value={editingMetric.balanceIndex}
-                  onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" value={editingMetric.balanceIndex} onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label>
-                <input
-                  type="number"
-                  value={editingMetric.visceralFat}
-                  onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" value={editingMetric.visceralFat} onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nước (%)</label>
-                <input
-                  type="number" step="0.1"
-                  value={editingMetric.waterPercent}
-                  onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" step="0.1" value={editingMetric.waterPercent} onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Khoáng chất (kg)</label>
-                <input
-                  type="number" step="0.1"
-                  value={editingMetric.boneMinerals}
-                  onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" step="0.1" value={editingMetric.boneMinerals} onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Năng lượng (kcal)</label>
-                <input
-                  type="number"
-                  value={editingMetric.energy}
-                  onChange={e => setEditingMetric({...editingMetric, energy: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" value={editingMetric.energy} onChange={e => setEditingMetric({...editingMetric, energy: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
               <div className="space-y-1 col-span-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tuổi sinh học</label>
-                <input
-                  type="number"
-                  value={editingMetric.bioAge}
-                  onChange={e => setEditingMetric({...editingMetric, bioAge: Number(e.target.value)})}
-                  className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500"
-                />
+                <input type="number" value={editingMetric.bioAge} onChange={e => setEditingMetric({...editingMetric, bioAge: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
             </div>
             <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => setEditingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px] hover:bg-slate-200 transition-all">
-                Hủy
-              </button>
-              <button onClick={handleUpdateMetric} className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg hover:bg-emerald-700 transition-all">
-                Lưu chỉ số
-              </button>
+              <button type="button" onClick={() => setEditingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px] hover:bg-slate-200 transition-all">Hủy</button>
+              <button onClick={handleUpdateMetric} className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg hover:bg-emerald-700 transition-all">Lưu chỉ số</button>
             </div>
           </div>
         </div>
@@ -374,12 +292,8 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
               <span className="text-rose-500 text-[10px] font-black mt-2 block">Hành động này không thể hoàn tác!</span>
             </p>
             <div className="flex gap-3 pt-4">
-              <button onClick={() => setDeletingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px] hover:bg-slate-200 transition-all">
-                Hủy
-              </button>
-              <button onClick={handleDeleteMetric} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all">
-                Xác nhận xóa
-              </button>
+              <button onClick={() => setDeletingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px] hover:bg-slate-200 transition-all">Hủy</button>
+              <button onClick={handleDeleteMetric} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all">Xác nhận xóa</button>
             </div>
           </div>
         </div>

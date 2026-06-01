@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 import { HealthMetric, User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
@@ -22,7 +23,6 @@ const renderTrendIcon = (current: number, prev?: number, inverse = false) => {
   );
 };
 
-// Helper kiểm tra quyền (chỉ dùng permissions từ group)
 const canEdit = (currentUser: User): boolean => {
   return (currentUser as any).permissions?.includes('metrics:update:any');
 };
@@ -35,7 +35,6 @@ const canViewAny = (currentUser: User): boolean => {
   return (currentUser as any).permissions?.includes('metrics:view:any');
 };
 
-// Kiểm tra target user có phải HLV không
 const isTargetUserCoach = (targetUser: User | undefined): boolean => {
   if (!targetUser) return false;
   return (
@@ -67,7 +66,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
     loadMetrics();
   }, [selectedUserId, refreshTrigger, user, currentUid, loadMetrics]);
 
-  // Tìm target user từ selectedUserId
   const targetUser = useMemo(() => {
     return users.find(u => {
       const uid = (u as any).id || (u as any)._id;
@@ -75,15 +73,12 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
     });
   }, [users, selectedUserId]);
 
-  // Xác định xem user đang xem của ai
   const isViewingOwn = selectedUserId === currentUid;
   const isTargetCoach = useMemo(() => isTargetUserCoach(targetUser), [targetUser]);
 
-  // Quyền: HLV có thể sửa/xóa member, KHÔNG được sửa/xóa HLV khác
   const canEditTarget = !isTargetCoach && (canEdit(user) || isViewingOwn);
   const canDeleteTarget = !isTargetCoach && canDelete(user);
 
-  // Xóa chế độ chọn khi chuyển user
   useEffect(() => {
     setIsSelectionMode(false);
     setSelectedIds(new Set());
@@ -217,10 +212,41 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
         </div>
       </div>
 
-      {/* HLV Actions Bar - chỉ hiển thị cho HLV đang xem người khác hoặc xem member */}
+      {editingMetric && (
+        <EditMetricModal
+          editingMetric={editingMetric}
+          setEditingMetric={setEditingMetric}
+          handleUpdateMetric={handleUpdateMetric}
+        />
+      )}
+
+      {deletingMetric && (
+        <ConfirmDeleteMetricModal
+          deletingMetric={deletingMetric}
+          setDeletingMetric={setDeletingMetric}
+          handleDeleteMetric={handleDeleteMetric}
+        />
+      )}
+
+      {deletingAllConfirm && (
+        <ConfirmDeleteAllModal
+          targetUser={targetUser}
+          onCancel={() => setDeletingAllConfirm(false)}
+          onConfirm={handleDeleteAllMetrics}
+        />
+      )}
+
+      {bulkDeleteConfirm && (
+        <ConfirmBulkDeleteModal
+          selectedCount={selectedIds.size}
+          onCancel={() => setBulkDeleteConfirm(false)}
+          onConfirm={handleBulkDelete}
+        />
+      )}
+
+      {/* HLV Actions Bar */}
       {(canDeleteTarget || canEditTarget) && sortedMetrics.length > 0 && (
         <div className="bg-amber-50/50 border border-amber-100 p-4 rounded-2xl flex flex-wrap items-center gap-3">
-          {/* Chế độ chọn nhiều */}
           {canDeleteTarget && (
             <button
               onClick={() => {
@@ -233,7 +259,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             </button>
           )}
 
-          {/* Khi đang trong chế độ chọn */}
           {isSelectionMode && (
             <>
               <button
@@ -256,7 +281,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             </>
           )}
 
-          {/* Nút xóa tất cả - chỉ khi không ở chế độ chọn, đang xem người khác và có quyền */}
           {!isSelectionMode && canDeleteTarget && !isViewingOwn && (
             <button
               onClick={() => setDeletingAllConfirm(true)}
@@ -275,7 +299,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           const mid = m.id || (m as any)._id;
           return (
             <div key={mid} className={`data-card relative ${isSelectionMode ? 'border-2 transition-all' : ''} ${isSelectionMode && selectedIds.has(mid) ? 'border-emerald-500 bg-emerald-50/30' : ''}`}>
-              {/* Checkbox chọn nhiều - Mobile */}
               {isSelectionMode && canDeleteTarget && (
                 <div className="absolute top-3 left-3 z-10">
                   <input
@@ -286,7 +309,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                   />
                 </div>
               )}
-              {/* Header: Ngày + các trend */}
               <div className={`data-card-header ${isSelectionMode ? 'pl-10' : ''}`}>
                 <div className="flex items-center justify-between">
                   <span className="font-black text-sm text-slate-800">📅 {formatDateVN(m.date)}</span>
@@ -295,7 +317,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                   </span>
                 </div>
               </div>
-              {/* Body: các chỉ số chi tiết grid 2 cột */}
               <div className="data-card-body">
                 <div className="grid grid-cols-2 gap-y-2 gap-x-4">
                   <div>
@@ -343,7 +364,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                   </div>
                 </div>
               </div>
-              {/* Actions - chỉ hiện khi không ở chế độ chọn */}
               {!isSelectionMode && (canEditTarget || canDeleteTarget || isViewingOwn) && (
                 <div className="data-card-actions">
                   {(canEditTarget || isViewingOwn) && (
@@ -379,7 +399,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             <table className="w-full text-left text-[11px] min-w-[1200px]">
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr className="text-slate-400 font-black uppercase tracking-widest">
-                  {/* Checkbox cho chế độ chọn nhiều */}
                   {isSelectionMode && canDeleteTarget && (
                     <th className="p-5 w-12">
                       <input
@@ -409,7 +428,6 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
                   const mid = m.id || (m as any)._id;
                   return (
                     <tr key={mid} className={`hover:bg-slate-50/50 transition-colors ${isSelectionMode && selectedIds.has(mid) ? 'bg-emerald-50/50' : ''}`}>
-                      {/* Checkbox cho chế độ chọn nhiều */}
                       {isSelectionMode && canDeleteTarget && (
                         <td className="p-5">
                           <input
@@ -485,119 +503,174 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           </div>
         </div>
       </div>
-
-      {/* Edit Metric Modal */}
-      {editingMetric && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95">
-            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật chỉ số</h4>
-            <p className="text-[10px] text-slate-400 font-medium">Ngày: {formatDateVN(editingMetric.date)}</p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
-                <input type="number" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ (%)</label>
-                <input type="number" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ (kg)</label>
-                <input type="number" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân đối</label>
-                <input type="number" value={editingMetric.balanceIndex} onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nước (%)</label>
-                <input type="number" step="0.1" value={editingMetric.waterPercent} onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Khoáng (kg)</label>
-                <input type="number" step="0.01" value={editingMetric.boneMinerals} onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label>
-                <input type="number" step="0.1" value={editingMetric.visceralFat} onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tuổi sinh học</label>
-                <input type="number" value={editingMetric.bioAge} onChange={e => setEditingMetric({...editingMetric, bioAge: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-              </div>
-            </div>
-            <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => setEditingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
-              <button onClick={handleUpdateMetric} className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg">Lưu chỉ số</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirm Dialog (single) */}
-      {deletingMetric && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
-            <div className="text-5xl mb-2">⚠️</div>
-            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xác nhận xóa</h4>
-            <p className="text-slate-600 text-sm leading-relaxed">
-              Bạn có chắc chắn muốn xóa chỉ số ngày <strong>{formatDateVN(deletingMetric.date)}</strong>?
-              <br />
-              <span className="text-rose-500 text-[10px] font-black mt-2 block">
-                Hành động này không thể hoàn tác!
-              </span>
-            </p>
-            <div className="flex gap-3 pt-4">
-              <button onClick={() => setDeletingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
-              <button onClick={handleDeleteMetric} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete All Confirm Dialog */}
-      {deletingAllConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
-            <div className="text-5xl mb-2">🚨</div>
-            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xóa toàn bộ chỉ số</h4>
-            <p className="text-slate-600 text-sm leading-relaxed">
-              Bạn có chắc chắn muốn xóa <strong>toàn bộ chỉ số</strong> của <strong>{targetUser?.fullName || 'hội viên này'}</strong>?
-              <br />
-              <span className="text-rose-500 text-[10px] font-black mt-2 block">
-                ⚠️ Hành động này không thể hoàn tác! ⚠️
-              </span>
-            </p>
-            <div className="flex gap-3 pt-4">
-              <button onClick={() => setDeletingAllConfirm(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
-              <button onClick={handleDeleteAllMetrics} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa tất cả</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Delete Confirm Dialog */}
-      {bulkDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
-            <div className="text-5xl mb-2">⚠️</div>
-            <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xóa nhiều chỉ số</h4>
-            <p className="text-slate-600 text-sm leading-relaxed">
-              Bạn có chắc chắn muốn xóa <strong>{selectedIds.size} chỉ số</strong> đã chọn?
-              <br />
-              <span className="text-rose-500 text-[10px] font-black mt-2 block">
-                Hành động này không thể hoàn tác!
-              </span>
-            </p>
-            <div className="flex gap-3 pt-4">
-              <button onClick={() => setBulkDeleteConfirm(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
-              <button onClick={handleBulkDelete} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa {selectedIds.size} chỉ số</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+
+// ========== Sub Modals ==========
+
+interface EditMetricModalProps {
+  editingMetric: HealthMetric;
+  setEditingMetric: (v: HealthMetric | null) => void;
+  handleUpdateMetric: () => void;
+}
+
+const EditMetricModal: React.FC<EditMetricModalProps> = ({ editingMetric, setEditingMetric, handleUpdateMetric }) => {
+  const [localMetric, setLocalMetric] = useState<HealthMetric>(editingMetric);
+  const modalId = useMemo(() => `edit-metric_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, () => setEditingMetric(null));
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95">
+        <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật chỉ số</h4>
+        <p className="text-[10px] text-slate-400 font-medium">Ngày: {formatDateVN(localMetric.date)}</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
+            <input type="number" step="0.1" value={localMetric.weight} onChange={e => setLocalMetric({...localMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ (%)</label>
+            <input type="number" step="0.1" value={localMetric.bodyFat} onChange={e => setLocalMetric({...localMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ (kg)</label>
+            <input type="number" step="0.1" value={localMetric.muscleMass} onChange={e => setLocalMetric({...localMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân đối</label>
+            <input type="number" value={localMetric.balanceIndex} onChange={e => setLocalMetric({...localMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nước (%)</label>
+            <input type="number" step="0.1" value={localMetric.waterPercent} onChange={e => setLocalMetric({...localMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Khoáng (kg)</label>
+            <input type="number" step="0.01" value={localMetric.boneMinerals} onChange={e => setLocalMetric({...localMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label>
+            <input type="number" step="0.1" value={localMetric.visceralFat} onChange={e => setLocalMetric({...localMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tuổi sinh học</label>
+            <input type="number" value={localMetric.bioAge} onChange={e => setLocalMetric({...localMetric, bioAge: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+          </div>
+        </div>
+        <div className="flex gap-3 pt-4">
+          <button type="button" onClick={() => setEditingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+          <button onClick={handleUpdateMetric} className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase text-[11px] shadow-lg">Lưu chỉ số</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+EditMetricModal.displayName = 'EditMetricModal';
+
+interface ConfirmDeleteMetricModalProps {
+  deletingMetric: HealthMetric;
+  setDeletingMetric: (v: HealthMetric | null) => void;
+  handleDeleteMetric: () => void;
+}
+
+const ConfirmDeleteMetricModal: React.FC<ConfirmDeleteMetricModalProps> = ({ deletingMetric, setDeletingMetric, handleDeleteMetric }) => {
+  const modalId = useMemo(() => `confirm-delete_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, () => setDeletingMetric(null));
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
+        <div className="text-5xl mb-2">⚠️</div>
+        <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xác nhận xóa</h4>
+        <p className="text-slate-600 text-sm leading-relaxed">
+          Bạn có chắc chắn muốn xóa chỉ số ngày <strong>{formatDateVN(deletingMetric.date)}</strong>?
+          <br />
+          <span className="text-rose-500 text-[10px] font-black mt-2 block">
+            Hành động này không thể hoàn tác!
+          </span>
+        </p>
+        <div className="flex gap-3 pt-4">
+          <button onClick={() => setDeletingMetric(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+          <button onClick={handleDeleteMetric} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+ConfirmDeleteMetricModal.displayName = 'ConfirmDeleteMetricModal';
+
+interface ConfirmDeleteAllModalProps {
+  targetUser: User | undefined;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+const ConfirmDeleteAllModal: React.FC<ConfirmDeleteAllModalProps> = ({ targetUser, onCancel, onConfirm }) => {
+  const modalId = useMemo(() => `confirm-delete-all_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, onCancel);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
+        <div className="text-5xl mb-2">🚨</div>
+        <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xóa toàn bộ chỉ số</h4>
+        <p className="text-slate-600 text-sm leading-relaxed">
+          Bạn có chắc chắn muốn xóa <strong>toàn bộ chỉ số</strong> của <strong>{targetUser?.fullName || 'hội viên này'}</strong>?
+          <br />
+          <span className="text-rose-500 text-[10px] font-black mt-2 block">
+            ⚠️ Hành động này không thể hoàn tác! ⚠️
+          </span>
+        </p>
+        <div className="flex gap-3 pt-4">
+          <button onClick={onCancel} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+          <button onClick={onConfirm} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa tất cả</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+ConfirmDeleteAllModal.displayName = 'ConfirmDeleteAllModal';
+
+interface ConfirmBulkDeleteModalProps {
+  selectedCount: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+const ConfirmBulkDeleteModal: React.FC<ConfirmBulkDeleteModalProps> = ({ selectedCount, onCancel, onConfirm }) => {
+  const modalId = useMemo(() => `confirm-bulk-delete_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, onCancel);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 text-center">
+        <div className="text-5xl mb-2">⚠️</div>
+        <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Xóa nhiều chỉ số</h4>
+        <p className="text-slate-600 text-sm leading-relaxed">
+          Bạn có chắc chắn muốn xóa <strong>{selectedCount} chỉ số</strong> đã chọn?
+          <br />
+          <span className="text-rose-500 text-[10px] font-black mt-2 block">
+            Hành động này không thể hoàn tác!
+          </span>
+        </p>
+        <div className="flex gap-3 pt-4">
+          <button onClick={onCancel} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+          <button onClick={onConfirm} className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200">Xác nhận xóa {selectedCount} chỉ số</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+ConfirmBulkDeleteModal.displayName = 'ConfirmBulkDeleteModal';
 
 export default MetricsManagement;

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { Database } from '../../../services/database.ts';
+import { useBodyScrollLock, useModalStack } from '../../system/ModalManager.tsx';
 
 interface ChatGroup {
   _id: string;
@@ -20,11 +21,15 @@ interface ChatGroupManagerProps {
 }
 
 const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGroups, onRefresh }) => {
+  const editModalId = useMemo(() => `chatgroup-edit_${Math.random().toString(36).slice(2, 9)}`, []);
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [editingGroup, setEditingGroup] = useState<ChatGroup | null>(null);
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [newGroup, setNewGroup] = useState({ name: '', nutritionGroupIds: [] as string[], memberIds: [] as string[] });
+
+  useBodyScrollLock(!!editingGroup);
+  useModalStack(editModalId, () => setEditingGroup(null));
 
   const loadGroups = useCallback(async () => {
     try {
@@ -37,7 +42,6 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
 
   useEffect(() => { loadGroups(); }, [loadGroups]);
 
-  // Khi chọn NDD, tự động thêm tất cả member của NDD đó
   const handleNutritionGroupToggle = (ngId: string) => {
     const isSelected = newGroup.nutritionGroupIds.includes(ngId);
     let updatedNgIds: string[];
@@ -45,7 +49,6 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
 
     if (isSelected) {
       updatedNgIds = newGroup.nutritionGroupIds.filter(id => id !== ngId);
-      // Remove members of that NDD
       const ng = nutritionGroups.find(g => (g.id || g._id) === ngId);
       if (ng?.members) {
         const memberIds = ng.members.map((m: any) => m._id || m);
@@ -53,7 +56,6 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
       }
     } else {
       updatedNgIds = [...newGroup.nutritionGroupIds, ngId];
-      // Add all members of that NDD
       const ng = nutritionGroups.find(g => (g.id || g._id) === ngId);
       if (ng?.members) {
         const memberIds = ng.members.map((m: any) => m._id || m);
@@ -62,7 +64,6 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
         });
       }
     }
-
     setNewGroup({ ...newGroup, nutritionGroupIds: updatedNgIds, memberIds: updatedMemberIds });
   };
 
@@ -136,17 +137,13 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
 
       <div className="flex justify-between items-center">
         <h2 className="font-black text-slate-800 text-sm uppercase tracking-widest">👥 Quản lý Group Chat</h2>
-        <button onClick={() => setIsCreating(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl shadow-lg font-bold text-xs hover:bg-indigo-700 transition-all">
-          + Tạo Group mới
-        </button>
+        <button onClick={() => setIsCreating(true)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl shadow-lg font-bold text-xs hover:bg-indigo-700 transition-all">+ Tạo Group mới</button>
       </div>
 
-      {/* Create Form */}
       {isCreating && (
         <div className="bg-white p-6 rounded-[2rem] border border-indigo-200 shadow-sm space-y-4">
           <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Thông tin Group Chat mới</h3>
           <input placeholder="Tên Group *" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
-
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Chọn NDD tham gia</p>
             <div className="space-y-1 max-h-32 overflow-y-auto">
@@ -161,24 +158,8 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
                   </label>
                 );
               })}
-              {nutritionGroups.length === 0 && <p className="text-[10px] text-slate-400 italic">Chưa có NDD nào. Hãy tạo NDD trước.</p>}
             </div>
           </div>
-
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Thành viên ({newGroup.memberIds.length} người)</p>
-            <div className="max-h-24 overflow-y-auto text-[10px] text-slate-500 bg-slate-50 rounded-xl p-2">
-              {newGroup.memberIds.length > 0 ? (
-                newGroup.memberIds.map(id => {
-                  const user = users.find(u => (u.id || u._id) === id);
-                  return <span key={id} className="inline-block mr-1 mb-1 px-2 py-0.5 bg-white rounded-full border border-slate-200">{user?.fullName || id.substring(0, 8)}</span>;
-                })
-              ) : (
-                <span className="italic">Chọn NDD để tự động thêm thành viên</span>
-              )}
-            </div>
-          </div>
-
           <div className="flex gap-3">
             <button onClick={() => setIsCreating(false)} className="px-6 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">Hủy</button>
             <button onClick={handleCreate} className="px-6 py-3 rounded-2xl bg-indigo-600 text-white font-black uppercase text-[10px] shadow-lg">Tạo Group</button>
@@ -186,7 +167,6 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
         </div>
       )}
 
-      {/* Group List */}
       <div className="space-y-3">
         {groups.map(group => {
           const gid = group.id || group._id;
@@ -195,23 +175,11 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
               <div className="px-5 py-4 border-b border-indigo-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-slate-800 text-sm">{group.name}</h3>
-                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${group.isActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                    {group.isActive ? 'Hoạt động' : 'Tạm dừng'}
-                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${group.isActive ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>{group.isActive ? 'Hoạt động' : 'Tạm dừng'}</span>
                 </div>
                 <span className="text-[10px] text-slate-400 font-medium">{group.memberIds?.length || 0} thành viên</span>
               </div>
               <div className="px-5 py-4 bg-indigo-50/30 space-y-2">
-                {group.nutritionGroupIds?.length > 0 && (
-                  <p className="text-[10px] text-slate-500">
-                    <span className="font-bold text-indigo-600">NDD:</span> {getNutritionGroupNames(group.nutritionGroupIds)}
-                  </p>
-                )}
-                {group.lastMessage && (
-                  <p className="text-[10px] text-slate-400 truncate">
-                    <span className="font-bold">{group.lastMessage.senderName}:</span> {group.lastMessage.content?.substring(0, 80)}
-                  </p>
-                )}
                 <div className="flex gap-2 pt-2 border-t border-indigo-100">
                   <button onClick={() => setEditingGroup({...group})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
                   <button onClick={() => handleDelete(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>
@@ -220,16 +188,10 @@ const ChatGroupManager: React.FC<ChatGroupManagerProps> = ({ users, nutritionGro
             </div>
           );
         })}
-        {groups.length === 0 && !isCreating && (
-          <div className="p-16 text-center text-slate-300 italic uppercase text-[10px] font-black tracking-widest">
-            Chưa có group chat nào. Hãy tạo group đầu tiên!
-          </div>
-        )}
       </div>
 
-      {/* Edit Modal */}
       {editingGroup && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={e => e.stopPropagation()}>
           <div className="bg-white w-full max-w-lg rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa Group: {editingGroup.name}</h4>
             <div>

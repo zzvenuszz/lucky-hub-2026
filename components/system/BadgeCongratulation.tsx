@@ -1,6 +1,7 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Badge } from '../../types.ts';
+import { useBodyScrollLock, useModalStack } from './ModalManager.tsx';
 
 interface BadgeCongratulationProps {
   badge: Badge;
@@ -8,6 +9,9 @@ interface BadgeCongratulationProps {
 }
 
 const BadgeCongratulation: React.FC<BadgeCongratulationProps> = ({ badge, onClose }) => {
+  const modalId = useMemo(() => `badge-congrat_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, onClose);
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-300">
       <div className="bg-white w-full max-w-sm rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-10 duration-500 text-center relative">

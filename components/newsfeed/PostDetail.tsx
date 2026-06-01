@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import { Post, User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatTimeAgo } from '../../utils/formatters.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import CommentSection from './CommentSection.tsx';
+import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 
 interface PostDetailProps {
   postId: string;
@@ -18,6 +19,9 @@ const REACTION_ICONS: Record<string, string> = {
 };
 
 const PostDetail: React.FC<PostDetailProps> = memo(({ postId, currentUser, users, onClose, onPostUpdated }) => {
+  const modalId = useMemo(() => `post-detail_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(true);
+  useModalStack(modalId, onClose);
   const [post, setPost] = useState<Post | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
