@@ -162,7 +162,12 @@ export const Database = {
   addComment: (postId: string, data: { content: string, parentId?: string | null, taggedUsers?: { userId: string, userName: string }[] }) => request<any>(`${API_BASE}/posts/${postId}/comments`, 'POST', data),
   editComment: (postId: string, commentId: string, content: string) => request<any>(`${API_BASE}/posts/${postId}/comments/${commentId}`, 'PUT', { content }),
   deleteComment: (postId: string, commentId: string) => request(`${API_BASE}/posts/${postId}/comments/${commentId}`, 'DELETE'),
-  reactToComment: (postId: string, commentId: string, type: string) => request<{ reactions: any[] }>(`${API_BASE}/posts/${postId}/comments/${commentId}/react`, 'POST', { type }),
+  reactToComment: (postId: string, commentId: string, type: string, userName?: string, userAvatar?: string) => {
+    const body: any = { type };
+    if (userName) body.userName = userName;
+    if (userAvatar) body.userAvatar = userAvatar;
+    return request<{ reactions: any[] }>(`${API_BASE}/posts/${postId}/comments/${commentId}/react`, 'POST', body);
+  },
 
   // Goal Reminders
   checkGoalReminders: (userId: string) => request<{ reminders: any[] }>(`${API_BASE}/goals/check-reminders/${userId}`, 'POST'),

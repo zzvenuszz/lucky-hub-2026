@@ -1,4 +1,4 @@
-import React, { useState, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { Comment, User, TaggedUser } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import CommentItem from './CommentItem.tsx';
@@ -19,11 +19,27 @@ const CommentSection: React.FC<CommentSectionProps> = memo(({
   const [localComments, setLocalComments] = useState<Comment[]>(comments);
   const [showAll, setShowAll] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Track latest comments from props để merge khi PostDetail fetch lại
+  const commentsRef = useRef(comments);
 
-  // KHÔNG sync localComments từ props - giữ state độc lập để tránh xóa comment khi PostDetail re-fetch
-  // Sort: gốc trước, replies sau
-  const rootComments = localComments.filter(c => !c.parentId);
-  const replies = localComments.filter(c => c.parentId);
+  // Merge comments từ props vào localComments - thêm những comment mới từ DB, giữ local state
+  useEffect(() => {
+    const prevIds = new Set(commentsRef.current.map((c: any) => c.id || c._id));
+    const newFromDb = comments.filter((c: any) => !prevIds.has(c.id || c._id));
+    if (newFromDb.length > 0) {
+      setLocalComments(prev => {
+        const existingIds = new Set(prev.map((c: any) => c.id || c._id));
+        const reallyNew = newFromDb.filter((c: any) => !existingIds.has(c.id || c._id));
+        return reallyNew.length > 0 ? [...prev, ...reallyNew] : prev;
+      });
+    }
+    commentsRef.current = comments;
+  }, [comments]);
+
+  // Sort: gốc trước (mới nhất lên trên), replies sau (cũ nhất lên trên)
+  const sortedLocal = [...localComments].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const rootComments = sortedLocal.filter(c => !c.parentId);
+  const replies = sortedLocal.filter(c => c.parentId);
 
   const getReplies = (parentId: string) => replies.filter(r => r.parentId === parentId);
 
@@ -33,7 +49,7 @@ const CommentSection: React.FC<CommentSectionProps> = memo(({
       const newComment = await Database.addComment(postId, { content, taggedUsers });
       if (newComment) {
         const formatted: Comment = {
-          id: newComment._id || newComment.id,
+          id: (newComment._id || newComment.id || '').toString(),
           postId,
           userId: newComment.userId,
           userFullName: newComment.userFullName,
@@ -59,14 +75,13 @@ const CommentSection: React.FC<CommentSectionProps> = memo(({
     await handleAddComment(content, [...taggedUsers, ...(taggedUsers || [])]);
   }, [handleAddComment]);
 
-  // Currently handleAddComment doesn't pass parentId - let's fix this
   const handleReplyWithParent = useCallback(async (content: string, taggedUsers: TaggedUser[], parentId: string) => {
     setIsLoading(true);
     try {
       const newComment = await Database.addComment(postId, { content, taggedUsers, parentId });
       if (newComment) {
         const formatted: Comment = {
-          id: newComment._id || newComment.id,
+          id: (newComment._id || newComment.id || '').toString(),
           postId,
           userId: newComment.userId,
           userFullName: newComment.userFullName,
@@ -116,9 +131,9 @@ const CommentSection: React.FC<CommentSectionProps> = memo(({
     }
   }, [postId, onCommentCountChange]);
 
-  const handleReact = useCallback(async (commentId: string) => {
+  const handleReact = useCallback(async (commentId: string, type: string) => {
     try {
-      const result = await Database.reactToComment(postId, commentId, 'like');
+      const result = await Database.reactToComment(postId, commentId, type, currentUser.fullName, currentUser.avatar);
       if (result) {
         setLocalComments(prev => prev.map(c =>
           c.id === commentId ? { ...c, reactions: result.reactions } : c
@@ -127,7 +142,7 @@ const CommentSection: React.FC<CommentSectionProps> = memo(({
     } catch (err: any) {
       console.error('[CommentSection] Error reacting:', err);
     }
-  }, [postId]);
+  }, [postId, currentUser.fullName, currentUser.avatar]);
 
   const displayComments = showAll ? rootComments : rootComments.slice(0, 3);
   const hasMoreComments = rootComments.length > 3 && !showAll;
@@ -145,36 +160,42 @@ const CommentSection: React.FC<CommentSectionProps> = memo(({
 
       {/* Comments List */}
       <div className="space-y-1">
-        {displayComments.map(comment => (
-          <div key={comment.id}>
-            <CommentItem
-              comment={comment}
-              currentUser={currentUser}
-              users={users}
-              postId={postId}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onReact={handleReact}
-              onReply={handleReplyWithParent}
-              level={0}
-            />
-            {/* Render replies */}
-            {getReplies(comment.id).map(reply => (
+          {displayComments.map(c => {
+          const commentId = String(c.id || (c as any)._id || '');
+          return (
+            <div key={commentId}>
               <CommentItem
-                key={reply.id}
-                comment={reply}
+                comment={c}
                 currentUser={currentUser}
                 users={users}
                 postId={postId}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
-                onReact={handleReact}
-                onReply={handleReplyWithParent}
-                level={1}
+                onReact={(id: string, type: string) => handleReact(id || commentId, type)}
+                onReply={(content: string, taggedUsers: TaggedUser[]) => handleReplyWithParent(content, taggedUsers, commentId)}
+                level={0}
               />
-            ))}
-          </div>
-        ))}
+              {/* Render replies */}
+              {getReplies(commentId).map(r => {
+                const replyId = String(r.id || (r as any)._id || '');
+                return (
+                  <CommentItem
+                    key={replyId}
+                    comment={r}
+                    currentUser={currentUser}
+                    users={users}
+                    postId={postId}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onReact={handleReact}
+                    onReply={(content: string, taggedUsers: TaggedUser[]) => handleReplyWithParent(content, taggedUsers, replyId)}
+                    level={1}
+                  />
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
 
       {/* Show more button */}

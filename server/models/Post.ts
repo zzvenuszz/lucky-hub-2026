@@ -14,7 +14,10 @@ const CommentSchema = new mongoose.Schema({
   }],
   reactions: [{
     userId: String,
+    userName: String,
+    userAvatar: String,
     type: String,
+    count: { type: Number, default: 0 }
   }],
 }, { _id: true });
 

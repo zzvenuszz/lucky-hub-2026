@@ -148,20 +148,25 @@ router.put('/:postId/react', async (req: Request, res: Response) => {
   try {
     const { postId } = req.params;
     const { userId, type, userName, userAvatar } = req.body;
+    console.log(`[PostReact] React on post ${postId} by user ${userId} type=${type}`);
 
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).lean();
     if (!post) return res.status(404).json({ message: 'Post not found' });
 
-    if (!Array.isArray(post.reactions)) (post as any).reactions = [];
-
-    const existingReaction = post.reactions.find((r: any) => r.userId === userId && r.type === type);
+    // Xử lý reactions
+    let reactions: any[] = (post as any).reactions || [];
+    const existingReaction = reactions.find((r: any) => r.userId === userId && r.type === type);
     if (existingReaction) {
       existingReaction.count = (existingReaction.count || 1) + 1;
     } else {
-      post.reactions.push({ userId, userName: userName || 'Unknown', userAvatar: userAvatar || '', type, count: 1 });
+      reactions.push({ userId, userName: userName || 'Unknown', userAvatar: userAvatar || '', type, count: 1 });
     }
 
-    await post.save();
+    // Direct MongoDB update - bypass Mongoose validation
+    await Post.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(postId) },
+      { $set: { reactions } }
+    );
 
     // Gửi notification cho chủ bài viết
     if (post.userId && post.userId !== userId) {
@@ -177,9 +182,11 @@ router.put('/:postId/react', async (req: Request, res: Response) => {
       await notification.save();
     }
 
-    res.json({ ...post.toObject(), id: post._id });
+    console.log(`[PostReact] ✅ Post ${postId} react updated (${reactions.length} total)`);
+    res.json({ ...post, reactions, id: post._id || postId });
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    console.error(`[PostReact] ❌ ERROR: ${err.message}`, err.stack);
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 });
 
@@ -245,8 +252,8 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
       reactions: [],
     };
 
-    if (!post.comments) post.comments = [];
-    post.comments.push(newComment as any);
+    if (!(post as any).comments) (post as any).comments = [];
+    (post as any).comments.push(newComment);
     post.commentCount = (post.commentCount || 0) + 1;
     await post.save();
 
@@ -314,19 +321,32 @@ router.put('/:postId/comments/:commentId', authMiddleware, async (req: Request, 
     const post = await Post.findById(postId);
     if (!post) return res.status(404).json({ message: 'Post not found' });
 
-    const comment = (post.comments as any)?.find((c: any) => c._id === commentId);
-    if (!comment) return res.status(404).json({ message: 'Comment not found' });
+    // Tìm comment bằng string comparison để tránh CastError
+    const allComments: any[] = (post as any).comments || [];
+    const commentIndex = allComments.findIndex((c: any) => String(c._id) === commentId);
+    if (commentIndex === -1) return res.status(404).json({ message: 'Comment not found' });
 
-    if (comment.userId !== req.user!.userId && !req.user!.permissions.includes(RESOURCES.POSTS.UPDATE_ANY)) {
+    const comment = allComments[commentIndex];
+    // Chỉ chủ sở hữu mới được sửa bình luận
+    if (comment.userId !== req.user!.userId) {
       return res.status(403).json({ message: 'Bạn không có quyền sửa bình luận này' });
     }
 
-    comment.content = content.trim();
-    comment.editedAt = new Date().toISOString();
-    await post.save();
+    // Dùng updateOne trực tiếp trên collection để bypass Mongoose DocumentArray type
+    await Post.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(postId), [`comments._id`]: commentId },
+      {
+        $set: {
+          [`comments.$.content`]: content.trim(),
+          [`comments.$.editedAt`]: new Date().toISOString(),
+        }
+      }
+    );
 
-    res.json(comment);
+    console.log(`[Comment] ✅ Edited comment ${commentId} on post ${postId}`);
+    res.json({ success: true });
   } catch (err: any) {
+    console.error(`[Comment] ❌ Error editing comment: ${err.message}`, err.stack);
     res.status(500).json({ message: err.message });
   }
 });
@@ -339,20 +359,44 @@ router.delete('/:postId/comments/:commentId', authMiddleware, async (req: Reques
     const post = await Post.findById(postId);
     if (!post) return res.status(404).json({ message: 'Post not found' });
 
-    const commentIndex = (post.comments as any)?.findIndex((c: any) => c._id === commentId);
-    if (commentIndex === -1 || commentIndex === undefined) return res.status(404).json({ message: 'Comment not found' });
+    // Tìm comment bằng string comparison thay vì Mongoose .id() để tránh CastError
+    const allComments: any[] = (post as any).comments || [];
+    const commentIndex = allComments.findIndex((c: any) => String(c._id) === commentId);
+    if (commentIndex === -1) return res.status(404).json({ message: 'Comment not found' });
 
-    const comment = post.comments![commentIndex];
-    if (comment.userId !== req.user!.userId && !req.user!.permissions.includes(RESOURCES.POSTS.DELETE_ANY)) {
+    const comment = allComments[commentIndex];
+    const isOwner = comment.userId === req.user!.userId;
+    const perms = req.user!.permissions || [];
+    const isAdmin = perms.includes('admin:panel');
+    const isCoach = perms.includes('coach:access');
+    const isNddManager = perms.includes('ndd:system');
+    const canDeleteAny = perms.includes(RESOURCES.POSTS.DELETE_ANY);
+
+    if (!isOwner && !isCoach && !isNddManager && !isAdmin && !canDeleteAny) {
       return res.status(403).json({ message: 'Bạn không có quyền xóa bình luận này' });
     }
 
-    post.comments!.splice(commentIndex, 1);
-    post.commentCount = Math.max(0, (post.commentCount || 1) - 1);
-    await post.save();
+    // Xóa comment và replies con của nó
+    const idsToDelete = new Set<string>([commentId]);
+    for (const c of allComments) {
+      if (String(c.parentId) === commentId) {
+        idsToDelete.add(String(c._id));
+      }
+    }
 
+    // Dùng updateOne trực tiếp trên collection để bypass Mongoose DocumentArray type
+    await Post.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(postId) },
+      {
+        $pull: { comments: { _id: { $in: Array.from(idsToDelete) } } } as any,
+        $inc: { commentCount: -idsToDelete.size }
+      }
+    );
+
+    console.log(`[Comment] ✅ Deleted comment ${commentId} on post ${postId} (removed ${idsToDelete.size} items)`);
     res.json({ success: true });
   } catch (err: any) {
+    console.error(`[Comment] ❌ Error deleting comment: ${err.message}`, err.stack);
     res.status(500).json({ message: err.message });
   }
 });
@@ -361,27 +405,47 @@ router.delete('/:postId/comments/:commentId', authMiddleware, async (req: Reques
 router.post('/:postId/comments/:commentId/react', authMiddleware, async (req: Request, res: Response) => {
   try {
     const { postId, commentId } = req.params;
-    const { type } = req.body;
+    const { type, userName, userAvatar } = req.body;
+    const userId = req.user!.userId;
+    console.log(`[CommentReact] React on comment ${commentId} by user ${userId} type=${type}`);
 
-    const post = await Post.findById(postId);
+    const post = await Post.findById(postId).lean();
     if (!post) return res.status(404).json({ message: 'Post not found' });
 
-    const comment = (post.comments as any)?.find((c: any) => c._id === commentId);
-    if (!comment) return res.status(404).json({ message: 'Comment not found' });
+    // Xác định index của comment trong mảng
+    const allComments: any[] = (post as any).comments || [];
+    const commentIndex = allComments.findIndex((c: any) => String(c._id) === commentId);
+    if (commentIndex === -1) return res.status(404).json({ message: 'Comment not found' });
 
-    if (!Array.isArray(comment.reactions)) comment.reactions = [];
+    // Lấy reactions hiện tại
+    let reactions: any[] = allComments[commentIndex].reactions || [];
+    const existingIdx = reactions.findIndex((r: any) => r.userId === userId && r.type === type);
 
-    const existingIdx = comment.reactions.findIndex((r: any) => r.userId === req.user!.userId && r.type === type);
     if (existingIdx >= 0) {
-      comment.reactions.splice(existingIdx, 1);
+      // Đã có reaction cùng loại -> tăng count
+      reactions[existingIdx].count = (reactions[existingIdx].count || 1) + 1;
     } else {
-      comment.reactions.push({ userId: req.user!.userId, type });
+      // Reaction mới
+      reactions.push({
+        userId,
+        userName: userName || req.user!.fullName || 'Unknown',
+        userAvatar: userAvatar || req.user!.avatar || '',
+        type,
+        count: 1,
+      });
     }
 
-    await post.save();
-    res.json({ reactions: comment.reactions });
+    // Direct MongoDB update - bypass Mongoose casting
+    await Post.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(postId) },
+      { $set: { [`comments.${commentIndex}.reactions`]: reactions } }
+    );
+
+    console.log(`[CommentReact] ✅ Comment ${commentId} react updated (${reactions.length} reaction types)`);
+    res.json({ reactions });
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    console.error(`[CommentReact] ❌ ERROR: ${err.message}`, err.stack);
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 });
 
