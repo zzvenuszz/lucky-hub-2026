@@ -56,36 +56,67 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/goals/check-reminders/:userId - Kiểm tra và gửi reminder
+// POST /api/goals/check-reminders/:userId - Kiểm tra và gửi reminder động viên
 router.post('/check-reminders/:userId', async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
     const now = new Date();
     const goals = await Goal.find({ userId, status: 'active' });
     const reminders: any[] = [];
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     for (const goal of goals) {
       const targetDate = new Date(goal.targetDate);
       const diffDays = Math.ceil((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const gLabel = goal.type;
 
-      // Gửi reminder khi còn 3 ngày, 1 ngày
-      if (diffDays === 3 || diffDays === 1) {
-        reminders.push({
-          goalId: goal._id,
-          type: goal.type,
-          daysLeft: diffDays,
-          progress: goal.progress,
-        });
+      // Kiểm tra xem hôm nay đã gửi reminder chưa (tránh spam)
+      const lastSent = goal.lastReminderSent ? new Date(goal.lastReminderSent) : null;
+      const alreadySentToday = lastSent && lastSent >= todayStart;
+
+      let shouldSend = false;
+      let message = '';
+
+      // Ưu tiên kiểm tra quá hạn trước
+      if (diffDays < 0 && goal.progress < 100) {
+        shouldSend = !alreadySentToday;
+        message = `💝 Mục tiêu "${gLabel}" đã quá hạn nhưng đừng lo! Hãy gia hạn thêm thời gian và tiếp tục cố gắng nhé. Bạn có thể làm được! 🌟`;
+      } else if (diffDays <= 2 && diffDays >= 0 && goal.progress < 100) {
+        // Còn 0-2 ngày chưa hoàn thành
+        shouldSend = !alreadySentToday;
+        message = `⚡ Chỉ còn ${diffDays} ngày để hoàn thành mục tiêu "${gLabel}"! Hãy nỗ lực hết mình, bạn sắp về đích rồi! 🔥`;
+      } else if (diffDays <= 2 && diffDays >= 0 && goal.progress >= 100) {
+        // Còn 0-2 ngày nhưng đã hoàn thành
+        shouldSend = !alreadySentToday;
+        message = `🎉 Chúc mừng! Bạn đã hoàn thành mục tiêu "${gLabel}" trước hạn! Thật tuyệt vời! 🌈✨`;
+      } else if (diffDays === 7) {
+        shouldSend = !alreadySentToday;
+        message = `🎯 Còn 7 ngày để hoàn thành mục tiêu "${gLabel}"! Bạn đang làm rất tốt, hãy tiếp tục duy trì nhé! 💪`;
+      } else if (diffDays === 3) {
+        shouldSend = !alreadySentToday;
+        message = `⏰ Chỉ còn 3 ngày nữa! Mục tiêu "${gLabel}" đang đến gần, cố gắng lên bạn nhé! 🔥`;
       }
 
-      // Kiểm tra nếu đã quá hạn và chưa hoàn thành
-      if (diffDays < 0 && goal.progress < 100) {
+      if (shouldSend) {
+        // Tạo Notification trong DB
+        await Notification.create({
+          userId: goal.userId,
+          type: 'goal_reminder',
+          message,
+          link: '/goals',
+          referenceId: goal._id.toString(),
+        });
+
+        // Cập nhật lastReminderSent
+        goal.lastReminderSent = now;
+        await goal.save();
+
         reminders.push({
           goalId: goal._id,
           type: goal.type,
           daysLeft: diffDays,
-          overdue: true,
           progress: goal.progress,
+          message,
         });
       }
     }

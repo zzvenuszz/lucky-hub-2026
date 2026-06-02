@@ -125,7 +125,19 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
   useEffect(() => {
     fetchGoals();
     fetchLatestMetrics();
-  }, [fetchGoals, fetchLatestMetrics, refreshTrigger]);
+    // Khi refreshTrigger thay đổi (có metric mới), tự động recalculate progress
+    if (refreshTrigger && refreshTrigger > 0) {
+      fetch(`/api/goals/recalculate/${currentUid}`, {
+        method: 'POST',
+        headers: getAuthHeaders()
+      }).then(resp => {
+        if (resp.ok) {
+          console.log(`[Goals] Recalculated after metric update (refreshTrigger=${refreshTrigger})`);
+          fetchGoals();
+        }
+      }).catch(err => console.error('[Goals] Recalculate error:', err));
+    }
+  }, [fetchGoals, fetchLatestMetrics, refreshTrigger, currentUid, getAuthHeaders]);
 
   // Tính ngày kết thúc từ duration
   const calcTargetDate = useCallback((days: number) => {
@@ -359,16 +371,47 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {activeGoals.map(goal => {
           const gInfo = info(goal.type);
-          const colorMap: Record<string, string> = {
-            emerald: 'bg-emerald-500', rose: 'bg-rose-500', blue: 'bg-blue-500',
-            sky: 'bg-sky-500', amber: 'bg-amber-500', orange: 'bg-orange-500',
-            purple: 'bg-purple-500', indigo: 'bg-indigo-500', teal: 'bg-teal-500'
-          };
-          const bgColor = colorMap[gInfo.color] || 'bg-slate-500';
           const isCompleted = goal.status === 'completed';
+          
+          // Tính số ngày còn lại
+          const now = Date.now();
+          const targetTime = new Date(goal.targetDate).getTime();
+          const startTime = new Date(goal.startDate).getTime();
+          const totalDuration = targetTime - startTime;
+          const elapsed = now - startTime;
+          const progressTime = totalDuration > 0 ? elapsed / totalDuration : 0; // % thời gian đã trôi qua
+          const daysLeft = Math.ceil((targetTime - now) / (1000 * 60 * 60 * 24));
+
+          // Xác định màu sắc thanh progress
+          let barColor = 'bg-emerald-500'; // Mặc định: xanh lá (mới tạo)
+          if (isCompleted && daysLeft <= 2) {
+            barColor = 'bg-purple-500'; // Còn ≤ 2 ngày + đã hoàn thành → tím
+          } else if (daysLeft <= 2 && goal.progress < 100) {
+            barColor = 'bg-rose-600'; // Còn ≤ 2 ngày + chưa hoàn thành → đỏ
+          } else if (progressTime >= 0.5 && goal.progress < 100) {
+            barColor = 'bg-amber-500'; // Quá 1/2 thời gian + chưa hoàn thành → cam
+          }
+
+          // Màu border card (đậm để nổi bật)
+          let borderColor = 'border-slate-200';
+          if (isCompleted) {
+            borderColor = 'border-emerald-400';
+          } else if (daysLeft <= 2) {
+            borderColor = 'border-rose-400';
+          } else if (progressTime >= 0.5) {
+            borderColor = 'border-amber-400';
+          }
+
+          // Màu chữ cho "còn lại xx ngày"
+          let daysLeftColor = 'text-emerald-500';
+          if (daysLeft <= 2) {
+            daysLeftColor = 'text-rose-500';
+          } else if (daysLeft <= 7) {
+            daysLeftColor = 'text-amber-500';
+          }
 
           return (
-            <div key={goal.id} className={`bg-white rounded-[2rem] border p-6 shadow-sm transition-all ${isCompleted ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-100'}`}>
+            <div key={goal.id} className={`bg-white rounded-[2rem] border p-6 shadow-sm transition-all ${borderColor} ${isCompleted ? 'bg-emerald-50/30' : ''}`}>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{gInfo.icon}</span>
@@ -393,13 +436,20 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
                 </div>
               </div>
 
-              {/* Progress Bar */}
+              {/* Progress Bar với màu sắc động */}
               <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden mb-2">
-                <div className={`h-full rounded-full transition-all duration-700 ${bgColor}`} style={{ width: `${Math.min(100, goal.progress)}%` }} />
+                <div className={`h-full rounded-full transition-all duration-700 ${barColor}`} style={{ width: `${Math.min(100, goal.progress)}%` }} />
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-black text-slate-500">{goal.progress}%</span>
-                <span className="text-[10px] text-slate-400">{goal.startDate} → {goal.targetDate}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400">{goal.startDate} → {goal.targetDate}</span>
+                  {!isCompleted && (
+                    <span className={`text-[10px] font-black ${daysLeftColor}`}>
+                      (còn {daysLeft} ngày)
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           );

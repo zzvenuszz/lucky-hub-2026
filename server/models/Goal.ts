@@ -13,6 +13,7 @@ const GoalSchema = new mongoose.Schema({
   targetDate: { type: String, required: true },
   status: { type: String, enum: ['active', 'completed', 'cancelled'], default: 'active' },
   progress: { type: Number, default: 0 },
+  lastReminderSent: { type: Date, default: null },
 }, { timestamps: true });
 
 export const Goal = mongoose.model('Goal', GoalSchema);
