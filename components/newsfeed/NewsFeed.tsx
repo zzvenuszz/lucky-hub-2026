@@ -325,6 +325,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser, users = [] }) => 
                 showReactions={showReactionsFor} setShowReactions={setShowReactionsFor} 
                 reactionTypes={REACTION_TYPES}
                 onHashtagClick={handleHashtagClick}
+                users={users}
               />
             ))}
             {/* Infinite scroll sentinel - dùng callback ref để observer hoạt động */}

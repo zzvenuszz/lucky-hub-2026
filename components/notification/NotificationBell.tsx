@@ -128,7 +128,11 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
   // Mark all as read qua API
   const handleMarkAllRead = useCallback(async () => {
     try {
-      const resp = await fetch(`/api/notifications/read-all/${currentUserId}`, { method: 'PUT' });
+      const sessionId = localStorage.getItem('lucky_hub_session');
+      const resp = await fetch(`/api/notifications/read-all/${currentUserId}`, { 
+        method: 'PUT',
+        headers: sessionId ? { 'Authorization': `Bearer ${sessionId}` } : {}
+      });
       if (resp.ok) {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
         console.log('[NotificationBell] Marked all as read');
@@ -140,27 +144,41 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
 
   // Mark single notification as read + navigate
   const handleNotificationClick = useCallback(async (notif: NotificationItem) => {
-    // Mark as read via API
-    try {
-      await fetch(`/api/notifications/${notif.id}/read`, { method: 'PUT' });
-      setNotifications(prev => prev.map(n =>
-        n.id === notif.id ? { ...n, read: true } : n
-      ));
-    } catch (err: any) {
-      console.error('[NotificationBell] MarkRead error:', err);
-    }
+    // Đóng panel ngay lập tức để UI không bị delay
     setIsOpen(false);
+
+    // Gọi API mark read TRƯỚC - await để đảm bảo thành công
+    try {
+      const sessionId = localStorage.getItem('lucky_hub_session');
+      const resp = await fetch(`/api/notifications/${notif.id}/read`, { 
+        method: 'PUT',
+        headers: sessionId ? { 'Authorization': `Bearer ${sessionId}` } : {}
+      });
+      if (resp.ok) {
+        setNotifications(prev => prev.map(n =>
+          n.id === notif.id ? { ...n, read: true } : n
+        ));
+        console.log(`[NotificationBell] Marked notification ${notif.id} as read`);
+      } else {
+        // Nếu API lỗi (404, server error), không update state
+        console.error(`[NotificationBell] MarkRead failed: ${resp.status} ${resp.statusText}`);
+      }
+    } catch (err: any) {
+      console.error('[NotificationBell] MarkRead network error:', err);
+      // Không update state nếu lỗi mạng - lần fetch tiếp theo sẽ khắc phục
+    }
 
     // Navigate dựa trên type và link
     if (notif.link) {
-      // Chuyển đến tab community nếu link là bài viết
       if (notif.link.startsWith('/posts/')) {
-        // Dispatch event để App.tsx bắt và mở PostDetail
+        const postId = notif.link.replace('/posts/', '');
+        // Chuyển tab community trước
+        if (onNavigate) onNavigate('community');
+        // Dispatch event để App.tsx bắt và mở PostDetail modal
         window.dispatchEvent(new CustomEvent('navigate:post', { 
-          detail: { postId: notif.link.replace('/posts/', ''), notificationId: notif.id } 
+          detail: { postId } 
         }));
-        if (onNavigate) onNavigate('community', { postId: notif.link.replace('/posts/', '') });
-      } else if (notif.link === '/goals') {
+      } else if (notif.link === '/goals' || notif.type === 'goal_completed' || notif.type === 'goal_reminder') {
         if (onNavigate) onNavigate('dashboard');
       } else if (notif.link.startsWith('/chat/')) {
         if (onNavigate) onNavigate('chat');

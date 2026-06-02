@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Router, Request, Response } from 'express';
 import { Post } from '../models/Post.ts';
 import { Notification } from '../models/Notification.ts';
@@ -223,13 +224,15 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
   try {
     const { postId } = req.params;
     const { content, parentId, taggedUsers } = req.body;
+    console.log(`[Comment] Adding comment to post ${postId}: content="${content?.substring(0,30)}...", user=${req.user?.userId}, parentId=${parentId}`);
 
     if (!content?.trim()) return res.status(400).json({ message: 'Nội dung bình luận là bắt buộc' });
 
     const post = await Post.findById(postId);
     if (!post) return res.status(404).json({ message: 'Post not found' });
 
-    const commentId = `c_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    // Dùng ObjectId hợp lệ cho Mongoose subdocument
+    const commentId = new mongoose.Types.ObjectId().toString();
     const newComment = {
       _id: commentId,
       userId: req.user!.userId,
@@ -242,7 +245,8 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
       reactions: [],
     };
 
-    post.comments!.push(newComment as any);
+    if (!post.comments) post.comments = [];
+    post.comments.push(newComment as any);
     post.commentCount = (post.commentCount || 0) + 1;
     await post.save();
 
@@ -295,7 +299,8 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
     console.log(`[Comment] ✅ ${parentId ? 'Reply' : 'Comment'} by ${req.user?.fullName} on post ${postId}`);
     res.json(newComment);
   } catch (err: any) {
-    res.status(500).json({ message: err.message });
+    console.error(`[Comment] ❌ ERROR: ${err.message}`, err.stack);
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 });
 

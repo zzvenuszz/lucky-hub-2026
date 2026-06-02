@@ -20,6 +20,7 @@ const CommentSection: React.FC<CommentSectionProps> = memo(({
   const [showAll, setShowAll] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // KHÔNG sync localComments từ props - giữ state độc lập để tránh xóa comment khi PostDetail re-fetch
   // Sort: gốc trước, replies sau
   const rootComments = localComments.filter(c => !c.parentId);
   const replies = localComments.filter(c => c.parentId);

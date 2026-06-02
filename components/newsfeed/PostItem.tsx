@@ -1,8 +1,7 @@
 import React, { memo, useState, useCallback } from 'react';
-import { Post, User, Comment } from '../../types.ts';
+import { Post, User } from '../../types.ts';
 import BadgeDisplay from '../system/BadgeDisplay.tsx';
 import { formatTimeAgo } from '../../utils/formatters.ts';
-import CommentSection from './CommentSection.tsx';
 
 interface PostItemProps {
   post: Post;
@@ -159,7 +158,7 @@ const renderContentWithHashtags = (content: string, onHashtagClick?: (hashtag: s
 
 const PostItem: React.FC<PostItemProps> = ({ 
   post, currentUser, onEdit, onDelete, onReact, onRemoveReact,
-  showReactions, setShowReactions, reactionTypes, onHashtagClick 
+  showReactions, setShowReactions, reactionTypes, onHashtagClick, users = [] 
 }) => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
@@ -256,24 +255,38 @@ const PostItem: React.FC<PostItemProps> = ({
             )}
           </div>
           
-          {/* Reaction Breakdown - Right Side */}
-          {totalReacts > 0 && (
-            <button 
-              onClick={() => setShowDetailModal(true)}
-              className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-xl transition-all"
-              title="Xem chi tiết tương tác"
+          {/* Comment button + Reaction Breakdown - Right Side */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                // Dispatch event để App.tsx bắt và mở PostDetail modal
+                window.dispatchEvent(new CustomEvent('navigate:post', { 
+                  detail: { postId } 
+                }));
+              }}
+              className="px-4 py-2 bg-slate-50 text-slate-500 rounded-xl text-[10px] font-black uppercase hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-1"
             >
-              <div className="flex items-center gap-1">
-                {Object.entries(typeCounts).map(([type, count]) => (
-                  <span key={type} className="flex items-center gap-0.5 text-xs font-bold text-slate-500">
-                    {REACTION_ICONS[type] || '👍'} 
-                    <span className="text-[10px]">{count}</span>
-                  </span>
-                ))}
-              </div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{totalReacts} tương tác</span>
+              💬 {post.commentCount > 0 && <span className="font-bold">{post.commentCount}</span>}
+              <span className="hidden sm:inline">Bình luận</span>
             </button>
-          )}
+            {totalReacts > 0 && (
+              <button 
+                onClick={() => setShowDetailModal(true)}
+                className="flex items-center gap-1.5 hover:bg-slate-50 px-2 py-1 rounded-xl transition-all"
+                title="Xem chi tiết tương tác"
+              >
+                <div className="flex items-center gap-1">
+                  {Object.entries(typeCounts).map(([type, count]) => (
+                    <span key={type} className="flex items-center gap-0.5 text-xs font-bold text-slate-500">
+                      {REACTION_ICONS[type] || '👍'} 
+                      <span className="text-[10px]">{count}</span>
+                    </span>
+                  ))}
+                </div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{totalReacts}</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

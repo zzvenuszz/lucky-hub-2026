@@ -8,6 +8,7 @@ import MetricForm from './components/dashboard/MetricForm.tsx';
 import Profile from './components/profile/Profile.tsx';
 import MetricsManagement from './components/dashboard/MetricsManagement.tsx';
 import NewsFeed from './components/newsfeed/NewsFeed.tsx';
+import PostDetail from './components/newsfeed/PostDetail.tsx';
 import BadgeCongratulation from './components/system/BadgeCongratulation.tsx';
 import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
@@ -58,6 +59,7 @@ const App: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [lockUntil, setLockUntil] = useState<string | null>(null);
   const [newEarnedBadge, setNewEarnedBadge] = useState<Badge | null>(null);
+  const [viewingPostId, setViewingPostId] = useState<string | null>(null);
   const pingIntervalRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
@@ -256,6 +258,19 @@ const App: React.FC = () => {
     const reminderInterval = setInterval(checkReminders, 60000);
     return () => clearInterval(reminderInterval);
   }, [currentUser]);
+
+  // Lắng nghe sự kiện navigate:post từ NotificationBell để mở PostDetail
+  useEffect(() => {
+    const handleNavigatePost = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail && detail.postId) {
+        console.log(`[App] Navigate to post: ${detail.postId}`);
+        setViewingPostId(detail.postId);
+      }
+    };
+    window.addEventListener('navigate:post', handleNavigatePost as any);
+    return () => window.removeEventListener('navigate:post', handleNavigatePost as any);
+  }, []);
 
   // Lắng nghe sự kiện session bị vô hiệu hóa từ database.ts
   useEffect(() => {
@@ -593,6 +608,15 @@ const App: React.FC = () => {
         }} onClose={() => setIsAddingMetric(false)} />}
         {newEarnedBadge && <BadgeCongratulation badge={newEarnedBadge} onClose={() => setNewEarnedBadge(null)} />}
         </Layout>
+        {/* PostDetail Modal - hiển thị khi click vào thông báo bài viết */}
+        {viewingPostId && currentUser && (
+          <PostDetail
+            postId={viewingPostId}
+            currentUser={currentUser}
+            users={users}
+            onClose={() => setViewingPostId(null)}
+          />
+        )}
       </ChatProvider>
       </ToastProvider>
       </ModalStackProvider>
