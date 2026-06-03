@@ -106,6 +106,7 @@ const TrendChart: React.FC<TrendChartProps> = ({ metrics, timeRange, setTimeRang
             }`}
           >
             <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }}></span>
+            <span className="text-sm leading-none">{m.icon}</span>
             <span className="hidden sm:inline">{m.label}</span>
           </button>
         ))}
@@ -140,7 +141,7 @@ const TrendChart: React.FC<TrendChartProps> = ({ metrics, timeRange, setTimeRang
               tickLine={false}
               domain={yConfig ? yConfig.domain : ['auto', 'auto']}
               ticks={yConfig ? yConfig.ticks : undefined}
-              width={40}
+              width={55}
             />
             <Tooltip 
               content={<CustomTooltip />}
