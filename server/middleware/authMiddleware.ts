@@ -59,14 +59,17 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
       });
     }
 
-    // Update lastPing không đồng bộ - không block request
-    // Dùng updateOne() thay vì save() để tránh load full document
-    ActiveSession.updateOne(
-      { _id: session._id },
-      { $set: { lastPing: new Date() } }
-    ).catch((err: any) => {
-      console.error(`[Auth] Failed to update lastPing: ${err.message}`);
-    });
+    // Update lastPing định kỳ (chỉ update nếu lastPing cũ hơn 60s) để giảm DB writes
+    const now = new Date();
+    const lastPingTime = session.lastPing ? new Date(session.lastPing).getTime() : 0;
+    if (now.getTime() - lastPingTime > 60000) {
+      ActiveSession.updateOne(
+        { _id: session._id },
+        { $set: { lastPing: now } }
+      ).catch((err: any) => {
+        console.error(`[Auth] Failed to update lastPing: ${err.message}`);
+      });
+    }
 
     // Lấy thông tin user
     const user = await User.findById(session.userId).select('groupId groupName fullName email username status');

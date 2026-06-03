@@ -345,33 +345,37 @@ const App: React.FC = () => {
     };
   }, [currentUser, handleLogout]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     // Tách riêng từng API call để một lỗi không làm hỏng các call khác
+    let usersData: User[] = [];
+    let knowledgeData: any[] = [];
+    let rulesData: AIRule[] = [];
+    let chatsData: any[] = [];
+
     try {
-      const u = await Database.getUsers();
-      setUsers(u || []);
+      usersData = await Database.getUsers();
+      setUsers(usersData || []);
     } catch (err) {
       console.warn('[App] Failed to load users:', err);
     }
     
     try {
-      const k = await Database.getKnowledge();
-      setKnowledge(k || []);
+      knowledgeData = await Database.getKnowledge();
+      setKnowledge(knowledgeData || []);
     } catch (err) {
       console.warn('[App] Failed to load knowledge:', err);
     }
     
     try {
-      const r = await Database.getRules();
-      setRules(r || []);
+      rulesData = await Database.getRules();
+      setRules(rulesData || []);
     } catch (err) {
       console.warn('[App] Failed to load rules:', err);
     }
     
     try {
-      const c = await Database.getChats();
-      setPreloadedChats(c || []);
-      if (window.debugLog) window.debugLog(`[App] Nhận dữ liệu: ${users.length || 0} users, ${knowledge.length || 0} kiến thức, ${rules.length || 0} quy tắc, ${c?.length || 0} chats`, "system");
+      chatsData = await Database.getChats();
+      setPreloadedChats(chatsData || []);
     } catch (err) {
       console.warn('[App] Failed to load chats:', err);
     }
@@ -385,13 +389,24 @@ const App: React.FC = () => {
         console.warn('[App] Failed to load metrics:', err);
       }
     }
-  };
+
+    if (window.debugLog) window.debugLog(
+      `[App] Nhận dữ liệu: ${usersData?.length || 0} users, ${knowledgeData?.length || 0} kiến thức, ${rulesData?.length || 0} quy tắc, ${chatsData?.length || 0} chats`,
+      "system"
+    );
+  }, [currentUser]);
+
+  // Sử dụng useRef để lưu fetchData function, tránh stale closure trong interval
+  const fetchDataRef = useRef(fetchData);
+  fetchDataRef.current = fetchData;
 
   useEffect(() => { 
     if (currentUser) {
-      fetchData(); 
+      fetchDataRef.current();
       // Refresh dữ liệu mỗi 10 phút (tối ưu hóa performance)
-      const mainInterval = setInterval(fetchData, 600000);
+      const mainInterval = setInterval(() => {
+        fetchDataRef.current();
+      }, 600000);
       return () => clearInterval(mainInterval);
     }
   }, [currentUser, refreshTrigger]);

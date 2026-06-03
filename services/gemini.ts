@@ -5,12 +5,51 @@ const processYearLogic = (extractedDate: string) => {
   const currentYear = now.getFullYear();
   if (!extractedDate || extractedDate === "0") return now.toISOString().split('T')[0];
 
-  const parts = extractedDate.split(/[-/]/);
+  // AI có thể trả về các format: "dd/mm", "mm/dd", "dd-mm", "mm-dd", "dd/mm/yyyy", "yyyy-mm-dd", ...
+  const parts = extractedDate.split(/[-/]/).filter(p => p.length > 0);
   if (parts.length >= 2) {
-    const d = parseInt(parts[0]);
-    const m = parseInt(parts[1]);
+    let d: number, m: number;
+    
+    // Nếu có 3 parts (yyyy-mm-dd hoặc dd/mm/yyyy)
+    if (parts.length >= 3) {
+      const first = parseInt(parts[0]);
+      // Nếu part đầu > 31 thì đó là năm (yyyy-mm-dd)
+      if (first > 31) {
+        d = parseInt(parts[2]);
+        m = parseInt(parts[1]);
+      } else {
+        // Ngược lại là dd/mm/yyyy
+        d = parseInt(parts[0]);
+        m = parseInt(parts[1]);
+      }
+    } else {
+      // Chỉ có 2 parts - xác định đâu là ngày, đâu là tháng
+      const first = parseInt(parts[0]);
+      const second = parseInt(parts[1]);
+      
+      if (first > 12 && second <= 12) {
+        // first chắc chắn là ngày (dd/mm)
+        d = first;
+        m = second;
+      } else if (second > 12 && first <= 12) {
+        // second chắc chắn là ngày (mm/dd)
+        m = first;
+        d = second;
+      } else if (first <= 12 && second <= 12) {
+        // Cả hai đều <= 12, không phân biệt được. Mặc định xử lý là dd/mm (format VN)
+        d = first;
+        m = second;
+      } else {
+        // Cả hai đều > 12, không hợp lệ
+        return now.toISOString().split('T')[0];
+      }
+    }
+
     const extractedDateThisYear = new Date(currentYear, m - 1, d, 23, 59, 59);
     let finalYear = currentYear;
+    if (isNaN(extractedDateThisYear.getTime())) {
+      return now.toISOString().split('T')[0];
+    }
     if (extractedDateThisYear > now) {
       finalYear = currentYear - 1;
     }

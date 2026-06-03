@@ -75,19 +75,55 @@ export function resetProviderCache(): void {
   console.log(`[AI Router] Provider cache reset`);
 }
 
+// Cache Cline keys với TTL 30s để giảm DB queries
+let cachedClineKeys: Array<{ key: string; label: string; id: any }> = [];
+let lastClineKeysRefresh = 0;
+const CLINE_KEYS_CACHE_TTL = 30000; // 30 giây
+
 /**
- * Lấy tất cả Cline API key active từ DB, shuffle để load balancing
+ * Lấy tất cả Cline API key active từ DB (có cache TTL), shuffle để load balancing
  * Trả về mảng các key kèm label, đã lọc bỏ key đang cooldown
  */
 async function getActiveClineKeys(): Promise<Array<{ key: string; label: string; id: any }>> {
   try {
     const now = Date.now();
+    
+    // Cache hit - trả về cached keys
+    if (cachedClineKeys.length > 0 && (now - lastClineKeysRefresh < CLINE_KEYS_CACHE_TTL)) {
+      // Vẫn cần lọc cooldown từ cache vì cooldown là real-time
+      const available = cachedClineKeys
+        .filter(k => {
+          // Lấy thông tin failCount, cooldown từ cache động (không query DB)
+          const cooldownKey = `cline_cooldown_${k.id}`;
+          const cooldownUntil = keyCooldowns.get(cooldownKey) || 0;
+          return cooldownUntil <= now;
+        });
+      
+      if (available.length > 0) return available;
+      // Nếu tất cả cached keys đều cooldown, fallthrough để query DB refresh
+    }
+    
+    // Cache miss - query DB
     const clineKeys = await GeminiKey.find({ isActive: true, keyType: 'cline' });
     
     // Lọc key không cooldown
     const available = clineKeys
       .filter(k => !k.cooldownUntil || new Date(k.cooldownUntil).getTime() <= now)
       .map(k => ({ key: k.key, label: k.label, id: k._id }));
+    
+    // Update cache
+    cachedClineKeys = available;
+    lastClineKeysRefresh = now;
+    
+    // Lưu cooldown info vào keyCooldowns map
+    clineKeys.forEach(k => {
+      const cooldownKey = `cline_cooldown_${k._id}`;
+      if (k.cooldownUntil) {
+        keyCooldowns.set(cooldownKey, new Date(k.cooldownUntil).getTime());
+      } else {
+        keyCooldowns.delete(cooldownKey);
+      }
+    });
     
     // Shuffle Fisher-Yates để load balancing
     for (let i = available.length - 1; i > 0; i--) {
@@ -98,7 +134,7 @@ async function getActiveClineKeys(): Promise<Array<{ key: string; label: string;
     if (clineKeys.length > 0 && available.length === 0) {
       console.log(`[AI Router] Tất cả ${clineKeys.length} Cline key đều đang cooldown!`);
     } else if (available.length > 0) {
-      console.log(`[AI Router] Có ${available.length}/${clineKeys.length} Cline key sẵn sàng`);
+      console.log(`[AI Router] Có ${available.length}/${clineKeys.length} Cline key sẵn sàng (cached)`);
     }
     
     return available;
@@ -106,6 +142,15 @@ async function getActiveClineKeys(): Promise<Array<{ key: string; label: string;
     console.error('[AI Router] Failed to get Cline keys:', err);
     return [];
   }
+}
+
+/**
+ * Reset cache Cline keys để refresh ngay lập tức (gọi sau khi thêm/xóa/toggle key)
+ */
+export function resetClineKeysCache(): void {
+  cachedClineKeys = [];
+  lastClineKeysRefresh = 0;
+  console.log('[AI Router] Cline keys cache reset');
 }
 
 /**

@@ -77,21 +77,29 @@ export const Database = {
   saveMetricsBulk: (data: any) => request<HealthMetric[]>(`${API_BASE}/metrics/bulk`, 'POST', data),
   deleteMetricsBulk: (ids: string[]) => request(`${API_BASE}/metrics/delete-bulk`, 'POST', { ids }),
   deleteAllUserMetrics: (userId: string) => request(`${API_BASE}/metrics/all/${userId}`, 'DELETE'),
-  exportMetrics: (userId: string, format: 'csv' | 'json' = 'csv') => {
-    const sessionId = localStorage.getItem('lucky_hub_session');
-    const url = `${API_BASE}/metrics/export/${userId}?format=${format}`;
-    // Open in new tab với auth header không thể dùng window.open
-    // Dùng fetch và download
-    return fetch(url, { headers: getAuthHeaders() })
-      .then(res => res.blob())
-      .then(blob => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `health_metrics.${format}`;
-        a.click();
-        window.URL.revokeObjectURL(url);
-      });
+  exportMetrics: async (userId: string, format: 'csv' | 'json' = 'csv') => {
+    try {
+      const url = `${API_BASE}/metrics/export/${userId}?format=${format}`;
+      const response = await fetch(url, { headers: getAuthHeaders() });
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || `Export failed: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `health_metrics.${format}`;
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      console.log(`[DB] Metrics exported successfully (${format})`);
+    } catch (err: any) {
+      console.error(`[DB] Export metrics failed:`, err.message);
+      if (window.debugLog) window.debugLog(`[DB] Export metrics FAILED: ${err.message}`, "error");
+      throw err;
+    }
   },
   
   // Knowledge & Rules

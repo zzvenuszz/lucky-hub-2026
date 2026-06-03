@@ -6,15 +6,53 @@
 // XSS Sanitize - Loại bỏ các thẻ script, event handlers khỏi text
 export function sanitizeText(input: string): string {
   if (!input) return '';
-  return input
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/on\w+="[^"]*"/gi, '')
-    .replace(/on\w+=\'[^\']*\'/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/<[\/]*iframe[^>]*>/gi, '')
-    .replace(/<[\/]*embed[^>]*>/gi, '')
-    .replace(/<[\/]*object[^>]*>/gi, '')
-    .trim();
+  let result = input;
+  
+  // Loại bỏ thẻ script và các biến thể (bao gồm cả base64 encoded)
+  result = result.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  result = result.replace(/<script\b[^>]*\/>/gi, '');
+  result = result.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+  
+  // Loại bỏ event handlers với nhiều format (dấu nháy đơn, kép, backtick, không dấu)
+  result = result.replace(/on\w+\s*=\s*"[^"]*"/gi, '');
+  result = result.replace(/on\w+\s*=\s*'[^']*'/gi, '');
+  result = result.replace(/on\w+\s*=\s*`[^`]*`/gi, '');
+  result = result.replace(/on\w+\s*=\s*[^\s"'>`]+/gi, '');
+  
+  // Loại bỏ javascript: pseudo-protocol (cả encoded)
+  result = result.replace(/javascript\s*:/gi, '');
+  result = result.replace(/vbscript\s*:/gi, '');
+  result = result.replace(/data\s*:\s*text\/html/gi, '');
+  result = result.replace(/data\s*:\s*application\/x-javascript/gi, '');
+  
+  // Loại bỏ thẻ iframe, embed, object, applet, form, base
+  result = result.replace(/<[\/]*iframe[^>]*>/gi, '');
+  result = result.replace(/<[\/]*frame[^>]*>/gi, '');
+  result = result.replace(/<[\/]*frameset[^>]*>/gi, '');
+  result = result.replace(/<[\/]*embed[^>]*>/gi, '');
+  result = result.replace(/<[\/]*object[^>]*>/gi, '');
+  result = result.replace(/<[\/]*applet[^>]*>/gi, '');
+  result = result.replace(/<[\/]*form[^>]*>/gi, '');
+  result = result.replace(/<[\/]*base[^>]*>/gi, '');
+  result = result.replace(/<[\/]*meta[^>]*>/gi, '');
+  result = result.replace(/<[\/]*link[^>]*>/gi, '');
+  result = result.replace(/<[\/]*svg[^>]*>/gi, '');
+  
+  // Loại bỏ các hàm nguy hiểm
+  result = result.replace(/alert\s*\(/gi, '');
+  result = result.replace(/prompt\s*\(/gi, '');
+  result = result.replace(/confirm\s*\(/gi, '');
+  result = result.replace(/document\.cookie/gi, '');
+  result = result.replace(/document\.write/gi, '');
+  result = result.replace(/eval\s*\(/gi, '');
+  result = result.replace(/setTimeout\s*\(/gi, '');
+  result = result.replace(/setInterval\s*\(/gi, '');
+  result = result.replace(/new\s+Function\s*\(/gi, '');
+  
+  // Loại bỏ HTML encoding bypass (&#xx; &#xXX;)
+  result = result.replace(/&#x?[0-9a-fA-F]{2,8};/gi, '');
+  
+  return result.trim();
 }
 
 // Validate email format

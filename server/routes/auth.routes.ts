@@ -90,14 +90,13 @@ router.post('/register', validateBody(
     });
     await newUser.save();
 
-    // Gửi email thông tin đăng ký
+    // Gửi email thông tin đăng ký (KHÔNG gửi password qua email vì lý do bảo mật)
     try {
       if (emailService && typeof emailService.sendRegistrationEmail === 'function') {
         await emailService.sendRegistrationEmail(
           newUser.email,
           newUser.fullName,
-          newUser.username,
-          password // plaintext password
+          newUser.username
         );
         console.log(`[Auth] 📧 Registration email sent to ${newUser.email}`);
       } else {

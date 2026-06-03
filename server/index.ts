@@ -80,12 +80,26 @@ const aiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Rate limiter cho các API write (create/update/delete) - 20 requests/phút
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { message: 'Quá nhiều yêu cầu tạo/chỉnh sửa. Vui lòng thử lại sau.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use('/api', globalLimiter);
 app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
 app.use('/api/forgot-password', authLimiter);
 app.use('/api/reset-password', authLimiter);
 app.use('/api/ai', aiLimiter);
+
+// Áp dụng writeLimiter cho các route có thể gây nhiều write
+app.use('/api/nutrition-groups', writeLimiter);
+app.use('/api/chat-groups', writeLimiter);
+app.use('/api/nutrition-branches', writeLimiter);
 
 // Global Request Logger
 app.use((req, res, next) => {
@@ -232,17 +246,21 @@ async function startServer() {
     console.log(`\x1b[1;35m  ⏱️  Timeout: 30s\x1b[0m`);
     console.log('\x1b[1;35m══════════════════════════════════\x1b[0m\n');
     
-    discoverAvailableModels().then(() => {
-      // Đếm số lượng key trong DB theo loại
-      import('./models/GeminiKey.ts').then(({ GeminiKey }) => {
-        GeminiKey.find({ isActive: true }).then((keys) => {
-          const geminiCount = keys.filter((k: any) => (k as any).keyType === 'gemini' || !(k as any).keyType).length;
-          const clineCount = keys.filter((k: any) => (k as any).keyType === 'cline').length;
-          console.log(`\n\x1b[1;34m[SYSTEM]\x1b[0m AI Keys Summary: \x1b[32m${geminiCount} Gemini\x1b[0m + \x1b[35m${clineCount} Cline\x1b[0m = \x1b[33m${geminiCount + clineCount} total\x1b[0m\n`);
-        }).catch(() => {});
-      }).catch(() => {});
-    }).catch((err: any) => {
+    discoverAvailableModels().catch((err: any) => {
       logger.error('SYSTEM', `AI health check failed: ${err?.message || err}`);
+    });
+    
+    // Đếm số lượng key trong DB theo loại (không phụ thuộc vào discoverAvailableModels)
+    import('./models/GeminiKey.ts').then(({ GeminiKey }) => {
+      GeminiKey.find({ isActive: true }).then((keys) => {
+        const geminiCount = keys.filter((k: any) => (k as any).keyType === 'gemini' || !(k as any).keyType).length;
+        const clineCount = keys.filter((k: any) => (k as any).keyType === 'cline').length;
+        console.log(`\n\x1b[1;34m[SYSTEM]\x1b[0m AI Keys Summary: \x1b[32m${geminiCount} Gemini\x1b[0m + \x1b[35m${clineCount} Cline\x1b[0m = \x1b[33m${geminiCount + clineCount} total\x1b[0m\n`);
+      }).catch((err: any) => {
+        logger.error('SYSTEM', `AI key count query failed: ${err?.message || err}`);
+      });
+    }).catch((err: any) => {
+      logger.error('SYSTEM', `AI key module import failed: ${err?.message || err}`);
     });
   });
 }
