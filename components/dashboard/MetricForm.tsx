@@ -165,7 +165,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
               headers,
               body: JSON.stringify({ 
                 imageBase64: compressedBase64,
-                selectedYear: selectedYearAI !== 'auto' ? selectedYearAI : undefined
+                selectedYear: selectedYearAI !== 'auto' ? selectedYearAI : now.getFullYear().toString()
               }),
               signal: AbortSignal.timeout(45000)
             });

@@ -45,7 +45,7 @@ export const extractMetricsFromImage = async (base64Image: string, selectedYear?
       headers: getAuthHeaders(),
       body: JSON.stringify({ 
         imageBase64: base64Image,
-        selectedYear: selectedYear && selectedYear !== 'auto' ? selectedYear : undefined
+        selectedYear: selectedYear && selectedYear !== 'auto' ? selectedYear : new Date().getFullYear().toString()
       }),
       signal: controller.signal
     });
