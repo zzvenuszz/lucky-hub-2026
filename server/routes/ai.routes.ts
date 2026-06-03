@@ -196,6 +196,69 @@ QUAN TRỌNG:
   }
 });
 
+// POST /api/ai/analyze-food - Phân tích ảnh thức ăn & đưa ra khuyến cáo dinh dưỡng
+router.post('/analyze-food', async (req: Request, res: Response) => {
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
+
+    const userId = (req as any).user?.userId;
+    if (!userId) return res.status(401).json({ message: "Vui lòng đăng nhập để sử dụng tính năng này" });
+
+    console.log(`\n[FoodAnalysis] 🍽️ [${requestId}] User ${userId} gửi yêu cầu phân tích ảnh thức ăn`);
+
+    // Dynamic import để tránh circular dependency
+    const { analyzeMeal } = await import('../services/foodAnalysisService.ts');
+    const result = await analyzeMeal(requestId, imageBase64, userId);
+
+    console.log(`[FoodAnalysis] ✅ [${requestId}] Hoàn tất phân tích: ${result.mealAnalysis.foods.length} món, ${result.mealAnalysis.totalCalories}kcal`);
+    console.log(`[FoodAnalysis] 📝 [${requestId}] Khuyến cáo: ${result.recommendation?.substring(0, 100)}`);
+
+    res.json(result);
+  } catch (err: any) {
+    console.error(`[FoodAnalysis] ❌ [${requestId}] Error:`, err.message);
+    res.status(500).json({
+      message: err.message,
+      mealAnalysis: { foods: [], totalCalories: 0, totalProtein: 0, totalCarbs: 0, totalFat: 0, totalFiber: 0, mealType: 'unknown', analysisConfidence: 'low', description: 'Lỗi hệ thống phân tích' },
+      userContext: { hasMetrics: false, dailyCalorieTarget: 0, macrosTarget: { protein: 0, carbs: 0, fat: 0 }, goals: [], bmi: null },
+      mealAssessment: { caloriePercentage: 0, proteinPercentage: 0, carbsPercentage: 0, fatPercentage: 0, isBalanced: false, assessment: 'Lỗi hệ thống' },
+      recommendation: 'Rất tiếc, hệ thống đang gặp sự cố. Vui lòng thử lại sau.',
+      suggestedAdjustments: [],
+      suggestedMenu: ''
+    });
+  }
+});
+
+// POST /api/ai/suggest-meal - Gợi ý thực đơn dựa trên mục tiêu người dùng
+router.post('/suggest-meal', async (req: Request, res: Response) => {
+  const requestId = Math.random().toString(36).substring(7).toUpperCase();
+  try {
+    const { mealType, calorieTarget, dietaryPreference } = req.body;
+    const userId = (req as any).user?.userId;
+    if (!userId) return res.status(401).json({ message: "Vui lòng đăng nhập để sử dụng tính năng này" });
+
+    console.log(`\n[SuggestMeal] 📋 [${requestId}] User ${userId} yêu cầu gợi ý thực đơn (${mealType || 'mặc định'})`);
+
+    const { suggestMeal } = await import('../services/foodAnalysisService.ts');
+    const result = await suggestMeal(requestId, userId, {
+      mealType: mealType || undefined,
+      calorieTarget: calorieTarget ? Number(calorieTarget) : undefined,
+      dietaryPreference: dietaryPreference || undefined
+    });
+
+    console.log(`[SuggestMeal] ✅ [${requestId}] Đã gợi ý thực đơn cho user ${userId}`);
+
+    res.json(result);
+  } catch (err: any) {
+    console.error(`[SuggestMeal] ❌ [${requestId}] Error:`, err.message);
+    res.status(500).json({
+      mealSuggestions: 'Rất tiếc, không thể tạo gợi ý thực đơn lúc này. Vui lòng thử lại sau.',
+      basedOn: ''
+    });
+  }
+});
+
 // POST /api/ai/coach
 router.post('/coach', async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).substring(7).toUpperCase();

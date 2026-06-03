@@ -30,7 +30,7 @@ const ANSI = {
 /**
  * Task types để lựa chọn model phù hợp
  */
-export type AITaskType = 'chat' | 'vision' | 'coach' | 'verify';
+export type AITaskType = 'chat' | 'vision' | 'coach' | 'verify' | 'food' | 'meal-plan';
 
 /**
  * Cache provider chính (refresh mỗi 60s)
@@ -241,7 +241,9 @@ export async function callAI(
     chat: 'Chat tư vấn',
     coach: 'Chat tư vấn',
     vision: 'Phân tích chỉ số từ ảnh',
-    verify: 'Xác thực ảnh đại diện'
+    verify: 'Xác thực ảnh đại diện',
+    food: 'Phân tích ảnh thức ăn',
+    'meal-plan': 'Gợi ý thực đơn'
   };
   
   const taskLabel = taskLabels[taskType] || taskType;
@@ -369,6 +371,8 @@ const MODEL_RECOMMENDATIONS: Record<AITaskType, string[]> = {
   coach: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'],
   vision: ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'],
   verify: ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'],
+  food: ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'],
+  'meal-plan': ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'],
 };
 
 /**
