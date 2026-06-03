@@ -107,7 +107,7 @@ const ChatWindow: React.FC<ChatWindowProps> = memo(({ chat, currentUid }) => {
       <div 
         ref={scrollRef} 
         onScroll={handleScroll}
-        className="flex-grow p-4 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-slate-200" 
+        className="flex-grow p-4 overflow-y-auto overflow-x-hidden space-y-4 scrollbar-thin scrollbar-thumb-slate-200" 
         style={{ overscrollBehavior: 'contain' }}
       >
         {messageGroups.map((group, gi) => (

@@ -89,7 +89,7 @@ const ContactList: React.FC<ContactListProps> = memo(({ onSelectContact }) => {
   }, []);
 
   return (
-    <div className="flex-grow overflow-y-auto no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
+    <div className="flex-grow overflow-y-auto overflow-x-hidden no-scrollbar" style={{ overscrollBehavior: 'contain' }}>
       {/* Search bar */}
       <div className="px-4 pt-4 pb-2">
         <div className="relative">

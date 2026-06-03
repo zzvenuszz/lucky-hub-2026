@@ -190,7 +190,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
             <select 
               value={selectedUserId} 
               onChange={e => setSelectedUserId(e.target.value)} 
-              className="bg-emerald-50 text-emerald-700 font-bold px-4 py-2 rounded-xl border-none text-sm outline-none ring-1 ring-emerald-100"
+              className="bg-emerald-50 text-emerald-700 font-bold px-4 py-2.5 rounded-xl border-none text-sm outline-none ring-1 ring-emerald-100"
             >
               {users.map(u => (
                 <option key={(u as any).id || (u as any)._id} value={(u as any).id || (u as any)._id}>
