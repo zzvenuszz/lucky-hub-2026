@@ -53,14 +53,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'users' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">👥</span>
-            Hội viên
+            <span className="hidden md:inline">Hội viên</span>
           </button>
           <button 
             onClick={() => setActiveTab('groups')} 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'groups' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">🔐</span>
-            Nhóm
+            <span className="hidden md:inline">Nhóm</span>
           </button>
           <button 
             onClick={() => {
@@ -70,7 +70,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'ndd' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">🏥</span>
-            NDD
+            <span className="hidden md:inline">NDD</span>
           </button>
           <button 
             onClick={() => {
@@ -79,28 +79,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'systemndd' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">🌐</span>
-            Nhánh NDD
+            <span className="hidden md:inline">Nhánh NDD</span>
           </button>
           <button 
             onClick={() => setActiveTab('ai')} 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'ai' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">🤖</span>
-            Huấn luyện AI
+            <span className="hidden md:inline">Huấn luyện AI</span>
           </button>
           <button 
             onClick={() => setActiveTab('config')} 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'config' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">⚙️</span>
-            Cấu hình
+            <span className="hidden md:inline">Cấu hình</span>
           </button>
           <button 
             onClick={() => setActiveTab('audit')} 
             className={`flex-1 min-w-0 px-2 md:px-3 py-2 md:py-3 rounded-lg md:rounded-xl font-black text-[9px] md:text-[10px] uppercase tracking-widest transition-all text-center ${activeTab === 'audit' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <span className="block md:hidden text-base mb-0.5">📋</span>
-            Nhật ký
+            <span className="hidden md:inline">Nhật ký</span>
           </button>
         </div>
       </div>

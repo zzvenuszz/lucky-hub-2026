@@ -199,7 +199,10 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
               ))}
             </select>
           )}
-          <button onClick={() => onAddMetric(selectedUserId)} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">+ Thêm mới</button>
+          <button onClick={() => onAddMetric(selectedUserId)} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg shadow-emerald-100 font-bold hover:bg-emerald-700 transition-all">
+            <span className="md:hidden">+</span>
+            <span className="hidden md:inline">+ Thêm mới</span>
+          </button>
           <button 
             onClick={() => {
               const uid = selectedUserId || currentUid;
@@ -297,7 +300,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
       )}
 
       {/* 📱 Mobile Card View */}
-      <div className="mobile-only space-y-3">
+      <div className="mobile-only overflow-x-hidden space-y-3">
         {sortedMetrics.map((m, idx) => {
           const prev = sortedMetrics[idx + 1];
           const mid = m.id || (m as any)._id;
@@ -397,6 +400,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
       </div>
 
       {/* 💻 Desktop Table View */}
+      {sortedMetrics.length > 0 && (
       <div className="table-desktop">
         <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
           <div className="overflow-x-auto no-scrollbar">
@@ -507,6 +511,12 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
           </div>
         </div>
       </div>
+      )}
+      {sortedMetrics.length === 0 && (
+        <div className="table-desktop">
+          <div className="p-20 text-center text-slate-400 font-medium italic">Chưa có dữ liệu lịch sử đo lường</div>
+        </div>
+      )}
     </div>
   );
 };
