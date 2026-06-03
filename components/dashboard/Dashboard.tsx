@@ -12,7 +12,7 @@ import LoadingButton from '../system/LoadingButton.tsx';
 interface DashboardProps {
   user: User;
   users: User[];
-  onAddMetric: () => void;
+  onAddMetric: (targetId?: string) => void;
   refreshTrigger?: number;
 }
 
@@ -98,7 +98,7 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
             <p className="text-slate-500 font-medium">Chào {user.fullName}! Mục tiêu: <span className="text-emerald-600 font-bold">{(user.healthGoals || []).join(', ') || 'Chưa đặt mục tiêu'}</span></p>
           )}
         </div>
-        <LoadingButton onClick={onAddMetric} variant="primary" size="md" className="!shadow-lg !shadow-emerald-100">
+        <LoadingButton onClick={() => onAddMetric(selectedUserId)} variant="primary" size="md" className="!shadow-lg !shadow-emerald-100">
           + Cập nhật chỉ số
         </LoadingButton>
       </div>

@@ -547,7 +547,7 @@ const App: React.FC = () => {
       <ToastProvider>
       <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
         <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={() => setIsChatOpen(!isChatOpen)}>
-        {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={() => handleOpenMetricForm()} refreshTrigger={refreshTrigger} />}
+        {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={(targetId) => handleOpenMetricForm(targetId)} refreshTrigger={refreshTrigger} />}
         {activeTab === 'community' && <NewsFeed currentUser={currentUser!} users={users} />}
         {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
         {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { 
