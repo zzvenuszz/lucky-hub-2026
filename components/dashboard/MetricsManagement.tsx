@@ -3,6 +3,7 @@ import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 import { HealthMetric, User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
+import { cacheManager } from '../../utils/cacheManager.ts';
 
 interface MetricsManagementProps {
   user: User;
@@ -105,6 +106,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
     try {
       console.log(`[MetricsManagement] Deleting metric ${mid}`);
       await Database.deleteMetric(mid);
+      cacheManager.remove(`metrics_${selectedUserId}`);
       setDeletingMetric(null);
       setActionMessage({ type: 'success', text: '🗑️ Đã xóa chỉ số' });
       loadMetrics();
@@ -118,6 +120,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
     try {
       console.log(`[MetricsManagement] Deleting all metrics for user ${selectedUserId}`);
       await Database.deleteAllUserMetrics(selectedUserId);
+      cacheManager.remove(`metrics_${selectedUserId}`);
       setDeletingAllConfirm(false);
       setActionMessage({ type: 'success', text: '🗑️ Đã xóa toàn bộ chỉ số' });
       loadMetrics();
@@ -133,6 +136,7 @@ const MetricsManagement: React.FC<MetricsManagementProps> = ({ user, users, onAd
       const ids = Array.from(selectedIds);
       console.log(`[MetricsManagement] Bulk deleting ${ids.length} metrics`);
       await Database.deleteMetricsBulk(ids);
+      cacheManager.remove(`metrics_${selectedUserId}`);
       setBulkDeleteConfirm(false);
       setSelectedIds(new Set());
       setIsSelectionMode(false);
