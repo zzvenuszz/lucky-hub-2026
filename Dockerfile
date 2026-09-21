@@ -12,9 +12,9 @@ COPY . .
 # Tự động build dự án nếu cần thiết
 RUN npm run build || true
 
-# Ép ứng dụng chạy trên cổng 7860 theo quy định bắt buộc của Hugging Face
-ENV PORT=7860
-EXPOSE 7860
+# Ép ứng dụng chạy trên cổng 3000
+ENV PORT=3000
+EXPOSE 3000
 
 # Khởi chạy ứng dụng backend/fullstack của bạn
 CMD ["node", "run.js"]
