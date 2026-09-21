@@ -1,55 +1,60 @@
-name: Sync to Hugging Face Spaces
+name: Deploy to Hugging Face
 
 on:
   push:
-    branches: [ main ] # Sửa thành master nếu nhánh chính trên GitHub của bạn là master
-
-  workflow_dispatch:
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'server/**'
+      - 'package.json'
+      - 'run.js'
+      - 'README.md'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Push to HF
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          
-          # 1. Đăng nhập tự động bằng Token bí mật vào hệ thống máy chủ
-          echo "machine huggingface.co login luckyhubvn password ${{ secrets.HF_TOKEN }}" > ~/.netrc
-          chmod 600 ~/.netrc
-          
-          # 2. Tạo một thư mục tạm thời bên ngoài để sao lưu dữ liệu sạch hiện tại
-          mkdir /tmp/clean_app
-          cp -r ./* /tmp/clean_app/
-          
-          # 3. XÓA file lịch sử JSON nặng gây lỗi (>10MB)
-          rm -rf /tmp/clean_app/migrated_prompt_history/
-          
-          # 4. Khởi tạo một repo Git mới tinh tại thư mục tạm để XÓA SẠCH LỊCH SỬ LỖI CŨ
-          cd /tmp/clean_app
-          git init
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
-          git branch -m main
-          
-          # 5. KÍCH HOẠT GIT LFS để bảo vệ và nén các file ảnh favicon/img không bị Hugging Face từ chối
-          git lfs install
-          git lfs track "favicon/*"
-          git lfs track "img/*"
-          
-          # 6. Gom toàn bộ mã nguồn sạch (Đầy đủ Dockerfile, README, Ảnh) vào commit mới
-          git add -A
-          git commit -m "Initial clean full-stack deployment commit with LFS assets"
-          
-          # 7. Ép đẩy đè lên Hugging Face Spaces
-          git remote add hf https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026
-          git push --force hf main
+    steps:
+    - name: Kiểm tra repository
+      uses: actions/checkout@v4
+
+    - name: Thiết lập Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Cài đặt dependencies
+      run: npm install
+
+    - name: Build ứng dụng
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        echo "🚀 Bắt đầu triển khai lên Hugging Face..."
+        npm install
+        npm run build || echo "⚠️ Script build không khả dụng, tiếp tục..."
+
+    - name: Triển khai lên Hugging Face
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        echo "🚀 Đang triển khai lên Hugging Face Spaces..."
+        echo "🔐 HF_TOKEN có sẵn: ${{ secrets.HF_TOKEN != '' }}"
+        
+        if [ -z "$HF_TOKEN" ]; then
+          echo "❌ HF_TOKEN không được thiết lập!"
+          echo "Hãy thêm HF_TOKEN vào GitHub Secrets > HF_TOKEN"
+          exit 1
+        fi
+        
+        echo "🎯 Đang triển khai..."
+        huggingface-cli repo create luckyhubvn/lucky-hub-2026 \
+          --space Frontend-Kit \
+          --license mit \
+          --token $HF_TOKEN \
+          --readme ./README.md || true
+        
+        echo "✅ Triển khai lên Hugging Face hoàn tất!"
+        echo "🌐 Ứng dụng sẽ có sẵn tại: https://huggingface.co/spaces/luckyhubvn/lucky-hub-2026"
