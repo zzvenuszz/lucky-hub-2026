@@ -20,6 +20,7 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
   adminRequired: initialAdminRequired,
   encryptionKeyConfigured,
 }) {
+  const existingAdminDetected = databaseConnected && !initialAdminRequired;
   const [databaseStepRequired, setDatabaseStepRequired] = useState(!databaseConnected);
   const [step, setStep] = useState<SetupStep>(() => !databaseConnected ? 0 : initialAdminRequired ? 1 : encryptionKeyConfigured ? 3 : 2);
   const [setupToken, setSetupToken] = useState('');
@@ -145,6 +146,13 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
     setNotice('');
     setIsBusy(true);
     try {
+      if (existingAdminDetected) {
+        await sendSetupRequest('/api/setup/complete', {});
+        console.info('[FirstRunSetup] Existing database setup marker completed.');
+        onComplete();
+        return;
+      }
+
       const providers = [];
       if ((emailProvider === 'brevo' || emailProvider === 'both') && emailConfig.brevoApiKey.trim()) {
         providers.push({ provider: 'brevo', apiKey: emailConfig.brevoApiKey.trim() });
@@ -176,7 +184,7 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
     } finally {
       setIsBusy(false);
     }
-  }, [admin, adminRequired, databaseStepRequired, databaseUri, emailConfig, emailProvider, encryptionKey, encryptionKeyConfigured, onComplete, sendSetupRequest, storageConfig, storageProvider]);
+  }, [admin, adminRequired, databaseStepRequired, databaseUri, emailConfig, emailProvider, encryptionKey, encryptionKeyConfigured, existingAdminDetected, onComplete, sendSetupRequest, storageConfig, storageProvider]);
 
   const goToStep = (target: SetupStep) => {
     setError('');
@@ -235,6 +243,36 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
         )}
 
         <section className={cardClass}>
+          {existingAdminDetected ? (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-extrabold">Database và tài khoản quản trị đã sẵn sàng</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  Đã kết nối MongoDB và tìm thấy tài khoản có quyền quản trị. Hoàn tất bước này để lưu marker setup; dữ liệu và cấu hình hiện có sẽ được giữ nguyên.
+                </p>
+              </div>
+              <dl className="divide-y divide-slate-200 rounded-xl border border-slate-200 px-4">
+                <div className="flex items-center justify-between gap-4 py-3 text-sm">
+                  <dt className="text-slate-600">Kết nối MongoDB</dt>
+                  <dd className="font-semibold text-emerald-700">Đã kết nối</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-3 text-sm">
+                  <dt className="text-slate-600">Tài khoản quản trị</dt>
+                  <dd className="font-semibold text-emerald-700">Đã phát hiện</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4 py-3 text-sm">
+                  <dt className="text-slate-600">Marker first-run setup</dt>
+                  <dd className="font-semibold text-amber-700">Chưa hoàn tất</dd>
+                </div>
+              </dl>
+              {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>}
+              {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
+              <button type="button" className={buttonClass} onClick={() => completeSetup(true)} disabled={isBusy}>
+                {isBusy ? 'Đang hoàn tất…' : 'Hoàn tất setup'}
+              </button>
+            </div>
+          ) : (
+            <>
           <div className="mb-7 grid grid-cols-4 gap-2" aria-label="Tiến trình setup">
             {visibleSteps.map((stepId, index) => (
               <div key={stepId} className="min-w-0">
@@ -257,7 +295,7 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
               </div>
               <div>
                 <label className={labelClass} htmlFor="setup-token">Mã truy cập setup</label>
-                <input id="setup-token" className={inputClass} value={setupToken} onChange={event => setSetupToken(event.target.value)} autoComplete="off" placeholder="Lấy mã hiện tại trong log máy chủ" />
+                <input id="setup-token" className={`${inputClass} uppercase tracking-widest`} value={setupToken} onChange={event => setSetupToken(event.target.value.toUpperCase())} autoComplete="off" placeholder="Mã trong log máy chủ (mặc định 6 ký tự in hoa)" />
                 <p className="mt-1.5 text-xs text-slate-500">Mã này bảo vệ bước cài đặt khỏi người truy cập trái phép. Có thể đặt LUCKY_HUB_SETUP_TOKEN trong cấu hình môi trường.</p>
               </div>
               <div>
@@ -280,6 +318,13 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
                 <h2 className="text-xl font-extrabold">Tạo tài khoản quản trị</h2>
                 <p className="mt-1 text-sm leading-6 text-slate-600">Tài khoản này được gán đầy đủ quyền quản trị. Mật khẩu tối thiểu 12 ký tự.</p>
               </div>
+              {!databaseStepRequired && (
+                <div>
+                  <label className={labelClass} htmlFor="setup-token-admin">Mã truy cập setup</label>
+                  <input id="setup-token-admin" className={`${inputClass} uppercase tracking-widest`} value={setupToken} onChange={event => setSetupToken(event.target.value)} autoComplete="off" placeholder="6 ký tự in hoa từ log máy chủ" />
+                  <p className="mt-1.5 text-xs text-slate-500">Nhập mã 6 ký tự in hoa trong log server để xác nhận quyền setup.</p>
+                </div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label className={labelClass} htmlFor="admin-full-name">Tên hiển thị</label>
@@ -300,7 +345,7 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
               </div>
               <div className="flex justify-between">
                 {visibleSteps.indexOf(step) > 0 && <button type="button" className={secondaryButtonClass} onClick={goToPreviousStep}>Quay lại</button>}
-                <button type="button" className={buttonClass} onClick={goToNextStep} disabled={admin.fullName.trim().length < 2 || admin.username.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(admin.email) || admin.password.length < 12}>
+                <button type="button" className={buttonClass} onClick={goToNextStep} disabled={(!databaseStepRequired && !setupToken.trim()) || admin.fullName.trim().length < 2 || admin.username.trim().length < 3 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(admin.email) || admin.password.length < 12}>
                   Tiếp tục
                 </button>
               </div>
@@ -407,6 +452,8 @@ const FirstRunWizard: React.FC<FirstRunWizardProps> = memo(function FirstRunWiza
                 </div>
               </div>
             </div>
+          )}
+            </>
           )}
         </section>
 

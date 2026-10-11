@@ -41,7 +41,7 @@ import setupRoutes from './routes/setup.routes.ts';
 
 // Services
 import { discoverModelsForAllProviders } from './services/ai/modelDiscovery.ts';
-import { initializeFirstRunConfiguration, initializeSetupAccessToken, isFirstRunSetupRequired, readPersistedSetup, resumePendingSetup } from './services/firstRunSetup.ts';
+import { hasAdministratorAccount, initializeFirstRunConfiguration, initializeSetupAccessToken, isFirstRunSetupRequired, readPersistedSetup, resumePendingSetup } from './services/firstRunSetup.ts';
 import { initChatWebSocket } from './websocket/chatSocket.ts';
 import { magicMirrorAuth } from './middleware/magicMirrorAuth.ts';
 import { authMiddleware } from './middleware/authMiddleware.ts';
@@ -281,12 +281,16 @@ async function startServer() {
   initChatWebSocket(wss);
 
   if (await isFirstRunSetupRequired()) {
-    const setupToken = initializeSetupAccessToken();
-    console.warn('[FirstRunSetup] Setup is incomplete. Enter the following one-time access code in the setup wizard:');
-    if (process.env.LUCKY_HUB_SETUP_TOKEN?.trim()) {
-      console.warn('[FirstRunSetup] LUCKY_HUB_SETUP_TOKEN is configured; use its value from the deployment environment.');
+    if (databaseConnected && await hasAdministratorAccount()) {
+      console.warn('[FirstRunSetup] Existing administrator detected. Complete setup from the wizard; no access code is required.');
     } else {
-      console.warn(`[FirstRunSetup] One-time setup access code: ${setupToken}`);
+      const setupToken = initializeSetupAccessToken();
+      console.warn('[FirstRunSetup] Setup is incomplete. Enter the following one-time access code in the setup wizard:');
+      if (process.env.LUCKY_HUB_SETUP_TOKEN?.trim()) {
+        console.warn('[FirstRunSetup] LUCKY_HUB_SETUP_TOKEN is configured; use its value from the deployment environment.');
+      } else {
+        console.warn(`[FirstRunSetup] One-time setup access code: ${setupToken}`);
+      }
     }
   }
 

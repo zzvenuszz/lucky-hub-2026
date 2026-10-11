@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
-import { completeFirstRunSetup, getAdminRequirementForDatabase, getFirstRunSetupStatus, initializeSetupAccessToken, isFirstRunSetupRequired, testConfiguredMongoConnection, testMongoConnection, SetupInput } from '../services/firstRunSetup.ts';
+import { completeFirstRunSetup, getAdminRequirementForDatabase, getFirstRunSetupStatus, hasAdministratorAccount, initializeSetupAccessToken, isFirstRunSetupRequired, testConfiguredMongoConnection, testMongoConnection, SetupInput } from '../services/firstRunSetup.ts';
 import { generateEncryptionKey } from '../utils/encryption.ts';
 import { discoverModelsForAllProviders } from '../services/ai/modelDiscovery.ts';
 
@@ -16,7 +16,18 @@ const setupLimiter = rateLimit({
   message: { message: 'Quá nhiều yêu cầu setup. Vui lòng thử lại sau.' },
 });
 
-function requireSetupToken(req: Request, res: Response, next: NextFunction): void {
+async function requireSetupToken(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (mongoose.connection.readyState === 1 && await hasAdministratorAccount()) {
+      next();
+      return;
+    }
+  } catch (error) {
+    console.error('[FirstRunSetup] Could not verify existing administrator:', error instanceof Error ? error.message : error);
+    res.status(500).json({ message: 'Không thể xác minh tài khoản quản trị hiện có.' });
+    return;
+  }
+
   const requiredToken = initializeSetupAccessToken();
   const suppliedToken = req.header('x-setup-token') || '';
   const supplied = Buffer.from(suppliedToken);

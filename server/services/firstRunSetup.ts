@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import { Group } from '../models/Group.ts';
 import { SystemSettings } from '../models/SystemSettings.ts';
 import { User } from '../models/User.ts';
-import { ALL_PERMISSIONS } from '../config/permissions.ts';
+import { ALL_PERMISSIONS, RESOURCES } from '../config/permissions.ts';
 import { encrypt, isStrongEncryptionPassphrase, isValidConfiguredEncryptionKey } from '../utils/encryption.ts';
 import { isValidEmail, isValidUsername } from '../../services/validationService.ts';
 
@@ -50,7 +50,6 @@ interface PersistedSetup {
 let generatedAccessToken = '';
 let setupCompletionInProgress = false;
 let setupCompletionKnown = false;
-let setupStateInitialized = false;
 
 function getSetupFilePath(): string {
   const dataDirectory = process.env.LUCKY_HUB_DATA_DIR?.trim()
@@ -97,24 +96,33 @@ async function writePersistedSetup(value: PersistedSetup): Promise<void> {
 
 export async function isFirstRunSetupRequired(): Promise<boolean> {
   const persisted = await readPersistedSetup();
-  if (persisted) return !persisted.setupComplete;
+  if (persisted?.setupComplete) {
+    setupCompletionKnown = true;
+    return false;
+  }
   if (setupCompletionKnown) return false;
-  if (setupStateInitialized) return true;
   if (mongoose.connection.readyState === 1) {
     const settings = await SystemSettings.findOne({}).select('firstRunSetupComplete').lean();
     if (settings?.firstRunSetupComplete) {
       setupCompletionKnown = true;
-      setupStateInitialized = true;
       return false;
     }
   }
-  setupStateInitialized = true;
   return true;
+}
+
+export async function hasAdministratorAccount(): Promise<boolean> {
+  const adminGroup = await Group.findOne({
+    permissions: RESOURCES.ADMIN.PANEL,
+    isActive: { $ne: false },
+  }).select('_id').lean();
+  if (!adminGroup) return false;
+  return !!await User.exists({ groupId: adminGroup._id, status: 'ACTIVE' });
 }
 
 export async function getFirstRunSetupStatus(): Promise<{ databaseConnected: boolean; adminRequired: boolean; encryptionKeyConfigured: boolean }> {
   const databaseConnected = mongoose.connection.readyState === 1;
-  const adminRequired = !databaseConnected || await User.countDocuments() === 0;
+  const adminRequired = !databaseConnected || !(await hasAdministratorAccount());
   const configuredEncryptionKey = process.env.AI_ENCRYPTION_KEY || '';
   return {
     databaseConnected,
@@ -133,7 +141,9 @@ export async function initializeFirstRunConfiguration(): Promise<PersistedSetup 
 
 export function initializeSetupAccessToken(): string {
   if (process.env.LUCKY_HUB_SETUP_TOKEN?.trim()) return process.env.LUCKY_HUB_SETUP_TOKEN.trim();
-  if (!generatedAccessToken) generatedAccessToken = crypto.randomBytes(32).toString('base64url');
+  if (!generatedAccessToken) {
+    generatedAccessToken = Array.from({ length: 6 }, () => String.fromCharCode(65 + crypto.randomInt(26))).join('');
+  }
   return generatedAccessToken;
 }
 
@@ -275,9 +285,8 @@ async function applyPendingSetup(persisted: PersistedSetup): Promise<boolean> {
   await Promise.all(mongoose.modelNames().map(name => mongoose.model(name).init()));
 
   const pendingAdmin = persisted.pending.admin;
-  const existingUsers = await User.countDocuments();
-  const adminCreated = existingUsers === 0;
-  if (existingUsers === 0) {
+  const adminCreated = !(await hasAdministratorAccount());
+  if (adminCreated) {
     if (!pendingAdmin) throw new Error('Cơ sở dữ liệu chưa có user; cần cung cấp thông tin tài khoản quản trị.');
     const adminGroup = await Group.findOneAndUpdate(
       { name: 'Quản trị viên' },
@@ -303,7 +312,7 @@ async function applyPendingSetup(persisted: PersistedSetup): Promise<boolean> {
     await adminGroup.save();
     await defaultGroup.save();
   } else {
-    console.log('[FirstRunSetup] Existing users found; skipping initial admin creation.');
+    console.log('[FirstRunSetup] Existing administrator found; skipping initial admin creation.');
   }
 
   const settingsToUpdate: Record<string, unknown> = {
@@ -331,7 +340,6 @@ async function applyPendingSetup(persisted: PersistedSetup): Promise<boolean> {
     databaseUri: persisted.databaseUri,
     encryptionKey: persisted.encryptionKey,
   });
-  setupStateInitialized = true;
   setupCompletionKnown = true;
   return adminCreated;
 }
@@ -363,7 +371,7 @@ export async function testConfiguredMongoConnection(): Promise<void> {
 export async function getAdminRequirementForDatabase(databaseUri: unknown): Promise<boolean> {
   const uri = validateDatabaseUri(databaseUri);
   if (mongoose.connection.readyState === 1 && process.env.MONGODB_URI?.trim() === uri) {
-    return await User.countDocuments() === 0;
+    return !(await hasAdministratorAccount());
   }
   const connection = mongoose.createConnection(uri, {
     serverSelectionTimeoutMS: 8000,
@@ -372,7 +380,16 @@ export async function getAdminRequirementForDatabase(databaseUri: unknown): Prom
   try {
     await connection.asPromise();
     if (!connection.db) throw new Error('Không thể truy vấn database MongoDB.');
-    return await connection.db.collection('users').countDocuments() === 0;
+    const adminGroup = await connection.db.collection('groups').findOne({
+      permissions: RESOURCES.ADMIN.PANEL,
+      isActive: { $ne: false },
+    }, { projection: { _id: 1 } });
+    if (!adminGroup) return true;
+    const admin = await connection.db.collection('users').findOne({
+      groupId: adminGroup._id,
+      status: 'ACTIVE',
+    }, { projection: { _id: 1 } });
+    return !admin;
   } finally {
     await connection.close();
   }
@@ -383,6 +400,17 @@ export async function completeFirstRunSetup(rawInput: SetupInput): Promise<boole
   setupCompletionInProgress = true;
   try {
     if (!(await isFirstRunSetupRequired())) throw new Error('Ứng dụng đã được setup.');
+    const previousSetup = await readPersistedSetup();
+    if (mongoose.connection.readyState === 1 && await hasAdministratorAccount() && !previousSetup?.pending) {
+      await SystemSettings.findOneAndUpdate(
+        {},
+        { $set: { firstRunSetupComplete: true } },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      );
+      setupCompletionKnown = true;
+      console.log('[FirstRunSetup] Existing administrator detected; setup completion marker saved.');
+      return false;
+    }
     const configuredDatabaseUri = mongoose.connection.readyState === 1 ? process.env.MONGODB_URI?.trim() || '' : '';
     const configuredEncryptionKey = process.env.AI_ENCRYPTION_KEY || '';
     const input = validateSetupInput(rawInput, configuredDatabaseUri, configuredEncryptionKey);
@@ -414,7 +442,6 @@ export async function completeFirstRunSetup(rawInput: SetupInput): Promise<boole
 
     await writePersistedSetup(persisted);
     const adminCreated = await applyPendingSetup(persisted);
-    setupStateInitialized = true;
     setupCompletionKnown = true;
     return adminCreated;
   } finally {
