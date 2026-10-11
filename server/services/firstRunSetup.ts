@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import mongoose from 'mongoose';
 import { Group } from '../models/Group.ts';
+import { AILog } from '../models/AILog.ts';
 import { SystemSettings } from '../models/SystemSettings.ts';
 import { User } from '../models/User.ts';
 import { ALL_PERMISSIONS, RESOURCES } from '../config/permissions.ts';
@@ -266,6 +267,27 @@ function prepareEmailSettings(email: NonNullable<SetupInput['email']>): { provid
   };
 }
 
+async function migrateAILogTimestampIndex(): Promise<void> {
+  const database = mongoose.connection.db;
+  if (!database) throw new Error('MongoDB connection is not ready for index migration.');
+
+  const collectionName = AILog.collection.collectionName;
+  const collectionExists = await database.listCollections({ name: collectionName }, { nameOnly: true }).hasNext();
+  if (!collectionExists) return;
+
+  const indexes = await AILog.collection.indexes();
+  const legacyTimestampIndex = indexes.find(index =>
+    index.name !== '_id_'
+    && index.expireAfterSeconds === undefined
+    && Object.keys(index.key).length === 1
+    && index.key.timestamp === 1,
+  );
+  if (!legacyTimestampIndex?.name) return;
+
+  await AILog.collection.dropIndex(legacyTimestampIndex.name);
+  console.warn(`[FirstRunSetup] Replacing legacy ${collectionName}.${legacyTimestampIndex.name} index with the configured 30-day TTL index.`);
+}
+
 async function applyPendingSetup(persisted: PersistedSetup): Promise<boolean> {
   if (!persisted.pending) throw new Error('Không có cấu hình setup đang chờ.');
   if (mongoose.connection.readyState === 1 && process.env.MONGODB_URI !== persisted.databaseUri) {
@@ -282,6 +304,7 @@ async function applyPendingSetup(persisted: PersistedSetup): Promise<boolean> {
     });
   }
 
+  await migrateAILogTimestampIndex();
   await Promise.all(mongoose.modelNames().map(name => mongoose.model(name).init()));
 
   const pendingAdmin = persisted.pending.admin;
