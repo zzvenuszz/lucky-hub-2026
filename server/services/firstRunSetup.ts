@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import mongoose from 'mongoose';
 import { Group } from '../models/Group.ts';
-import { AILog } from '../models/AILog.ts';
+import { AILog, AI_LOG_RETENTION_SECONDS } from '../models/AILog.ts';
 import { SystemSettings } from '../models/SystemSettings.ts';
 import { User } from '../models/User.ts';
 import { ALL_PERMISSIONS, RESOURCES } from '../config/permissions.ts';
@@ -284,8 +284,14 @@ async function migrateAILogTimestampIndex(): Promise<void> {
   );
   if (!legacyTimestampIndex?.name) return;
 
-  await AILog.collection.dropIndex(legacyTimestampIndex.name);
-  console.warn(`[FirstRunSetup] Replacing legacy ${collectionName}.${legacyTimestampIndex.name} index with the configured 30-day TTL index.`);
+  await database.command({
+    collMod: collectionName,
+    index: {
+      name: legacyTimestampIndex.name,
+      expireAfterSeconds: AI_LOG_RETENTION_SECONDS,
+    },
+  });
+  console.warn(`[FirstRunSetup] Updated ${collectionName}.${legacyTimestampIndex.name} to the configured TTL retention.`);
 }
 
 async function applyPendingSetup(persisted: PersistedSetup): Promise<boolean> {

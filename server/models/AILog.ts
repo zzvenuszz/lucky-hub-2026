@@ -38,7 +38,7 @@ const AILogSchema = new mongoose.Schema({
     enum: ['chat', 'coach', 'vision', 'verify', 'food', 'meal-plan', 'embedding']
   },
   userId: { type: String, index: true },
-  timestamp: { type: Date, default: Date.now, index: true },
+  timestamp: { type: Date, default: Date.now },
 
   // Provider/Model/Key used
   providerId: { type: String, index: true },
@@ -87,8 +87,9 @@ AILogSchema.index({ providerId: 1, timestamp: -1 });
 AILogSchema.index({ userId: 1, timestamp: -1 });
 AILogSchema.index({ logLevel: 1, timestamp: -1 });
 
-// TTL index - auto delete logs older than 30 days (configurable)
-AILogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
+// TTL index - auto delete logs older than 30 days
+export const AI_LOG_RETENTION_SECONDS = 30 * 24 * 60 * 60;
+AILogSchema.index({ timestamp: 1 }, { expireAfterSeconds: AI_LOG_RETENTION_SECONDS });
 
 // Virtual for formatted duration
 AILogSchema.virtual('durationFormatted').get(function() {
