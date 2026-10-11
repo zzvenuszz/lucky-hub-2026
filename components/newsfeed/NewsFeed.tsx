@@ -24,6 +24,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser, users = [] }) => 
   const [posts, setPosts] = useState<Post[]>([]);
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [postError, setPostError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessingImages, setIsProcessingImages] = useState(false);
   const [showReactionsFor, setShowReactionsFor] = useState<string | null>(null);
@@ -143,6 +144,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser, users = [] }) => 
 
   const handleCreatePost = async () => {
     if (!inputText.trim() && selectedImages.length === 0) return;
+    setPostError('');
     setIsLoading(true); 
     setIsProcessingImages(true);
     
@@ -172,7 +174,7 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser, users = [] }) => 
       }
     } catch (error) {
       console.error(`[NewsFeed] Error creating post:`, error);
-      // Show error state to user
+      setPostError(error instanceof Error ? error.message : 'Không thể đăng bài. Vui lòng thử lại.');
     } finally {
       setIsLoading(false); 
       setIsProcessingImages(false);
@@ -275,6 +277,11 @@ const NewsFeed: React.FC<NewsFeedProps> = memo(({ currentUser, users = [] }) => 
         </div>
       </div>
 
+      {postError && (
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {postError}
+        </div>
+      )}
       <PostCreator 
         currentUser={currentUser} inputText={inputText} setInputText={setInputText} 
         selectedImages={selectedImages} setSelectedImages={setSelectedImages} 

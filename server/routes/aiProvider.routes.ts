@@ -33,6 +33,8 @@ import {
 } from '../services/ai/index.ts';
 
 const router = Router();
+const AI_TASK_TYPES = ['chat', 'coach', 'vision', 'verify', 'food', 'meal-plan', 'embedding'] as const;
+type AITaskType = typeof AI_TASK_TYPES[number];
 
 // Apply auth and permission middleware
 router.use(authMiddleware);
@@ -49,6 +51,26 @@ function logAdmin(req: Request, action: string, detail = ''): void {
 
 function generateRequestId(): string {
   return 'adm-' + Math.random().toString(36).substring(7).toUpperCase();
+}
+
+function isAITaskType(taskType: string): taskType is AITaskType {
+  return (AI_TASK_TYPES as readonly string[]).includes(taskType);
+}
+
+async function ensureTaskConfig(taskType: AITaskType) {
+  const existingConfig = await AITaskConfig.findOne({ taskType });
+  if (existingConfig) return existingConfig;
+
+  try {
+    const config = await AITaskConfig.create({ taskType, updatedBy: 'system' });
+    console.log(`[AI-TaskMapping] Initialized missing task config: ${taskType}`);
+    return config;
+  } catch (error: any) {
+    if (error.code !== 11000) throw error;
+    const concurrentlyCreatedConfig = await AITaskConfig.findOne({ taskType });
+    if (!concurrentlyCreatedConfig) throw error;
+    return concurrentlyCreatedConfig;
+  }
 }
 
 function sanitizeProviderForResponse(provider: any) {
@@ -462,6 +484,7 @@ router.put('/providers/:id/models/:modelId/toggle', async (req: Request, res: Re
 // GET /api/admin/ai/task-configs - List all task configs
 router.get('/task-configs', async (req: Request, res: Response) => {
   try {
+    await Promise.all(AI_TASK_TYPES.map(taskType => ensureTaskConfig(taskType)));
     const configs = await AITaskConfig.find().lean();
 
     // Populate provider names
@@ -492,16 +515,15 @@ router.get('/task-configs', async (req: Request, res: Response) => {
 router.get('/task-configs/:taskType', async (req: Request, res: Response) => {
   try {
     const { taskType } = req.params;
-    const config = await AITaskConfig.findOne({ taskType }).lean();
-
-    if (!config) {
-      return res.status(404).json({ message: 'Task config not found' });
+    if (!isAITaskType(taskType)) {
+      return res.status(400).json({ message: 'Task type không hợp lệ.' });
     }
+    const config = await ensureTaskConfig(taskType);
 
     // Get available models for this task
-    const availableModels = await getAvailableModelsForTask(taskType as any);
+    const availableModels = await getAvailableModelsForTask(taskType);
 
-    res.json({ taskConfig: config, availableModels });
+    res.json({ taskConfig: config.toObject(), availableModels });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }

@@ -49,8 +49,15 @@ router.post('/', authMiddleware, requirePermission(RESOURCES.POSTS.CREATE), vali
   if (imageUrls && Array.isArray(imageUrls)) {
     for (const img of imageUrls) {
       if (img.startsWith('data:image')) {
-        const imgData = await uploadToImgBB(img);
-        if (imgData) uploadedImages.push(imgData);
+        try {
+          const imgData = await uploadToImgBB(img, { required: true });
+          if (!imgData) throw new Error('Không nhận được đường dẫn ảnh sau khi tải lên.');
+          uploadedImages.push(imgData);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Không thể tải ảnh lên.';
+          console.error('[Posts] Image upload failed; post was not saved:', message);
+          return res.status(502).json({ message });
+        }
       }
     }
   }
