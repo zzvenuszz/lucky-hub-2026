@@ -33,7 +33,7 @@ View your app in AI Studio: https://ai.studio/apps/deadf569-6a8d-4c68-a9a7-e339e
 
 1. Đăng nhập Lucky Hub bằng tài khoản quản trị, mở **Cài đặt Hệ thống → CẤU HÌNH MAGIC MIRROR** và tạo token riêng cho từng thiết bị. Có thể đặt ngày hết hạn; để trống nếu token không hết hạn.
 2. Sao chép token mới tạo và cấu hình cùng giá trị vào `apiToken` trong cấu hình của cả `MMM-LuckyHub-FaceSync` và `MMM-LuckyHub`. Không commit token vào Git; với server từ xa, chỉ kết nối qua HTTPS.
-3. Token được lưu mã hóa trong database và xác thực bằng hash. Dùng **Copy token** để sao chép lại, **Chặn/Cho phép** để bật hoặc thu hồi quyền kết nối, hoặc sửa/xóa token trong trang quản trị. Token bị tắt hoặc hết hạn sẽ không được chấp nhận.
+3. Token được lưu mã hóa trong database và xác thực bằng hash cho cả API lẫn kết nối WebSocket của Magic Mirror. Hai module tự gửi token từ `apiToken` dưới dạng `Authorization: Bearer <token>`. Dùng **Copy token** để sao chép lại, **Chặn/Cho phép** để bật hoặc thu hồi quyền kết nối, hoặc sửa/xóa token trong trang quản trị. Token bị tắt hoặc hết hạn sẽ không được chấp nhận.
 4. Server cần có `AI_ENCRYPTION_KEY` hợp lệ để lưu token mã hóa. Gemini API key không được gửi xuống thiết bị; lời chào được tạo qua server.
 
 Ví dụ cấu hình trong `config.js` Magic Mirror (thay URL và token bằng giá trị của bạn):

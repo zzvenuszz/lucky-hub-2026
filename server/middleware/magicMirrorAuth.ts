@@ -2,6 +2,18 @@ import { createHash } from 'crypto';
 import { NextFunction, Request, Response } from 'express';
 import { MagicMirrorToken } from '../models/MagicMirrorToken.ts';
 
+export async function isMagicMirrorTokenValid(providedToken: string): Promise<boolean> {
+  const tokenHash = createHash('sha256').update(providedToken).digest('hex');
+  const now = new Date();
+  const token = await MagicMirrorToken.findOne({
+    tokenHash,
+    isActive: true,
+    $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+  }).select('_id');
+
+  return Boolean(token);
+}
+
 export async function magicMirrorAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const authorization = req.get('authorization') || '';
@@ -12,15 +24,7 @@ export async function magicMirrorAuth(req: Request, res: Response, next: NextFun
       return;
     }
 
-    const tokenHash = createHash('sha256').update(providedToken).digest('hex');
-    const now = new Date();
-    const token = await MagicMirrorToken.findOne({
-      tokenHash,
-      isActive: true,
-      $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
-    }).select('_id');
-
-    if (!token) {
+    if (!(await isMagicMirrorTokenValid(providedToken))) {
       res.status(401).json({ message: 'Magic Mirror token is invalid, inactive, or expired.' });
       return;
     }

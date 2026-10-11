@@ -5,17 +5,46 @@
 
 import crypto from 'crypto';
 
-// Get encryption key from environment (32 bytes = 256 bits)
+const SPECIAL_KEY_CHARACTERS = "!@#$%^&*()-_=+[]{}?.,:;/\\|~`'\"";
+let cachedConfiguredKey = '';
+let cachedEncryptionKey: Buffer | null = null;
+
+export function isStrongEncryptionPassphrase(value: string): boolean {
+  return value.length >= 8
+    && value.length <= 256
+    && /[A-Z]/.test(value)
+    && /[a-z]/.test(value)
+    && /[0-9]/.test(value)
+    && [...value].some(character => SPECIAL_KEY_CHARACTERS.includes(character));
+}
+
+export function isValidConfiguredEncryptionKey(value: string): boolean {
+  const decoded = Buffer.from(value, 'base64');
+  return isStrongEncryptionPassphrase(value)
+    || (decoded.length === 32 && decoded.toString('base64').replace(/=+$/, '') === value.replace(/=+$/, ''));
+}
+
+// Keep accepting legacy 32-byte base64 keys while deriving setup passphrases to 256-bit keys.
 function getEncryptionKey(): Buffer {
-  const keyB64 = process.env.AI_ENCRYPTION_KEY;
-  if (!keyB64) {
-    throw new Error('AI_ENCRYPTION_KEY environment variable is required. Generate with: openssl rand -base64 32');
+  const configuredKey = process.env.AI_ENCRYPTION_KEY;
+  if (!configuredKey) {
+    throw new Error('AI_ENCRYPTION_KEY environment variable is required.');
   }
-  const key = Buffer.from(keyB64, 'base64');
-  if (key.length !== 32) {
-    throw new Error('AI_ENCRYPTION_KEY must be 32 bytes (base64 encoded)');
+  if (cachedEncryptionKey && cachedConfiguredKey === configuredKey) return cachedEncryptionKey;
+
+  const legacyKey = Buffer.from(configuredKey, 'base64');
+  const canonicalLegacyKey = legacyKey.toString('base64').replace(/=+$/, '');
+  if (legacyKey.length === 32 && canonicalLegacyKey === configuredKey.replace(/=+$/, '')) {
+    cachedEncryptionKey = legacyKey;
+  } else {
+    if (!isStrongEncryptionPassphrase(configuredKey)) {
+      throw new Error('AI_ENCRYPTION_KEY must be a 32-byte base64 key or a strong passphrase with uppercase, lowercase, number, and special character.');
+    }
+    cachedEncryptionKey = crypto.scryptSync(configuredKey, 'lucky-hub-2026:AI_ENCRYPTION_KEY:v1', 32);
   }
-  return key;
+
+  cachedConfiguredKey = configuredKey;
+  return cachedEncryptionKey;
 }
 
 /**
@@ -96,9 +125,27 @@ export function maskApiKey(key: string): string {
 }
 
 /**
- * Generate a new encryption key (for setup)
- * Run: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+ * Generate a setup passphrase that meets the wizard complexity policy.
  */
 export function generateEncryptionKey(): string {
-  return crypto.randomBytes(32).toString('base64');
+  const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const special = SPECIAL_KEY_CHARACTERS;
+  const allCharacters = uppercase + lowercase + digits + special;
+  const requiredCharacters = [
+    uppercase[crypto.randomInt(uppercase.length)],
+    lowercase[crypto.randomInt(lowercase.length)],
+    digits[crypto.randomInt(digits.length)],
+    special[crypto.randomInt(special.length)],
+  ];
+
+  while (requiredCharacters.length < 32) {
+    requiredCharacters.push(allCharacters[crypto.randomInt(allCharacters.length)]);
+  }
+  for (let index = requiredCharacters.length - 1; index > 0; index -= 1) {
+    const swapIndex = crypto.randomInt(index + 1);
+    [requiredCharacters[index], requiredCharacters[swapIndex]] = [requiredCharacters[swapIndex], requiredCharacters[index]];
+  }
+  return requiredCharacters.join('');
 }

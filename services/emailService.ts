@@ -9,6 +9,9 @@
 
 import sgMail from '@sendgrid/mail';
 import { logger } from './logger.ts';
+import mongoose from 'mongoose';
+import { SystemSettings } from '../server/models/SystemSettings.ts';
+import { decrypt } from '../server/utils/encryption.ts';
 
 const DEFAULT_FRONTEND_URL = 'https://lucky-hub-2026.onrender.com';
 
@@ -33,6 +36,7 @@ class EmailService {
   private senderEmail: string = 'luckyhubvn@gmail.com';
   private senderName: string = 'Lucky Hub';
   private appBaseUrl: string;
+  private storedSettingsLoadedAt = 0;
 
   constructor() {
     this.brevoApiKey = process.env.BREVO_API_KEY || '';
@@ -55,6 +59,41 @@ class EmailService {
       senderName: this.senderName,
       appBaseUrl: this.appBaseUrl
     });
+  }
+
+  private async refreshStoredSettings(): Promise<void> {
+    if (mongoose.connection.readyState !== 1 || Date.now() - this.storedSettingsLoadedAt < 5000) return;
+    try {
+      const settings = await SystemSettings.findOne({}).select('email').lean();
+      const email = settings?.email;
+      if (!email) return;
+
+      this.senderEmail = email.senderEmail || this.senderEmail;
+      this.senderName = email.senderName || this.senderName;
+      this.appBaseUrl = (email.appBaseUrl || this.appBaseUrl).replace(/\/$/, '');
+
+      const providers = (email.providers || []).filter((provider: any) => provider.isActive)
+        .sort((left: any, right: any) => left.priority - right.priority);
+      if (providers.length > 0) {
+        this.brevoApiKey = '';
+        this.sgApiKey = '';
+      }
+      for (const provider of providers) {
+        const apiKey = typeof provider.apiKey === 'string' && provider.apiKey.split(':').length === 3
+          ? decrypt(provider.apiKey)
+          : provider.apiKey;
+        if (!apiKey) continue;
+        if (provider.provider === 'brevo') this.brevoApiKey = apiKey;
+        if (provider.provider === 'sendgrid') {
+          this.sgApiKey = apiKey;
+          sgMail.setApiKey(apiKey);
+        }
+      }
+      this.storedSettingsLoadedAt = Date.now();
+    } catch (error: any) {
+      console.error('[EMAIL-SERVICE] Failed to load stored email settings:', error.message);
+      logger.error('Email', `Could not load saved email settings: ${error.message}`);
+    }
   }
 
   /**
@@ -143,6 +182,7 @@ class EmailService {
    */
   public async sendEmail(options: EmailOptions): Promise<boolean> {
     console.log('[EMAIL-SERVICE] sendEmail called with:', { to: options.to, subject: options.subject });
+    await this.refreshStoredSettings();
 
     // 1. Thử Brevo trước
     const brevoResult = await this.sendViaBrevo(options);
@@ -170,6 +210,7 @@ class EmailService {
    * Send email verification email
    */
   public async sendVerificationEmail(email: string, verificationToken: string, userName: string): Promise<boolean> {
+    await this.refreshStoredSettings();
     console.log('[EMAIL-SERVICE] sendVerificationEmail called:', { email, userName, tokenLength: verificationToken.length });
 
     const verifyUrl = `${this.appBaseUrl}/verify-email?token=${verificationToken}`;
@@ -239,6 +280,7 @@ class EmailService {
    * Send password reset email
    */
   public async sendPasswordResetEmail(email: string, resetToken: string, userName: string): Promise<boolean> {
+    await this.refreshStoredSettings();
     console.log('[EMAIL-SERVICE] sendPasswordResetEmail called:', { email, userName, tokenLength: resetToken.length });
 
     const resetUrl = `${this.appBaseUrl}/reset-password?token=${resetToken}`;
@@ -263,6 +305,7 @@ class EmailService {
    * Send welcome email for new users
    */
   public async sendWelcomeEmail(email: string, userName: string): Promise<boolean> {
+    await this.refreshStoredSettings();
     const loginUrl = `${this.appBaseUrl}/login`;
 
     const html = `
@@ -440,6 +483,7 @@ class EmailService {
    * Send registration success email with login credentials
    */
   public async sendRegistrationEmail(email: string, userName: string, loginId: string, password: string): Promise<boolean> {
+    await this.refreshStoredSettings();
     console.log('[EMAIL-SERVICE] sendRegistrationEmail called:', { email, userName });
 
     const loginUrl = `${this.appBaseUrl}/login`;

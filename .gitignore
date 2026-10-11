@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.data/
 
 # Sao lưu & lịch sử prompt cũ (không cần version hoá)
 *.bak

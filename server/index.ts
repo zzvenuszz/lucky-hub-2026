@@ -37,9 +37,11 @@ import nutritionBranchRoutes from './routes/nutritionBranch.routes.ts';
 import chatGroupRoutes from './routes/chatGroup.routes.ts';
 import magicMirrorTokenRoutes from './routes/magicMirrorToken.routes.ts';
 import systemBrandingRoutes from './routes/systemBranding.routes.ts';
+import setupRoutes from './routes/setup.routes.ts';
 
 // Services
 import { discoverModelsForAllProviders } from './services/ai/modelDiscovery.ts';
+import { initializeFirstRunConfiguration, initializeSetupAccessToken, isFirstRunSetupRequired, readPersistedSetup, resumePendingSetup } from './services/firstRunSetup.ts';
 import { initChatWebSocket } from './websocket/chatSocket.ts';
 import { magicMirrorAuth } from './middleware/magicMirrorAuth.ts';
 import { authMiddleware } from './middleware/authMiddleware.ts';
@@ -97,6 +99,19 @@ const writeLimiter = rateLimit({
 });
 
 app.use('/api', globalLimiter);
+app.use('/api/setup', setupRoutes);
+app.use('/api', async (req, res, next) => {
+  if (req.path.startsWith('/setup/') || req.path === '/setup' || req.path === '/health') return next();
+  try {
+    if (await isFirstRunSetupRequired()) {
+      return res.status(503).json({ message: 'Hoàn tất setup ban đầu trước khi sử dụng ứng dụng.', setupRequired: true });
+    }
+    next();
+  } catch (error) {
+    logger.error('SYSTEM', `Could not read first-run setup state: ${error instanceof Error ? error.message : String(error)}`);
+    res.status(500).json({ message: 'Không thể đọc trạng thái setup.' });
+  }
+});
 app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
 app.use('/api/forgot-password', authLimiter);
@@ -199,19 +214,23 @@ app.get('*', (req, res) => res.sendFile(path.resolve('index.html')));
 // Database & Server Start
 // =============================================================================
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/lucky_hub';
-
-async function initDB() {
+async function initDB(allowLocalFallback = true): Promise<boolean> {
+  const mongoUri = process.env.MONGODB_URI?.trim();
+  if (!mongoUri) {
+    console.log('[FirstRunSetup] MongoDB URI is not configured; waiting for initial setup.');
+    return false;
+  }
   try {
-    await mongoose.connect(MONGODB_URI, {
+    await mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
       bufferCommands: false
     });
     console.log('✅ Connected to MongoDB');
+    return true;
   } catch (err: any) {
     console.error('❌ DB Error:', err.message);
-    if (MONGODB_URI.includes('mongodb.net')) {
+    if (allowLocalFallback && !(await isFirstRunSetupRequired()) && mongoUri.includes('mongodb.net')) {
       const fallbackUri = 'mongodb://127.0.0.1:27017/lucky_hub';
       console.warn(`🔁 Falling back to local MongoDB at ${fallbackUri}`);
       try {
@@ -221,10 +240,12 @@ async function initDB() {
           bufferCommands: false
         });
         console.log('✅ Connected to local MongoDB fallback');
+        return true;
       } catch (fallbackErr: any) {
         console.error('❌ Local DB fallback error:', fallbackErr.message);
       }
     }
+    return false;
   }
 }
 
@@ -239,14 +260,40 @@ async function initEmailService() {
 }
 
 async function startServer() {
-  await initDB();
+  let databaseConnected = false;
+  let persistedSetup = await initializeFirstRunConfiguration();
+  if (process.env.MONGODB_URI?.trim()) {
+    databaseConnected = await initDB(!persistedSetup);
+  } else {
+    console.log('[FirstRunSetup] No MongoDB URI found; setup wizard will be shown.');
+  }
+  if (databaseConnected && persistedSetup && !persistedSetup.setupComplete) {
+    try {
+      await resumePendingSetup(persistedSetup);
+      persistedSetup = await readPersistedSetup();
+      databaseConnected = true;
+    } catch (error) {
+      databaseConnected = false;
+      console.error('[FirstRunSetup] Could not resume setup:', error instanceof Error ? error.message : String(error));
+    }
+  }
   await initEmailService();
   initChatWebSocket(wss);
+
+  if (await isFirstRunSetupRequired()) {
+    const setupToken = initializeSetupAccessToken();
+    console.warn('[FirstRunSetup] Setup is incomplete. Enter the following one-time access code in the setup wizard:');
+    if (process.env.LUCKY_HUB_SETUP_TOKEN?.trim()) {
+      console.warn('[FirstRunSetup] LUCKY_HUB_SETUP_TOKEN is configured; use its value from the deployment environment.');
+    } else {
+      console.warn(`[FirstRunSetup] One-time setup access code: ${setupToken}`);
+    }
+  }
 
   server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     logger.info('SYSTEM', `Environment: ${process.env.NODE_ENV || 'development'}`);
-    logger.info('SYSTEM', `Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
+    logger.info('SYSTEM', `Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Not configured'}`);
 
     // New AI System Health Check
     console.log('\n\x1b[1;36m══════════ AI SYSTEM (NEW) ══════════\x1b[0m');
@@ -257,9 +304,11 @@ async function startServer() {
     console.log('\x1b[1;36m══════════════════════════════════════\x1b[0m\n');
 
     // Run initial model discovery
-    discoverModelsForAllProviders().catch((err: any) => {
-      logger.error('SYSTEM', `AI model discovery failed: ${err?.message || err}`);
-    });
+    if (mongoose.connection.readyState === 1) {
+      discoverModelsForAllProviders().catch((err: any) => {
+        logger.error('SYSTEM', `AI model discovery failed: ${err?.message || err}`);
+      });
+    }
   });
 }
 

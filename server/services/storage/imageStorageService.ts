@@ -52,12 +52,12 @@ async function uploadToImgBB(dataUrl: string, config: StorageConfig): Promise<st
   return result.data.url;
 }
 
-async function uploadToCloudinary(dataUrl: string, config: StorageConfig): Promise<string> {
+async function uploadToCloudinary(dataUrl: string, config: StorageConfig, uploadFolder: string): Promise<string> {
   if (!config.cloudName) throw new Error('Thiếu Cloud Name của Cloudinary.');
   const apiKey = readSecret(config.apiKey, 'API key Cloudinary');
   const apiSecret = readSecret(config.apiSecret, 'API secret Cloudinary');
   const timestamp = Math.floor(Date.now() / 1000);
-  const folder = 'luckyhub/branding';
+  const folder = `luckyhub/${uploadFolder}`;
   const signature = createHash('sha1')
     .update(`folder=${folder}&timestamp=${timestamp}${apiSecret}`)
     .digest('hex');
@@ -84,6 +84,7 @@ async function uploadToS3(
   buffer: Buffer,
   contentType: string,
   config: StorageConfig,
+  uploadFolder: string,
 ): Promise<string> {
   if (!config.bucket || !config.region) throw new Error('Thiếu Bucket hoặc Region của S3.');
   const client = new S3Client({
@@ -94,7 +95,7 @@ async function uploadToS3(
     },
   });
   const extension = contentType === 'image/jpeg' ? 'jpg' : contentType.split('/')[1];
-  const key = `branding/${randomUUID()}.${extension}`;
+  const key = `${uploadFolder}/${randomUUID()}.${extension}`;
   try {
     await client.send(new PutObjectCommand({
       Bucket: config.bucket,
@@ -114,16 +115,16 @@ async function uploadToS3(
   return `https://${host}/${encodedKey}`;
 }
 
-export async function uploadImageToStorageProvider(dataUrl: string, provider: StorageProvider): Promise<string> {
+export async function uploadImageToStorageProvider(dataUrl: string, provider: StorageProvider, uploadFolder = 'branding'): Promise<string> {
   const { buffer, contentType } = parseImageData(dataUrl);
   const config = provider.config || {};
   switch (provider.provider) {
     case 'imgbb':
       return uploadToImgBB(dataUrl, config);
     case 'cloudinary':
-      return uploadToCloudinary(dataUrl, config);
+      return uploadToCloudinary(dataUrl, config, uploadFolder);
     case 's3':
-      return uploadToS3(buffer, contentType, config);
+      return uploadToS3(buffer, contentType, config, uploadFolder);
     default:
       throw new Error('Storage provider hiện tại không được hỗ trợ.');
   }

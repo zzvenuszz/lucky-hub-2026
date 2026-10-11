@@ -1,7 +1,7 @@
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.tsx';
+import SetupGate from './components/setup/SetupGate.tsx';
 
 declare global {
   interface Window {
@@ -32,7 +32,7 @@ try {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <React.StrictMode>
-      <App />
+      <SetupGate />
     </React.StrictMode>
   );
   window.reactLoaded = true;

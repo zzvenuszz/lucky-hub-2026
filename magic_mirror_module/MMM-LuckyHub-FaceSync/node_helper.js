@@ -16,18 +16,12 @@ module.exports = NodeHelper.create({
     this.isSyncing = false;
     this.pythonProcess = null;
     this.wsClient = null;
+    this.reconnectTimer = null;
     fs.ensureDirSync(this.faceDir);
 
-    // Fallback: Nếu sau 10 giây không nhận được CONFIG, tự chạy với cấu hình mặc định
     setTimeout(() => {
       if (!this.config) {
-        console.log("MMM-LuckyHub-FaceSync: No CONFIG received after 10s. Starting with default settings...");
-        this.config = {
-          baseUrl: "https://luckyhub.io.vn",
-          syncInterval: 30 * 60 * 1000,
-          apiToken: ""
-        };
-        console.error("MMM-LuckyHub-FaceSync: Configure apiToken in the Magic Mirror module settings before starting.");
+        console.error("MMM-LuckyHub-FaceSync: No CONFIG received. Configure the module and restart Magic Mirror.");
       }
     }, 10000);
   },
@@ -42,21 +36,22 @@ module.exports = NodeHelper.create({
   socketNotificationReceived: function(notification, payload) {
     console.log("MMM-LuckyHub-FaceSync: Received socket notification: " + notification);
     if (notification === "CONFIG") {
-      const isFirstConfig = !this.config;
-      this.config = payload;
-      console.log("MMM-LuckyHub-FaceSync: Config received. BaseURL: " + this.config.baseUrl);
-
-      if (!this.config.apiToken) {
+      if (!payload || typeof payload !== "object" || typeof payload.apiToken !== "string" || !payload.apiToken.trim()) {
         console.error("MMM-LuckyHub-FaceSync: Configure apiToken in the Magic Mirror module settings.");
         return;
       }
+
+      const isFirstConfig = !this.config;
+      this.config = payload;
+      console.log("MMM-LuckyHub-FaceSync: Config received. BaseURL: " + this.config.baseUrl);
 
       if (isFirstConfig) {
         this.startSyncLoop();
         this.startRecognition();
         this.connectToWebSocket();
       } else {
-        console.log("MMM-LuckyHub-FaceSync: Config updated, restarting recognition...");
+        console.log("MMM-LuckyHub-FaceSync: Config updated, restarting sync and recognition...");
+        this.startSyncLoop();
         this.startRecognition();
         this.connectToWebSocket();
       }
@@ -64,6 +59,11 @@ module.exports = NodeHelper.create({
   },
 
   connectToWebSocket: function() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.wsClient) {
       this.wsClient.terminate();
       this.wsClient = null;
@@ -72,13 +72,16 @@ module.exports = NodeHelper.create({
     const wsUrl = this.config.baseUrl.replace(/^http/, "ws") + "/";
     console.log("MMM-LuckyHub-FaceSync: Connecting to WebSocket at " + wsUrl);
 
-    this.wsClient = new WebSocket(wsUrl);
+    const client = new WebSocket(wsUrl, {
+      headers: this.getAuthorizationHeaders()
+    });
+    this.wsClient = client;
 
-    this.wsClient.on("open", () => {
+    client.on("open", () => {
       console.log("MMM-LuckyHub-FaceSync: WebSocket connected.");
     });
 
-    this.wsClient.on("message", (data) => {
+    client.on("message", (data) => {
       try {
         const message = JSON.parse(data);
         console.log("MMM-LuckyHub-FaceSync: Received WebSocket message: " + message.type);
@@ -91,13 +94,18 @@ module.exports = NodeHelper.create({
       }
     });
 
-    this.wsClient.on("error", (err) => {
+    client.on("error", (err) => {
       console.error("MMM-LuckyHub-FaceSync: WebSocket error: " + err.message);
     });
 
-    this.wsClient.on("close", () => {
+    client.on("close", () => {
+      if (this.wsClient !== client) return;
+      this.wsClient = null;
       console.log("MMM-LuckyHub-FaceSync: WebSocket closed. Reconnecting in 10s...");
-      setTimeout(() => this.connectToWebSocket(), 10000);
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        if (this.config && !this.wsClient) this.connectToWebSocket();
+      }, 10000);
     });
   },
 

@@ -5,6 +5,7 @@ import { logger } from '../../src/utils/logger.ts';
 import { ActiveSession } from '../models/ActiveSession.ts';
 import { User } from '../models/User.ts';
 import { getSessionIdFromCookie } from '../utils/sessionCookie.ts';
+import { isMagicMirrorTokenValid } from '../middleware/magicMirrorAuth.ts';
 
 // Maps
 export const userWsConnections = new Map<string, Set<WebSocket>>();
@@ -33,6 +34,24 @@ export function initChatWebSocket(wss: WebSocketServer) {
 
     // Chỉ xử lý kết nối chat tại /ws, còn lại cho Magic Mirror
     if (pathname !== '/ws') {
+      const authorization = req.headers.authorization || '';
+      const match = /^Bearer\s+(.+)$/i.exec(authorization);
+      if (!match?.[1]) {
+        ws.close(4001, 'Magic Mirror token is required');
+        return;
+      }
+
+      try {
+        if (!(await isMagicMirrorTokenValid(match[1]))) {
+          ws.close(4001, 'Invalid Magic Mirror token');
+          return;
+        }
+      } catch (err: any) {
+        logger.error('MM', `Token verification failed: ${err.message}`);
+        ws.close(1011, 'Authentication failed');
+        return;
+      }
+
       logger.ws(`[MM] Connection from ${ip}. Total: ${wss.clients.size}`);
       
       ws.on('message', (data) => {

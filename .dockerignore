@@ -2,3 +2,6 @@
 *.log
 node_modules/
 .git/
+.data/
+.env
+.env.*

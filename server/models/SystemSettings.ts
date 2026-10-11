@@ -54,6 +54,8 @@ const BrandingSettingsSchema = new mongoose.Schema({
 
 // Main System Settings
 const SystemSettingsSchema = new mongoose.Schema({
+  singleton: { type: String, default: 'system', enum: ['system'], immutable: true },
+  firstRunSetupComplete: { type: Boolean, default: false },
   email: EmailSettingsSchema,
   storage: StorageSettingsSchema,
   ai: AISettingsSchema,
@@ -62,6 +64,6 @@ const SystemSettingsSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Ensure only one document exists
-SystemSettingsSchema.index({}, { unique: true });
+SystemSettingsSchema.index({ singleton: 1 }, { unique: true, name: 'unique_system_settings' });
 
 export const SystemSettings = mongoose.model('SystemSettings', SystemSettingsSchema);
