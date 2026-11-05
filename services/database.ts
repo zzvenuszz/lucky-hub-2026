@@ -77,6 +77,8 @@ export const Database = {
     priceList: (at?: string) => request<any>(`${API_BASE}/inventory/price-list${at ? `?at=${encodeURIComponent(at)}` : ''}`),
     priceListProducts: () => request<any[]>(`${API_BASE}/inventory/price-list/products`),
     savePriceList: (data: any) => request<any>(`${API_BASE}/inventory/price-list`, 'POST', data),
+    updatePriceList: (id: string, data: any) => request<any>(`${API_BASE}/inventory/price-list/${id}`, 'PUT', data),
+    deletePriceList: (id: string) => request<any>(`${API_BASE}/inventory/price-list/${id}`, 'DELETE'),
     findMembers: (q: string) => request<any[]>(`${API_BASE}/inventory/members?q=${encodeURIComponent(q)}`),
     saveSale: (data: any) => request<any>(`${API_BASE}/inventory/sales`, 'POST', data),
     getSales: (query = '') => request<any>(`${API_BASE}/inventory/sales${query ? `?${query}` : ''}`),

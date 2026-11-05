@@ -33,6 +33,7 @@ const toDateTimeLocalValue = (date: Date = new Date()) => {
   return localDate.toISOString().slice(0, 16);
 };
 const parseDateTimeLocalValue = (value: string) => new Date(value);
+const normalizeSkuInput = (value: string) => [...new Set(value.split(/[\n,]/).map(sku => sku.trim().toUpperCase()).filter(Boolean))];
 const tabs: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'overview', label: 'Tổng quan', icon: '◫' }, { id: 'stock', label: 'Kho hàng', icon: '▣' }, { id: 'sale', label: 'Bán hàng', icon: '＋' },
   { id: 'history', label: 'Lịch sử', icon: '↻' }, { id: 'prices', label: 'Bảng giá', icon: '＄' }, { id: 'reports', label: 'Báo cáo', icon: '▤' }, { id: 'levels', label: 'Tuyến hội viên', icon: '⌘' }, { id: 'settings', label: 'Hoá đơn', icon: '⚙' },
@@ -63,6 +64,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const [categoryTarget, setCategoryTarget] = useState<'create' | 'edit'>('create');
   const [newCategoryName, setNewCategoryName] = useState(''); const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [showSaleBarcodeScanner, setShowSaleBarcodeScanner] = useState(false);
   const [cart, setCart] = useState<any[]>([]); const [note, setNote] = useState(''); const [soldAt, setSoldAt] = useState(toDateTimeLocalValue()); const [soldAtEdited, setSoldAtEdited] = useState(false);
   const [levelEntries, setLevelEntries] = useState<any[]>([]); const [reportPeriod, setReportPeriod] = useState('month'); const [memberReport, setMemberReport] = useState<any[]>([]);
   const [priceEntries, setPriceEntries] = useState<any[]>([]); const [priceEffective, setPriceEffective] = useState(toDateTimeLocalValue()); const [priceListName, setPriceListName] = useState('Bảng giá chung');
@@ -96,7 +98,11 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
       if (result?.active?.name) setPriceListName(result.active.name);
       const entries = (result?.active?.entries || []).map((entry: any) => ({ ...entry }));
       const known = new Set(entries.map((entry: any) => entry.sku));
-      for (const item of items) if (!item.archived && !known.has(item.sku)) entries.push({ sku: item.sku, costReference: 0, price100: 0, price25: 0, price35: 0, price42: 0, price50: 0 });
+      for (const item of items) if (!item.archived) for (const sku of item.skus?.length ? item.skus : [item.sku]) if (!known.has(sku)) {
+        const primary = entries.find((entry: any) => entry.sku === item.sku) || item.prices || {};
+        entries.push({ ...primary, sku, costReference: Number(primary.costReference || 0), price100: Number(primary.price100 || 0), price25: Number(primary.price25 || 0), price35: Number(primary.price35 || 0), price42: Number(primary.price42 || 0), price50: Number(primary.price50 || 0) });
+        known.add(sku);
+      }
       setPriceEntries(entries);
       setPricesReady(true);
     } catch (error: any) { console.error('[InventoryUI] Price load failed:', error); setMessage(error.message); }
@@ -135,7 +141,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
       .catch(error => { if (active) setMessage(error.message); });
     return () => { active = false; };
   }, [tab, soldAt, soldAtEdited, canUseInventory]);
-  useEffect(() => { if (!salePriceList || !cart.length) return; const levelInfo = LEVELS.find(entry => entry.id === (selectedMember?.memberLevel || 'customer')) || LEVELS[0]; setCart(lines => lines.map(line => { const entry = salePriceList.entries?.find((price: any) => price.sku === line.sku); if (!entry) return line; const nextDefaultField = levelInfo.price; const selectedField = line.manualPriceLevel ? line.priceField : nextDefaultField; return { ...line, defaultPriceField: nextDefaultField, defaultUnitPrice: Number(entry[nextDefaultField] || 0), priceField: selectedField, priceLevel: PRICE_TIERS.find(tier => tier.field === selectedField)?.label || 'Giá Lẻ', unitPrice: Number(entry[selectedField] || 0) }; })); }, [salePriceList, selectedMember]);
+  useEffect(() => { if (!salePriceList || !cart.length) return; const levelInfo = LEVELS.find(entry => entry.id === (selectedMember?.memberLevel || 'customer')) || LEVELS[0]; setCart(lines => lines.map(line => { const entry = salePriceList.entries?.find((price: any) => price.sku === (line.priceSku || line.sku)) || salePriceList.entries?.find((price: any) => (line.skus || []).includes(price.sku)); if (!entry) return line; const nextDefaultField = levelInfo.price; const selectedField = line.manualPriceLevel ? line.priceField : nextDefaultField; return { ...line, defaultPriceField: nextDefaultField, defaultUnitPrice: Number(entry[nextDefaultField] || 0), priceField: selectedField, priceLevel: PRICE_TIERS.find(tier => tier.field === selectedField)?.label || 'Giá Lẻ', unitPrice: Number(entry[selectedField] || 0) }; })); }, [salePriceList, selectedMember]);
   useEffect(() => { if (tab === 'reports' && canInventory) Database.inventory.memberReport(`period=${reportPeriod}`).then(data => setMemberReport(data || [])).catch(error => setMessage(error.message)); }, [tab, reportPeriod, canInventory]);
   useEffect(() => { if (tab === 'history' && canUseInventory) Database.inventory.getSales().then(result => setSales(result?.sales || [])).catch(error => setMessage(error.message)); }, [tab, canUseInventory]);
   useEffect(() => { if (memberQuery.trim().length < 2) { setMembers([]); return; } const timer = window.setTimeout(() => Database.inventory.findMembers(memberQuery).then(data => setMembers(data || [])).catch(error => setMessage(error.message)), 250); return () => window.clearTimeout(timer); }, [memberQuery]);
@@ -151,19 +157,28 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const showMessage = useCallback((text: string) => { setMessage(text); }, []);
   useEffect(() => { if (!message) return; const timer = window.setTimeout(() => setMessage(''), 4500); return () => window.clearTimeout(timer); }, [message]);
   const reload = useCallback(async () => { await loadCore(); await loadPrices(); }, [loadCore, loadPrices]);
-  const filteredItems = items.filter(item => `${item.name} ${item.sku}`.toLowerCase().includes(q.toLowerCase()));
+  const filteredItems = items.filter(item => `${item.name} ${item.sku} ${(item.skus || []).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
   const saleItems = filteredItems.filter(item => !item.archived);
   const filteredSales = sales.filter(sale => `${sale.invoiceNumber} ${sale.buyerName} ${sale.lines?.map((line: any) => `${line.name} ${line.sku}`).join(' ')}`.toLowerCase().includes(historyQuery.toLowerCase()));
   const updateCartLine = (id: string, patch: any) => setCart(lines => lines.map(line => line.itemId === id ? { ...line, ...patch } : line));
-  const addToCart = (item: any) => {
+  const addToCart = (item: any, scannedSku = item.sku) => {
     const existing = cart.find(line => line.itemId === item.id);
     if (existing) updateCartLine(item.id, { quantity: existing.quantity + 1 });
     else {
       const level = selectedMember?.memberLevel || 'customer'; const levelInfo = LEVELS.find(entry => entry.id === level) || LEVELS[0];
-      const price = salePriceList?.entries?.find((entry: any) => entry.sku === item.sku);
-      setCart(lines => [...lines, { itemId: item.id, sku: item.sku, name: item.name, pv: item.pv, available: item.quantity, quantity: 1, priceField: levelInfo.price, defaultPriceField: levelInfo.price, manualPriceLevel: false, unitPrice: Number(price?.[levelInfo.price] || 0), defaultUnitPrice: Number(price?.[levelInfo.price] || 0), priceLevel: PRICE_TIERS.find(tier => tier.field === levelInfo.price)?.label || 'Giá Lẻ' }]);
+      const price = salePriceList?.entries?.find((entry: any) => entry.sku === item.sku) || salePriceList?.entries?.find((entry: any) => (item.skus || [item.sku]).includes(entry.sku));
+      setCart(lines => [...lines, { itemId: item.id, sku: scannedSku, priceSku: item.sku, skus: item.skus || [item.sku], name: item.name, pv: item.pv, available: item.quantity, quantity: 1, priceField: levelInfo.price, defaultPriceField: levelInfo.price, manualPriceLevel: false, unitPrice: Number(price?.[levelInfo.price] || 0), defaultUnitPrice: Number(price?.[levelInfo.price] || 0), priceLevel: PRICE_TIERS.find(tier => tier.field === levelInfo.price)?.label || 'Giá Lẻ' }]);
     }
   };
+  const handleSaleBarcodeDetected = useCallback((value: string) => {
+    const sku = value.trim().toUpperCase();
+    const item = items.find(candidate => (candidate.skus?.length ? candidate.skus : [candidate.sku]).includes(sku));
+    setShowSaleBarcodeScanner(false);
+    if (!item) { showMessage(`Không tìm thấy SKU ${sku} trong kho của bạn.`); return; }
+    if (item.archived || Number(item.quantity) < 1) { showMessage(`${item.name} đang ngừng bán hoặc hết hàng.`); return; }
+    addToCart(item, sku);
+    showMessage(`Đã quét ${sku} · ${item.name}.`);
+  }, [items, addToCart, showMessage]);
   const total = cart.reduce((sum, line) => sum + line.quantity * Number(line.unitPrice || 0), 0);
   const totalPv = cart.reduce((sum, line) => sum + line.quantity * Number(line.pv || 0), 0);
   const submitSale = async () => {
@@ -174,7 +189,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     try {
       const saleTime = soldAtEdited ? parseDateTimeLocalValue(soldAt) : new Date();
       if (Number.isNaN(saleTime.getTime())) throw new Error('Thời gian bán hàng không hợp lệ.');
-      const result = await Database.inventory.saveSale({ buyerType, buyerUserId: selectedMember?.id, buyerName: buyerType === 'custom' ? customBuyer.trim() : selectedMember?.fullName, buyerAddress: buyerAddress.trim(), buyerPhone: buyerPhone.trim(), sellerAddressGroupId: selectedNutritionAddress?.id, lines: cart.map(line => ({ itemId: line.itemId, quantity: Number(line.quantity), priceField: line.priceField })), soldAt: saleTime.toISOString(), note });
+      const result = await Database.inventory.saveSale({ buyerType, buyerUserId: selectedMember?.id, buyerName: buyerType === 'custom' ? customBuyer.trim() : selectedMember?.fullName, buyerAddress: buyerAddress.trim(), buyerPhone: buyerPhone.trim(), sellerAddressGroupId: selectedNutritionAddress?.id, lines: cart.map(line => ({ itemId: line.itemId, sku: line.sku, quantity: Number(line.quantity), priceField: line.priceField })), soldAt: saleTime.toISOString(), note });
       if (result) { setInvoice(result); setCart([]); setNote(''); setSelectedMember(null); setBuyerType('custom'); setCustomBuyer(''); setBuyerAddress(''); setBuyerPhone(''); setSoldAt(toDateTimeLocalValue()); setSoldAtEdited(false); showMessage(`Đã tạo hoá đơn ${result.invoiceNumber}.`); await reload(); }
     } catch (error: any) { showMessage(error.message || 'Không thể lưu hoá đơn.'); }
     finally { setBusy(false); }
@@ -182,19 +197,21 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const addProduct = async (event: React.FormEvent) => {
     event.preventDefault(); setBusy(true);
     try {
-      const sku = draft.sku.trim().toUpperCase();
-      const created = await Database.inventory.createItem({ ...draft, sku, pv: Number(draft.pv), quantity: Number(draft.quantity), unitCost: Number(draft.unitCost), lowStockThreshold: Number(draft.lowStockThreshold) });
+      const skuList = normalizeSkuInput(draft.sku);
+      if (!skuList.length) throw new Error('Nhập ít nhất một SKU hợp lệ.');
+      const sku = skuList[0];
+      const created = await Database.inventory.createItem({ ...draft, sku, skus: skuList, pv: Number(draft.pv), quantity: Number(draft.quantity), unitCost: Number(draft.unitCost), lowStockThreshold: Number(draft.lowStockThreshold) });
       if (!created) throw new Error('Máy chủ chưa xác nhận đã tạo sản phẩm. Hãy thử lại.');
-      const createdItem = { ...created, id: String(created.id || created._id), sku };
+      const createdItem = { ...created, id: String(created.id || created._id), sku, skus: skuList };
       setQ('');
       setItems(old => [createdItem, ...old.filter(item => String(item.id || item._id) !== createdItem.id)]);
       if (canPrices) {
-        const priceEntry = { sku, costReference: Number(draft.unitCost), price100: Number(draftPrices.price100), price25: Number(draftPrices.price25), price35: Number(draftPrices.price35), price42: Number(draftPrices.price42), price50: Number(draftPrices.price50) };
-        const nextEntries = [...priceEntries.filter((entry: any) => entry.sku !== sku), priceEntry];
+        const priceEntry = { name: draft.name.trim(), pv: Number(draft.pv), categoryName: categories.find((category: any) => String(category._id) === draft.categoryId)?.name || '', costReference: Number(draft.unitCost), price100: Number(draftPrices.price100), price25: Number(draftPrices.price25), price35: Number(draftPrices.price35), price42: Number(draftPrices.price42), price50: Number(draftPrices.price50) };
+        const nextEntries = [...priceEntries.filter((entry: any) => !skuList.includes(entry.sku)), ...skuList.map(skuCode => ({ ...priceEntry, sku: skuCode }))];
         try {
           const effectiveFrom = new Date(); effectiveFrom.setSeconds(0, 0);
           await Database.inventory.savePriceList({ name: priceListName || 'Bảng giá chung', effectiveFrom: effectiveFrom.toISOString(), entries: nextEntries, note: `Thêm SKU ${sku} cùng lúc tạo sản phẩm` });
-          console.log('[InventoryUI] New product price tiers saved:', { sku });
+          console.log('[InventoryUI] New product price tiers saved:', { skus: skuList });
         } catch (priceError: any) {
           setShowProductModal(false);
           setDraft({ sku: '', name: '', categoryId: '', pv: '0', quantity: '0', unitCost: '0', lowStockThreshold: '5', imageUrl: '' });
@@ -234,28 +251,30 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const editProduct = (item: any) => {
     const entry = priceEntries.find((price: any) => price.sku === item.sku) || item.prices || {};
     setEditingProduct(item);
-    setEditDraft({ sku: item.sku || '', name: item.name || '', categoryId: item.categoryId ? String(item.categoryId) : '', pv: String(item.pv ?? 0), lowStockThreshold: String(item.lowStockThreshold ?? 5), imageUrl: item.imageUrl || '' });
+    setEditDraft({ sku: (item.skus?.length ? item.skus : [item.sku]).join(', '), name: item.name || '', categoryId: item.categoryId ? String(item.categoryId) : '', pv: String(item.pv ?? 0), lowStockThreshold: String(item.lowStockThreshold ?? 5), imageUrl: item.imageUrl || '' });
     setEditPrices({ costReference: String(entry.costReference ?? 0), price100: String(entry.price100 ?? 0), price25: String(entry.price25 ?? 0), price35: String(entry.price35 ?? 0), price42: String(entry.price42 ?? 0), price50: String(entry.price50 ?? 0) });
   };
   const saveEditedProduct = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!editingProduct) return;
-    const sku = editDraft.sku.trim().toUpperCase(); const pv = Number(editDraft.pv); const lowStockThreshold = Number(editDraft.lowStockThreshold);
-    if (!sku || !editDraft.name.trim() || !Number.isFinite(pv) || pv < 0 || !Number.isFinite(lowStockThreshold) || lowStockThreshold < 0) return showMessage('SKU, tên sản phẩm, PV hoặc ngưỡng tồn không hợp lệ.');
+    const skuList = normalizeSkuInput(editDraft.sku); const sku = skuList[0]; const pv = Number(editDraft.pv); const lowStockThreshold = Number(editDraft.lowStockThreshold);
+    if (!skuList.length || !editDraft.name.trim() || !Number.isFinite(pv) || pv < 0 || !Number.isFinite(lowStockThreshold) || lowStockThreshold < 0) return showMessage('SKU, tên sản phẩm, PV hoặc ngưỡng tồn không hợp lệ.');
     const priceValues = Object.values(editPrices).map(Number);
     if (canPrices && priceValues.some(value => !Number.isSafeInteger(value) || value < 0)) return showMessage('Giá vốn và các mức giá phải là số nguyên không âm.');
     setBusy(true);
     let itemSaved = false;
     try {
-      const updatedItem = await Database.inventory.updateItem(editingProduct.id || editingProduct._id, { ...editDraft, sku, name: editDraft.name.trim(), pv, lowStockThreshold });
+      const updatedItem = await Database.inventory.updateItem(editingProduct.id || editingProduct._id, { ...editDraft, sku, skus: skuList, name: editDraft.name.trim(), pv, lowStockThreshold });
       itemSaved = true;
       setEditingProduct((old: any) => old ? { ...old, ...updatedItem, id: String(updatedItem?.id || updatedItem?._id || old.id || old._id) } : old);
       if (canPrices) {
-        const nextEntry = { sku, costReference: Number(editPrices.costReference), price100: Number(editPrices.price100), price25: Number(editPrices.price25), price35: Number(editPrices.price35), price42: Number(editPrices.price42), price50: Number(editPrices.price50) };
+        const nextEntry = { name: editDraft.name.trim(), pv, categoryName: categories.find((category: any) => String(category._id) === editDraft.categoryId)?.name || '', costReference: Number(editPrices.costReference), price100: Number(editPrices.price100), price25: Number(editPrices.price25), price35: Number(editPrices.price35), price42: Number(editPrices.price42), price50: Number(editPrices.price50) };
         const currentEntry = priceEntries.find((entry: any) => entry.sku === editingProduct.sku) || editingProduct.prices || {};
-        const priceChanged = editingProduct.sku !== sku || Object.entries(nextEntry).some(([key, value]) => Number(currentEntry[key] ?? 0) !== value);
+        const oldSkus = editingProduct.skus?.length ? editingProduct.skus : [editingProduct.sku];
+        const skuSetChanged = JSON.stringify([...oldSkus].sort()) !== JSON.stringify([...skuList].sort());
+        const priceChanged = skuSetChanged || Object.entries(nextEntry).some(([key, value]) => Number(currentEntry[key] ?? 0) !== value);
         if (priceChanged) {
-          const nextEntries = [...priceEntries.filter((entry: any) => entry.sku !== sku), nextEntry];
+          const nextEntries = [...priceEntries.filter((entry: any) => !oldSkus.includes(entry.sku) && !skuList.includes(entry.sku)), ...skuList.map(skuCode => ({ ...nextEntry, sku: skuCode }))];
           await Database.inventory.savePriceList({ name: priceListName || 'Bảng giá chung', effectiveFrom: new Date().toISOString(), entries: nextEntries, note: `Sửa thông tin và giá sản phẩm ${sku}` });
         }
       }
@@ -324,7 +343,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
               {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-20 w-20 rounded-xl object-cover" /> : <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-emerald-50 text-3xl">📦</div>}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2"><h3 className="truncate font-black">{item.name}</h3>{item.archived && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">Ngừng bán</span>}</div>
-                <p className="text-xs text-slate-500">SKU {item.sku} · PV {item.pv}{item.categoryName ? ` · ${item.categoryName}` : ''}</p>
+                <p className="text-xs text-slate-500">SKU {(item.skus?.length ? item.skus : [item.sku]).join(', ')} · PV {item.pv}{item.categoryName ? ` · ${item.categoryName}` : ''}</p>
                 <p className={`mt-2 text-sm font-bold ${item.quantity <= item.lowStockThreshold ? 'text-amber-700' : 'text-emerald-700'}`}>Tồn {item.quantity} · cảnh báo {item.lowStockThreshold}</p>
               </div>
             </div>
@@ -351,8 +370,8 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
       {buyerType === 'member' && <div className="relative"><input value={selectedMember ? getMemberIdentityLabel(selectedMember) : memberQuery} onChange={e => { setSelectedMember(null); setBuyerAddress(''); setBuyerPhone(''); setMemberQuery(e.target.value); }} placeholder="Tìm theo mã hoặc tên hội viên" className="w-full rounded-xl bg-slate-100 p-3" />{members.length > 0 && !selectedMember && <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-xl border bg-white shadow-xl">{members.map(member => <button key={member.id} onClick={() => { setSelectedMember(member); setBuyerAddress(member.address || ''); setBuyerPhone(member.phoneNumber || ''); setMemberQuery(''); }} className="block w-full p-3 text-left text-sm hover:bg-emerald-50">{getMemberIdentityLabel(member)}</button>)}</div>}</div>}
       {buyerType === 'custom' && <input required value={customBuyer} onChange={e => setCustomBuyer(e.target.value)} placeholder="Tên khách lẻ" className="w-full rounded-xl bg-slate-100 p-3" />}
       <div className="grid gap-3 rounded-2xl bg-emerald-50/70 p-4 sm:grid-cols-2"><p className="text-xs text-emerald-900 sm:col-span-2">{buyerType === 'member' ? 'Thông tin được điền từ hồ sơ hội viên; người bán có thể bổ sung hoặc sửa nếu hồ sơ còn thiếu.' : 'Nhập thông tin liên hệ người mua để lưu trên hóa đơn.'}</p><label className="text-xs font-bold text-slate-600">Địa chỉ người mua<input required value={buyerAddress} onChange={e => setBuyerAddress(e.target.value)} placeholder="Địa chỉ" className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal" /></label><label className="text-xs font-bold text-slate-600">Số điện thoại người mua<input required type="tel" value={buyerPhone} onChange={e => setBuyerPhone(e.target.value)} placeholder="Số điện thoại" className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal" /></label></div>
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm hàng trong kho" className="w-full rounded-xl bg-slate-100 p-3" /><div className="grid gap-2 sm:grid-cols-2">{saleItems.map(item => <button key={item.id} onClick={() => addToCart(item)} disabled={item.quantity <= 0} className="flex items-center justify-between rounded-xl border p-3 text-left disabled:opacity-40"><span><b>{item.name}</b><small className="block text-slate-500">{item.sku} · {item.quantity} tồn · {item.pv} PV</small></span><span className="rounded-lg bg-emerald-50 px-3 py-2 font-black text-emerald-800">+</span></button>)}</div></div>
-      <aside className="h-fit space-y-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="text-lg font-black">Giỏ hàng <span className="text-sm text-slate-400">({cart.length})</span></h2>{cart.map(line => <div key={line.itemId} className="rounded-xl bg-slate-50 p-3"><div className="flex justify-between gap-2 text-sm"><b>{line.name}</b><button onClick={() => setCart(old => old.filter(x => x.itemId !== line.itemId))} aria-label="Xoá hàng">×</button></div><div className="mt-2 grid grid-cols-2 gap-2"><label className="text-xs text-slate-500">Số lượng<input type="number" min="1" max={line.available} value={line.quantity} onChange={e => updateCartLine(line.itemId, { quantity: Math.min(line.available, Number(e.target.value)) })} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900" /></label><label className="text-xs text-slate-500">Mức giá<select value={line.priceField} onChange={e => { const priceField = e.target.value; const tier = PRICE_TIERS.find(option => option.field === priceField) || PRICE_TIERS[0]; const entry = salePriceList?.entries?.find((price: any) => price.sku === line.sku); updateCartLine(line.itemId, { priceField, priceLevel: tier.label, manualPriceLevel: true, unitPrice: Number(entry?.[priceField] || 0) }); }} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900">{PRICE_TIERS.map(tier => <option key={tier.field} value={tier.field}>{tier.label}</option>)}</select></label></div><p className="mt-2 text-[11px] text-slate-500">{line.priceLevel}: {money(line.unitPrice)}{line.manualPriceLevel && line.priceField !== line.defaultPriceField ? ` · Cấp bậc người mua: ${PRICE_TIERS.find(tier => tier.field === line.defaultPriceField)?.label || 'Giá Lẻ'}` : ''}</p></div>)}<textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú trên hoá đơn (không bắt buộc)" className="min-h-20 w-full rounded-xl bg-slate-100 p-3 text-sm" /><div className="flex justify-between text-sm"><span>Tổng PV</span><b>{totalPv}</b></div><div className="flex justify-between border-t pt-3 text-lg"><b>Tổng tiền</b><b>{money(total)}</b></div><button disabled={busy || !hasSellerDetails || !cart.length || !buyerAddress.trim() || !buyerPhone.trim() || (buyerType === 'member' && !selectedMember) || (buyerType === 'custom' && !customBuyer.trim())} onClick={submitSale} className="w-full rounded-xl bg-emerald-700 py-3 font-black text-white disabled:opacity-40">{busy ? 'Đang lưu…' : 'Xác nhận bán hàng'}</button></aside>
+      <div className="flex gap-2"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm hàng trong kho" className="min-w-0 flex-1 rounded-xl bg-slate-100 p-3" /><button type="button" onClick={() => setShowSaleBarcodeScanner(true)} className="shrink-0 rounded-xl bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800">📷 Quét mã</button></div><div className="grid gap-2 sm:grid-cols-2">{saleItems.map(item => <button key={item.id} onClick={() => addToCart(item)} disabled={item.quantity <= 0} className="flex items-center justify-between rounded-xl border p-3 text-left disabled:opacity-40"><span><b>{item.name}</b><small className="block text-slate-500">{(item.skus?.length ? item.skus : [item.sku]).join(', ')} · {item.quantity} tồn · {item.pv} PV</small></span><span className="rounded-lg bg-emerald-50 px-3 py-2 font-black text-emerald-800">+</span></button>)}</div></div>
+      <aside className="h-fit space-y-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="text-lg font-black">Giỏ hàng <span className="text-sm text-slate-400">({cart.length})</span></h2>{cart.map(line => <div key={line.itemId} className="rounded-xl bg-slate-50 p-3"><div className="flex justify-between gap-2 text-sm"><b>{line.name}</b><button onClick={() => setCart(old => old.filter(x => x.itemId !== line.itemId))} aria-label="Xoá hàng">×</button></div><div className="mt-2 grid grid-cols-2 gap-2"><label className="text-xs text-slate-500">Số lượng<input type="number" min="1" max={line.available} value={line.quantity} onChange={e => updateCartLine(line.itemId, { quantity: Math.min(line.available, Number(e.target.value)) })} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900" /></label><label className="text-xs text-slate-500">Mức giá<select value={line.priceField} onChange={e => { const priceField = e.target.value; const tier = PRICE_TIERS.find(option => option.field === priceField) || PRICE_TIERS[0]; const entry = salePriceList?.entries?.find((price: any) => price.sku === (line.priceSku || line.sku)) || salePriceList?.entries?.find((price: any) => (line.skus || []).includes(price.sku)); updateCartLine(line.itemId, { priceField, priceLevel: tier.label, manualPriceLevel: true, unitPrice: Number(entry?.[priceField] || 0) }); }} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900">{PRICE_TIERS.map(tier => <option key={tier.field} value={tier.field}>{tier.label}</option>)}</select></label></div><p className="mt-2 text-[11px] text-slate-500">{line.priceLevel}: {money(line.unitPrice)}{line.manualPriceLevel && line.priceField !== line.defaultPriceField ? ` · Cấp bậc người mua: ${PRICE_TIERS.find(tier => tier.field === line.defaultPriceField)?.label || 'Giá Lẻ'}` : ''}</p></div>)}<textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú trên hoá đơn (không bắt buộc)" className="min-h-20 w-full rounded-xl bg-slate-100 p-3 text-sm" /><div className="flex justify-between text-sm"><span>Tổng PV</span><b>{totalPv}</b></div><div className="flex justify-between border-t pt-3 text-lg"><b>Tổng tiền</b><b>{money(total)}</b></div><button disabled={busy || !hasSellerDetails || !cart.length || !buyerAddress.trim() || !buyerPhone.trim() || (buyerType === 'member' && !selectedMember) || (buyerType === 'custom' && !customBuyer.trim())} onClick={submitSale} className="w-full rounded-xl bg-emerald-700 py-3 font-black text-white disabled:opacity-40">{busy ? 'Đang lưu…' : 'Xác nhận bán hàng'}</button></aside>
     </div>}
 
     {tab === 'history' && canUseInventory && <div className="space-y-3"><input value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Lọc theo mã hoá đơn, người mua, SKU hoặc mặt hàng" className="w-full rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-emerald-500" />{filteredSales.map(sale => <article key={sale._id} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><div className="flex flex-wrap items-center gap-2"><b className="text-lg">{sale.invoiceNumber}</b><span className={`rounded-full px-3 py-1 text-xs font-bold ${sale.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{({ completed: 'Hoàn tất', partially_returned: 'Hoàn một phần', returned: 'Đã hoàn', cancelled: 'Đã huỷ' } as any)[sale.status]}</span></div><p className="mt-1 text-sm text-slate-500">{new Date(sale.soldAt).toLocaleString('vi-VN')} · {sale.buyerName} · {sale.totalPv} PV</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setInvoice(sale)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">Xem hoá đơn</button>{canInventory && !['cancelled', 'returned'].includes(sale.status) && <><button onClick={() => changeBuyer(sale)} className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800">Sửa người mua</button><button onClick={() => handleReturn(sale)} className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Trả hàng</button>{sale.status === 'completed' && <button onClick={() => cancelSale(sale)} className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800">Huỷ đơn</button>}</>}</div></div><div className="mt-3 flex justify-between border-t pt-3 text-sm"><span>{sale.lines?.map((line: any) => `${line.name} × ${line.quantity}`).join(' · ')}</span><b>{money(sale.total)}</b></div>{sale.returnEvents?.map((event: any, i: number) => <p key={i} className="mt-2 text-xs text-amber-800">Đợt trả: {event.reason} · hoàn {money(event.refundAmount)}</p>)}</article>)}{!filteredSales.length && <p className="rounded-3xl bg-white p-10 text-center text-slate-500">Không có giao dịch phù hợp.</p>}</div>}
@@ -368,6 +387,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     {stockAction && <StockActionModal action={stockAction.action} itemName={stockAction.item.name} archived={Boolean(stockAction.item.archived)} busy={busy} onClose={() => setStockAction(null)} onSubmit={submitStockAction} />}
     {showCategoryModal && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="create-category-title"><div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h2 id="create-category-title" className="text-xl font-black">Tạo danh mục hàng hoá</h2><p className="mt-1 text-sm text-slate-500">Danh mục này chỉ dùng trong kho của bạn.</p></div><button type="button" aria-label="Đóng tạo danh mục" onClick={() => setShowCategoryModal(false)} className="rounded-xl bg-slate-100 px-3 py-2">✕</button></div><label className="mt-5 block text-sm font-bold">Tên danh mục<input autoFocus maxLength={80} value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createCategory(); } }} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" placeholder="Ví dụ: Dinh dưỡng, chăm sóc cá nhân" /></label><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setShowCategoryModal(false)} className="rounded-xl bg-slate-100 px-4 py-3 font-bold">Huỷ</button><button type="button" onClick={createCategory} disabled={!newCategoryName.trim()} className="rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white disabled:opacity-50">Tạo và chọn</button></div></div></div>}
     {showBarcodeScanner && <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setShowBarcodeScanner(false)} />}
+    {showSaleBarcodeScanner && <BarcodeScanner onDetected={handleSaleBarcodeDetected} onClose={() => setShowSaleBarcodeScanner(false)} />}
     {invoice && <InvoicePreview sale={invoice} seller={{ name: invoice.sellerName || sellerProfile.name, address: invoice.sellerAddress || sellerProfile.address, phone: invoice.sellerPhone || sellerProfile.phone }} defaultFormat={sellerSettings?.format === 'image' ? 'image' : 'pdf'} onClose={() => setInvoice(null)} />}
   </section>;
 });

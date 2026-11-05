@@ -74,9 +74,10 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
       <div>
         <label htmlFor="create-item-sku" className="block text-sm font-bold text-slate-700">SKU</label>
         <div className="mt-1 flex gap-2">
-          <input id="create-item-sku" data-testid="create-item-sku" required value={draft.sku} onChange={event => setDraft(old => ({ ...old, sku: event.target.value }))} className="min-w-0 flex-1 rounded-xl bg-slate-100 p-3 text-sm font-normal" />
+          <input id="create-item-sku" data-testid="create-item-sku" required value={draft.sku} onChange={event => setDraft(old => ({ ...old, sku: event.target.value }))} placeholder="SKU1, SKU2, SKU3" className="min-w-0 flex-1 rounded-xl bg-slate-100 p-3 text-sm font-normal" />
           <button type="button" onClick={onScanBarcode} className="shrink-0 rounded-xl bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800" aria-label="Quét mã vạch bằng camera">📷 Quét mã</button>
         </div>
+        <p className="mt-1 text-xs font-normal text-slate-500">Có thể nhập nhiều SKU, phân cách bằng dấu phẩy. Tất cả dùng chung tồn kho, PV và giá.</p>
       </div>
       <label className="block text-sm font-bold text-slate-700">Tên hàng hoá<input data-testid="create-item-name" required value={draft.name} onChange={event => setDraft(old => ({ ...old, name: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       <div>

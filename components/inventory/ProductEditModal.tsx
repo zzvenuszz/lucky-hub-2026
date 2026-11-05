@@ -57,7 +57,7 @@ const ProductEditModal: React.FC<ProductEditModalProps> = memo(({
         <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng sửa sản phẩm" className="rounded-xl bg-slate-100 px-3 py-2 font-bold disabled:opacity-50">✕</button>
       </header>
 
-      <label className="block text-sm font-bold text-slate-700">SKU<input required value={draft.sku} onChange={event => setDraft(old => ({ ...old, sku: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+      <label className="block text-sm font-bold text-slate-700">SKU<input required value={draft.sku} onChange={event => setDraft(old => ({ ...old, sku: event.target.value }))} placeholder="SKU1, SKU2, SKU3" className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /><span className="mt-1 block text-xs font-normal text-slate-500">Phân cách các SKU bằng dấu phẩy. Tất cả dùng chung tồn kho, PV và giá.</span></label>
       <label className="block text-sm font-bold text-slate-700">Tên hàng hoá<input required value={draft.name} onChange={event => setDraft(old => ({ ...old, name: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       <div>
         <label className="block text-sm font-bold text-slate-700">Danh mục</label>

@@ -10,6 +10,7 @@ export const InventoryCategory = mongoose.model('InventoryCategory', InventoryCa
 const InventoryItemSchema = new mongoose.Schema({
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   sku: { type: String, required: true, uppercase: true, trim: true },
+  skus: [{ type: String, uppercase: true, trim: true }],
   name: { type: String, required: true, trim: true },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryCategory', default: null },
   categoryName: { type: String, default: '' },
@@ -20,6 +21,7 @@ const InventoryItemSchema = new mongoose.Schema({
   archived: { type: Boolean, default: false },
 }, { timestamps: true });
 InventoryItemSchema.index({ ownerId: 1, sku: 1 }, { unique: true });
+InventoryItemSchema.index({ ownerId: 1, skus: 1 }, { unique: true, sparse: true });
 export const InventoryItem = mongoose.model('InventoryItem', InventoryItemSchema);
 
 const InventoryLotSchema = new mongoose.Schema({
@@ -50,8 +52,12 @@ const PriceListVersionSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, default: 'Bảng giá chung' },
   effectiveFrom: { type: Date, required: true },
   effectiveTo: { type: Date, default: null, index: true },
+  endDateExplicit: { type: Boolean, default: false },
   entries: [{
     sku: { type: String, required: true, uppercase: true, trim: true },
+    name: { type: String, default: '' },
+    pv: { type: Number, min: 0, default: 0 },
+    categoryName: { type: String, default: '' },
     costReference: { type: Number, min: 0, default: 0 },
     price100: { type: Number, min: 0, required: true },
     price25: { type: Number, min: 0, required: true },

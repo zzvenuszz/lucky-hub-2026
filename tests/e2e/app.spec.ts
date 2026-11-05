@@ -41,6 +41,29 @@ test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {
       await expect(page.getByRole('columnheader', { name: label })).toBeVisible();
     }
     await page.getByRole('button', { name: 'Đóng' }).click();
+    const firstVersion = page.locator('details').first();
+    await firstVersion.locator('summary').click();
+    await expect(firstVersion.getByRole('button', { name: 'Sửa' })).toBeVisible();
+    await expect(firstVersion.getByRole('button', { name: 'Xóa' })).toBeVisible();
+    await expect(firstVersion.getByRole('button', { name: 'In / Lưu PDF' })).toBeVisible();
+    await expect(firstVersion.getByRole('button', { name: 'Lưu ảnh' })).toBeVisible();
+    if ((page.viewportSize()?.width || 1024) >= 768) {
+      const [pdfWindow] = await Promise.all([page.waitForEvent('popup'), firstVersion.getByRole('button', { name: 'In / Lưu PDF' }).click()]);
+      await expect(pdfWindow.locator('h1')).toBeVisible();
+      await pdfWindow.close();
+      const [imageDownload] = await Promise.all([page.waitForEvent('download'), firstVersion.getByRole('button', { name: 'Lưu ảnh' }).click()]);
+      expect(imageDownload.suggestedFilename()).toMatch(/\.png$/);
+    }
+    await firstVersion.getByRole('button', { name: 'Sửa' }).click();
+    await expect(page.getByRole('heading', { name: 'Sửa bảng giá' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Lưu thay đổi' })).toBeVisible();
+    await page.getByRole('button', { name: 'Đóng' }).click();
+    await page.getByRole('navigation', { name: 'Quản lý bán hàng' }).getByRole('button', { name: /Kho hàng/ }).click();
+    await page.getByTestId('open-create-product').click();
+    await expect(page.getByPlaceholder('SKU1, SKU2, SKU3')).toBeVisible();
+    await page.getByRole('button', { name: 'Đóng thêm sản phẩm' }).click();
+    await page.getByRole('navigation', { name: 'Quản lý bán hàng' }).getByRole('button', { name: 'Bán hàng' }).click();
+    await expect(page.getByRole('button', { name: /Quét mã/ })).toBeVisible();
   });
 
   test('tạo mặt hàng, đặt bảng giá chung, bán hàng và mở hoá đơn', async ({ page }) => {
