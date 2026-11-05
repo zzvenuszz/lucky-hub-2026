@@ -7,6 +7,7 @@ const UserSchema = new mongoose.Schema({
   password: { type: String, required: true },
   fullName: { type: String, required: true },
   phoneNumber: { type: String, default: '' },
+  address: { type: String, default: '' },
   memberNumber: { type: String, default: '', uppercase: true, trim: true },
   memberLevel: { type: String, enum: ['customer', 'member', 'senior_consultant', 'success_builder', 'supervisor'], default: 'customer' },
   sponsorUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },

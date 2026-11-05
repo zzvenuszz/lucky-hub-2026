@@ -73,6 +73,8 @@ const SaleSchema = new mongoose.Schema({
   buyerUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   buyerName: { type: String, required: true, trim: true },
   buyerMemberNumber: { type: String, default: '' },
+  buyerAddress: { type: String, default: '' },
+  buyerPhone: { type: String, default: '' },
   lines: [{
     itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', required: true },
     sku: { type: String, required: true },

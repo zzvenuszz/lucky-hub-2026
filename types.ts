@@ -178,6 +178,7 @@ export interface User {
   height: number;
   weight: number;
   phoneNumber: string;
+  address?: string;
   memberNumber?: string;
   memberLevel?: 'customer' | 'member' | 'senior_consultant' | 'success_builder' | 'supervisor';
   sponsorMemberNumber?: string;

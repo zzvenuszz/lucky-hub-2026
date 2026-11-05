@@ -89,6 +89,10 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
           {/* SỬA LỖI: Truyền false cho shouldSubmit */}
           <input required type="tel" value={formData.phoneNumber} onChange={e => { const d = {...formData, phoneNumber: e.target.value}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
         </div>
+        <div className="space-y-1 md:col-span-2">
+          <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Địa chỉ</label>
+          <input required type="text" value={formData.address || ''} onChange={e => { const d = {...formData, address: e.target.value}; setFormData(d); onUpdate(d, false); }} placeholder="Địa chỉ nhận hàng / liên hệ" className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
+        </div>
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mã hội viên Herbalife</label>
           <input type="text" value={formData.memberNumber || ''} onChange={e => { const d = {...formData, memberNumber: e.target.value.toUpperCase()}; setFormData(d); onUpdate(d, false); }} placeholder="VA12345678 hoặc VNY1234567" className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />

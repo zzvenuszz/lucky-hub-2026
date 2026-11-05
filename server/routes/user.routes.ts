@@ -119,7 +119,7 @@ router.put('/:id',
 
       const data = { ...req.body };
       let previousSponsorNumber = '';
-      const allowedFields = ['fullName', 'email', 'phoneNumber', 'birthDate', 'height', 'weight', 'gender', 'healthGoals', 'avatar', 'password'];
+      const allowedFields = ['fullName', 'email', 'phoneNumber', 'address', 'birthDate', 'height', 'weight', 'gender', 'healthGoals', 'avatar', 'password'];
       if (hasUpdatePerm) allowedFields.push('status');
       for (const key of Object.keys(data)) {
         if (!allowedFields.includes(key) && key !== 'memberNumber' && key !== 'sponsorMemberNumber') delete data[key];

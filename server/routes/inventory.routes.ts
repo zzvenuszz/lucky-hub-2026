@@ -56,8 +56,8 @@ router.get('/members', inventorySeller, async (req: Request, res: Response) => {
     if (q.length < 2) return res.json([]);
     const safeQuery = escapeRegex(q);
     const members = await User.find({ status: 'ACTIVE', $or: [{ fullName: { $regex: safeQuery, $options: 'i' } }, { memberNumber: { $regex: safeQuery, $options: 'i' } }] })
-      .select('_id fullName memberNumber memberLevel').limit(15).lean();
-    res.json(members.map((m: any) => ({ id: String(m._id), fullName: String(m.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(m.memberNumber), memberLevel: m.memberLevel || 'customer' })));
+      .select('_id fullName memberNumber memberLevel phoneNumber address').limit(15).lean();
+    res.json(members.map((m: any) => ({ id: String(m._id), fullName: String(m.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(m.memberNumber), memberLevel: m.memberLevel || 'customer', phoneNumber: String(m.phoneNumber || ''), address: String(m.address || '') })));
   } catch (error: any) { console.error('[Inventory] Member lookup failed:', error); res.status(500).json({ message: 'Không thể tìm hội viên.' }); }
 });
 
@@ -327,13 +327,18 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
     if (!soldAt || !Array.isArray(req.body.lines) || !req.body.lines.length) return res.status(400).json({ message: 'Đơn hàng hoặc thời gian bán không hợp lệ.' });
     const buyerType = req.body.buyerType;
     let buyer = { userId: null as any, name: String(req.body.buyerName || '').trim(), memberNumber: '' };
+    let buyerAddress = String(req.body.buyerAddress || '').trim();
+    let buyerPhone = String(req.body.buyerPhone || '').trim();
     let level = 'customer';
     if (buyerType === 'member') {
-      const member = await User.findOne({ _id: req.body.buyerUserId, status: 'ACTIVE' }).select('_id fullName memberNumber memberLevel');
+      const member = await User.findOne({ _id: req.body.buyerUserId, status: 'ACTIVE' }).select('_id fullName memberNumber memberLevel phoneNumber address');
       if (!member) return res.status(400).json({ message: 'Không tìm thấy hồ sơ người mua đang hoạt động.' });
       buyer = { userId: member._id, name: String(member.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(member.memberNumber) }; level = member.memberLevel || 'customer';
+      buyerAddress = buyerAddress || String(member.address || '').trim();
+      buyerPhone = buyerPhone || String(member.phoneNumber || '').trim();
     } else if (!['walk-in', 'custom'].includes(buyerType) || (buyerType === 'custom' && !buyer.name)) return res.status(400).json({ message: 'Thông tin người mua không hợp lệ.' });
     if (buyerType === 'walk-in') buyer.name = 'Khách lẻ';
+    if (!buyerAddress || !buyerPhone) return res.status(400).json({ message: 'Cần nhập đầy đủ địa chỉ và số điện thoại người mua.' });
     const priceList: any = await currentPrices(soldAt);
     if (!priceList) return res.status(400).json({ message: 'Chưa có bảng giá hiệu lực tại thời điểm bán.' });
     const defaultPriceField = memberPriceKey[level] || 'price100';
@@ -368,7 +373,7 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
     }
     const total = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
     const totalPv = lines.reduce((sum, line) => sum + line.quantity * line.pv, 0);
-    const saleData = { ownerId, soldAt, buyerType, buyerUserId: buyer.userId, buyerName: buyer.name, buyerMemberNumber: buyer.memberNumber, lines, subtotal: total, total, totalPv, note: String(req.body.note || '').slice(0, 1000) };
+    const saleData = { ownerId, soldAt, buyerType, buyerUserId: buyer.userId, buyerName: buyer.name, buyerMemberNumber: buyer.memberNumber, buyerAddress: buyerAddress.slice(0, 500), buyerPhone: buyerPhone.slice(0, 40), lines, subtotal: total, total, totalPv, note: String(req.body.note || '').slice(0, 1000) };
     let sale: any; let lastError: any;
     for (let attempt = 0; attempt < 4 && !sale; attempt++) {
       try { sale = await Sale.create({ ...saleData, invoiceNumber: invoiceNumber(soldAt) }); }
@@ -395,15 +400,17 @@ router.put('/sales/:id/buyer', inventory, async (req: Request, res: Response) =>
   try {
     const sale: any = await Sale.findOne({ _id: req.params.id, ownerId: idOf(req) });
     if (!sale || sale.status === 'cancelled' || sale.status === 'returned') return res.status(404).json({ message: 'Không tìm thấy hoá đơn có thể sửa.' });
-    let next = { type: req.body.buyerType, userId: null as any, name: String(req.body.buyerName || '').trim(), memberNumber: '' };
+    let next = { type: req.body.buyerType, userId: null as any, name: String(req.body.buyerName || '').trim(), memberNumber: '', address: String(req.body.buyerAddress || '').trim(), phone: String(req.body.buyerPhone || '').trim() };
     if (next.type === 'member') {
-      const member = await User.findOne({ _id: req.body.buyerUserId, status: 'ACTIVE' }).select('_id fullName memberNumber');
+      const member = await User.findOne({ _id: req.body.buyerUserId, status: 'ACTIVE' }).select('_id fullName memberNumber address phoneNumber');
       if (!member) return res.status(400).json({ message: 'Hội viên không hợp lệ.' });
-      next = { type: 'member', userId: member._id, name: String(member.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(member.memberNumber) };
+      next = { type: 'member', userId: member._id, name: String(member.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(member.memberNumber), address: next.address || String(member.address || '').trim(), phone: next.phone || String(member.phoneNumber || '').trim() };
     } else if (next.type === 'walk-in') next.name = 'Khách lẻ';
     else if (next.type !== 'custom' || !next.name) return res.status(400).json({ message: 'Người mua không hợp lệ.' });
+    if (!next.address || !next.phone) return res.status(400).json({ message: 'Cần nhập đầy đủ địa chỉ và số điện thoại người mua.' });
     sale.buyerChanges.push({ fromName: sale.buyerName, fromUserId: sale.buyerUserId, toName: next.name, toUserId: next.userId, actorId: idOf(req), createdAt: new Date() });
     sale.buyerType = next.type; sale.buyerUserId = next.userId; sale.buyerName = next.name; sale.buyerMemberNumber = next.memberNumber;
+    sale.buyerAddress = next.address; sale.buyerPhone = next.phone;
     await sale.save(); await logAudit(req, 'SALE_BUYER_CHANGE', `Đổi người mua hoá đơn ${sale.invoiceNumber}: ${sale.buyerName}`, String(sale._id), sale.invoiceNumber);
     res.json(sale);
   } catch (error: any) { console.error('[Inventory] Buyer update failed:', error); res.status(500).json({ message: error.message }); }
