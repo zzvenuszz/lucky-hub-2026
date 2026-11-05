@@ -19,12 +19,28 @@ test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {
     await page.getByRole('button', { name: 'ĐĂNG NHẬP NGAY' }).click();
   };
 
-  test('người bán được cấp quyền thấy màn hình kho và điều hướng responsive', async ({ page }) => {
+  test('người có quyền mở và tạo bảng giá trên desktop/mobile', async ({ page }) => {
     await signIn(page);
-    await expect(page.getByRole('button', { name: 'Quản lý hàng hoá' })).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: 'Quản lý hàng hoá' }).click();
+    if ((page.viewportSize()?.width || 1024) < 768) {
+      await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+      await page.getByRole('menuitem', { name: 'Quản lý bảng giá' }).click();
+    } else {
+      await expect(page.getByRole('button', { name: 'Bảng giá chung' })).toBeVisible({ timeout: 20_000 });
+      await page.getByRole('button', { name: 'Bảng giá chung' }).click();
+    }
     await expect(page.getByTestId('inventory-dashboard')).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Kho hàng của/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Danh sách bảng giá' })).toBeVisible();
+    await page.getByRole('button', { name: '+ Tạo mới bảng giá' }).click();
+    await expect(page.getByRole('heading', { name: 'Tạo bảng giá mới' })).toBeVisible();
+    await expect(page.getByLabel('Tên bảng giá')).toBeVisible();
+    await expect(page.getByLabel('Ngày bắt đầu hiệu lực')).toBeVisible();
+    await expect(page.getByLabel(/Ngày kết thúc hiệu lực/)).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Ảnh' })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'SKU / PV' })).toBeVisible();
+    for (const label of ['Giá 100%', 'Giá giảm 25%', 'Giá giảm 35%', 'Giá giảm 42%', 'Giá giảm 50%']) {
+      await expect(page.getByRole('columnheader', { name: label })).toBeVisible();
+    }
+    await page.getByRole('button', { name: 'Đóng' }).click();
   });
 
   test('tạo mặt hàng, đặt bảng giá chung, bán hàng và mở hoá đơn', async ({ page }) => {

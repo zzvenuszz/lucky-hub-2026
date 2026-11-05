@@ -234,27 +234,49 @@ router.get('/price-list', async (req: Request, res: Response) => {
   try {
     if (!req.user?.permissions.includes(RESOURCES.INVENTORY.MANAGE) && !req.user?.permissions.includes(RESOURCES.INVENTORY.SELL) && !req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE)) return res.status(403).json({ message: 'Bạn không có quyền xem bảng giá.' });
     const at = validDate(req.query.at) || new Date();
-    const versions = await PriceListVersion.find().sort({ effectiveFrom: -1 }).limit(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE) ? 100 : 1).lean();
+    const versionsQuery = PriceListVersion.find().sort({ effectiveFrom: -1 });
+    if (!req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE)) versionsQuery.limit(1);
+    const versions = await versionsQuery.lean();
     const active = await currentPrices(at);
     res.json({ active, versions });
   } catch (error: any) { console.error('[Inventory] Price list load failed:', error); res.status(500).json({ message: error.message }); }
 });
 
+router.get('/price-list/products', priceManager, async (_req: Request, res: Response) => {
+  try {
+    const [items, active] = await Promise.all([
+      InventoryItem.find({ archived: { $ne: true } }).select('sku name imageUrl pv categoryName -_id').sort({ name: 1 }).lean(),
+      currentPrices(new Date()),
+    ]);
+    const priceMap = new Map<string, any>((active?.entries || []).map((entry: any) => [String(entry.sku), entry] as [string, any]));
+    const products = new Map<string, any>();
+    for (const item of items as any[]) {
+      if (!products.has(item.sku)) products.set(item.sku, { sku: item.sku, name: item.name, imageUrl: item.imageUrl, pv: item.pv, categoryName: item.categoryName, prices: priceMap.get(item.sku) || null });
+    }
+    console.log('[Inventory] Price list products loaded:', { count: products.size });
+    res.json([...products.values()]);
+  } catch (error: any) { console.error('[Inventory] Price list products load failed:', error); res.status(500).json({ message: error.message }); }
+});
+
 router.post('/price-list', priceManager, async (req: Request, res: Response) => {
   try {
     const effectiveFrom = validDate(req.body.effectiveFrom);
+    const requestedEndValue = req.body.effectiveTo;
+    const requestedEffectiveTo = requestedEndValue ? validDate(requestedEndValue) : null;
     const entries = Array.isArray(req.body.entries) ? req.body.entries.map((entry: any) => ({ sku: String(entry.sku || '').trim().toUpperCase(), costReference: Number(entry.costReference || 0), price100: Number(entry.price100), price25: Number(entry.price25), price35: Number(entry.price35), price42: Number(entry.price42), price50: Number(entry.price50) })) : [];
     const uniqueSkus = new Set(entries.map((entry: any) => entry.sku));
-    if (!effectiveFrom || !entries.length || uniqueSkus.size !== entries.length || entries.some((e: any) => !e.sku || ['costReference', 'price100', 'price25', 'price35', 'price42', 'price50'].some(key => !Number.isSafeInteger(e[key]) || e[key] < 0))) return res.status(400).json({ message: 'Ngày hiệu lực hoặc dữ liệu giá không hợp lệ; SKU phải duy nhất và giá phải là số nguyên không âm.' });
+    if (!effectiveFrom || (requestedEndValue && !requestedEffectiveTo) || (requestedEffectiveTo && requestedEffectiveTo <= effectiveFrom) || !entries.length || uniqueSkus.size !== entries.length || entries.some((e: any) => !e.sku || ['costReference', 'price100', 'price25', 'price35', 'price42', 'price50'].some(key => !Number.isSafeInteger(e[key]) || e[key] < 0))) return res.status(400).json({ message: 'Ngày hiệu lực hoặc dữ liệu giá không hợp lệ; ngày kết thúc phải sau ngày bắt đầu, SKU phải duy nhất và giá phải là số nguyên không âm.' });
     const conflict = await PriceListVersion.findOne({ effectiveFrom: { $lt: effectiveFrom }, $or: [{ effectiveTo: null }, { effectiveTo: { $gt: effectiveFrom } }] }).sort({ effectiveFrom: -1 });
     const next = await PriceListVersion.findOne({ effectiveFrom: { $gt: effectiveFrom } }).sort({ effectiveFrom: 1 });
+    if (requestedEffectiveTo && next && requestedEffectiveTo > next.effectiveFrom) return res.status(400).json({ message: `Ngày kết thúc phải trước bảng giá kế tiếp có hiệu lực từ ${next.effectiveFrom.toLocaleDateString('vi-VN')}.` });
     if (conflict) conflict.effectiveTo = effectiveFrom;
     const name = String(req.body.name || '').trim();
     if (!name || name.length > 100) return res.status(400).json({ message: 'Tên bảng giá bắt buộc và tối đa 100 ký tự.' });
-    const doc = await PriceListVersion.create({ name, effectiveFrom, effectiveTo: next?.effectiveFrom || null, entries, createdBy: idOf(req), note: String(req.body.note || '') });
+    const effectiveTo = requestedEffectiveTo || next?.effectiveFrom || null;
+    const doc = await PriceListVersion.create({ name, effectiveFrom, effectiveTo, entries, createdBy: idOf(req), note: String(req.body.note || '') });
     await conflict?.save();
-    await logAudit(req, 'PRICELIST_UPDATE', `Cập nhật bảng giá hiệu lực từ ${effectiveFrom.toISOString()}`);
-    console.log('[Inventory] Price list version created:', { id: doc.id, effectiveFrom });
+    await logAudit(req, 'PRICELIST_UPDATE', `Tạo bảng giá “${name}” hiệu lực từ ${effectiveFrom.toISOString()}${effectiveTo ? ` đến trước ${effectiveTo.toISOString()}` : ' không có ngày kết thúc'}`);
+    console.log('[Inventory] Price list version created:', { id: doc.id, effectiveFrom, effectiveTo, previousVersionClosed: Boolean(conflict) });
     res.status(201).json(doc);
   } catch (error: any) { console.error('[Inventory] Price list update failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'Đã tồn tại bảng giá tại thời điểm này.' : error.message }); }
 });

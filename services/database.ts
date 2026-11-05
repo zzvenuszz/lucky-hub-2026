@@ -75,6 +75,7 @@ export const Database = {
     movements: () => request<any[]>(`${API_BASE}/inventory/movements`),
     overview: () => request<any>(`${API_BASE}/inventory/overview`),
     priceList: (at?: string) => request<any>(`${API_BASE}/inventory/price-list${at ? `?at=${encodeURIComponent(at)}` : ''}`),
+    priceListProducts: () => request<any[]>(`${API_BASE}/inventory/price-list/products`),
     savePriceList: (data: any) => request<any>(`${API_BASE}/inventory/price-list`, 'POST', data),
     findMembers: (q: string) => request<any[]>(`${API_BASE}/inventory/members?q=${encodeURIComponent(q)}`),
     saveSale: (data: any) => request<any>(`${API_BASE}/inventory/sales`, 'POST', data),
