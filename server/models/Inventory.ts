@@ -75,6 +75,9 @@ const SaleSchema = new mongoose.Schema({
   buyerMemberNumber: { type: String, default: '' },
   buyerAddress: { type: String, default: '' },
   buyerPhone: { type: String, default: '' },
+  sellerName: { type: String, default: '' },
+  sellerAddress: { type: String, default: '' },
+  sellerPhone: { type: String, default: '' },
   lines: [{
     itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', required: true },
     sku: { type: String, required: true },
