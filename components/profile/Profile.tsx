@@ -19,6 +19,8 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmi
     height: user.height,
     weight: user.weight || 0,
     phoneNumber: user.phoneNumber || '',
+    memberNumber: user.memberNumber || '',
+    sponsorMemberNumber: user.sponsorMemberNumber || '',
     healthGoals: user.healthGoals || [],
     avatar: user.avatar || '',
     gender: user.gender
@@ -108,6 +110,8 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmi
       height: user.height,
       weight: user.weight || 0,
       phoneNumber: user.phoneNumber || '',
+      memberNumber: user.memberNumber || '',
+      sponsorMemberNumber: user.sponsorMemberNumber || '',
       healthGoals: user.healthGoals || [],
       avatar: user.avatar || '',
       gender: user.gender

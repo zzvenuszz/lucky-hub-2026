@@ -1,6 +1,6 @@
 # Kế hoạch: Quản lý kho hàng và bán hàng
 
-**Trạng thái:** Đang chờ duyệt kế hoạch triển khai; các quyết định đã thống nhất được ghi dưới đây.  
+**Trạng thái:** Đang triển khai theo phạm vi đã duyệt; các quyết định đã thống nhất được ghi dưới đây.
 **Phạm vi:** Ứng dụng Lucky Hub 2026 hiện tại (React/TypeScript, Express, MongoDB/Mongoose).
 
 ## 1. Kết quả cần đạt
@@ -130,6 +130,7 @@ Tạo khu vực module hoá dưới `components/inventory/`:
 - Giai đoạn đầu xuất PDF và ảnh; Bluetooth làm sau.
 - Tra cứu hội viên dùng API riêng chỉ trả dữ liệu cần cho bán hàng.
 - Sửa người mua đã chốt theo phương án chuyển liên kết: cập nhật báo cáo mua hàng/PV cho hội viên đúng tại kỳ bán ban đầu, không đổi giá/PV của hoá đơn; lưu người mua cũ/mới, người sửa và thời điểm sửa. Điều chỉnh tiền/PV (nếu cần) phải là giao dịch riêng.
+- Mặc định triển khai đã chọn: người quản lý cấp độ có thể quản lý mọi tầng tuyến dưới; ngưỡng cảnh báo tồn ban đầu là 5 và tuỳ chỉnh từng mặt hàng; cho phép backdate và ghi audit log; hoàn hàng lưu số tiền hoàn dự kiến trong nhật ký, không tích hợp cổng thanh toán.
 
 ### Các thông số còn lại cần chốt
 

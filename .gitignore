@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 .data/
+test-results/
+playwright-report/
 
 # Sao lưu & lịch sử prompt cũ (không cần version hoá)
 *.bak

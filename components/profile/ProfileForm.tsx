@@ -90,6 +90,20 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
           <input required type="tel" value={formData.phoneNumber} onChange={e => { const d = {...formData, phoneNumber: e.target.value}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
         </div>
         <div className="space-y-1">
+          <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mã hội viên Herbalife</label>
+          <input type="text" value={formData.memberNumber || ''} onChange={e => { const d = {...formData, memberNumber: e.target.value.toUpperCase()}; setFormData(d); onUpdate(d, false); }} placeholder="VA12345678 hoặc VNY1234567" className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
+          <p className="text-[10px] text-slate-400 ml-1">Để trống nếu chưa có thẻ hội viên.</p>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mã người bảo trợ</label>
+          <input type="text" value={formData.sponsorMemberNumber || ''} onChange={e => { const d = {...formData, sponsorMemberNumber: e.target.value.toUpperCase()}; setFormData(d); onUpdate(d, false); }} placeholder="Mã hội viên người giới thiệu" className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Cấp độ hội viên</label>
+          <input readOnly value={({ customer: 'Khách hàng', member: 'Hội viên', senior_consultant: 'Tư vấn viên cao cấp', success_builder: 'Nhà kiến tạo thành công', supervisor: 'Giám sát viên' } as any)[user.memberLevel || 'customer']} className="w-full px-4 py-3 bg-slate-100 rounded-xl border border-transparent outline-none text-sm font-medium text-slate-500" />
+          <p className="text-[10px] text-slate-400 ml-1">Cấp độ do người có quyền trong tuyến trên quản lý.</p>
+        </div>
+        <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Chiều cao (CM)</label>
           <input required type="number" value={formData.height} onChange={e => { const d = {...formData, height: Number(e.target.value)}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
         </div>

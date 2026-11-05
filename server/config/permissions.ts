@@ -50,6 +50,15 @@ export const RESOURCES = {
     MANAGE: 'ndd:manage',
     SYSTEM: 'ndd:system',
   },
+  INVENTORY: {
+    MANAGE: 'inventory:manage',
+  },
+  PRICELIST: {
+    MANAGE: 'pricelist:manage',
+  },
+  MEMBER_LEVEL: {
+    MANAGE: 'members:level:manage',
+  },
 } as const;
 
 /**
@@ -94,4 +103,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.COACH.ACCESS]: 'Vận hành NDD',
   [RESOURCES.NDD.MANAGE]: 'Quản lý NDD',
   [RESOURCES.NDD.SYSTEM]: 'Q.Lý Nhánh NDD',
+  [RESOURCES.INVENTORY.MANAGE]: 'Quản lý kho hàng và bán hàng riêng',
+  [RESOURCES.PRICELIST.MANAGE]: 'Quản lý bảng giá chung',
+  [RESOURCES.MEMBER_LEVEL.MANAGE]: 'Quản lý cấp độ hội viên trong tuyến dưới',
 };

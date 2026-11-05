@@ -178,6 +178,10 @@ export interface User {
   height: number;
   weight: number;
   phoneNumber: string;
+  memberNumber?: string;
+  memberLevel?: 'customer' | 'member' | 'senior_consultant' | 'success_builder' | 'supervisor';
+  sponsorMemberNumber?: string;
+  sponsorUserId?: string;
   gender: 'Nam' | 'Nữ';
   healthGoals: HealthGoal[];
   status: AccountStatus;

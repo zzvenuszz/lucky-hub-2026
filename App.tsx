@@ -19,6 +19,7 @@ import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
 import { ModalStackProvider } from './components/system/ModalManager.tsx';
 import NDDDashboard from './components/ndd/NDDDashboard.tsx';
+import InventoryDashboard from './components/inventory/InventoryDashboard.tsx';
 import { User, AIRule, HealthMetric, Badge, WsEvent } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 import { cacheManager } from './utils/cacheManager.ts';
@@ -658,6 +659,9 @@ const App: React.FC = () => {
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
         {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} />}
         {activeTab === 'systemndd' && <BranchManager />}
+        {activeTab === 'inventory' && (currentUser! as any).permissions?.includes('inventory:manage') && <InventoryDashboard user={currentUser!} />}
+        {activeTab === 'inventory-prices' && (currentUser! as any).permissions?.includes('pricelist:manage') && <InventoryDashboard user={currentUser!} initialPricesOnly />}
+        {activeTab === 'member-levels' && (currentUser! as any).permissions?.includes('members:level:manage') && <InventoryDashboard user={currentUser!} initialLevelsOnly />}
         
         {/* ChatSystem UI - chỉ hiển thị khung chat khi mở */}
         {isChatOpen && <ChatSystem currentUser={currentUser!} onClose={() => setIsChatOpen(false)} />}

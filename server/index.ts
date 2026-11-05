@@ -38,6 +38,7 @@ import chatGroupRoutes from './routes/chatGroup.routes.ts';
 import magicMirrorTokenRoutes from './routes/magicMirrorToken.routes.ts';
 import systemBrandingRoutes from './routes/systemBranding.routes.ts';
 import setupRoutes from './routes/setup.routes.ts';
+import inventoryRoutes from './routes/inventory.routes.ts';
 
 // Services
 import { discoverModelsForAllProviders } from './services/ai/modelDiscovery.ts';
@@ -145,6 +146,7 @@ app.use('/api/system', systemBrandingRoutes);
 
 // Protected API routes
 app.use('/api/users', userRoutes);
+app.use('/api/inventory', inventoryRoutes);
 app.use('/api/metrics', metricRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/chats', chatRoutes);

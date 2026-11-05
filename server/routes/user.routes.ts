@@ -117,7 +117,54 @@ router.put('/:id',
 
       console.log(`[Permission] ✅ ${req.user!.fullName} allowed update user ${targetId} (self=${isSelf})`);
 
-      const data = req.body;
+      const data = { ...req.body };
+      let previousSponsorNumber = '';
+      const allowedFields = ['fullName', 'email', 'phoneNumber', 'birthDate', 'height', 'weight', 'gender', 'healthGoals', 'avatar', 'password'];
+      if (hasUpdatePerm) allowedFields.push('status');
+      for (const key of Object.keys(data)) {
+        if (!allowedFields.includes(key) && key !== 'memberNumber' && key !== 'sponsorMemberNumber') delete data[key];
+      }
+      if (isSelf && ('memberNumber' in req.body || 'sponsorMemberNumber' in req.body)) {
+        const previousProfile = await User.findById(req.user!.userId).select('sponsorMemberNumber').lean();
+        previousSponsorNumber = previousProfile?.sponsorMemberNumber || '';
+        const memberNumber = String(req.body.memberNumber ?? '').trim().toUpperCase();
+        const sponsorNumber = String(req.body.sponsorMemberNumber ?? '').trim().toUpperCase();
+        const validMemberNumber = (value: string) => !value || /^(VA\d{8}|VNY\d{7})$/.test(value);
+        if (!validMemberNumber(memberNumber) || !validMemberNumber(sponsorNumber)) {
+          return res.status(400).json({ message: 'Mã hội viên hoặc mã người bảo trợ không đúng định dạng.' });
+        }
+        if (memberNumber) {
+          const duplicate = await User.findOne({ memberNumber, _id: { $ne: req.user!.userId } }).select('_id');
+          if (duplicate) return res.status(409).json({ message: 'Mã hội viên đã được sử dụng.' });
+          data.memberNumber = memberNumber;
+          const currentUser = await User.findById(req.user!.userId).select('memberLevel').lean();
+          if (!currentUser?.memberLevel || currentUser.memberLevel === 'customer') data.memberLevel = 'member';
+        } else {
+          data.memberNumber = '';
+          data.memberLevel = 'customer';
+        }
+        if (sponsorNumber) {
+          const sponsor = await User.findOne({ memberNumber: sponsorNumber }).select('_id memberNumber');
+          if (!sponsor) return res.status(400).json({ message: 'Không tìm thấy người bảo trợ theo mã hội viên.' });
+          if (String(sponsor._id) === String(req.user!.userId)) return res.status(400).json({ message: 'Không thể tự bảo trợ chính mình.' });
+          let cursor: any = sponsor;
+          const seen = new Set<string>([String(req.user!.userId)]);
+          while (cursor?.sponsorUserId) {
+            const id = String(cursor.sponsorUserId);
+            if (seen.has(id)) return res.status(400).json({ message: 'Quan hệ người bảo trợ tạo thành vòng lặp.' });
+            seen.add(id);
+            cursor = await User.findById(id).select('sponsorUserId').lean();
+          }
+          data.sponsorUserId = sponsor._id;
+          data.sponsorMemberNumber = sponsorNumber;
+        } else {
+          data.sponsorUserId = null;
+          data.sponsorMemberNumber = '';
+        }
+      } else {
+        delete data.memberNumber;
+        delete data.sponsorMemberNumber;
+      }
       if (data.avatar && data.avatar.startsWith('data:image')) {
         const imgData = await uploadToImgBB(data.avatar);
         if (imgData) {
@@ -136,13 +183,17 @@ router.put('/:id',
         data.avatarHash = cryptoUtils.generateAvatarHash(data.avatar);
       }
 
-      const u = await User.findByIdAndUpdate(req.params.id, data, { new: true }).select('-password');
+      const u = await User.findByIdAndUpdate(req.params.id, data, { new: true, runValidators: true }).select('-password');
       if (!u) return res.status(404).json({ message: 'User not found' });
 
       const result = u.toObject();
+      if (isSelf && 'sponsorMemberNumber' in req.body) {
+        const log = new AuditLog({ actorId: req.user!.userId, actorName: req.user!.fullName, targetId: String(u._id), targetName: u.fullName, type: 'SPONSOR_UPDATE', details: `Người bảo trợ ${previousSponsorNumber || 'không có'} → ${u.sponsorMemberNumber || 'không có'}`, timestamp: new Date().toISOString() });
+        await log.save();
+      }
       res.json({ ...result, id: u._id });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(err.code === 11000 ? 409 : 500).json({ message: err.code === 11000 ? 'Mã hội viên đã được sử dụng.' : err.message });
     }
   }
 );

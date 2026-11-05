@@ -7,6 +7,10 @@ const UserSchema = new mongoose.Schema({
   password: { type: String, required: true },
   fullName: { type: String, required: true },
   phoneNumber: { type: String, default: '' },
+  memberNumber: { type: String, default: '', uppercase: true, trim: true },
+  memberLevel: { type: String, enum: ['customer', 'member', 'senior_consultant', 'success_builder', 'supervisor'], default: 'customer' },
+  sponsorUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+  sponsorMemberNumber: { type: String, default: '', uppercase: true, trim: true },
   birthDate: String,
   height: { type: Number, default: 0 },
   weight: { type: Number, default: 0 },
@@ -24,5 +28,7 @@ const UserSchema = new mongoose.Schema({
   nutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
   pendingNutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
 }, { timestamps: true });
+
+UserSchema.index({ memberNumber: 1 }, { unique: true, partialFilterExpression: { memberNumber: { $gt: '' } }, name: 'unique_member_number' });
 
 export const User = mongoose.model('User', UserSchema);
