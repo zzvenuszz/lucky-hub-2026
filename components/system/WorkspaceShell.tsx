@@ -121,6 +121,9 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
   const avatarUrl = user.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(user.fullName || 'Lucky Hub')}&backgroundColor=194f3b&textColor=ffffff`;
   const moreItems = [
     { id: 'profile', label: 'Hồ sơ cá nhân', icon: 'profile' as IconName },
+    ...(canManageInventory ? [{ id: 'inventory', label: 'Quản lý bán hàng', icon: 'inventory' as IconName }] : []),
+    ...(!canManageInventory && canManagePriceList ? [{ id: 'inventory-prices', label: 'Bảng giá chung', icon: 'inventory' as IconName }] : []),
+    ...(canManageMemberLevels && !canManageInventory ? [{ id: 'member-levels', label: 'Cấp độ tuyến dưới', icon: 'inventory' as IconName }] : []),
     ...(canManageNdd ? [{ id: 'ndd', label: 'Quản lý NDD', icon: 'coach' as IconName }] : []),
     ...(canManageBranches ? [{ id: 'systemndd', label: 'Chi nhánh NDD', icon: 'branch' as IconName }] : []),
     ...(isAdmin ? [{ id: 'admin', label: 'Quản trị', icon: 'admin' as IconName }] : []),
