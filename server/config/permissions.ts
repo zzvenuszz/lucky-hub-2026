@@ -58,6 +58,7 @@ export const RESOURCES = {
   },
   MEMBER_LEVEL: {
     MANAGE: 'members:level:manage',
+    MANAGE_ANY: 'members:level:manage:any',
   },
 } as const;
 
@@ -106,4 +107,5 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.INVENTORY.MANAGE]: 'Quản lý kho hàng và bán hàng riêng',
   [RESOURCES.PRICELIST.MANAGE]: 'Quản lý bảng giá chung',
   [RESOURCES.MEMBER_LEVEL.MANAGE]: 'Quản lý cấp độ hội viên trong tuyến dưới',
+  [RESOURCES.MEMBER_LEVEL.MANAGE_ANY]: 'Quản lý cấp độ của mọi hội viên',
 };

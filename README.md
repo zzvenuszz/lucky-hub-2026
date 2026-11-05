@@ -36,17 +36,18 @@ Lucky Hub có khu vực bán hàng với kho riêng cho từng người bán. Qu
 | Quyền | Chức năng |
 |---|---|
 | `inventory:manage` | Quản lý kho riêng, nhập và điều chỉnh tồn, bán hàng, xem hoá đơn và báo cáo của mình |
-| `pricelist:manage` | Tạo phiên bản bảng giá chung và đặt thời điểm bắt đầu áp dụng |
+| `pricelist:manage` | Tạo và chỉnh toàn bộ một phiên bản bảng giá chung, đặt tên và thời điểm bắt đầu áp dụng |
 | `members:level:manage` | Cập nhật cấp độ hội viên trong các tuyến dưới được bảo trợ |
+| `members:level:manage:any` | Cập nhật cấp độ của mọi hội viên; có thể gán riêng cho group quản trị viên |
 
-Ba quyền này độc lập. Có quyền quản lý kho không tự cấp quyền sửa bảng giá chung hoặc cấp độ hội viên. Người bán chỉ truy cập và thao tác trên kho của mình.
+Các quyền này độc lập. Có quyền quản lý kho không tự cấp quyền sửa bảng giá chung hoặc cấp độ hội viên. Quyền `members:level:manage` chỉ áp dụng cho tuyến dưới; `members:level:manage:any` áp dụng cho mọi hội viên. Người bán chỉ truy cập và thao tác trên kho của mình.
 
 ### Bắt đầu sử dụng
 
 1. Quản trị viên cấp các quyền phù hợp qua nhóm phân quyền.
 2. Hội viên cập nhật mã thẻ trong **Hồ sơ cá nhân**. Mã được chấp nhận theo dạng `VA12345678` hoặc `VNY1234567`; có thể nhập mã người bảo trợ tại cùng trang. Cấp độ chỉ được người có quyền quản lý cấp độ trong tuyến trên thay đổi.
-3. Người bán mở **Quản lý hàng hoá**, tạo SKU, tên hàng, PV, ảnh và ngưỡng cảnh báo tồn (mặc định 5). Khi nhập hàng, ghi số lượng và giá vốn thực tế để hệ thống lưu thành lô.
-4. Người có quyền `pricelist:manage` tạo bảng giá chung cho SKU với giá nhập tham chiếu và các mức **Giá 100%**, **Giá 25%**, **Giá 35%**, **Giá 42%**, **Giá 50%**. Đây là tên các mức giá; giá tiền được nhập trực tiếp. Mỗi lần cập nhật tạo phiên bản có thời gian hiệu lực, dùng cả khi ghi nhận giao dịch bán bổ sung trong quá khứ.
+3. Người bán mở **Quản lý hàng hoá**, tạo danh mục ngay trong form sản phẩm hoặc chọn danh mục sẵn có; sau đó nhập SKU, tên hàng, PV, ảnh và ngưỡng cảnh báo tồn (mặc định 5). Khi nhập hàng, ghi số lượng và giá vốn thực tế để hệ thống lưu thành lô.
+4. Người có quyền `pricelist:manage` mở **Quản lý bảng giá** (cũng có trong menu **Khác** trên điện thoại), nhập toàn bộ giá SKU trong một lần, đặt tên bảng giá và thời gian hiệu lực. Có thể nhập giá nhập tham chiếu và các mức **Giá 100%**, **Giá 25%**, **Giá 35%**, **Giá 42%**, **Giá 50%**. Đây là tên các mức giá; giá tiền được nhập trực tiếp. Mỗi lần lưu tạo phiên bản lịch sử, dùng cả khi ghi nhận giao dịch bán bổ sung trong quá khứ.
 5. Tạo đơn cho hội viên, khách lẻ hoặc tên tuỳ chỉnh. Giá được gợi ý theo cấp hội viên và có thể điều chỉnh trên đơn. Có thể thêm ghi chú, xem lịch sử, đổi người mua có lưu dấu vết, huỷ đơn hoặc hoàn một phần/toàn bộ hàng với lý do.
 6. Xem trước hoá đơn, xuất ảnh PNG hoặc in/lưu PDF. Người bán có thể lưu định dạng mặc định cùng tên cửa hàng, số điện thoại và địa chỉ. Kết nối máy in Bluetooth chưa thuộc giai đoạn này.
 

@@ -661,7 +661,7 @@ const App: React.FC = () => {
         {activeTab === 'systemndd' && <BranchManager />}
         {activeTab === 'inventory' && (currentUser! as any).permissions?.includes('inventory:manage') && <InventoryDashboard user={currentUser!} />}
         {activeTab === 'inventory-prices' && (currentUser! as any).permissions?.includes('pricelist:manage') && <InventoryDashboard user={currentUser!} initialPricesOnly />}
-        {activeTab === 'member-levels' && (currentUser! as any).permissions?.includes('members:level:manage') && <InventoryDashboard user={currentUser!} initialLevelsOnly />}
+        {activeTab === 'member-levels' && ((currentUser! as any).permissions?.includes('members:level:manage') || (currentUser! as any).permissions?.includes('members:level:manage:any')) && <InventoryDashboard user={currentUser!} initialLevelsOnly />}
         
         {/* ChatSystem UI - chỉ hiển thị khung chat khi mở */}
         {isChatOpen && <ChatSystem currentUser={currentUser!} onClose={() => setIsChatOpen(false)} />}

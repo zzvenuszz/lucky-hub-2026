@@ -1,9 +1,18 @@
 import mongoose from 'mongoose';
 
+const InventoryCategorySchema = new mongoose.Schema({
+  ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  name: { type: String, required: true, trim: true },
+}, { timestamps: true });
+InventoryCategorySchema.index({ ownerId: 1, name: 1 }, { unique: true });
+export const InventoryCategory = mongoose.model('InventoryCategory', InventoryCategorySchema);
+
 const InventoryItemSchema = new mongoose.Schema({
   ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   sku: { type: String, required: true, uppercase: true, trim: true },
   name: { type: String, required: true, trim: true },
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryCategory', default: null },
+  categoryName: { type: String, default: '' },
   imageUrl: { type: String, default: '' },
   pv: { type: Number, required: true, min: 0 },
   quantity: { type: Number, default: 0, min: 0 },
@@ -38,6 +47,7 @@ const InventoryMovementSchema = new mongoose.Schema({
 export const InventoryMovement = mongoose.model('InventoryMovement', InventoryMovementSchema);
 
 const PriceListVersionSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true, default: 'Bảng giá chung' },
   effectiveFrom: { type: Date, required: true },
   effectiveTo: { type: Date, default: null, index: true },
   entries: [{

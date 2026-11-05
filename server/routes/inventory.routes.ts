@@ -6,13 +6,14 @@ import { User } from '../models/User.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { uploadImageToStorageProvider } from '../services/storage/imageStorageService.ts';
 import { SystemSettings } from '../models/SystemSettings.ts';
-import { InventoryItem, InventoryLot, InventoryMovement, PriceListVersion, Sale, SellerPrintPreference } from '../models/Inventory.ts';
+import { InventoryCategory, InventoryItem, InventoryLot, InventoryMovement, PriceListVersion, Sale, SellerPrintPreference } from '../models/Inventory.ts';
 
 const router = Router();
 router.use(authMiddleware);
 const inventory = requirePermission(RESOURCES.INVENTORY.MANAGE);
 const priceManager = requirePermission(RESOURCES.PRICELIST.MANAGE);
 const levelManager = requirePermission(RESOURCES.MEMBER_LEVEL.MANAGE);
+const anyLevelManager = requirePermission([RESOURCES.MEMBER_LEVEL.MANAGE, RESOURCES.MEMBER_LEVEL.MANAGE_ANY]);
 const idOf = (req: Request) => (req as any).user.userId;
 const memberPriceKey: Record<string, string> = { customer: 'price100', member: 'price25', senior_consultant: 'price35', success_builder: 'price42', supervisor: 'price50' };
 const memberPriceLabel: Record<string, string> = { customer: 'Giá 100%', member: 'Giá 25%', senior_consultant: 'Giá 35%', success_builder: 'Giá 42%', supervisor: 'Giá 50%' };
@@ -55,6 +56,21 @@ router.get('/members', inventory, async (req: Request, res: Response) => {
   } catch (error: any) { console.error('[Inventory] Member lookup failed:', error); res.status(500).json({ message: 'Không thể tìm hội viên.' }); }
 });
 
+router.get('/categories', inventory, async (req: Request, res: Response) => {
+  try { res.json(await InventoryCategory.find({ ownerId: idOf(req) }).sort({ name: 1 }).lean()); }
+  catch (error: any) { console.error('[Inventory] Categories load failed:', error); res.status(500).json({ message: error.message }); }
+});
+
+router.post('/categories', inventory, async (req: Request, res: Response) => {
+  try {
+    const name = String(req.body.name || '').trim();
+    if (!name || name.length > 80) return res.status(400).json({ message: 'Tên danh mục bắt buộc và tối đa 80 ký tự.' });
+    const category = await InventoryCategory.create({ ownerId: idOf(req), name });
+    console.log('[Inventory] Category created:', { ownerId: idOf(req), name });
+    res.status(201).json(category);
+  } catch (error: any) { console.error('[Inventory] Category create failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'Danh mục này đã có trong kho của bạn.' : error.message }); }
+});
+
 router.get('/items', inventory, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
@@ -76,7 +92,13 @@ router.post('/items', inventory, async (req: Request, res: Response) => {
       if (!provider) return res.status(400).json({ message: 'Chưa cấu hình dịch vụ lưu ảnh.' });
       finalImage = await uploadImageToStorageProvider(finalImage, provider, 'inventory');
     }
-    const item = await InventoryItem.create({ ownerId: idOf(req), sku: String(sku).trim().toUpperCase(), name: String(name).trim(), imageUrl: finalImage, pv: Number(pv), quantity: 0, lowStockThreshold: Math.max(0, Number(lowStockThreshold) || 0) });
+    let categoryId = null; let categoryName = '';
+    if (req.body.categoryId) {
+      const category = await InventoryCategory.findOne({ _id: req.body.categoryId, ownerId: idOf(req) }).select('name');
+      if (!category) return res.status(400).json({ message: 'Danh mục không thuộc kho của bạn.' });
+      categoryId = category._id; categoryName = category.name;
+    }
+    const item = await InventoryItem.create({ ownerId: idOf(req), sku: String(sku).trim().toUpperCase(), name: String(name).trim(), categoryId, categoryName, imageUrl: finalImage, pv: Number(pv), quantity: 0, lowStockThreshold: Math.max(0, Number(lowStockThreshold) || 0) });
     if (Number(quantity) > 0) {
       const unitCost = Number(req.body.unitCost || 0);
       const lot = await InventoryLot.create({ ownerId: idOf(req), itemId: item._id, receivedQuantity: Number(quantity), remainingQuantity: Number(quantity), unitCost, receivedAt: new Date() });
@@ -92,6 +114,14 @@ router.put('/items/:id', inventory, async (req: Request, res: Response) => {
   try {
     const patch: any = {};
     for (const key of ['sku', 'name', 'imageUrl', 'pv', 'lowStockThreshold', 'archived']) if (req.body[key] !== undefined) patch[key] = req.body[key];
+    if (req.body.categoryId !== undefined) {
+      if (!req.body.categoryId) { patch.categoryId = null; patch.categoryName = ''; }
+      else {
+        const category = await InventoryCategory.findOne({ _id: req.body.categoryId, ownerId: idOf(req) }).select('name');
+        if (!category) return res.status(400).json({ message: 'Danh mục không thuộc kho của bạn.' });
+        patch.categoryId = category._id; patch.categoryName = category.name;
+      }
+    }
     if (patch.sku) patch.sku = String(patch.sku).trim().toUpperCase();
     if (patch.imageUrl?.startsWith('data:image')) {
       const settings = await SystemSettings.findOne({}).select('storage').lean();
@@ -178,7 +208,9 @@ router.post('/price-list', priceManager, async (req: Request, res: Response) => 
     const conflict = await PriceListVersion.findOne({ effectiveFrom: { $lt: effectiveFrom }, $or: [{ effectiveTo: null }, { effectiveTo: { $gt: effectiveFrom } }] }).sort({ effectiveFrom: -1 });
     const next = await PriceListVersion.findOne({ effectiveFrom: { $gt: effectiveFrom } }).sort({ effectiveFrom: 1 });
     if (conflict) conflict.effectiveTo = effectiveFrom;
-    const doc = await PriceListVersion.create({ effectiveFrom, effectiveTo: next?.effectiveFrom || null, entries, createdBy: idOf(req), note: String(req.body.note || '') });
+    const name = String(req.body.name || '').trim();
+    if (!name || name.length > 100) return res.status(400).json({ message: 'Tên bảng giá bắt buộc và tối đa 100 ký tự.' });
+    const doc = await PriceListVersion.create({ name, effectiveFrom, effectiveTo: next?.effectiveFrom || null, entries, createdBy: idOf(req), note: String(req.body.note || '') });
     await conflict?.save();
     await logAudit(req, 'PRICELIST_UPDATE', `Cập nhật bảng giá hiệu lực từ ${effectiveFrom.toISOString()}`);
     console.log('[Inventory] Price list version created:', { id: doc.id, effectiveFrom });
@@ -186,12 +218,13 @@ router.post('/price-list', priceManager, async (req: Request, res: Response) => 
   } catch (error: any) { console.error('[Inventory] Price list update failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'Đã tồn tại bảng giá tại thời điểm này.' : error.message }); }
 });
 
-router.get('/members/downline', levelManager, async (req: Request, res: Response) => {
+router.get('/members/downline', anyLevelManager, async (req: Request, res: Response) => {
   try {
     const all = await User.find({ status: 'ACTIVE' }).select('_id fullName memberNumber memberLevel sponsorUserId').lean() as any[];
     const children = new Map<string, any[]>();
     for (const user of all) { const parent = String(user.sponsorUserId || ''); if (!children.has(parent)) children.set(parent, []); children.get(parent)!.push(user); }
-    const result: any[] = []; const queue = [...(children.get(String(idOf(req))) || [])]; const seen = new Set<string>();
+    const hasGlobalLevelPermission = req.user!.permissions.includes(RESOURCES.MEMBER_LEVEL.MANAGE_ANY);
+    const result: any[] = []; const queue = hasGlobalLevelPermission ? [...all] : [...(children.get(String(idOf(req))) || [])]; const seen = new Set<string>();
     while (queue.length) { const user = queue.shift(); const id = String(user._id); if (seen.has(id)) continue; seen.add(id); result.push({ id, fullName: user.fullName, memberNumber: user.memberNumber, memberLevel: user.memberLevel }); queue.push(...(children.get(id) || [])); }
     res.json(result);
   } catch (error: any) { console.error('[Inventory] Downline lookup failed:', error); res.status(500).json({ message: error.message }); }
@@ -206,18 +239,19 @@ router.get('/members/:id/purchases', inventory, async (req: Request, res: Respon
   } catch (error: any) { console.error('[Inventory] Member purchases failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.put('/members/:id/level', levelManager, async (req: Request, res: Response) => {
+router.put('/members/:id/level', anyLevelManager, async (req: Request, res: Response) => {
   try {
     const target = await User.findById(req.params.id).select('fullName memberLevel sponsorUserId memberNumber');
     if (!target) return res.status(404).json({ message: 'Không tìm thấy hội viên.' });
     let cursor: any = target; let isDownline = false; const visited = new Set<string>();
+    const hasGlobalLevelPermission = req.user!.permissions.includes(RESOURCES.MEMBER_LEVEL.MANAGE_ANY);
     while (cursor?.sponsorUserId) {
       const sponsorId = String(cursor.sponsorUserId);
       if (sponsorId === String(idOf(req))) { isDownline = true; break; }
       if (visited.has(sponsorId)) return res.status(409).json({ message: 'Phát hiện vòng lặp trong quan hệ bảo trợ.' });
       visited.add(sponsorId); cursor = await User.findById(sponsorId).select('sponsorUserId').lean();
     }
-    if (!isDownline) return res.status(403).json({ message: 'Chỉ được đổi cấp độ thành viên trong tuyến dưới của bạn.' });
+    if (!hasGlobalLevelPermission && !isDownline) return res.status(403).json({ message: 'Chỉ được đổi cấp độ thành viên trong tuyến dưới của bạn.' });
     const levels = ['customer', 'member', 'senior_consultant', 'success_builder', 'supervisor'];
     if (!levels.includes(req.body.memberLevel) || (req.body.memberLevel !== 'customer' && !target.memberNumber)) return res.status(400).json({ message: 'Cấp độ không hợp lệ hoặc hội viên chưa có mã thẻ.' });
     const previous = target.memberLevel; target.memberLevel = req.body.memberLevel; await target.save();

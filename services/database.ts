@@ -64,6 +64,8 @@ export const Database = {
   getUsers: async () => (await request<User[]>(`${API_BASE}/users`)) ?? [],
   updateUser: (id: string, data: Partial<User>) => request<User>(`${API_BASE}/users/${id}`, 'PUT', data),
   inventory: {
+    getCategories: () => request<any[]>(`${API_BASE}/inventory/categories`),
+    createCategory: (name: string) => request<any>(`${API_BASE}/inventory/categories`, 'POST', { name }),
     getItems: () => request<any[]>(`${API_BASE}/inventory/items`),
     createItem: (data: any) => request<any>(`${API_BASE}/inventory/items`, 'POST', data),
     updateItem: (id: string, data: any) => request<any>(`${API_BASE}/inventory/items/${id}`, 'PUT', data),
