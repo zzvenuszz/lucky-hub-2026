@@ -32,6 +32,7 @@ test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {
     await signIn(page);
     await page.getByRole('button', { name: 'Quản lý hàng hoá' }).click();
     await page.getByRole('button', { name: 'Kho hàng' }).click();
+    await page.getByRole('button', { name: 'Thêm sản phẩm' }).click();
     const sku = `PW${Date.now()}`;
     await page.getByTestId('create-item-sku').fill(sku);
     await page.getByTestId('create-item-name').fill(`Playwright ${sku}`);
