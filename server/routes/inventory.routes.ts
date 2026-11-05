@@ -375,7 +375,7 @@ router.get('/members/downline', anyLevelManager, async (req: Request, res: Respo
   } catch (error: any) { console.error('[Inventory] Downline lookup failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.get('/members/:id/purchases', inventory, async (req: Request, res: Response) => {
+router.get('/members/:id/purchases', inventorySeller, async (req: Request, res: Response) => {
   try {
     const member = await User.findById(req.params.id).select('_id fullName memberNumber').lean();
     if (!member) return res.status(404).json({ message: 'Không tìm thấy hội viên.' });
@@ -678,7 +678,7 @@ router.get('/reports/member-purchases', inventory, async (req: Request, res: Res
   } catch (error: any) { console.error('[Inventory] Member report failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.get('/reports/analytics', inventory, async (req: Request, res: Response) => {
+router.get('/reports/analytics', inventorySeller, async (req: Request, res: Response) => {
   try {
     const ownerId = String(idOf(req));
     console.log('[Inventory] Analytics report requested:', { ownerId, query: req.query });

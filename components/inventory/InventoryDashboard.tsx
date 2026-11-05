@@ -8,10 +8,11 @@ import CurrencyInput from './CurrencyInput.tsx';
 import StockActionModal from './StockActionModal.tsx';
 import PriceListManager from './PriceListManager.tsx';
 import InventoryReportPanel from './reports/InventoryReportPanel.tsx';
+import ScrollableSubTabs from './ScrollableSubTabs.tsx';
 import { User } from '../../types.ts';
 import { formatVND } from '../../utils/formatters.ts';
 
-interface Props { user: User; initialPricesOnly?: boolean; initialLevelsOnly?: boolean; }
+interface Props { user: User; initialPricesOnly?: boolean; initialLevelsOnly?: boolean; initialTab?: Tab; }
 type Tab = 'overview' | 'stock' | 'sale' | 'history' | 'prices' | 'reports' | 'levels' | 'settings';
 type PriceField = 'price100' | 'price25' | 'price35' | 'price42' | 'price50';
 const LEVELS = [
@@ -40,14 +41,19 @@ const tabs: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'history', label: 'Lịch sử', icon: '↻' }, { id: 'prices', label: 'Bảng giá', icon: '＄' }, { id: 'reports', label: 'Báo cáo', icon: '▤' }, { id: 'levels', label: 'Tuyến hội viên', icon: '⌘' }, { id: 'settings', label: 'Hoá đơn', icon: '⚙' },
 ];
 
-const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = false, initialLevelsOnly = false }) => {
+const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = false, initialLevelsOnly = false, initialTab }) => {
   const permissions: string[] = (user as any).permissions || [];
   const canInventory = permissions.includes('inventory:manage');
   const canSell = permissions.includes('inventory:sell');
   const canUseInventory = canInventory || canSell;
   const canPrices = permissions.includes('pricelist:manage');
   const canLevels = permissions.includes('members:level:manage') || permissions.includes('members:level:manage:any');
-  const [tab, setTab] = useState<Tab>(initialLevelsOnly ? 'levels' : initialPricesOnly ? 'prices' : 'overview');
+  const [tab, setTab] = useState<Tab>(initialTab ? initialTab : initialLevelsOnly ? 'levels' : initialPricesOnly ? 'prices' : 'overview');
+  useEffect(() => {
+    if (initialTab) setTab(initialTab);
+    else if (initialLevelsOnly) setTab('levels');
+    else if (initialPricesOnly) setTab('prices');
+  }, [initialTab, initialLevelsOnly, initialPricesOnly]);
   const [items, setItems] = useState<any[]>([]); const [categories, setCategories] = useState<any[]>([]); const [overview, setOverview] = useState<any>(null); const [movements, setMovements] = useState<any[]>([]); const [priceVersions, setPriceVersions] = useState<any[]>([]); const [salePriceList, setSalePriceList] = useState<any>(null);
   const [priceProducts, setPriceProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]); const [members, setMembers] = useState<any[]>([]); const [downline, setDownline] = useState<any[]>([]); const [preference, setPreference] = useState<any>({ format: 'pdf' });
@@ -151,7 +157,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     if (item.id === 'prices') return canPrices || canInventory;
     if (item.id === 'levels') return canLevels;
     if (item.id === 'settings') return canUseInventory;
-    if (item.id === 'sale' || item.id === 'history') return canUseInventory;
+    if (item.id === 'sale' || item.id === 'history' || item.id === 'reports') return canUseInventory;
     return canInventory;
   }), [canInventory, canPrices, canLevels, canUseInventory]);
   useEffect(() => { if (!visibleTabs.some(item => item.id === tab)) setTab(visibleTabs[0]?.id || 'prices'); }, [visibleTabs, tab]);
@@ -353,7 +359,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   return <section className="mx-auto max-w-7xl space-y-6 px-3 pb-24 pt-4 sm:px-6 lg:px-8" data-testid="inventory-dashboard">
     <header className="flex flex-col justify-between gap-4 rounded-[2rem] bg-gradient-to-br from-emerald-950 via-emerald-800 to-teal-600 p-6 text-white shadow-xl sm:flex-row sm:items-center sm:p-8"><div><p className="text-xs font-bold uppercase tracking-[.24em] text-emerald-200">Lucky Hub · Bán hàng</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">{canInventory ? <><span className="uppercase">KHO HÀNG CÁ NHÂN</span><br /><span>{user.fullName}</span></> : canUseInventory ? 'Bán hàng' : tab === 'levels' ? (permissions.includes('members:level:manage:any') ? 'Quản lý cấp độ hội viên' : 'Quản lý cấp độ tuyến dưới') : 'Bảng giá sản phẩm'}</h1><p className="mt-2 max-w-xl text-sm text-emerald-100">{canInventory ? 'Quản lý tồn kho riêng, giá bán theo cấp hội viên và lịch sử hoá đơn.' : canUseInventory ? 'Chọn sản phẩm có sẵn, khách hàng và một trong các mức giá cố định.' : tab === 'levels' ? 'Cập nhật cấp độ hội viên theo phạm vi quyền được cấp.' : 'Quản lý bảng giá chung và thời gian áp dụng.'}</p></div>{canUseInventory && <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 text-sm"><div className="font-bold">Mã hội viên: {user.memberNumber || 'Chưa cập nhật'}</div><div className="mt-1 text-emerald-100">Cấp độ: {getMemberLevelLabel(user.memberLevel)}</div></div>}</header>
     {message && <div role="status" aria-live="polite" className="fixed right-3 top-3 z-[160] flex w-[calc(100%-1.5rem)] max-w-md items-start gap-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm font-bold text-emerald-900 shadow-xl sm:right-6 sm:top-6"><span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-800">✓</span><span className="flex-1 pt-1">{message}</span><button type="button" aria-label="Đóng thông báo" onClick={() => setMessage('')} className="rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100">✕</button></div>}
-    <nav className="flex gap-2 overflow-x-auto rounded-2xl bg-white p-2 shadow-sm ring-1 ring-slate-200" aria-label="Quản lý bán hàng">{visibleTabs.map(item => <button key={item.id} onClick={() => setTab(item.id)} className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition ${tab === item.id ? 'bg-emerald-700 text-white shadow' : 'text-slate-600 hover:bg-slate-100'}`}><span>{item.icon}</span>{item.label}</button>)}</nav>
+    <ScrollableSubTabs tabs={visibleTabs} activeTab={tab} onSelect={setTab} />
 
     {tab === 'overview' && canInventory && <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[['Mặt hàng', overview?.itemCount || 0], ['Tổng sản phẩm', overview?.totalUnits || 0], ['Giá vốn tồn kho', money(overview?.costValue || 0)], ['Sản phẩm cần nhập', overview?.lowStock?.length || 0]].map(([label, value]) => <div key={String(label)} className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-3 break-words text-xl font-black text-slate-900 sm:text-2xl">{value}</p></div>)}</div>
@@ -410,7 +416,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
 
     {tab === 'history' && canUseInventory && <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><input value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Lọc theo mã hoá đơn, người mua, SKU hoặc mặt hàng" className="min-w-0 flex-1 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-emerald-500" />{canInventory && cancelledSalesCount > 0 && <button type="button" disabled={busy} onClick={deleteAllCancelledSales} className="shrink-0 rounded-2xl bg-rose-600 px-4 py-4 text-xs font-black text-white shadow-sm hover:bg-rose-700 disabled:opacity-50" data-testid="delete-all-cancelled-sales">🗑 Xóa tất cả đơn đã hủy ({cancelledSalesCount})</button>}</div>{filteredSales.map(sale => <article key={sale._id} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><div className="flex flex-wrap items-center gap-2"><b className="text-lg">{sale.invoiceNumber}</b><span className={`rounded-full px-3 py-1 text-xs font-bold ${sale.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : sale.status === 'cancelled' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>{({ completed: 'Hoàn tất', partially_returned: 'Hoàn một phần', returned: 'Đã hoàn', cancelled: 'Đã huỷ' } as any)[sale.status]}</span></div><p className="mt-1 text-sm text-slate-500">{new Date(sale.soldAt).toLocaleString('vi-VN')} · {sale.buyerName} · {sale.totalPv} PV</p>{sale.status === 'cancelled' && sale.cancelReason && <p className="mt-1 text-xs text-rose-700">Lý do huỷ: {sale.cancelReason}</p>}</div><div className="flex flex-wrap gap-2"><button onClick={() => setInvoice(sale)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">Xem hoá đơn</button>{canInventory && !['cancelled', 'returned'].includes(sale.status) && <><button onClick={() => changeBuyer(sale)} className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800">Sửa người mua</button><button onClick={() => handleReturn(sale)} className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Trả hàng</button>{sale.status === 'completed' && <button onClick={() => cancelSale(sale)} className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800">Huỷ đơn</button>}</>}{canInventory && sale.status === 'cancelled' && <button type="button" disabled={busy} onClick={() => deleteCancelledSale(sale)} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50" data-testid={`delete-cancelled-sale-${sale._id}`}>Xóa hóa đơn</button>}</div></div><div className="mt-3 flex justify-between border-t pt-3 text-sm"><span>{sale.lines?.map((line: any) => `${line.name} × ${line.quantity}`).join(' · ')}</span><b>{money(sale.total)}</b></div>{sale.returnEvents?.map((event: any, i: number) => <p key={i} className="mt-2 text-xs text-amber-800">Đợt trả: {event.reason} · hoàn {money(event.refundAmount)}</p>)}</article>)}{!filteredSales.length && <p className="rounded-3xl bg-white p-10 text-center text-slate-500">Không có giao dịch phù hợp.</p>}</div>}
 
-    {tab === 'reports' && canInventory && <InventoryReportPanel onOpenMemberPurchases={openMemberPurchases} onMessage={showMessage} />}
+    {tab === 'reports' && canUseInventory && <InventoryReportPanel onOpenMemberPurchases={openMemberPurchases} onMessage={showMessage} />}
 
     {tab === 'levels' && canLevels && <div className="space-y-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Quản lý cấp độ tuyến dưới</h2><p className="text-sm text-slate-500">Bạn chỉ có thể cập nhật cấp độ thành viên nằm trong tuyến dưới của mình.</p>{downline.map(member => { const selected = levelEntries.find(entry => entry.id === member.id); return <div key={member.id} className="grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-[1fr_220px_1fr_auto] md:items-end"><div><b>{member.fullName}</b><div className="text-xs text-slate-500">{member.memberNumber || 'Chưa có mã'}</div></div><label className="text-xs font-bold text-slate-500">Cấp độ<select value={selected?.value || member.memberLevel} onChange={e => setLevelEntries(old => [...old.filter(x => x.id !== member.id), { id: member.id, value: e.target.value, reason: selected?.reason || '' }])} className="mt-1 w-full rounded-xl bg-white p-3 text-sm">{LEVELS.map(level => <option key={level.id} value={level.id}>{level.label}</option>)}</select></label><input value={selected?.reason || ''} onChange={e => setLevelEntries(old => [...old.filter(x => x.id !== member.id), { id: member.id, value: selected?.value || member.memberLevel, reason: e.target.value }])} placeholder="Lý do cập nhật" className="rounded-xl bg-white p-3 text-sm" /><button onClick={() => saveLevel(member)} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Lưu</button></div>; })}{!downline.length && <p className="py-8 text-center text-sm text-slate-500">Chưa có thành viên trong tuyến dưới.</p>}</div>}
 

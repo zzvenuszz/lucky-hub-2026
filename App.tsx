@@ -669,6 +669,7 @@ const App: React.FC = () => {
         {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} />}
         {activeTab === 'systemndd' && <BranchManager />}
         {activeTab === 'inventory' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} />}
+        {activeTab === 'inventory-reports' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} initialTab="reports" />}
         {activeTab === 'inventory-prices' && (currentUser! as any).permissions?.includes('pricelist:manage') && <InventoryDashboard user={currentUser!} initialPricesOnly />}
         {activeTab === 'member-levels' && ((currentUser! as any).permissions?.includes('members:level:manage') || (currentUser! as any).permissions?.includes('members:level:manage:any')) && <InventoryDashboard user={currentUser!} initialLevelsOnly />}
         

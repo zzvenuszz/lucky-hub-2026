@@ -17,7 +17,7 @@ interface WorkspaceShellProps {
   branding: SystemBranding;
 }
 
-type IconName = 'overview' | 'community' | 'health' | 'coach' | 'branch' | 'admin' | 'chat' | 'more' | 'profile' | 'logout' | 'menu' | 'close' | 'chevron' | 'inventory';
+type IconName = 'overview' | 'community' | 'health' | 'coach' | 'branch' | 'admin' | 'chat' | 'more' | 'profile' | 'logout' | 'menu' | 'close' | 'chevron' | 'inventory' | 'report';
 
 const ICONS: Record<IconName, React.ReactNode> = {
   overview: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
@@ -27,6 +27,7 @@ const ICONS: Record<IconName, React.ReactNode> = {
   branch: <><circle cx="6" cy="6" r="3" /><circle cx="18" cy="18" r="3" /><path d="M6 9v3a6 6 0 0 0 6 6h3" /><path d="M15 6h3" /><circle cx="18" cy="6" r="3" /></>,
   admin: <><path d="M12 3 4 7v5c0 5 3.4 8 8 9 4.6-1 8-4 8-9V7l-8-4Z" /><path d="M9 12h6M12 9v6" /></>,
   inventory: <><path d="m3 7 9-4 9 4-9 4-9-4Z" /><path d="M3 7v10l9 4 9-4V7M12 11v10" /></>,
+  report: <><path d="M3 3v18h18" /><path d="M7 16v-5M12 16V8M17 16v-8" /></>,
   chat: <><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 3.9a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z" /></>,
   more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
   profile: <><circle cx="12" cy="8" r="4" /><path d="M5 21a7 7 0 0 1 14 0" /></>,
@@ -75,6 +76,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
     ...(canManageInventory || canSellInventory || canManagePriceList || canManageMemberLevels ? [{ label: 'Bán hàng', items: [
       ...(canManageInventory ? [{ id: 'inventory', label: 'Quản lý hàng hoá', icon: 'inventory' as IconName }] : []),
       ...(!canManageInventory && canSellInventory ? [{ id: 'inventory', label: 'Bán hàng', icon: 'inventory' as IconName }] : []),
+      ...(canManageInventory || canSellInventory ? [{ id: 'inventory-reports', label: 'Báo cáo bán hàng', icon: 'report' as IconName }] : []),
       ...(canManagePriceList ? [{ id: 'inventory-prices', label: 'Bảng giá chung', icon: 'inventory' as IconName }] : []),
       ...(canManageMemberLevels && !canManageInventory ? [{ id: 'member-levels', label: permissions.includes('members:level:manage:any') ? 'Quản lý cấp độ hội viên' : 'Cấp độ tuyến dưới', icon: 'inventory' as IconName }] : []),
     ] }] : []),
@@ -85,6 +87,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
     const item = navGroups.flatMap(group => group.items).find(navItem => navItem.id === activeTab);
     if (item) return item.label;
     if (activeTab === 'profile') return 'Hồ sơ cá nhân';
+    if (activeTab === 'inventory-reports') return 'Báo cáo bán hàng';
     if (activeTab === 'inventory-prices') return 'Bảng giá chung';
     if (activeTab === 'member-levels') return 'Cấp độ tuyến dưới';
     return 'Lucky Hub';
@@ -125,6 +128,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
     { id: 'profile', label: 'Hồ sơ cá nhân', icon: 'profile' as IconName },
     ...(canManageInventory ? [{ id: 'inventory', label: 'Quản lý bán hàng', icon: 'inventory' as IconName }] : []),
     ...(!canManageInventory && canSellInventory ? [{ id: 'inventory', label: 'Bán hàng', icon: 'inventory' as IconName }] : []),
+    ...(canManageInventory || canSellInventory ? [{ id: 'inventory-reports', label: 'Báo cáo bán hàng', icon: 'report' as IconName }] : []),
     ...(canManagePriceList ? [{ id: 'inventory-prices', label: 'Quản lý bảng giá', icon: 'inventory' as IconName }] : []),
     ...(canManageMemberLevels && !canManageInventory ? [{ id: 'member-levels', label: permissions.includes('members:level:manage:any') ? 'Quản lý cấp độ hội viên' : 'Cấp độ tuyến dưới', icon: 'inventory' as IconName }] : []),
     ...(canManageNdd ? [{ id: 'ndd', label: 'Quản lý NDD', icon: 'coach' as IconName }] : []),
