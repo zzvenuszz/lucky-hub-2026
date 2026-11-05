@@ -3,9 +3,18 @@ const VND_SYMBOL = '\u20AB';
 
 export const formatVND = (value: number) => {
   const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
-  const formattedAmount = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(amount);
+  const formattedAmount = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount).replace(/,/g, ' ');
   return `${formattedAmount}\u00A0${VND_SYMBOL}`;
 };
+
+export const formatGroupedInteger = (value: string | number | null | undefined) => {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  const normalized = digits.replace(/^0+(?=\d)/, '');
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+};
+
+export const parseGroupedInteger = (value: string) => value.replace(/\D/g, '');
 
 export const formatDateVN = (dateStr: string) => {
   if (!dateStr) return '--/--/----';

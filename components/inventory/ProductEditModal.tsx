@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import CurrencyInput from './CurrencyInput.tsx';
 
 interface ProductDraft {
   sku: string;
@@ -80,8 +81,8 @@ const ProductEditModal: React.FC<ProductEditModalProps> = memo(({
           <p className="mt-1 text-xs font-normal text-emerald-800">Lưu thay đổi sẽ tạo phiên bản bảng giá chung mới; các lô nhập và hóa đơn cũ giữ nguyên giá lịch sử.</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <label className="block text-xs font-bold text-slate-700">Giá nhập tham chiếu<input type="number" min="0" step="1" value={prices.costReference} readOnly={!canPrices} onChange={event => setPrices(old => ({ ...old, costReference: event.target.value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal read-only:bg-slate-100" /></label>
-          {priceTiers.map(tier => <label key={tier.field} className="block text-xs font-bold text-slate-700">{tier.label}<input type="number" min="0" step="1" value={prices[tier.field]} readOnly={!canPrices} onChange={event => setPrices(old => ({ ...old, [tier.field]: event.target.value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal read-only:bg-slate-100" /></label>)}
+          <label className="block text-xs font-bold text-slate-700">Giá nhập tham chiếu<CurrencyInput value={prices.costReference} readOnly={!canPrices} onValueChange={value => setPrices(old => ({ ...old, costReference: value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal read-only:bg-slate-100" /></label>
+          {priceTiers.map(tier => <label key={tier.field} className="block text-xs font-bold text-slate-700">{tier.label}<CurrencyInput value={prices[tier.field]} readOnly={!canPrices} onValueChange={value => setPrices(old => ({ ...old, [tier.field]: value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal read-only:bg-slate-100" /></label>)}
         </div>
         {!canPrices && <p className="text-xs text-slate-600">Bạn chỉ có thể xem giá. Cần quyền quản lý bảng giá để thay đổi.</p>}
       </div>

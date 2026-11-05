@@ -19,6 +19,10 @@ const idOf = (req: Request) => (req as any).user.userId;
 const memberPriceKey: Record<string, string> = { customer: 'price100', member: 'price25', senior_consultant: 'price35', success_builder: 'price42', supervisor: 'price50' };
 const fixedPriceLabels: Record<string, string> = { price100: 'Giá Lẻ', price25: 'Giá -25%', price35: 'Giá -35%', price42: 'Giá -42%', price50: 'Giá -50%' };
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const safeMemberNumber = (value: any) => {
+  const memberNumber = String(value || '').trim();
+  return ['undefined', 'null'].includes(memberNumber.toLowerCase()) ? '' : memberNumber;
+};
 const logAudit = async (req: Request, type: string, details: string, targetId?: string, targetName?: string) => {
   const actor = (req as any).user;
   try { await new AuditLog({ actorId: actor.userId, actorName: actor.fullName, targetId, targetName, type, details, timestamp: new Date().toISOString() }).save(); }
@@ -51,9 +55,9 @@ router.get('/members', inventorySeller, async (req: Request, res: Response) => {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json([]);
     const safeQuery = escapeRegex(q);
-    const members = await User.find({ status: 'ACTIVE', memberNumber: { $ne: '' }, $or: [{ fullName: { $regex: safeQuery, $options: 'i' } }, { memberNumber: { $regex: safeQuery, $options: 'i' } }] })
+    const members = await User.find({ status: 'ACTIVE', $or: [{ fullName: { $regex: safeQuery, $options: 'i' } }, { memberNumber: { $regex: safeQuery, $options: 'i' } }] })
       .select('_id fullName memberNumber memberLevel').limit(15).lean();
-    res.json(members.map((m: any) => ({ id: String(m._id), fullName: m.fullName, memberNumber: m.memberNumber, memberLevel: m.memberLevel })));
+    res.json(members.map((m: any) => ({ id: String(m._id), fullName: String(m.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(m.memberNumber), memberLevel: m.memberLevel || 'customer' })));
   } catch (error: any) { console.error('[Inventory] Member lookup failed:', error); res.status(500).json({ message: 'Không thể tìm hội viên.' }); }
 });
 
@@ -325,9 +329,9 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
     let buyer = { userId: null as any, name: String(req.body.buyerName || '').trim(), memberNumber: '' };
     let level = 'customer';
     if (buyerType === 'member') {
-      const member = await User.findOne({ _id: req.body.buyerUserId, memberNumber: { $ne: '' } }).select('_id fullName memberNumber memberLevel');
-      if (!member) return res.status(400).json({ message: 'Hội viên không hợp lệ hoặc chưa có mã thẻ.' });
-      buyer = { userId: member._id, name: member.fullName, memberNumber: member.memberNumber }; level = member.memberLevel || 'customer';
+      const member = await User.findOne({ _id: req.body.buyerUserId, status: 'ACTIVE' }).select('_id fullName memberNumber memberLevel');
+      if (!member) return res.status(400).json({ message: 'Không tìm thấy hồ sơ người mua đang hoạt động.' });
+      buyer = { userId: member._id, name: String(member.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(member.memberNumber) }; level = member.memberLevel || 'customer';
     } else if (!['walk-in', 'custom'].includes(buyerType) || (buyerType === 'custom' && !buyer.name)) return res.status(400).json({ message: 'Thông tin người mua không hợp lệ.' });
     if (buyerType === 'walk-in') buyer.name = 'Khách lẻ';
     const priceList: any = await currentPrices(soldAt);
@@ -393,9 +397,9 @@ router.put('/sales/:id/buyer', inventory, async (req: Request, res: Response) =>
     if (!sale || sale.status === 'cancelled' || sale.status === 'returned') return res.status(404).json({ message: 'Không tìm thấy hoá đơn có thể sửa.' });
     let next = { type: req.body.buyerType, userId: null as any, name: String(req.body.buyerName || '').trim(), memberNumber: '' };
     if (next.type === 'member') {
-      const member = await User.findOne({ _id: req.body.buyerUserId, memberNumber: { $ne: '' } }).select('_id fullName memberNumber');
+      const member = await User.findOne({ _id: req.body.buyerUserId, status: 'ACTIVE' }).select('_id fullName memberNumber');
       if (!member) return res.status(400).json({ message: 'Hội viên không hợp lệ.' });
-      next = { type: 'member', userId: member._id, name: member.fullName, memberNumber: member.memberNumber };
+      next = { type: 'member', userId: member._id, name: String(member.fullName || '').trim() || 'Hội viên', memberNumber: safeMemberNumber(member.memberNumber) };
     } else if (next.type === 'walk-in') next.name = 'Khách lẻ';
     else if (next.type !== 'custom' || !next.name) return res.status(400).json({ message: 'Người mua không hợp lệ.' });
     sale.buyerChanges.push({ fromName: sale.buyerName, fromUserId: sale.buyerUserId, toName: next.name, toUserId: next.userId, actorId: idOf(req), createdAt: new Date() });

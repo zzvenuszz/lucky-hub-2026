@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import CurrencyInput from './CurrencyInput.tsx';
 
 interface ProductDraft {
   sku: string;
@@ -93,7 +94,7 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
         <label className="block text-sm font-bold text-slate-700">Số lượng ban đầu<input type="number" min="0" value={draft.quantity} onChange={event => setDraft(old => ({ ...old, quantity: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-bold text-slate-700">Giá vốn mỗi sản phẩm<input type="number" min="0" value={draft.unitCost} onChange={event => setDraft(old => ({ ...old, unitCost: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="block text-sm font-bold text-slate-700">Giá vốn mỗi sản phẩm<CurrencyInput value={draft.unitCost} onValueChange={value => setDraft(old => ({ ...old, unitCost: value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
         <label className="block text-sm font-bold text-slate-700">Cảnh báo tồn khi còn<input type="number" min="0" value={draft.lowStockThreshold} onChange={event => setDraft(old => ({ ...old, lowStockThreshold: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       </div>
       {canPrices ? (
@@ -103,7 +104,7 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
             <p className="mt-1 text-xs font-normal text-emerald-800">Nhập số tiền áp dụng cho từng mốc. Hệ thống không tự tính từ giá gốc.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {priceTiers.map(tier => <label key={tier.field} className="block text-xs font-bold text-slate-700">{tier.label}<input required type="number" min="0" step="1" value={draftPrices[tier.field]} onChange={event => setDraftPrices(old => ({ ...old, [tier.field]: event.target.value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal" /></label>)}
+            {priceTiers.map(tier => <label key={tier.field} className="block text-xs font-bold text-slate-700">{tier.label}<CurrencyInput required value={draftPrices[tier.field]} onValueChange={value => setDraftPrices(old => ({ ...old, [tier.field]: value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal" /></label>)}
           </div>
         </div>
       ) : <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Bảng giá chung do người có quyền quản lý bảng giá cập nhật.</p>}
