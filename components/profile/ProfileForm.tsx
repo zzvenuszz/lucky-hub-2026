@@ -7,6 +7,8 @@ import { useToast } from '../system/ToastProvider.tsx';
 interface ProfileFormProps {
   user: User;
   initialData: any;
+  canManageMemberLevel?: boolean;
+  onMemberLevelUpdate?: (memberLevel: string) => Promise<void>;
   /**
    * PHÂN TÍCH: Cần mở rộng kiểu của onUpdate để chấp nhận tham số thứ 2 (shouldSubmit)
    * nhằm tương thích với logic cập nhật tức thì (false) và cập nhật khi submit (true/mặc định).
@@ -14,8 +16,10 @@ interface ProfileFormProps {
   onUpdate: (data: any, shouldSubmit?: boolean) => void;
 }
 
-const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }) => {
+const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, canManageMemberLevel = false, onMemberLevelUpdate }) => {
   const [formData, setFormData] = useState(initialData);
+  const [memberLevelDraft, setMemberLevelDraft] = useState<string>(user.memberLevel || 'customer');
+  const [savingMemberLevel, setSavingMemberLevel] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { addToast } = useToast();
@@ -24,6 +28,23 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
   React.useEffect(() => {
     setFormData(initialData);
   }, [initialData]);
+  React.useEffect(() => { setMemberLevelDraft(user.memberLevel || 'customer'); }, [user.memberLevel]);
+
+  const saveMemberLevel = useCallback(async () => {
+    if (!onMemberLevelUpdate) return;
+    if (memberLevelDraft !== 'customer' && !user.memberNumber) {
+      addToast({ type: 'warning', title: 'Chưa thể đổi cấp độ', message: 'Hồ sơ cần có mã hội viên hợp lệ trước.' });
+      return;
+    }
+    setSavingMemberLevel(true);
+    try {
+      await onMemberLevelUpdate(memberLevelDraft);
+      addToast({ type: 'success', title: 'Đã cập nhật', message: 'Cấp độ hội viên đã được lưu.' });
+    } catch (error: any) {
+      console.error('[ProfileForm] Member level update failed:', error);
+      addToast({ type: 'error', title: 'Không thể cập nhật', message: error?.message || 'Có lỗi khi cập nhật cấp độ.' });
+    } finally { setSavingMemberLevel(false); }
+  }, [onMemberLevelUpdate, memberLevelDraft, user.memberNumber, addToast]);
 
   const checkEmailExists = async (email: string) => {
     if (email === user.email) { 
@@ -104,8 +125,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate }
         </div>
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Cấp độ hội viên</label>
-          <input readOnly value={({ customer: 'Khách hàng', member: 'Hội viên', senior_consultant: 'Tư vấn viên cao cấp', success_builder: 'Nhà kiến tạo thành công', supervisor: 'Giám sát viên' } as any)[user.memberLevel || 'customer']} className="w-full px-4 py-3 bg-slate-100 rounded-xl border border-transparent outline-none text-sm font-medium text-slate-500" />
-          <p className="text-[10px] text-slate-400 ml-1">Cấp độ do người có quyền trong tuyến trên quản lý.</p>
+          {canManageMemberLevel ? <><select value={memberLevelDraft} onChange={e => setMemberLevelDraft(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent outline-none text-sm font-medium"><option value="customer">Khách hàng</option><option value="member">Hội viên</option><option value="senior_consultant">Tư vấn viên cao cấp</option><option value="success_builder">Nhà kiến tạo thành công</option><option value="supervisor">Giám sát viên</option></select><button type="button" onClick={saveMemberLevel} disabled={savingMemberLevel || memberLevelDraft === (user.memberLevel || 'customer')} className="mt-2 rounded-xl bg-emerald-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{savingMemberLevel ? 'Đang lưu…' : 'Lưu cấp độ'}</button></> : <><input readOnly value={({ customer: 'Khách hàng', member: 'Hội viên', senior_consultant: 'Tư vấn viên cao cấp', success_builder: 'Nhà kiến tạo thành công', supervisor: 'Giám sát viên' } as any)[user.memberLevel || 'customer']} className="w-full px-4 py-3 bg-slate-100 rounded-xl border border-transparent outline-none text-sm font-medium text-slate-500" /><p className="text-[10px] text-slate-400 ml-1">Cấp độ do người có quyền trong tuyến trên quản lý.</p></>}
         </div>
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Chiều cao (CM)</label>

@@ -133,7 +133,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
       {/* Main Content Area */}
       <div className="flex-grow overflow-y-auto bg-slate-50/40 p-4 md:p-6">
         {activeTab === 'users' && (
-          <UserManagement users={users} onRefresh={onRefresh} />
+          <UserManagement users={users} onRefresh={onRefresh} canManageMemberLevels={(currentUser as any).permissions?.includes('members:level:manage:any') || false} />
         )}
 
         {activeTab === 'ai' && (

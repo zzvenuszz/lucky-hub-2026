@@ -3,6 +3,7 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { User } from '../models/User.ts';
+import { NutritionGroup } from '../models/NutritionGroup.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { uploadImageToStorageProvider } from '../services/storage/imageStorageService.ts';
 import { SystemSettings } from '../models/SystemSettings.ts';
@@ -326,10 +327,17 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
   try {
     if (!soldAt || !Array.isArray(req.body.lines) || !req.body.lines.length) return res.status(400).json({ message: 'Đơn hàng hoặc thời gian bán không hợp lệ.' });
     const seller = await User.findById(ownerId).select('fullName address phoneNumber').lean() as any;
-    if (!String(seller?.fullName || '').trim() || !String(seller?.address || '').trim() || !String(seller?.phoneNumber || '').trim()) {
-      console.warn('[Inventory] Sale blocked: seller profile is missing required invoice details.', { ownerId });
-      return res.status(400).json({ message: 'Hãy cập nhật họ tên, địa chỉ và số điện thoại trong hồ sơ người bán trước khi bán hàng.' });
+    if (!String(seller?.fullName || '').trim() || !String(seller?.phoneNumber || '').trim()) {
+      console.warn('[Inventory] Sale blocked: seller profile is missing name or phone.', { ownerId });
+      return res.status(400).json({ message: 'Hãy cập nhật họ tên và số điện thoại trong hồ sơ người bán trước khi bán hàng.' });
     }
+    let sellerAddress = String(seller.address || '').trim(); let sellerAddressGroupId: any = null;
+    if (req.body.sellerAddressGroupId) {
+      const operatingGroup = await NutritionGroup.findOne({ _id: req.body.sellerAddressGroupId, isActive: true, $or: [{ ownerId }, { coOwners: ownerId }] }).select('_id address').lean() as any;
+      if (!operatingGroup || !String(operatingGroup.address || '').trim()) return res.status(400).json({ message: 'Bạn không vận hành NDD đã chọn hoặc NDD chưa có địa chỉ.' });
+      sellerAddress = String(operatingGroup.address).trim(); sellerAddressGroupId = operatingGroup._id;
+    }
+    if (!sellerAddress) return res.status(400).json({ message: 'Hãy cập nhật địa chỉ trong hồ sơ hoặc chọn địa chỉ NDD do bạn vận hành.' });
     const buyerType = req.body.buyerType;
     let buyer = { userId: null as any, name: String(req.body.buyerName || '').trim(), memberNumber: '' };
     let buyerAddress = String(req.body.buyerAddress || '').trim();
@@ -378,7 +386,7 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
     }
     const total = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
     const totalPv = lines.reduce((sum, line) => sum + line.quantity * line.pv, 0);
-    const saleData = { ownerId, soldAt, sellerName: String(seller.fullName).trim(), sellerAddress: String(seller.address).trim().slice(0, 500), sellerPhone: String(seller.phoneNumber).trim().slice(0, 40), buyerType, buyerUserId: buyer.userId, buyerName: buyer.name, buyerMemberNumber: buyer.memberNumber, buyerAddress: buyerAddress.slice(0, 500), buyerPhone: buyerPhone.slice(0, 40), lines, subtotal: total, total, totalPv, note: String(req.body.note || '').slice(0, 1000) };
+    const saleData = { ownerId, soldAt, sellerName: String(seller.fullName).trim(), sellerAddress: sellerAddress.slice(0, 500), sellerPhone: String(seller.phoneNumber).trim().slice(0, 40), sellerAddressGroupId, buyerType, buyerUserId: buyer.userId, buyerName: buyer.name, buyerMemberNumber: buyer.memberNumber, buyerAddress: buyerAddress.slice(0, 500), buyerPhone: buyerPhone.slice(0, 40), lines, subtotal: total, total, totalPv, note: String(req.body.note || '').slice(0, 1000) };
     let sale: any; let lastError: any;
     for (let attempt = 0; attempt < 4 && !sale; attempt++) {
       try { sale = await Sale.create({ ...saleData, invoiceNumber: invoiceNumber(soldAt) }); }

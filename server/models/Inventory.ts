@@ -78,6 +78,7 @@ const SaleSchema = new mongoose.Schema({
   sellerName: { type: String, default: '' },
   sellerAddress: { type: String, default: '' },
   sellerPhone: { type: String, default: '' },
+  sellerAddressGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
   lines: [{
     itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', required: true },
     sku: { type: String, required: true },

@@ -9,10 +9,10 @@ import { Database } from '../../services/database.ts';
 interface ProfileProps {
   user: User;
   onUpdate: (data: Partial<User>) => void;
-  onNavigateToAdmin?: () => void;
+  onMemberLevelUpdate?: (memberLevel: string) => Promise<void>;
 }
 
-const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmin }) => {
+const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpdate }) => {
   const [localData, setLocalData] = useState({
     fullName: user.fullName,
     email: user.email || '',
@@ -127,19 +127,6 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmi
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-24">
-      {(user as any).permissions?.includes('admin:panel') && (
-        <div className="flex flex-col gap-3 rounded-[28px] border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50 p-5 shadow-[0_20px_50px_rgba(245,158,11,0.08)] sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-3xl shadow-lg shadow-amber-200">🛡️</div>
-            <div>
-              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700">Quản trị viên</h4>
-              <p className="mt-1 text-sm text-amber-700">Bạn có quyền truy cập hệ thống quản trị.</p>
-            </div>
-          </div>
-          <button onClick={onNavigateToAdmin} className="rounded-2xl bg-amber-600 px-5 py-3 text-sm font-black text-white shadow-md shadow-amber-200 transition hover:bg-amber-700 active:scale-95">Admin Panel</button>
-        </div>
-      )}
-
       <div className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.05)]">
         <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-sky-500 p-5 text-white sm:p-6">
           <div className="flex items-center justify-between gap-3">
@@ -278,6 +265,8 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onNavigateToAdmi
           user={user} 
           initialData={localData} 
           onUpdate={(d, submit) => handleDataUpdate(d, submit)} 
+          canManageMemberLevel={(user as any).permissions?.includes('members:level:manage:any') || false}
+          onMemberLevelUpdate={onMemberLevelUpdate}
         />
       </div>
     </div>

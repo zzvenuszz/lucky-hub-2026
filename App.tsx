@@ -647,7 +647,16 @@ const App: React.FC = () => {
         {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={(targetId) => handleOpenMetricForm(targetId)} refreshTrigger={refreshTrigger} />}
         {activeTab === 'community' && <NewsFeed currentUser={currentUser!} users={users} />}
         {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
-        {activeTab === 'profile' && <Profile user={currentUser!} onNavigateToAdmin={() => setActiveTab('admin')} onUpdate={async (d) => { 
+        {activeTab === 'profile' && <Profile user={currentUser!} onMemberLevelUpdate={async (memberLevel) => {
+          const uid = (currentUser as any).id || (currentUser as any)._id;
+          await Database.inventory.setMemberLevel(uid, { memberLevel, reason: 'Người dùng cập nhật cấp độ từ hồ sơ cá nhân' });
+          const response = await fetch('/api/users/me', { credentials: 'same-origin' });
+          if (!response.ok) throw new Error('Đã lưu cấp độ nhưng không tải lại được hồ sơ.');
+          const refreshedUser = await response.json();
+          setCurrentUser(refreshedUser);
+          localStorage.setItem('lucky_hub_user', JSON.stringify(refreshedUser));
+          console.log('[Profile] Own member level updated:', { userId: uid, memberLevel });
+        }} onUpdate={async (d) => {
           const uid = (currentUser as any).id || (currentUser as any)._id; 
           const u = await Database.updateUser(uid, d); 
           if(u) { 

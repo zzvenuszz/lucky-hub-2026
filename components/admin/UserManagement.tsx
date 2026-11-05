@@ -8,6 +8,7 @@ import LoadingButton from '../system/LoadingButton.tsx';
 interface UserManagementProps {
   users: User[];
   onRefresh: () => void;
+  canManageMemberLevels: boolean;
 }
 
 interface Group {
@@ -19,7 +20,7 @@ interface Group {
   members: any[];
 }
 
-const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => {
+const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canManageMemberLevels }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
@@ -84,12 +85,19 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
       fullName: editingUser.fullName,
       status: editingUser.status,
     };
+    if ('phoneNumber' in editingUser) updateData.phoneNumber = editingUser.phoneNumber || '';
+    if ('address' in editingUser) updateData.address = editingUser.address || '';
     if ((editingUser as any).password && (editingUser as any).password.trim() !== '') {
       updateData.password = (editingUser as any).password;
     }
 
     try {
       await Database.updateUser(uid, updateData);
+      console.log('[UserManagement] Profile contact fields saved:', { userId: uid });
+      const originalUser = users.find(user => getUserId(user) === uid);
+      if (canManageMemberLevels && editingUser.memberLevel && editingUser.memberLevel !== (originalUser?.memberLevel || 'customer')) {
+        await Database.inventory.setMemberLevel(uid, { memberLevel: editingUser.memberLevel, reason: 'Cập nhật cấp độ từ Admin Panel' });
+      }
 
       // Cập nhật group membership (single group)
       if (selectedGroupId) {
@@ -407,6 +415,17 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Họ tên</label>
               <input value={editingUser.fullName} onChange={e => setEditingUser({...editingUser, fullName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
             </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Số điện thoại</label>
+                <input type="tel" value={editingUser.phoneNumber || ''} onChange={e => setEditingUser({...editingUser, phoneNumber: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Địa chỉ</label>
+                <input value={editingUser.address || ''} onChange={e => setEditingUser({...editingUser, address: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+            </div>
             
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Trạng thái tài khoản</label>
@@ -414,7 +433,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                 {Object.values(AccountStatus).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            
+
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mật khẩu mới (Để trống nếu không đổi)</label>
               <input 
@@ -469,6 +488,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh }) => 
                 )}
               </div>
             </div>
+
+            {canManageMemberLevels && <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cấp độ hội viên</label>
+              <select value={editingUser.memberLevel || 'customer'} onChange={e => setEditingUser({...editingUser, memberLevel: e.target.value as User['memberLevel']})} className="w-full px-4 py-3 bg-slate-50 rounded-xl font-bold text-xs">
+                <option value="customer">Khách hàng</option><option value="member" disabled={!editingUser.memberNumber}>Hội viên</option><option value="senior_consultant" disabled={!editingUser.memberNumber}>Tư vấn viên cao cấp</option><option value="success_builder" disabled={!editingUser.memberNumber}>Nhà kiến tạo thành công</option><option value="supervisor" disabled={!editingUser.memberNumber}>Giám sát viên</option>
+              </select>
+              {editingUser.memberLevel !== 'customer' && !editingUser.memberNumber && <p className="text-[10px] text-amber-700">Cần có mã hội viên trước khi gán cấp độ này.</p>}
+            </div>}
 
             <div className="flex gap-3 pt-4">
               <button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px] hover:bg-slate-200 transition-all active:scale-[0.97]">Hủy</button>
