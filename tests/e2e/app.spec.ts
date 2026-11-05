@@ -9,6 +9,159 @@ test('ứng dụng mở và bố cục không tràn ngang trên desktop/mobile',
   expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport + 2);
 });
 
+test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn hủy và báo cáo trên desktop/mobile', async ({ page }) => {
+  const mockUser = {
+    id: 'u_test_1',
+    _id: 'u_test_1',
+    username: 'tester',
+    fullName: 'Bùi Huy Hoàn',
+    memberNumber: 'VA01562408',
+    memberLevel: 'supervisor',
+    phoneNumber: '0900000001',
+    address: 'Hà Nội',
+    permissions: ['inventory:manage', 'inventory:sell', 'pricelist:manage', 'members:level:manage'],
+  };
+
+  await page.addInitScript((user) => {
+    window.localStorage.setItem('lucky_hub_user', JSON.stringify(user));
+    window.localStorage.setItem('lucky_hub_remember', 'true');
+    window.localStorage.setItem('lucky_hub_login_time', String(Date.now()));
+  }, mockUser);
+
+  await page.route('**/api/users/me', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockUser) }));
+  await page.route('**/api/session/ping', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }));
+  await page.route('**/api/users', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([mockUser]) }));
+  await page.route('**/api/knowledge', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/rules', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/chats', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/metrics/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/notifications/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/goals/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ reminders: [] }) }));
+  await page.route('**/api/nutrition-groups', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/inventory/items', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ _id: 'item1', id: 'item1', sku: 'F1', skus: ['F1'], name: 'Hỗn hợp dinh dưỡng F1', categoryName: 'Dinh dưỡng', pv: 23.95, quantity: 10, lowStockThreshold: 5, archived: false }]),
+  }));
+  await page.route('**/api/inventory/categories', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ _id: 'cat1', name: 'Dinh dưỡng' }]) }));
+  await page.route('**/api/inventory/overview', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ itemCount: 1, totalUnits: 10, costValue: 6670000, estimated: { price100: 12000000, price25: 9500000, price35: 8300000, price42: 7500000, price50: 6670000 }, lowStock: [], monthly: [], recentSales: [] }),
+  }));
+  await page.route('**/api/inventory/movements', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/inventory/print-preference', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ format: 'pdf' }) }));
+  await page.route('**/api/inventory/price-list**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ active: null, versions: [] }) }));
+  await page.route('**/api/inventory/sales**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      sales: [{
+        _id: 'sale_cancelled_1',
+        invoiceNumber: 'LK-05112026-1000-0001',
+        soldAt: '2026-11-05T03:00:00.000Z',
+        buyerName: 'Nguyễn Văn A',
+        total: 1200000,
+        totalPv: 23.95,
+        status: 'cancelled',
+        cancelReason: 'Nhập nhầm đơn',
+        lines: [{ itemId: 'item1', sku: 'F1', name: 'Hỗn hợp dinh dưỡng F1', quantity: 1, unitPrice: 1200000 }],
+      }],
+      total: 1,
+      page: 1,
+      limit: 30,
+    }),
+  }));
+  await page.route('**/api/inventory/reports/analytics**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      range: { from: '2026-02-01T00:00:00.000Z', to: '2027-01-31T23:59:59.999Z', periodType: 'herbalife_fy', granularity: 'month', herbalifeFiscalYear: 2026, label: 'Năm tài chính Herbalife 2026 (01/02/2026 - 31/01/2027)' },
+      stockSummary: { totalItems: 1, totalAllItems: 1, totalUnits: 10, totalCostValue: 6670000, totalPv: 239.5, lowStockCount: 0, outOfStockCount: 0, archivedCount: 0, estimated: { price100: 12000000, price25: 9500000, price35: 8300000, price42: 7500000, price50: 6670000 } },
+      stockItems: [{ id: 'item1', sku: 'F1', skus: ['F1'], name: 'Hỗn hợp dinh dưỡng F1', categoryName: 'Dinh dưỡng', imageUrl: '', pv: 23.95, quantity: 10, lowStockThreshold: 5, archived: false, costValue: 6670000, avgUnitCost: 667000, totalPv: 239.5, retailPrice: 1200000, retailValue: 12000000, stockStatus: 'in_stock' }],
+      salesSummary: { orders: 2, units: 4, sales: 4800000, pv: 95.8, cost: 2668000, profit: 2132000 },
+      trendSeries: [{ key: '2026-11', label: 'T11/26', fullLabel: 'Tháng 11/2026', sales: 4800000, pv: 95.8, orders: 2, units: 4, cost: 2668000, profit: 2132000 }],
+      breakdown: {
+        byProduct: [{ itemId: 'item1', sku: 'F1', name: 'Hỗn hợp dinh dưỡng F1', categoryName: 'Dinh dưỡng', units: 4, sales: 4800000, pv: 95.8, cost: 2668000, profit: 2132000, salesPercent: 100, unitsPercent: 100, pvPercent: 100 }],
+        byCategory: [{ categoryName: 'Dinh dưỡng', units: 4, sales: 4800000, pv: 95.8, cost: 2668000, profit: 2132000, salesPercent: 100, unitsPercent: 100, pvPercent: 100 }],
+      },
+      topCustomers: {
+        rangeLabel: 'Năm 2026',
+        periodType: 'year',
+        from: '2026-01-01T00:00:00.000Z',
+        to: '2026-12-31T23:59:59.999Z',
+        customers: [{ key: 'member:u1', buyerUserId: 'u1', buyerName: 'Trần Thị B', memberNumber: 'VA999888', buyerPhone: '0912345678', buyerType: 'member', orders: 2, units: 4, sales: 4800000, pv: 95.8, lastPurchaseAt: '2026-11-05T03:00:00.000Z' }],
+      },
+    }),
+  }));
+
+  await page.goto('/');
+  const isMobile = (page.viewportSize()?.width || 1024) < 768;
+
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Báo cáo bán hàng' })).toBeVisible();
+    await page.getByRole('menuitem', { name: 'Quản lý bán hàng' }).click();
+  } else {
+    await expect(page.getByRole('button', { name: 'Báo cáo bán hàng' })).toBeVisible();
+    await page.getByRole('button', { name: 'Quản lý hàng hoá' }).click();
+  }
+
+  await expect(page.getByTestId('inventory-dashboard')).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Quản lý bán hàng' });
+  const container = nav.locator('..');
+  const firstTabBtn = nav.getByRole('button', { name: /Tổng quan/ });
+  await expect(firstTabBtn).toBeVisible();
+
+  // Kiểm tra nút tab đầu tiên không bị che/cắt phần dưới khi vừa tải trang
+  const [containerBox, firstBtnBox] = await Promise.all([container.boundingBox(), firstTabBtn.boundingBox()]);
+  expect(containerBox).not.toBeNull();
+  expect(firstBtnBox).not.toBeNull();
+  expect(firstBtnBox!.height).toBeGreaterThanOrEqual(42);
+  expect(firstBtnBox!.y).toBeGreaterThanOrEqual(containerBox!.y + 4);
+  expect(firstBtnBox!.y + firstBtnBox!.height).toBeLessThanOrEqual(containerBox!.y + containerBox!.height - 4);
+
+  if (isMobile) {
+    // Kiểm tra nút mũi tên phải hiển thị sát mép, chiều ngang hẹp ~12px, chiều cao khớp khung chứa
+    const rightArrow = page.getByTestId('subtabs-scroll-right');
+    await expect(rightArrow).toBeVisible();
+    await expect(page.getByTestId('subtabs-scroll-left')).toHaveCount(0);
+
+    const arrowBox = await rightArrow.boundingBox();
+    expect(arrowBox).not.toBeNull();
+    expect(arrowBox!.width).toBeLessThanOrEqual(14);
+    expect(Math.abs(arrowBox!.height - containerBox!.height)).toBeLessThanOrEqual(2);
+    expect(Math.abs(arrowBox!.x + arrowBox!.width - (containerBox!.x + containerBox!.width))).toBeLessThanOrEqual(2);
+
+    // Khi bấm kéo sang phải, nút mũi tên trái xuất hiện
+    await rightArrow.click();
+    await expect(page.getByTestId('subtabs-scroll-left')).toBeVisible();
+
+    // Khi kéo hết về cuối bên phải, nút mũi tên phải tự ẩn
+    await nav.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+    await expect(page.getByTestId('subtabs-scroll-right')).toHaveCount(0);
+  }
+
+  // Kiểm tra xóa hóa đơn đã hủy trong tab Lịch sử
+  await nav.getByRole('button', { name: /Lịch sử/ }).click();
+  await expect(page.getByTestId('delete-all-cancelled-sales')).toBeVisible();
+  await expect(page.getByTestId('delete-cancelled-sale-sale_cancelled_1')).toBeVisible();
+
+  // Kiểm tra mở mục Báo cáo bán hàng từ menu di động hoặc tab
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Báo cáo bán hàng' }).click();
+  } else {
+    await nav.getByRole('button', { name: /Báo cáo/ }).click();
+  }
+
+  await expect(page.getByTestId('inventory-report-panel')).toBeVisible();
+  await expect(page.getByTestId('sales-trend-bar-chart')).toBeVisible();
+  await expect(page.getByTestId('sales-category-pie-chart')).toBeVisible();
+  await expect(page.getByTestId('top-customers-section')).toBeVisible();
+  await expect(page.getByTestId('stock-report-section')).toBeVisible();
+});
+
 test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {
   test.skip(!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD, 'Cấu hình E2E_EMAIL/E2E_PASSWORD của tài khoản có inventory:manage để chạy luồng đã đăng nhập.');
 
