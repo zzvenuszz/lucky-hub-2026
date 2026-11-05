@@ -69,6 +69,7 @@ export const Database = {
     getItems: () => request<any[]>(`${API_BASE}/inventory/items`),
     createItem: (data: any) => request<any>(`${API_BASE}/inventory/items`, 'POST', data),
     updateItem: (id: string, data: any) => request<any>(`${API_BASE}/inventory/items/${id}`, 'PUT', data),
+    deleteItem: (id: string) => request<any>(`${API_BASE}/inventory/items/${id}`, 'DELETE'),
     receiveStock: (id: string, data: any) => request<any>(`${API_BASE}/inventory/items/${id}/receive`, 'POST', data),
     adjustStock: (id: string, data: any) => request<any>(`${API_BASE}/inventory/items/${id}/adjust`, 'POST', data),
     movements: () => request<any[]>(`${API_BASE}/inventory/movements`),

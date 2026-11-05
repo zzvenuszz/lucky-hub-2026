@@ -75,7 +75,8 @@ router.post('/categories', inventory, async (req: Request, res: Response) => {
 router.get('/items', inventorySeller, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
-    const items = await InventoryItem.find({ ownerId, archived: false }).sort({ name: 1 }).lean();
+    const canManageInventory = req.user?.permissions.includes(RESOURCES.INVENTORY.MANAGE);
+    const items = await InventoryItem.find(canManageInventory ? { ownerId } : { ownerId, archived: false }).sort({ name: 1 }).lean();
     const prices = await currentPrices(new Date());
     const priceMap = new Map<string, any>((prices?.entries || []).map((entry: any) => [String(entry.sku), entry] as [string, any]));
     res.json(items.map((item: any) => ({ ...item, id: String(item._id), prices: priceMap.get(item.sku) || null })));
@@ -132,8 +133,40 @@ router.put('/items/:id', inventory, async (req: Request, res: Response) => {
     }
     const item = await InventoryItem.findOneAndUpdate({ _id: req.params.id, ownerId: idOf(req) }, { $set: patch }, { new: true, runValidators: true });
     if (!item) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+    console.log('[Inventory] Product updated:', { ownerId: idOf(req), itemId: String(item._id), sku: item.sku, archived: item.archived });
     res.json(item);
   } catch (error: any) { console.error('[Inventory] Update item failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'SKU đã tồn tại trong kho.' : error.message }); }
+});
+
+router.delete('/items/:id', inventory, async (req: Request, res: Response) => {
+  try {
+    const ownerId = idOf(req);
+    const existing = await InventoryItem.findOne({ _id: req.params.id, ownerId });
+    if (!existing) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+
+    const wasArchived = existing.archived;
+    const item = await InventoryItem.findOneAndUpdate({ _id: existing._id, ownerId }, { $set: { archived: true } }, { new: true });
+    if (!item) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+
+    const hasSales = await Sale.exists({ ownerId, 'lines.itemId': item._id });
+    if (hasSales) {
+      if (!wasArchived) await InventoryItem.updateOne({ _id: item._id, ownerId }, { $set: { archived: false } });
+      return res.status(409).json({ message: 'Mặt hàng đã có trên hóa đơn nên không thể xóa hẳn. Hãy dùng “Ngừng bán” để giữ nguyên lịch sử.' });
+    }
+
+    await Promise.all([
+      InventoryLot.deleteMany({ ownerId, itemId: item._id }),
+      InventoryMovement.deleteMany({ ownerId, itemId: item._id }),
+    ]);
+    const deletion = await InventoryItem.deleteOne({ _id: item._id, ownerId });
+    if (!deletion.deletedCount) return res.status(404).json({ message: 'Mặt hàng đã bị xóa hoặc không còn trong kho.' });
+    await logAudit(req, 'INVENTORY_ITEM_DELETE', `Xóa hẳn sản phẩm ${item.sku} · ${item.name}`, String(item._id), item.name);
+    console.log('[Inventory] Product permanently deleted:', { ownerId, sku: item.sku, itemId: String(item._id) });
+    res.json({ success: true, id: String(item._id) });
+  } catch (error: any) {
+    console.error('[Inventory] Product delete failed:', error);
+    res.status(500).json({ message: error.message || 'Không thể xóa sản phẩm.' });
+  }
 });
 
 router.post('/items/:id/receive', inventory, async (req: Request, res: Response) => {
@@ -155,7 +188,9 @@ router.post('/items/:id/adjust', inventory, async (req: Request, res: Response) 
   try {
     const delta = Number(req.body.quantityDelta); const reason = String(req.body.reason || '').trim();
     if (!Number.isInteger(delta) || delta === 0 || !reason) return res.status(400).json({ message: 'Nhập số lượng điều chỉnh và lý do.' });
-    const item = await InventoryItem.findOneAndUpdate({ _id: req.params.id, ownerId: idOf(req), quantity: { $gte: Math.max(0, -delta) } }, { $inc: { quantity: delta } }, { new: true });
+    const filter: any = { _id: req.params.id, ownerId: idOf(req), quantity: { $gte: Math.max(0, -delta) } };
+    if (delta > 0) filter.archived = false;
+    const item = await InventoryItem.findOneAndUpdate(filter, { $inc: { quantity: delta } }, { new: true });
     if (!item) return res.status(400).json({ message: 'Không tìm thấy mặt hàng hoặc điều chỉnh sẽ làm tồn kho âm.' });
     let unitCost = Number(req.body.unitCost || 0);
     if (delta > 0) {
@@ -311,7 +346,7 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
       const defaultUnitPrice = Number(priceEntry[defaultPriceField]);
       const unitPrice = Number(priceEntry[priceField]);
       if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) throw new Error('Đơn giá phải là số nguyên không âm.');
-      const updated = await InventoryItem.findOneAndUpdate({ _id: item._id, ownerId, quantity: { $gte: quantity } }, { $inc: { quantity: -quantity } }, { new: true });
+      const updated = await InventoryItem.findOneAndUpdate({ _id: item._id, ownerId, archived: false, quantity: { $gte: quantity } }, { $inc: { quantity: -quantity } }, { new: true });
       if (!updated) throw new Error(`Tồn kho không đủ cho ${item.name}.`);
       let needed = quantity; const lots = await InventoryLot.find({ ownerId, itemId: item._id, remainingQuantity: { $gt: 0 } }).sort({ receivedAt: 1 });
       let cost = 0; const deductions: any[] = [];
