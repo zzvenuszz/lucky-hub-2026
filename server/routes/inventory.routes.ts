@@ -8,6 +8,7 @@ import { AuditLog } from '../models/AuditLog.ts';
 import { uploadImageToStorageProvider } from '../services/storage/imageStorageService.ts';
 import { SystemSettings } from '../models/SystemSettings.ts';
 import { InventoryCategory, InventoryItem, InventoryLot, InventoryMovement, PriceListVersion, Sale, SellerPrintPreference } from '../models/Inventory.ts';
+import { buildInventoryAnalyticsReport } from '../services/inventoryReportService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -350,11 +351,9 @@ router.delete('/price-list/:id', priceManager, async (req: Request, res: Respons
   try {
     const version = await PriceListVersion.findById(req.params.id).lean();
     if (!version) return res.status(404).json({ message: 'Không tìm thấy bảng giá.' });
-    const [saleReference, lotReference] = await Promise.all([
-      Sale.exists({ 'lines.priceListVersionId': version._id }),
-      InventoryLot.exists({ priceListVersionId: version._id }),
-    ]);
-    if (saleReference || lotReference) return res.status(409).json({ message: 'Không thể xóa bảng giá đã được hóa đơn hoặc lô nhập tham chiếu.' });
+    const saleReference = await Sale.exists({ 'lines.priceListVersionId': version._id });
+    if (saleReference) return res.status(409).json({ message: 'Không thể xóa bảng giá đang được hóa đơn tham chiếu. Hãy hủy và xóa các hóa đơn đã hủy liên quan trước.' });
+    await InventoryLot.updateMany({ priceListVersionId: version._id }, { $set: { priceListVersionId: null } });
     await PriceListVersion.deleteOne({ _id: version._id });
     const remaining = await PriceListVersion.find().sort({ effectiveFrom: 1 }).lean();
     await reflowPriceListIntervals(remaining);
@@ -607,6 +606,50 @@ router.post('/sales/:id/cancel', inventory, async (req: Request, res: Response) 
   }
 });
 
+router.delete('/sales/cancelled', inventory, async (req: Request, res: Response) => {
+  try {
+    const ownerId = idOf(req);
+    console.log('[Inventory] Delete all cancelled sales started:', { ownerId });
+    const cancelledSales = await Sale.find({ ownerId, status: 'cancelled' }).select('_id invoiceNumber').lean();
+    if (!cancelledSales.length) {
+      return res.status(400).json({ message: 'Không có hóa đơn đã hủy nào để xóa.' });
+    }
+    const cancelledIds = cancelledSales.map((s: any) => s._id);
+    const invoiceNumbers = cancelledSales.map((s: any) => s.invoiceNumber);
+    await InventoryMovement.deleteMany({ ownerId, referenceId: { $in: cancelledIds } });
+    const result = await Sale.deleteMany({ _id: { $in: cancelledIds }, ownerId, status: 'cancelled' });
+    await logAudit(req, 'SALE_DELETE_BULK', `Xóa ${result.deletedCount} hóa đơn đã hủy: ${invoiceNumbers.slice(0, 10).join(', ')}`);
+    console.log('[Inventory] All cancelled sales deleted:', { ownerId, deletedCount: result.deletedCount });
+    res.json({ success: true, deletedCount: result.deletedCount, deletedIds: cancelledIds.map(String) });
+  } catch (error: any) {
+    console.error('[Inventory] Delete all cancelled sales failed:', error);
+    res.status(500).json({ message: error.message || 'Không thể xóa các hóa đơn đã hủy.' });
+  }
+});
+
+router.delete('/sales/:id', inventory, async (req: Request, res: Response) => {
+  try {
+    const ownerId = idOf(req);
+    console.log('[Inventory] Delete cancelled sale started:', { ownerId, saleId: req.params.id });
+    const sale: any = await Sale.findOne({ _id: req.params.id, ownerId }).select('_id invoiceNumber status').lean();
+    if (!sale) return res.status(404).json({ message: 'Không tìm thấy hoá đơn trong lịch sử của bạn.' });
+    if (sale.status !== 'cancelled') {
+      return res.status(400).json({ message: 'Chỉ có thể xóa những hóa đơn đang ở trạng thái đã hủy.' });
+    }
+    await InventoryMovement.deleteMany({ ownerId, referenceId: sale._id });
+    const deletion = await Sale.deleteOne({ _id: sale._id, ownerId, status: 'cancelled' });
+    if (!deletion.deletedCount) {
+      return res.status(404).json({ message: 'Hóa đơn đã bị xóa hoặc không còn ở trạng thái đã hủy.' });
+    }
+    await logAudit(req, 'SALE_DELETE', `Xóa hóa đơn đã hủy ${sale.invoiceNumber}`, String(sale._id), sale.invoiceNumber);
+    console.log('[Inventory] Cancelled sale deleted:', { ownerId, saleId: String(sale._id), invoiceNumber: sale.invoiceNumber });
+    res.json({ success: true, id: String(sale._id), invoiceNumber: sale.invoiceNumber });
+  } catch (error: any) {
+    console.error('[Inventory] Delete cancelled sale failed:', error);
+    res.status(500).json({ message: error.message || 'Không thể xóa hóa đơn đã hủy.' });
+  }
+});
+
 router.get('/overview', inventory, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req); const [items, lots, priceList, sales] = await Promise.all([InventoryItem.find({ ownerId, archived: false }).lean(), InventoryLot.find({ ownerId, remainingQuantity: { $gt: 0 } }).lean(), currentPrices(new Date()), Sale.find({ ownerId }).sort({ soldAt: -1 }).limit(5000).lean()]);
@@ -633,6 +676,18 @@ router.get('/reports/member-purchases', inventory, async (req: Request, res: Res
     const users = await User.find({ _id: { $in: rows.map(row => row._id) } }).select('fullName memberNumber').lean(); const userMap = new Map(users.map((u: any) => [String(u._id), u]));
     res.json(rows.map(row => ({ ...row, member: userMap.get(String(row._id)) })));
   } catch (error: any) { console.error('[Inventory] Member report failed:', error); res.status(500).json({ message: error.message }); }
+});
+
+router.get('/reports/analytics', inventory, async (req: Request, res: Response) => {
+  try {
+    const ownerId = String(idOf(req));
+    console.log('[Inventory] Analytics report requested:', { ownerId, query: req.query });
+    const report = await buildInventoryAnalyticsReport(ownerId, req.query as Record<string, any>);
+    res.json(report);
+  } catch (error: any) {
+    console.error('[Inventory] Analytics report failed:', error);
+    res.status(500).json({ message: error.message || 'Không thể tải dữ liệu báo cáo.' });
+  }
 });
 
 router.get('/print-preference', inventorySeller, async (req: Request, res: Response) => {
