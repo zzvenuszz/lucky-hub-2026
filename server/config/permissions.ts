@@ -52,6 +52,7 @@ export const RESOURCES = {
   },
   INVENTORY: {
     MANAGE: 'inventory:manage',
+    SELL: 'inventory:sell',
   },
   PRICELIST: {
     MANAGE: 'pricelist:manage',
@@ -105,6 +106,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.NDD.MANAGE]: 'Quản lý NDD',
   [RESOURCES.NDD.SYSTEM]: 'Q.Lý Nhánh NDD',
   [RESOURCES.INVENTORY.MANAGE]: 'Quản lý kho hàng và bán hàng riêng',
+  [RESOURCES.INVENTORY.SELL]: 'Bán hàng từ sản phẩm và tồn kho có sẵn',
   [RESOURCES.PRICELIST.MANAGE]: 'Quản lý bảng giá chung',
   [RESOURCES.MEMBER_LEVEL.MANAGE]: 'Quản lý cấp độ hội viên trong tuyến dưới',
   [RESOURCES.MEMBER_LEVEL.MANAGE_ANY]: 'Quản lý cấp độ của mọi hội viên',

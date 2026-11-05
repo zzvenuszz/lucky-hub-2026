@@ -1,4 +1,12 @@
 
+const VND_SYMBOL = '\u20AB';
+
+export const formatVND = (value: number) => {
+  const amount = Number.isFinite(Number(value)) ? Number(value) : 0;
+  const formattedAmount = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(amount);
+  return `${formattedAmount}\u00A0${VND_SYMBOL}`;
+};
+
 export const formatDateVN = (dateStr: string) => {
   if (!dateStr) return '--/--/----';
   try {

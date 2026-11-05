@@ -81,6 +81,7 @@ const SaleSchema = new mongoose.Schema({
     unitPrice: { type: Number, required: true, min: 0 },
     defaultUnitPrice: { type: Number, required: true, min: 0 },
     priceLevel: { type: String, required: true },
+    priceField: { type: String, enum: ['price100', 'price25', 'price35', 'price42', 'price50'], default: 'price100' },
     pv: { type: Number, required: true, min: 0 },
     unitCost: { type: Number, required: true, min: 0 },
     priceListVersionId: { type: mongoose.Schema.Types.ObjectId, ref: 'PriceListVersion', default: null },

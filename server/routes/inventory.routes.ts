@@ -11,12 +11,13 @@ import { InventoryCategory, InventoryItem, InventoryLot, InventoryMovement, Pric
 const router = Router();
 router.use(authMiddleware);
 const inventory = requirePermission(RESOURCES.INVENTORY.MANAGE);
+const inventorySeller = requirePermission([RESOURCES.INVENTORY.MANAGE, RESOURCES.INVENTORY.SELL]);
 const priceManager = requirePermission(RESOURCES.PRICELIST.MANAGE);
 const levelManager = requirePermission(RESOURCES.MEMBER_LEVEL.MANAGE);
 const anyLevelManager = requirePermission([RESOURCES.MEMBER_LEVEL.MANAGE, RESOURCES.MEMBER_LEVEL.MANAGE_ANY]);
 const idOf = (req: Request) => (req as any).user.userId;
 const memberPriceKey: Record<string, string> = { customer: 'price100', member: 'price25', senior_consultant: 'price35', success_builder: 'price42', supervisor: 'price50' };
-const memberPriceLabel: Record<string, string> = { customer: 'Giá 100%', member: 'Giá 25%', senior_consultant: 'Giá 35%', success_builder: 'Giá 42%', supervisor: 'Giá 50%' };
+const fixedPriceLabels: Record<string, string> = { price100: 'Giá Lẻ', price25: 'Giá -25%', price35: 'Giá -35%', price42: 'Giá -42%', price50: 'Giá -50%' };
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const logAudit = async (req: Request, type: string, details: string, targetId?: string, targetName?: string) => {
   const actor = (req as any).user;
@@ -45,7 +46,7 @@ const netSaleTotals = (sale: any) => {
 };
 
 // Dedicated member lookup returns only the fields required at checkout.
-router.get('/members', inventory, async (req: Request, res: Response) => {
+router.get('/members', inventorySeller, async (req: Request, res: Response) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json([]);
@@ -71,7 +72,7 @@ router.post('/categories', inventory, async (req: Request, res: Response) => {
   } catch (error: any) { console.error('[Inventory] Category create failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'Danh mục này đã có trong kho của bạn.' : error.message }); }
 });
 
-router.get('/items', inventory, async (req: Request, res: Response) => {
+router.get('/items', inventorySeller, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
     const items = await InventoryItem.find({ ownerId, archived: false }).sort({ name: 1 }).lean();
@@ -191,7 +192,7 @@ router.get('/movements', inventory, async (req: Request, res: Response) => {
 
 router.get('/price-list', async (req: Request, res: Response) => {
   try {
-    if (!req.user?.permissions.includes(RESOURCES.INVENTORY.MANAGE) && !req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE)) return res.status(403).json({ message: 'Bạn không có quyền xem bảng giá.' });
+    if (!req.user?.permissions.includes(RESOURCES.INVENTORY.MANAGE) && !req.user?.permissions.includes(RESOURCES.INVENTORY.SELL) && !req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE)) return res.status(403).json({ message: 'Bạn không có quyền xem bảng giá.' });
     const at = validDate(req.query.at) || new Date();
     const versions = await PriceListVersion.find().sort({ effectiveFrom: -1 }).limit(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE) ? 100 : 1).lean();
     const active = await currentPrices(at);
@@ -260,7 +261,7 @@ router.put('/members/:id/level', anyLevelManager, async (req: Request, res: Resp
   } catch (error: any) { console.error('[Inventory] Member level update failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.get('/sales', inventory, async (req: Request, res: Response) => {
+router.get('/sales', inventorySeller, async (req: Request, res: Response) => {
   try {
     const query: any = { ownerId: idOf(req) };
     if (req.query.from || req.query.to) query.soldAt = { ...(req.query.from ? { $gte: new Date(String(req.query.from)) } : {}), ...(req.query.to ? { $lte: new Date(String(req.query.to)) } : {}) };
@@ -271,7 +272,7 @@ router.get('/sales', inventory, async (req: Request, res: Response) => {
   } catch (error: any) { console.error('[Inventory] Sales load failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.get('/sales/:id', inventory, async (req: Request, res: Response) => {
+router.get('/sales/:id', inventorySeller, async (req: Request, res: Response) => {
   try {
     const sale = await Sale.findOne({ _id: req.params.id, ownerId: idOf(req) }).lean();
     if (!sale) return res.status(404).json({ message: 'Không tìm thấy hoá đơn trong lịch sử của bạn.' });
@@ -279,7 +280,7 @@ router.get('/sales/:id', inventory, async (req: Request, res: Response) => {
   } catch (error: any) { console.error('[Inventory] Invoice lookup failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.post('/sales', inventory, async (req: Request, res: Response) => {
+router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
   const ownerId = idOf(req); const soldAt = validDate(req.body.soldAt);
   const rollback: Array<{ itemId: any; quantity: number; lots: Array<{ lotId: any; quantity: number }> }> = [];
   let createdSaleId: any = null;
@@ -296,7 +297,7 @@ router.post('/sales', inventory, async (req: Request, res: Response) => {
     if (buyerType === 'walk-in') buyer.name = 'Khách lẻ';
     const priceList: any = await currentPrices(soldAt);
     if (!priceList) return res.status(400).json({ message: 'Chưa có bảng giá hiệu lực tại thời điểm bán.' });
-    const priceField = memberPriceKey[level] || 'price100'; const priceLabel = memberPriceLabel[level] || 'Giá 100%';
+    const defaultPriceField = memberPriceKey[level] || 'price100';
     const lines: any[] = [];
     for (const input of req.body.lines) {
       const quantity = Number(input.quantity);
@@ -305,8 +306,10 @@ router.post('/sales', inventory, async (req: Request, res: Response) => {
       if (!item) throw new Error('Mặt hàng không thuộc kho của bạn.');
       const priceEntry: any = priceList.entries.find((entry: any) => entry.sku === item.sku);
       if (!priceEntry) throw new Error(`SKU ${item.sku} chưa có trong bảng giá.`);
-      const defaultUnitPrice = Number(priceEntry[priceField]);
-      const unitPrice = input.unitPrice === undefined ? defaultUnitPrice : Number(input.unitPrice);
+      const priceField = input.priceField === undefined ? defaultPriceField : String(input.priceField);
+      if (!Object.prototype.hasOwnProperty.call(fixedPriceLabels, priceField)) throw new Error('Mức giá bán không hợp lệ.');
+      const defaultUnitPrice = Number(priceEntry[defaultPriceField]);
+      const unitPrice = Number(priceEntry[priceField]);
       if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) throw new Error('Đơn giá phải là số nguyên không âm.');
       const updated = await InventoryItem.findOneAndUpdate({ _id: item._id, ownerId, quantity: { $gte: quantity } }, { $inc: { quantity: -quantity } }, { new: true });
       if (!updated) throw new Error(`Tồn kho không đủ cho ${item.name}.`);
@@ -322,7 +325,7 @@ router.post('/sales', inventory, async (req: Request, res: Response) => {
         needed -= take; cost += take * lot.unitCost; deductions.push({ lotId: lot._id, quantity: take });
       }
       if (needed > 0) throw new Error(`Thiếu dữ liệu giá vốn theo lô cho ${item.name}; chưa thể bán.`);
-      lines.push({ itemId: item._id, sku: item.sku, name: item.name, quantity, unitPrice, defaultUnitPrice, priceLevel: priceLabel, pv: Number(item.pv), unitCost: cost / quantity, priceListVersionId: priceList._id });
+      lines.push({ itemId: item._id, sku: item.sku, name: item.name, quantity, unitPrice, defaultUnitPrice, priceLevel: fixedPriceLabels[priceField], priceField, pv: Number(item.pv), unitCost: cost / quantity, priceListVersionId: priceList._id });
     }
     const total = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
     const totalPv = lines.reduce((sum, line) => sum + line.quantity * line.pv, 0);
@@ -465,11 +468,11 @@ router.get('/reports/member-purchases', inventory, async (req: Request, res: Res
   } catch (error: any) { console.error('[Inventory] Member report failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.get('/print-preference', inventory, async (req: Request, res: Response) => {
+router.get('/print-preference', inventorySeller, async (req: Request, res: Response) => {
   try { const pref = await SellerPrintPreference.findOneAndUpdate({ ownerId: idOf(req) }, { $setOnInsert: { format: 'pdf' } }, { new: true, upsert: true }); res.json(pref); }
   catch (error: any) { res.status(500).json({ message: error.message }); }
 });
-router.put('/print-preference', inventory, async (req: Request, res: Response) => {
+router.put('/print-preference', inventorySeller, async (req: Request, res: Response) => {
   try { const pref = await SellerPrintPreference.findOneAndUpdate({ ownerId: idOf(req) }, { $set: { format: ['pdf', 'image'].includes(req.body.format) ? req.body.format : 'pdf', shopName: String(req.body.shopName || '').slice(0, 120), phone: String(req.body.phone || '').slice(0, 40), address: String(req.body.address || '').slice(0, 250) } }, { new: true, upsert: true }); res.json(pref); }
   catch (error: any) { res.status(500).json({ message: error.message }); }
 });
