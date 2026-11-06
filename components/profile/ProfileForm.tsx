@@ -93,7 +93,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, 
   }, [formData, emailError, onUpdate, addToast]);
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="p-8 pt-16 space-y-6">
+    <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="p-6 sm:p-8 space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Họ và tên</label>

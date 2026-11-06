@@ -127,6 +127,14 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
       },
     }),
   }));
+  await page.route('**/api/nutrition-groups/mine', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      group: { id: 'ndd1', name: 'NDD Hạnh Phúc', ownerName: 'Nguyễn Văn A' },
+      pendingGroup: null,
+    }),
+  }));
 
   await page.goto('/');
   const isMobile = (page.viewportSize()?.width || 1024) < 768;
@@ -250,6 +258,37 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await expect(page.getByTestId('sales-category-pie-chart')).toBeVisible();
   await expect(page.getByTestId('top-customers-section')).toBeVisible();
   await expect(page.getByTestId('stock-report-section')).toBeVisible();
+
+  // Kiểm tra giao diện Hồ sơ cá nhân: avatar bên trái, ô thông tin bên phải
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Hồ sơ cá nhân' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Menu tài khoản' }).click();
+    await page.getByRole('menuitem', { name: 'Hồ sơ cá nhân' }).click();
+  }
+  const profileHeader = page.getByTestId('profile-header-card');
+  const avatarEditor = page.getByTestId('profile-avatar-editor');
+  const infoPanel = page.getByTestId('profile-info-panel');
+  await expect(profileHeader).toBeVisible();
+  await expect(avatarEditor).toBeVisible();
+  await expect(infoPanel).toBeVisible();
+  await expect(infoPanel).toContainText('Bùi Huy Hoàn');
+  await expect(infoPanel).toContainText('@tester');
+  await expect(infoPanel).toContainText('Nhóm:');
+  await expect(infoPanel).toContainText('Cấp độ:');
+  await expect(infoPanel).toContainText('Thành tựu:');
+
+  const [headerRect, avatarRect, infoRect] = await Promise.all([
+    profileHeader.boundingBox(),
+    avatarEditor.boundingBox(),
+    infoPanel.boundingBox(),
+  ]);
+  expect(headerRect).not.toBeNull();
+  expect(avatarRect).not.toBeNull();
+  expect(infoRect).not.toBeNull();
+  expect(avatarRect!.x).toBeLessThan(infoRect!.x);
+  expect(avatarRect!.y + avatarRect!.height).toBeLessThanOrEqual(headerRect!.y + headerRect!.height + 2);
 });
 
 test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {

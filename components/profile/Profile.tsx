@@ -125,32 +125,54 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpd
     if (shouldSubmit) await onUpdate(newData);
   };
 
+  const memberLevelLabel = ({
+    customer: 'Khách hàng',
+    member: 'Hội viên',
+    senior_consultant: 'Tư vấn viên cao cấp',
+    success_builder: 'Nhà kiến tạo thành công',
+    supervisor: 'Giám sát viên',
+  } as Record<string, string>)[user.memberLevel || 'customer'] || 'Khách hàng';
+  const groupNameLabel = (user as any).groupName || 'Thành viên';
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 pb-24">
       <div className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.05)]">
-        <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-sky-500 p-5 text-white sm:p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-100">Hồ sơ</div>
-              <h3 className="mt-2 text-2xl font-black">{user.fullName}</h3>
+        <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 p-5 text-white sm:p-7" data-testid="profile-header-card">
+          <div className="flex items-start gap-4 sm:items-center sm:gap-6">
+            <AvatarEditor 
+              currentAvatar={localData.avatar} 
+              gender={localData.gender} 
+              fullName={localData.fullName} 
+              onAvatarChange={(avatar) => handleDataUpdate({ avatar })} 
+            />
+            <div className="min-w-0 flex-1 rounded-2xl border border-white/15 bg-white/10 p-3.5 backdrop-blur-sm sm:p-4" data-testid="profile-info-panel">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h3 className="truncate text-lg font-black text-white sm:text-2xl">{user.fullName}</h3>
+                <span className="text-xs font-bold text-emerald-100 sm:text-sm">@{user.username}</span>
+              </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold sm:gap-2 sm:text-xs">
+                <span className="inline-flex items-center gap-1 rounded-xl border border-white/20 bg-white/15 px-2.5 py-1 text-white">
+                  🔐 Nhóm: {groupNameLabel}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-xl border border-white/20 bg-white/15 px-2.5 py-1 text-emerald-50">
+                  ⭐ Cấp độ: {memberLevelLabel}
+                </span>
+                {nutritionGroup?.name && (
+                  <span className="inline-flex items-center gap-1 rounded-xl border border-white/20 bg-white/15 px-2.5 py-1 text-emerald-50">
+                    🏥 NDD: {nutritionGroup.name}
+                  </span>
+                )}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/15 pt-2.5">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-100">🏆 Thành tựu:</span>
+                {user.badges && user.badges.length > 0 ? (
+                  <BadgeDisplay badgeIds={user.badges} size="md" />
+                ) : (
+                  <span className="text-xs italic text-emerald-100/80">Chưa có thành tựu</span>
+                )}
+              </div>
             </div>
-            <div className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-emerald-50">{user.username}</div>
           </div>
-        </div>
-
-        <AvatarEditor 
-          currentAvatar={localData.avatar} 
-          gender={localData.gender} 
-          fullName={localData.fullName} 
-          onAvatarChange={(avatar) => handleDataUpdate({ avatar })} 
-        />
-        
-        <div className="px-6 pb-2 pt-6 sm:px-8">
-          <div className="flex items-center gap-3">
-            <h3 className="text-xl font-black text-slate-800">{user.fullName}</h3>
-            <BadgeDisplay badgeIds={user.badges} size="md" />
-          </div>
-          <p className="mt-1 text-xs font-medium text-slate-400">@{user.username}</p>
         </div>
 
         {/* Nutrition Group (NDD) Card */}
