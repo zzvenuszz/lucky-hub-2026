@@ -197,6 +197,25 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await expect(page.getByTestId('threshold-btn-F1')).toBeVisible();
   await expect(page.getByTestId('inventory-movements-log')).toContainText('Nhập kho');
 
+  // Kiểm tra chữ "Kho của tôi" nằm trên dòng riêng phía trên, còn ô tìm kiếm + nút Thêm + nút +SP nằm cùng 1 dòng
+  const myStockHeading = page.getByRole('heading', { name: 'Kho của tôi' });
+  const searchInput = page.getByPlaceholder('Tìm SKU hoặc tên hàng');
+  const receiveBtn = page.getByTestId('open-batch-receive');
+  const createProdBtn = page.getByTestId('open-create-product');
+  const [headingBox, searchBox, receiveBox, createBox] = await Promise.all([
+    myStockHeading.boundingBox(),
+    searchInput.boundingBox(),
+    receiveBtn.boundingBox(),
+    createProdBtn.boundingBox(),
+  ]);
+  expect(headingBox).not.toBeNull();
+  expect(searchBox).not.toBeNull();
+  expect(receiveBox).not.toBeNull();
+  expect(createBox).not.toBeNull();
+  expect(searchBox!.y).toBeGreaterThanOrEqual(headingBox!.y + headingBox!.height);
+  expect(Math.abs(searchBox!.y - receiveBox!.y)).toBeLessThanOrEqual(4);
+  expect(Math.abs(searchBox!.y - createBox!.y)).toBeLessThanOrEqual(4);
+
   // Mở modal tạo mẫu sản phẩm: xác nhận đã loại bỏ input số lượng ban đầu
   await page.getByTestId('open-create-product').click();
   await expect(page.getByRole('heading', { name: 'Thêm mẫu sản phẩm dùng chung' })).toBeVisible();
