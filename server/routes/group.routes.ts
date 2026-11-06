@@ -5,7 +5,7 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { PERMISSION_DESCRIPTIONS } from '../config/permissions.ts';
-import { clearPermissionCache } from '../services/permissionService.ts';
+import { clearPermissionCache, clearAllPermissionCache } from '../services/permissionService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -88,10 +88,9 @@ router.put('/:id', async (req: Request, res: Response) => {
     const group = await Group.findByIdAndUpdate(req.params.id, updateData, { new: true });
     if (!group) return res.status(404).json({ message: 'Không tìm thấy nhóm' });
 
-    // Clear cache cho tất cả members của group khi permissions thay đổi
-    if (permissions !== undefined) {
-      const memberIds = group.members || [];
-      memberIds.forEach(memberId => clearPermissionCache(String(memberId)));
+    // Clear cache cho tất cả members của group khi permissions hoặc trạng thái thay đổi
+    if (permissions !== undefined || isActive !== undefined) {
+      clearAllPermissionCache();
     }
 
     console.log(`[Groups] ✅ Updated group "${group.name}" by ${req.user?.fullName}`);
@@ -145,44 +144,37 @@ router.post('/:id/members', async (req: Request, res: Response) => {
     const group = await Group.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy nhóm' });
 
+    const normalizedMemberIds = memberIds.filter(Boolean).map((m: any) => String(m._id || m));
     // Lưu danh sách members cũ TRƯỚC KHI ghi đè
-    const oldMemberIds = (group.members || []).map(m => String(m));
+    const oldMemberIds = (group.members || []).filter(Boolean).map(m => String(m));
 
-    group.members = memberIds;
+    group.members = normalizedMemberIds as any;
     await group.save();
 
-    // QUAN TRỌNG: Cập nhật groupId cho User khi thay đổi membership
-    // User mới được thêm: set groupId = group này
-    const addedMemberIds = memberIds.filter(mId => !oldMemberIds.includes(mId));
-    if (addedMemberIds.length > 0) {
+    // QUAN TRỌNG: Đồng bộ groupId cho tất cả thành viên hiện tại của group
+    if (normalizedMemberIds.length > 0) {
       await User.updateMany(
-        { _id: { $in: addedMemberIds } },
+        { _id: { $in: normalizedMemberIds } },
         { $set: { groupId: group._id } }
       );
-      console.log(`[Groups] ✅ Updated groupId for ${addedMemberIds.length} new members to "${group.name}"`);
+      console.log(`[Groups] ✅ Synced groupId for ${normalizedMemberIds.length} members in "${group.name}"`);
     }
 
-    // User bị xóa khỏi group: set groupId = null (sẽ được gán group mặc định sau)
-    const removedMemberIds = oldMemberIds.filter(mId => !memberIds.includes(mId));
+    // User bị xóa khỏi group: chỉ set groupId = null nếu đang trỏ tới chính group này
+    const removedMemberIds = oldMemberIds.filter(mId => !normalizedMemberIds.includes(mId));
     if (removedMemberIds.length > 0) {
       await User.updateMany(
-        { _id: { $in: removedMemberIds } },
+        { _id: { $in: removedMemberIds }, groupId: group._id },
         { $set: { groupId: null } }
       );
       console.log(`[Groups] ℹ️ Cleared groupId for ${removedMemberIds.length} removed members from "${group.name}"`);
     }
 
     // Clear cache cho tất cả members khi có thay đổi
-    memberIds.forEach(memberId => clearPermissionCache(memberId));
-    // Các member cũ bị xóa khỏi group cũng cần clear cache
-    oldMemberIds.forEach(memberId => {
-      if (!memberIds.includes(memberId)) {
-        clearPermissionCache(memberId);
-      }
-    });
+    clearAllPermissionCache();
 
     const populatedGroup = await Group.findById(group._id).populate('members', 'fullName username email avatar');
-    console.log(`[Groups] ✅ Updated members for group "${group.name}": ${memberIds.length} members`);
+    console.log(`[Groups] ✅ Updated members for group "${group.name}": ${normalizedMemberIds.length} members`);
     res.json({ ...populatedGroup!.toObject(), id: populatedGroup!._id });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -192,11 +184,16 @@ router.post('/:id/members', async (req: Request, res: Response) => {
 // GET /api/admin/groups/user/:userId - Lấy nhóm của user
 router.get('/user/:userId', async (req: Request, res: Response) => {
   try {
-    const groups = await Group.find({
-      members: req.params.userId,
-      isActive: true
-    }).select('name permissions');
-    res.json(groups);
+    const targetUser = await User.findById(req.params.userId).select('groupId').lean();
+    const query: any = {
+      isActive: true,
+      $or: [
+        { members: req.params.userId },
+        ...(targetUser?.groupId ? [{ _id: targetUser.groupId }] : []),
+      ],
+    };
+    const groups = await Group.find(query).select('name permissions');
+    res.json(groups.map(g => ({ ...g.toObject(), id: g._id })));
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }

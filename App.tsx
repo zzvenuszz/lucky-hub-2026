@@ -458,6 +458,29 @@ const App: React.FC = () => {
 
     if (currentUser) {
       try {
+        const meRes = await fetch('/api/users/me', { credentials: 'same-origin' });
+        if (meRes.ok) {
+          const refreshedMe = await meRes.json();
+          setCurrentUser(prev => {
+            if (!prev) return refreshedMe;
+            const prevPerms = JSON.stringify((prev as any).permissions || []);
+            const nextPerms = JSON.stringify(refreshedMe.permissions || []);
+            const prevGroup = (prev as any).groupName || '';
+            const nextGroup = refreshedMe.groupName || '';
+            if (prevPerms === nextPerms && prevGroup === nextGroup && prev.fullName === refreshedMe.fullName && prev.avatar === refreshedMe.avatar && prev.memberLevel === refreshedMe.memberLevel) {
+              return prev;
+            }
+            const merged = { ...prev, ...refreshedMe };
+            localStorage.setItem(LS_USER, JSON.stringify(merged));
+            console.log(`[App] Refreshed currentUser permissions: ${refreshedMe.permissions?.length || 0}`);
+            return merged;
+          });
+        }
+      } catch (err) {
+        console.warn('[App] Failed to refresh currentUser:', err);
+      }
+
+      try {
         const uid = (currentUser as any).id || (currentUser as any)._id;
         const m = await Database.getMetrics(uid);
         setExistingMetrics(m || []);
@@ -660,8 +683,18 @@ const App: React.FC = () => {
           const uid = (currentUser as any).id || (currentUser as any)._id; 
           const u = await Database.updateUser(uid, d); 
           if(u) { 
-            setCurrentUser(u); 
-            localStorage.setItem('lucky_hub_user', JSON.stringify(u)); 
+            setCurrentUser(prev => {
+              const merged = {
+                ...prev,
+                ...u,
+                permissions: Array.isArray((u as any).permissions) ? (u as any).permissions : ((prev as any)?.permissions || []),
+                groupPermissions: Array.isArray((u as any).groupPermissions) ? (u as any).groupPermissions : ((prev as any)?.groupPermissions || []),
+                groupName: (u as any).groupName ?? (prev as any)?.groupName ?? '',
+              } as User;
+              localStorage.setItem('lucky_hub_user', JSON.stringify(merged));
+              return merged;
+            });
+            console.log(`[Profile] User profile updated, permissions preserved: ${((u as any).permissions || (currentUser as any).permissions || []).length}`);
             if (window.debugLog) window.debugLog(`Cập nhật hồ sơ người dùng @${u.username} thành công`, "user");
           } 
         }} />}

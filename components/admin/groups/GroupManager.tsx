@@ -41,13 +41,19 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [permissionsList, setPermissionsList] = useState<{ key: string; description: string }[]>([]);
   const [editingGroup, setEditingGroup] = useState<Group | null>(null);
-  const editModalId = React.useMemo(() => `group-edit_${Math.random().toString(36).slice(2, 9)}`, []);
-  useBodyScrollLock(!!editingGroup);
-  useModalStack(editModalId, () => setEditingGroup(null));
+  const [modalMode, setModalMode] = useState<'edit' | 'members'>('edit');
   const [isCreating, setIsCreating] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', description: '', permissions: [] as string[], isDefault: false });
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const closeModal = useCallback(() => {
+    setEditingGroup(null);
+    setSelectedMembers([]);
+    setModalMode('edit');
+  }, []);
+  const editModalId = React.useMemo(() => `group-edit_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(!!editingGroup);
+  useModalStack(editModalId, closeModal);
 
   // Nhóm permissions theo category
   const groupedPermissions = useMemo(() => {
@@ -88,6 +94,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
       setIsCreating(false);
       setActionMessage({ type: 'success', text: '✅ Đã tạo nhóm mới' });
       loadData();
+      onRefresh();
     } catch (err: any) {
       setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
     }
@@ -104,9 +111,10 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
         isActive: editingGroup.isActive,
         isDefault: editingGroup.isDefault,
       });
-      setEditingGroup(null);
+      closeModal();
       setActionMessage({ type: 'success', text: '✅ Đã cập nhật nhóm' });
       loadData();
+      onRefresh();
     } catch (err: any) {
       setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
     }
@@ -119,6 +127,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
       await Database.deleteGroup(gid);
       setActionMessage({ type: 'success', text: `🗑️ Đã xóa nhóm "${group.name}"` });
       loadData();
+      onRefresh();
     } catch (err: any) {
       setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
     }
@@ -128,17 +137,25 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
     const gid = group.id || group._id;
     try {
       await Database.updateGroupMembers(gid, selectedMembers);
-      setEditingGroup(null);
+      closeModal();
       setActionMessage({ type: 'success', text: '✅ Đã cập nhật thành viên' });
       loadData();
+      onRefresh();
     } catch (err: any) {
       setActionMessage({ type: 'error', text: '❌ Lỗi: ' + err.message });
     }
   };
 
   const openMemberEditor = (group: Group) => {
+    setModalMode('members');
     setEditingGroup({ ...group });
-    setSelectedMembers(group.members?.map((m: any) => m._id || m) || []);
+    setSelectedMembers(group.members?.filter(Boolean).map((m: any) => String(m._id || m)) || []);
+  };
+
+  const openGroupEditor = (group: Group) => {
+    setModalMode('edit');
+    setSelectedMembers([]);
+    setEditingGroup({ ...group });
   };
 
   const togglePermission = (perm: string) => {
@@ -286,7 +303,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
                 {/* Actions */}
                 <div className="flex gap-2 pt-2 border-t border-orange-100">
                   <button onClick={() => openMemberEditor(group)} className="flex-1 py-2 rounded-xl bg-blue-50 text-blue-600 font-black text-[9px] uppercase tracking-wider hover:bg-blue-100 transition-all">👥 Thành viên</button>
-                  <button onClick={() => setEditingGroup({...group})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
+                  <button onClick={() => openGroupEditor(group)} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
                   <button onClick={() => handleDeleteGroup(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>
                 </div>
               </div>
@@ -303,11 +320,11 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4 overflow-y-auto" onClick={e => e.stopPropagation()}>
           <div className="bg-white w-full max-w-2xl rounded-[2rem] md:rounded-[2.5rem] p-4 md:p-8 space-y-6 animate-in zoom-in-95 my-8">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">
-              {selectedMembers.length > 0 ? 'Quản lý thành viên' : 'Chỉnh sửa nhóm'}: {editingGroup.name}
+              {modalMode === 'members' ? 'Quản lý thành viên' : 'Chỉnh sửa nhóm'}: {editingGroup.name}
             </h4>
 
             {/* Member Management */}
-            {selectedMembers.length > 0 ? (
+            {modalMode === 'members' ? (
               <div className="space-y-4">
                 <p className="text-[10px] text-slate-400 font-medium">Chọn thành viên cho nhóm này</p>
                 <div className="max-h-[400px] overflow-y-auto space-y-1">
@@ -339,7 +356,7 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
                   })}
                 </div>
                 <div className="flex gap-3 pt-4">
-                  <button onClick={() => { setEditingGroup(null); setSelectedMembers([]); }} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
+                  <button onClick={closeModal} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[11px]">Hủy</button>
                   <button onClick={() => handleUpdateMembers(editingGroup)} className="flex-1 py-4 rounded-2xl bg-blue-600 text-white font-black uppercase text-[11px] shadow-lg">Lưu thành viên</button>
                 </div>
               </div>

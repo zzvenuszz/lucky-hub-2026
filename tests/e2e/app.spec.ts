@@ -41,7 +41,27 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await page.route('**/api/inventory/items', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify([{ _id: 'item1', id: 'item1', sku: 'F1', skus: ['F1'], name: 'Hỗn hợp dinh dưỡng F1', categoryName: 'Dinh dưỡng', pv: 23.95, quantity: 10, lowStockThreshold: 5, archived: false }]),
+    body: JSON.stringify([{
+      _id: 'item1',
+      id: 'item1',
+      sku: 'F1',
+      skus: ['F1'],
+      name: 'Hỗn hợp dinh dưỡng F1',
+      categoryName: 'Dinh dưỡng',
+      pv: 23.95,
+      quantity: 10,
+      lowStockThreshold: 5,
+      archived: false,
+      hasActivePrice: true,
+      prices: { sku: 'F1', costReference: 667000, price100: 1200000, price25: 950000, price35: 830000, price42: 750000, price50: 667000 },
+      totalSystemStock: 10,
+      otherUsersStock: 0,
+    }]),
+  }));
+  await page.route('**/api/inventory/receive-batch', route => route.fulfill({
+    status: 201,
+    contentType: 'application/json',
+    body: JSON.stringify({ success: true, receivedCount: 1, totalQuantity: 5, receivedAt: '2026-11-05T10:00:00.000Z', movements: [] }),
   }));
   await page.route('**/api/inventory/categories', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ _id: 'cat1', name: 'Dinh dưỡng' }]) }));
   await page.route('**/api/inventory/overview', route => route.fulfill({
@@ -49,7 +69,20 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
     contentType: 'application/json',
     body: JSON.stringify({ itemCount: 1, totalUnits: 10, costValue: 6670000, estimated: { price100: 12000000, price25: 9500000, price35: 8300000, price42: 7500000, price50: 6670000 }, lowStock: [], monthly: [], recentSales: [] }),
   }));
-  await page.route('**/api/inventory/movements', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/inventory/movements', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{
+      _id: 'mov_1',
+      type: 'receive',
+      quantityDelta: 5,
+      unitCost: 667000,
+      receivedAt: '2026-11-05T08:00:00.000Z',
+      createdAt: '2026-11-05T08:01:00.000Z',
+      reason: 'Nhập kho đợt 1',
+      itemId: { _id: 'item1', sku: 'F1', name: 'Hỗn hợp dinh dưỡng F1' },
+    }]),
+  }));
   await page.route('**/api/inventory/print-preference', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ format: 'pdf' }) }));
   await page.route('**/api/inventory/price-list**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ active: null, versions: [] }) }));
   await page.route('**/api/inventory/sales**', route => route.fulfill({
@@ -108,6 +141,22 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   }
 
   await expect(page.getByTestId('inventory-dashboard')).toBeVisible();
+  if (isMobile) {
+    // Kiểm tra dòng chữ "KHO HÀNG CÁ NHÂN" nằm gọn trên 1 dòng trên di động
+    const titleSpan = page.getByTestId('inventory-dashboard').locator('h1 span').first();
+    const titleBox = await titleSpan.boundingBox();
+    expect(titleBox).not.toBeNull();
+    expect(titleBox!.height).toBeLessThanOrEqual(32);
+
+    // Kiểm tra bottom menu di động chỉ hiển thị icon, không hiển thị text
+    const mobileNavButtons = page.getByRole('navigation', { name: 'Điều hướng nhanh' }).locator('button');
+    const btnCount = await mobileNavButtons.count();
+    expect(btnCount).toBe(5);
+    for (let i = 0; i < btnCount; i++) {
+      const text = (await mobileNavButtons.nth(i).innerText()).trim();
+      expect(text).toBe('');
+    }
+  }
   const nav = page.getByRole('navigation', { name: 'Quản lý bán hàng' });
   const container = nav.locator('..');
   const firstTabBtn = nav.getByRole('button', { name: /Tổng quan/ });
@@ -141,6 +190,28 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
     await nav.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
     await expect(page.getByTestId('subtabs-scroll-right')).toHaveCount(0);
   }
+
+  // Kiểm tra tab Kho hàng: tạo mẫu sản phẩm không có input số lượng ban đầu, phiếu nhập hàng theo danh sách và nhật ký nhập kho
+  await nav.getByRole('button', { name: /Kho hàng/ }).click();
+  await expect(page.getByTestId('open-batch-receive')).toBeVisible();
+  await expect(page.getByTestId('threshold-btn-F1')).toBeVisible();
+  await expect(page.getByTestId('inventory-movements-log')).toContainText('Nhập kho');
+
+  // Mở modal tạo mẫu sản phẩm: xác nhận đã loại bỏ input số lượng ban đầu
+  await page.getByTestId('open-create-product').click();
+  await expect(page.getByRole('heading', { name: 'Thêm mẫu sản phẩm dùng chung' })).toBeVisible();
+  await expect(page.getByText('Số lượng ban đầu')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Đóng thêm sản phẩm' }).click();
+
+  // Mở modal Nhập hàng vào kho cá nhân: tìm kiếm, thêm vào danh sách, chỉnh số lượng, ngày nhập và bấm Nhập kho
+  await page.getByTestId('open-batch-receive').click();
+  await expect(page.getByTestId('batch-receive-modal')).toBeVisible();
+  await page.getByTestId('batch-receive-search').fill('F1');
+  await page.getByTestId('batch-add-item-F1').click();
+  await page.getByTestId('batch-qty-F1').fill('5');
+  await expect(page.getByTestId('batch-receive-date')).toBeVisible();
+  await page.getByTestId('submit-batch-receive').click();
+  await expect(page.getByTestId('batch-receive-modal')).toHaveCount(0);
 
   // Kiểm tra xóa hóa đơn đã hủy trong tab Lịch sử
   await nav.getByRole('button', { name: /Lịch sử/ }).click();

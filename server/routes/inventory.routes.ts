@@ -14,6 +14,7 @@ const router = Router();
 router.use(authMiddleware);
 const inventory = requirePermission(RESOURCES.INVENTORY.MANAGE);
 const inventorySeller = requirePermission([RESOURCES.INVENTORY.MANAGE, RESOURCES.INVENTORY.SELL]);
+const inventoryOrPrice = requirePermission([RESOURCES.INVENTORY.MANAGE, RESOURCES.INVENTORY.SELL, RESOURCES.PRICELIST.MANAGE]);
 const priceManager = requirePermission(RESOURCES.PRICELIST.MANAGE);
 const levelManager = requirePermission(RESOURCES.MEMBER_LEVEL.MANAGE);
 const anyLevelManager = requirePermission([RESOURCES.MEMBER_LEVEL.MANAGE, RESOURCES.MEMBER_LEVEL.MANAGE_ANY]);
@@ -82,39 +83,176 @@ router.get('/members', inventorySeller, async (req: Request, res: Response) => {
   } catch (error: any) { console.error('[Inventory] Member lookup failed:', error); res.status(500).json({ message: 'Không thể tìm hội viên.' }); }
 });
 
-router.get('/categories', inventory, async (req: Request, res: Response) => {
-  try { res.json(await InventoryCategory.find({ ownerId: idOf(req) }).sort({ name: 1 }).lean()); }
-  catch (error: any) { console.error('[Inventory] Categories load failed:', error); res.status(500).json({ message: error.message }); }
+const syncAndLoadPersonalItems = async (ownerId: string, canManageCatalog: boolean) => {
+  const [prices, allSystemItems] = await Promise.all([
+    currentPrices(new Date()),
+    InventoryItem.find({}).sort({ updatedAt: -1 }).lean(),
+  ]);
+  const priceMap = new Map<string, any>(
+    (prices?.entries || []).map((entry: any) => [String(entry.sku).trim().toUpperCase(), entry] as [string, any])
+  );
+
+  // Build master templates and stock totals across all users
+  const templatesBySku = new Map<string, any>();
+  const skuToPrimarySku = new Map<string, string>();
+  const totalStockByPrimarySku = new Map<string, number>();
+  const otherUsersStockByPrimarySku = new Map<string, number>();
+
+  for (const rawItem of allSystemItems as any[]) {
+    const itemSkus = skusForItem(rawItem);
+    if (!itemSkus.length) continue;
+    const matchedPrimary = itemSkus.map(s => skuToPrimarySku.get(s)).find(Boolean) || rawItem.sku;
+    if (!templatesBySku.has(matchedPrimary)) {
+      templatesBySku.set(matchedPrimary, {
+        sku: matchedPrimary,
+        skus: itemSkus,
+        name: rawItem.name,
+        categoryId: rawItem.categoryId || null,
+        categoryName: rawItem.categoryName || '',
+        imageUrl: rawItem.imageUrl || '',
+        pv: Number(rawItem.pv || 0),
+        lowStockThreshold: Number(rawItem.lowStockThreshold ?? 5),
+        archived: Boolean(rawItem.archived),
+      });
+    } else {
+      const existingTemplate = templatesBySku.get(matchedPrimary);
+      existingTemplate.skus = normalizeSkus([...existingTemplate.skus, ...itemSkus]);
+    }
+    for (const s of templatesBySku.get(matchedPrimary).skus) {
+      skuToPrimarySku.set(s, matchedPrimary);
+    }
+    const qty = Number(rawItem.quantity || 0);
+    totalStockByPrimarySku.set(matchedPrimary, (totalStockByPrimarySku.get(matchedPrimary) || 0) + qty);
+    if (String(rawItem.ownerId) !== String(ownerId)) {
+      otherUsersStockByPrimarySku.set(matchedPrimary, (otherUsersStockByPrimarySku.get(matchedPrimary) || 0) + qty);
+    }
+  }
+
+  // Ensure any SKU in the active price list that has no InventoryItem yet is also represented as a template
+  for (const entry of (prices?.entries || []) as any[]) {
+    const entrySku = String(entry.sku || '').trim().toUpperCase();
+    if (!entrySku || skuToPrimarySku.has(entrySku)) continue;
+    templatesBySku.set(entrySku, {
+      sku: entrySku,
+      skus: [entrySku],
+      name: String(entry.name || entrySku).trim(),
+      categoryId: null,
+      categoryName: String(entry.categoryName || '').trim(),
+      imageUrl: '',
+      pv: Number(entry.pv || 0),
+      lowStockThreshold: 5,
+      archived: false,
+    });
+    skuToPrimarySku.set(entrySku, entrySku);
+  }
+
+  // Ensure personal InventoryItem records exist for this ownerId
+  const personalItems = await InventoryItem.find({ ownerId }).lean() as any[];
+  const personalBySku = new Map<string, any>();
+  for (const item of personalItems) {
+    for (const s of skusForItem(item)) personalBySku.set(s, item);
+  }
+
+  const newPersonalDocs: any[] = [];
+  for (const [primarySku, template] of templatesBySku.entries()) {
+    const hasPrice = template.skus.some((s: string) => priceMap.has(s));
+    if (!canManageCatalog && !hasPrice) continue;
+    const existingPersonal = template.skus.map((s: string) => personalBySku.get(s)).find(Boolean);
+    if (!existingPersonal) {
+      if (!canManageCatalog && template.archived) continue;
+      newPersonalDocs.push({
+        ownerId,
+        sku: primarySku,
+        skus: template.skus,
+        name: template.name,
+        categoryId: template.categoryId,
+        categoryName: template.categoryName,
+        imageUrl: template.imageUrl,
+        pv: template.pv,
+        quantity: 0,
+        lowStockThreshold: template.lowStockThreshold ?? 5,
+        archived: Boolean(template.archived),
+      });
+    }
+  }
+
+  if (newPersonalDocs.length) {
+    for (const doc of newPersonalDocs) {
+      try {
+        await InventoryItem.create(doc);
+      } catch (_err) {
+        // Ignore duplicate key race condition
+      }
+    }
+  }
+
+  const finalPersonalItems = await InventoryItem.find({ ownerId }).sort({ name: 1 }).lean() as any[];
+  return finalPersonalItems
+    .map((item: any) => {
+      const itemSkus = skusForItem(item);
+      const primarySku = skuToPrimarySku.get(item.sku) || item.sku;
+      const priceEntry = priceMap.get(item.sku) || itemSkus.map(sku => priceMap.get(sku)).find(Boolean) || null;
+      return {
+        ...item,
+        id: String(item._id),
+        skus: itemSkus,
+        prices: priceEntry,
+        hasActivePrice: Boolean(priceEntry),
+        totalSystemStock: totalStockByPrimarySku.get(primarySku) ?? Number(item.quantity || 0),
+        otherUsersStock: otherUsersStockByPrimarySku.get(primarySku) ?? 0,
+      };
+    })
+    .filter((item: any) => {
+      if (canManageCatalog) return true;
+      // Người bán chỉ dùng các mẫu sản phẩm có trong bảng giá đang có hiệu lực,
+      // hoặc sản phẩm còn tồn kho trong kho riêng của họ (kể cả khi đã ngừng bán vẫn được bán tiếp đến khi tồn = 0)
+      if (Number(item.quantity || 0) > 0) return true;
+      return item.hasActivePrice && !item.archived;
+    });
+};
+
+router.get('/categories', inventoryOrPrice, async (_req: Request, res: Response) => {
+  try {
+    const allCategories = await InventoryCategory.find({}).sort({ name: 1 }).lean() as any[];
+    const uniqueByName = new Map<string, any>();
+    for (const cat of allCategories) {
+      const key = String(cat.name || '').trim().toLowerCase();
+      if (key && !uniqueByName.has(key)) uniqueByName.set(key, cat);
+    }
+    res.json([...uniqueByName.values()]);
+  } catch (error: any) { console.error('[Inventory] Categories load failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.post('/categories', inventory, async (req: Request, res: Response) => {
+router.post('/categories', priceManager, async (req: Request, res: Response) => {
   try {
     const name = String(req.body.name || '').trim();
     if (!name || name.length > 80) return res.status(400).json({ message: 'Tên danh mục bắt buộc và tối đa 80 ký tự.' });
+    const existing = await InventoryCategory.findOne({ name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' } }).lean();
+    if (existing) return res.status(200).json(existing);
     const category = await InventoryCategory.create({ ownerId: idOf(req), name });
     console.log('[Inventory] Category created:', { ownerId: idOf(req), name });
     res.status(201).json(category);
-  } catch (error: any) { console.error('[Inventory] Category create failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'Danh mục này đã có trong kho của bạn.' : error.message }); }
+  } catch (error: any) { console.error('[Inventory] Category create failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'Danh mục này đã tồn tại.' : error.message }); }
 });
 
-router.get('/items', inventorySeller, async (req: Request, res: Response) => {
+router.get('/items', inventoryOrPrice, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
-    const canManageInventory = req.user?.permissions.includes(RESOURCES.INVENTORY.MANAGE);
-    const items = await InventoryItem.find(canManageInventory ? { ownerId } : { ownerId, archived: false }).sort({ name: 1 }).lean();
-    const prices = await currentPrices(new Date());
-    const priceMap = new Map<string, any>((prices?.entries || []).map((entry: any) => [String(entry.sku), entry] as [string, any]));
-    res.json(items.map((item: any) => ({ ...item, id: String(item._id), skus: skusForItem(item), prices: priceMap.get(item.sku) || skusForItem(item).map(sku => priceMap.get(sku)).find(Boolean) || null })));
+    const canManageCatalog = Boolean(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE));
+    const items = await syncAndLoadPersonalItems(ownerId, canManageCatalog);
+    res.json(items);
   } catch (error: any) { console.error('[Inventory] Items load failed:', error); res.status(500).json({ message: 'Không thể tải kho hàng.' }); }
 });
 
-router.post('/items', inventory, async (req: Request, res: Response) => {
+router.post('/items', priceManager, async (req: Request, res: Response) => {
   try {
-    const { name, imageUrl, pv, quantity = 0, lowStockThreshold = 5 } = req.body;
+    const { name, imageUrl, pv, lowStockThreshold = 5 } = req.body;
     const skus = normalizeSkus(req.body.skus ?? req.body.sku);
-    if (!skus.length || !String(name || '').trim() || !Number.isFinite(Number(pv)) || Number(pv) < 0 || Number(quantity) < 0) return res.status(400).json({ message: 'SKU, tên, PV hoặc số lượng không hợp lệ.' });
-    const existingSku = await InventoryItem.findOne({ ownerId: idOf(req), $or: [{ sku: { $in: skus } }, { skus: { $in: skus } }] }).select('sku').lean();
-    if (existingSku) return res.status(409).json({ message: `SKU ${skus.find(sku => sku === existingSku.sku) || existingSku.sku} đã tồn tại trong kho của bạn.` });
+    if (!skus.length || !String(name || '').trim() || !Number.isFinite(Number(pv)) || Number(pv) < 0) {
+      return res.status(400).json({ message: 'SKU, tên sản phẩm hoặc điểm PV không hợp lệ.' });
+    }
+    const existingSku = await InventoryItem.findOne({ $or: [{ sku: { $in: skus } }, { skus: { $in: skus } }] }).select('sku').lean();
+    if (existingSku) return res.status(409).json({ message: `SKU ${skus.find(sku => sku === existingSku.sku) || existingSku.sku} đã tồn tại trong danh mục mẫu sản phẩm.` });
     let finalImage = typeof imageUrl === 'string' ? imageUrl : '';
     if (finalImage.startsWith('data:image')) {
       const settings = await SystemSettings.findOne({}).select('storage').lean();
@@ -124,103 +262,335 @@ router.post('/items', inventory, async (req: Request, res: Response) => {
     }
     let categoryId = null; let categoryName = '';
     if (req.body.categoryId) {
-      const category = await InventoryCategory.findOne({ _id: req.body.categoryId, ownerId: idOf(req) }).select('name');
-      if (!category) return res.status(400).json({ message: 'Danh mục không thuộc kho của bạn.' });
+      const category = await InventoryCategory.findById(req.body.categoryId).select('name');
+      if (!category) return res.status(400).json({ message: 'Danh mục không hợp lệ.' });
       categoryId = category._id; categoryName = category.name;
     }
-    const item = await InventoryItem.create({ ownerId: idOf(req), sku: skus[0], skus, name: String(name).trim(), categoryId, categoryName, imageUrl: finalImage, pv: Number(pv), quantity: 0, lowStockThreshold: Math.max(0, Number(lowStockThreshold) || 0) });
-    if (Number(quantity) > 0) {
-      const unitCost = Number(req.body.unitCost || 0);
-      const lot = await InventoryLot.create({ ownerId: idOf(req), itemId: item._id, receivedQuantity: Number(quantity), remainingQuantity: Number(quantity), unitCost, receivedAt: new Date() });
-      await InventoryItem.updateOne({ _id: item._id, ownerId: idOf(req) }, { $inc: { quantity: Number(quantity) } });
-      await InventoryMovement.create({ ownerId: idOf(req), itemId: item._id, lotId: lot._id, type: 'receive', quantityDelta: Number(quantity), unitCost, actorId: idOf(req), reason: 'Tạo mặt hàng và nhập kho ban đầu' });
-    }
-    console.log('[Inventory] Item created:', { ownerId: idOf(req), skus });
-    res.status(201).json({ ...item.toObject(), quantity: Number(quantity), id: String(item._id) });
-  } catch (error: any) { console.error('[Inventory] Create item failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'SKU đã tồn tại trong kho của bạn.' : error.message || 'Không thể tạo mặt hàng.' }); }
+    // Bước tạo sản phẩm chỉ tạo ra mẫu sản phẩm dùng chung với tồn kho = 0
+    const item = await InventoryItem.create({
+      ownerId: idOf(req),
+      sku: skus[0],
+      skus,
+      name: String(name).trim(),
+      categoryId,
+      categoryName,
+      imageUrl: finalImage,
+      pv: Number(pv),
+      quantity: 0,
+      lowStockThreshold: Math.max(0, Number(lowStockThreshold) || 0),
+    });
+    console.log('[Inventory] Shared product template created:', { ownerId: idOf(req), skus, name: item.name });
+    res.status(201).json({ ...item.toObject(), quantity: 0, id: String(item._id), totalSystemStock: 0, otherUsersStock: 0 });
+  } catch (error: any) { console.error('[Inventory] Create item failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'SKU đã tồn tại trong danh mục.' : error.message || 'Không thể tạo mẫu sản phẩm.' }); }
 });
 
-router.put('/items/:id', inventory, async (req: Request, res: Response) => {
+router.put('/items/:id/threshold', inventorySeller, async (req: Request, res: Response) => {
   try {
-    const patch: any = {};
-    for (const key of ['name', 'imageUrl', 'pv', 'lowStockThreshold', 'archived']) if (req.body[key] !== undefined) patch[key] = req.body[key];
+    const threshold = Number(req.body.lowStockThreshold);
+    if (!Number.isInteger(threshold) || threshold < 0) {
+      return res.status(400).json({ message: 'Ngưỡng cảnh báo tồn kho phải là số nguyên không âm.' });
+    }
+    const item = await InventoryItem.findOneAndUpdate(
+      { _id: req.params.id, ownerId: idOf(req) },
+      { $set: { lowStockThreshold: threshold } },
+      { new: true }
+    );
+    if (!item) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+    console.log('[Inventory] Personal lowStockThreshold updated:', { ownerId: idOf(req), itemId: String(item._id), lowStockThreshold: threshold });
+    res.json({ ...item.toObject(), id: String(item._id) });
+  } catch (error: any) {
+    console.error('[Inventory] Threshold update failed:', error);
+    res.status(500).json({ message: error.message || 'Không thể cập nhật ngưỡng cảnh báo tồn.' });
+  }
+});
+
+router.put('/items/:id', inventoryOrPrice, async (req: Request, res: Response) => {
+  try {
+    const actorId = idOf(req);
+    const canManageCatalog = Boolean(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE));
+    const existing = await InventoryItem.findOne({ _id: req.params.id, ownerId: actorId }).lean() as any;
+    if (!existing) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+
+    const bodyKeys = Object.keys(req.body || {}).filter(k => req.body[k] !== undefined);
+    const isThresholdOnly = bodyKeys.length === 1 && bodyKeys[0] === 'lowStockThreshold';
+
+    if (isThresholdOnly) {
+      const threshold = Math.max(0, Number(req.body.lowStockThreshold) || 0);
+      const updated = await InventoryItem.findOneAndUpdate(
+        { _id: existing._id, ownerId: actorId },
+        { $set: { lowStockThreshold: threshold } },
+        { new: true }
+      );
+      console.log('[Inventory] Personal lowStockThreshold updated via PUT /items/:id:', { ownerId: actorId, itemId: String(existing._id), threshold });
+      return res.json(updated);
+    }
+
+    if (!canManageCatalog) {
+      return res.status(403).json({ message: 'Chỉ người có quyền quản lý sản phẩm & bảng giá mới được sửa hoặc ngừng bán mẫu sản phẩm.' });
+    }
+
+    const existingSkus = skusForItem(existing);
+    const allMatchingItems = await InventoryItem.find({
+      $or: [{ sku: { $in: existingSkus } }, { skus: { $in: existingSkus } }],
+    }).lean() as any[];
+
+    const otherUsersWithStock = allMatchingItems.filter(doc => String(doc.ownerId) !== String(actorId) && Number(doc.quantity || 0) > 0);
+    const otherUsersStock = otherUsersWithStock.reduce((sum, doc) => sum + Number(doc.quantity || 0), 0);
+
+    const isArchivingOnly = bodyKeys.length === 1 && bodyKeys[0] === 'archived';
+    if (!isArchivingOnly && otherUsersStock > 0) {
+      return res.status(409).json({
+        message: `Không thể sửa mẫu sản phẩm vì đang có ${otherUsersWithStock.length} kho cá nhân của người dùng khác còn tồn kho (tổng ${otherUsersStock} sản phẩm).`,
+      });
+    }
+
+    const templatePatch: any = {};
+    for (const key of ['name', 'imageUrl', 'pv', 'archived']) {
+      if (req.body[key] !== undefined) templatePatch[key] = req.body[key];
+    }
     if (req.body.skus !== undefined || req.body.sku !== undefined) {
       const skus = normalizeSkus(req.body.skus ?? req.body.sku);
       if (!skus.length) return res.status(400).json({ message: 'Nhập ít nhất một SKU hợp lệ.' });
-      const existing = await InventoryItem.findOne({ _id: req.params.id, ownerId: idOf(req) }).select('_id').lean();
-      if (!existing) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
-      const conflict = await InventoryItem.findOne({ ownerId: idOf(req), _id: { $ne: existing._id }, $or: [{ sku: { $in: skus } }, { skus: { $in: skus } }] }).select('sku').lean();
-      if (conflict) return res.status(409).json({ message: `SKU ${skus.find(sku => sku === conflict.sku) || conflict.sku} đã tồn tại trong kho của bạn.` });
-      patch.sku = skus[0]; patch.skus = skus;
+      const matchingIds = allMatchingItems.map(doc => doc._id);
+      const conflict = await InventoryItem.findOne({
+        _id: { $nin: matchingIds },
+        $or: [{ sku: { $in: skus } }, { skus: { $in: skus } }],
+      }).select('sku').lean();
+      if (conflict) return res.status(409).json({ message: `SKU ${skus.find(sku => sku === conflict.sku) || conflict.sku} đã tồn tại ở sản phẩm khác.` });
+      templatePatch.sku = skus[0];
+      templatePatch.skus = skus;
     }
     if (req.body.categoryId !== undefined) {
-      if (!req.body.categoryId) { patch.categoryId = null; patch.categoryName = ''; }
-      else {
-        const category = await InventoryCategory.findOne({ _id: req.body.categoryId, ownerId: idOf(req) }).select('name');
-        if (!category) return res.status(400).json({ message: 'Danh mục không thuộc kho của bạn.' });
-        patch.categoryId = category._id; patch.categoryName = category.name;
+      if (!req.body.categoryId) {
+        templatePatch.categoryId = null;
+        templatePatch.categoryName = '';
+      } else {
+        const category = await InventoryCategory.findById(req.body.categoryId).select('name');
+        if (!category) return res.status(400).json({ message: 'Danh mục không hợp lệ.' });
+        templatePatch.categoryId = category._id;
+        templatePatch.categoryName = category.name;
       }
     }
-    if (patch.imageUrl?.startsWith('data:image')) {
+    if (templatePatch.imageUrl?.startsWith('data:image')) {
       const settings = await SystemSettings.findOne({}).select('storage').lean();
       const provider: any = settings?.storage?.providers?.find((p: any) => p.isActive);
       if (!provider) return res.status(400).json({ message: 'Chưa cấu hình dịch vụ lưu ảnh.' });
-      patch.imageUrl = await uploadImageToStorageProvider(patch.imageUrl, provider, 'inventory');
+      templatePatch.imageUrl = await uploadImageToStorageProvider(templatePatch.imageUrl, provider, 'inventory');
     }
-    const item = await InventoryItem.findOneAndUpdate({ _id: req.params.id, ownerId: idOf(req) }, { $set: patch }, { new: true, runValidators: true });
-    if (!item) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
-    console.log('[Inventory] Product updated:', { ownerId: idOf(req), itemId: String(item._id), skus: skusForItem(item), archived: item.archived });
+
+    // Đồng bộ mẫu sản phẩm cho tất cả các kho cá nhân, nhưng giữ nguyên tồn kho và ngưỡng cảnh báo riêng của từng người
+    const matchingIds = allMatchingItems.map(doc => doc._id);
+    if (Object.keys(templatePatch).length > 0) {
+      await InventoryItem.updateMany({ _id: { $in: matchingIds } }, { $set: templatePatch });
+    }
+    if (req.body.lowStockThreshold !== undefined) {
+      await InventoryItem.updateOne(
+        { _id: existing._id, ownerId: actorId },
+        { $set: { lowStockThreshold: Math.max(0, Number(req.body.lowStockThreshold) || 0) } }
+      );
+    }
+
+    const item = await InventoryItem.findById(existing._id);
+    console.log('[Inventory] Product template updated across system:', { actorId, itemId: String(existing._id), updatedDocs: matchingIds.length, archived: item?.archived });
     res.json(item);
   } catch (error: any) { console.error('[Inventory] Update item failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'SKU đã tồn tại trong kho.' : error.message }); }
 });
 
-router.delete('/items/:id', inventory, async (req: Request, res: Response) => {
+router.delete('/items/:id', priceManager, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
-    const existing = await InventoryItem.findOne({ _id: req.params.id, ownerId });
-    if (!existing) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+    const existing = await InventoryItem.findOne({ _id: req.params.id, ownerId }).lean() as any;
+    if (!existing) return res.status(404).json({ message: 'Không tìm thấy mặt hàng.' });
 
-    const wasArchived = existing.archived;
-    const item = await InventoryItem.findOneAndUpdate({ _id: existing._id, ownerId }, { $set: { archived: true } }, { new: true });
-    if (!item) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+    const existingSkus = skusForItem(existing);
+    const allMatchingItems = await InventoryItem.find({
+      $or: [{ sku: { $in: existingSkus } }, { skus: { $in: existingSkus } }],
+    }).lean() as any[];
+    const matchingIds = allMatchingItems.map(doc => doc._id);
 
-    const hasSales = await Sale.exists({ ownerId, 'lines.itemId': item._id });
+    const totalSystemStock = allMatchingItems.reduce((sum, doc) => sum + Number(doc.quantity || 0), 0);
+    if (totalSystemStock > 0) {
+      return res.status(409).json({
+        message: `Không thể xóa sản phẩm vì tổng tồn kho hiện tại của tất cả người dùng là ${totalSystemStock} sản phẩm. Chỉ cho phép xóa khi tồn kho của tất cả mọi người cho sản phẩm đó = 0.`,
+      });
+    }
+
+    const hasSales = await Sale.exists({
+      $or: [
+        { 'lines.itemId': { $in: matchingIds } },
+        { 'lines.sku': { $in: existingSkus } },
+      ],
+    });
     if (hasSales) {
-      if (!wasArchived) await InventoryItem.updateOne({ _id: item._id, ownerId }, { $set: { archived: false } });
       return res.status(409).json({ message: 'Mặt hàng đã có trên hóa đơn nên không thể xóa hẳn. Hãy dùng “Ngừng bán” để giữ nguyên lịch sử.' });
     }
 
     await Promise.all([
-      InventoryLot.deleteMany({ ownerId, itemId: item._id }),
-      InventoryMovement.deleteMany({ ownerId, itemId: item._id }),
+      InventoryLot.deleteMany({ itemId: { $in: matchingIds } }),
+      InventoryMovement.deleteMany({ itemId: { $in: matchingIds } }),
+      InventoryItem.deleteMany({ _id: { $in: matchingIds } }),
     ]);
-    const deletion = await InventoryItem.deleteOne({ _id: item._id, ownerId });
-    if (!deletion.deletedCount) return res.status(404).json({ message: 'Mặt hàng đã bị xóa hoặc không còn trong kho.' });
-    await logAudit(req, 'INVENTORY_ITEM_DELETE', `Xóa hẳn sản phẩm ${item.sku} · ${item.name}`, String(item._id), item.name);
-    console.log('[Inventory] Product permanently deleted:', { ownerId, sku: item.sku, itemId: String(item._id) });
-    res.json({ success: true, id: String(item._id) });
+    await logAudit(req, 'INVENTORY_ITEM_DELETE', `Xóa hẳn mẫu sản phẩm ${existing.sku} · ${existing.name}`, String(existing._id), existing.name);
+    console.log('[Inventory] Product template permanently deleted:', { ownerId, sku: existing.sku, deletedDocs: matchingIds.length });
+    res.json({ success: true, id: String(existing._id) });
   } catch (error: any) {
     console.error('[Inventory] Product delete failed:', error);
     res.status(500).json({ message: error.message || 'Không thể xóa sản phẩm.' });
   }
 });
 
-router.post('/items/:id/receive', inventory, async (req: Request, res: Response) => {
+router.post('/items/:id/receive', inventorySeller, async (req: Request, res: Response) => {
   try {
-    const quantity = Number(req.body.quantity); const unitCost = Number(req.body.unitCost); const at = validDate(req.body.receivedAt);
-    if (!Number.isInteger(quantity) || quantity <= 0 || !Number.isFinite(unitCost) || unitCost < 0 || !at) return res.status(400).json({ message: 'Số lượng, giá vốn hoặc thời gian nhập không hợp lệ.' });
-    const item = await InventoryItem.findOne({ _id: req.params.id, ownerId: idOf(req), archived: false });
-    if (!item) return res.status(404).json({ message: 'Không tìm thấy mặt hàng.' });
-    const priceList = await currentPrices(at);
-    const lot = await InventoryLot.create({ ownerId: idOf(req), itemId: item._id, receivedQuantity: quantity, remainingQuantity: quantity, unitCost, priceListVersionId: priceList?._id || null, receivedAt: at });
-    await InventoryItem.updateOne({ _id: item._id, ownerId: idOf(req) }, { $inc: { quantity } });
-    await InventoryMovement.create({ ownerId: idOf(req), itemId: item._id, lotId: lot._id, type: 'receive', quantityDelta: quantity, unitCost, actorId: idOf(req), reason: String(req.body.reason || 'Nhập hàng') });
-    console.log('[Inventory] Stock received:', { ownerId: idOf(req), sku: item.sku, quantity, unitCost });
+    const ownerId = idOf(req);
+    const quantity = Number(req.body.quantity);
+    const at = validDate(req.body.receivedAt);
+    if (!Number.isInteger(quantity) || quantity <= 0 || !at) {
+      return res.status(400).json({ message: 'Số lượng hoặc ngày nhập không hợp lệ.' });
+    }
+    const item = await InventoryItem.findOne({ _id: req.params.id, ownerId });
+    if (!item) return res.status(404).json({ message: 'Không tìm thấy mặt hàng trong kho của bạn.' });
+    if (item.archived) {
+      return res.status(400).json({ message: `Sản phẩm ${item.name} đã ngừng bán, không cho phép nhập thêm hàng.` });
+    }
+    const activePriceList = await currentPrices(new Date());
+    const itemSkus = skusForItem(item);
+    const priceEntry = (activePriceList?.entries || []).find((entry: any) => itemSkus.includes(String(entry.sku).toUpperCase()));
+    if (!priceEntry) {
+      return res.status(400).json({ message: `Sản phẩm ${item.name} (${item.sku}) chưa có trong bảng giá đang có hiệu lực.` });
+    }
+    const unitCost = req.body.unitCost !== undefined && Number(req.body.unitCost) > 0
+      ? Number(req.body.unitCost)
+      : Number(priceEntry.costReference || priceEntry.price50 || 0);
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      return res.status(400).json({ message: 'Giá vốn không hợp lệ.' });
+    }
+    const lot = await InventoryLot.create({
+      ownerId,
+      itemId: item._id,
+      receivedQuantity: quantity,
+      remainingQuantity: quantity,
+      unitCost,
+      priceListVersionId: activePriceList?._id || null,
+      receivedAt: at,
+    });
+    await InventoryItem.updateOne({ _id: item._id, ownerId }, { $inc: { quantity } });
+    await InventoryMovement.create({
+      ownerId,
+      itemId: item._id,
+      lotId: lot._id,
+      type: 'receive',
+      quantityDelta: quantity,
+      unitCost,
+      receivedAt: at,
+      actorId: ownerId,
+      reason: String(req.body.reason || 'Nhập kho'),
+    });
+    console.log('[Inventory] Stock received:', { ownerId, sku: item.sku, quantity, unitCost, receivedAt: at.toISOString() });
     res.status(201).json({ lot, quantity: item.quantity + quantity });
   } catch (error: any) { console.error('[Inventory] Receive stock failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.post('/items/:id/adjust', inventory, async (req: Request, res: Response) => {
+router.post('/receive-batch', inventorySeller, async (req: Request, res: Response) => {
+  try {
+    const ownerId = idOf(req);
+    const receivedAt = validDate(req.body.receivedAt);
+    const reason = String(req.body.reason || '').trim() || 'Nhập kho theo danh sách';
+    const rawLines = Array.isArray(req.body.lines) ? req.body.lines : [];
+    if (!receivedAt || !rawLines.length) {
+      return res.status(400).json({ message: 'Vui lòng chọn ít nhất một sản phẩm và ngày nhập hợp lệ.' });
+    }
+
+    const canManageCatalog = Boolean(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE));
+    await syncAndLoadPersonalItems(ownerId, canManageCatalog);
+
+    const activePriceList = await currentPrices(new Date());
+    if (!activePriceList?.entries?.length) {
+      return res.status(400).json({ message: 'Chưa có bảng giá đang có hiệu lực để nhập hàng.' });
+    }
+    const priceMap = new Map<string, any>(
+      (activePriceList.entries || []).map((entry: any) => [String(entry.sku).trim().toUpperCase(), entry] as [string, any])
+    );
+
+    const validatedLines: Array<{ item: any; quantity: number; unitCost: number; sku: string }> = [];
+    for (const line of rawLines) {
+      const quantity = Number(line.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({ message: 'Số lượng nhập của từng sản phẩm phải là số nguyên lớn hơn 0.' });
+      }
+      const requestedSku = String(line.sku || '').trim().toUpperCase();
+      const personalItem = line.itemId
+        ? await InventoryItem.findOne({ _id: line.itemId, ownerId })
+        : await InventoryItem.findOne({ ownerId, $or: [{ sku: requestedSku }, { skus: requestedSku }] });
+
+      if (!personalItem) {
+        return res.status(404).json({ message: `Không tìm thấy mẫu sản phẩm ${requestedSku || ''} trong danh mục.` });
+      }
+      if (personalItem.archived) {
+        return res.status(400).json({ message: `Sản phẩm ${personalItem.name} (${personalItem.sku}) đã ngừng bán, không cho phép nhập thêm hàng.` });
+      }
+      const itemSkus = skusForItem(personalItem);
+      const priceEntry = priceMap.get(requestedSku) || priceMap.get(personalItem.sku) || itemSkus.map(s => priceMap.get(s)).find(Boolean);
+      if (!priceEntry) {
+        return res.status(400).json({ message: `Sản phẩm ${personalItem.name} (${personalItem.sku}) chưa có trong bảng giá đang có hiệu lực.` });
+      }
+      const unitCost = line.unitCost !== undefined && Number(line.unitCost) >= 0 && String(line.unitCost) !== ''
+        ? Number(line.unitCost)
+        : Number(priceEntry.costReference || priceEntry.price50 || 0);
+      validatedLines.push({ item: personalItem, quantity, unitCost, sku: requestedSku || personalItem.sku });
+    }
+
+    const createdMovements: any[] = [];
+    for (const entry of validatedLines) {
+      const lot = await InventoryLot.create({
+        ownerId,
+        itemId: entry.item._id,
+        receivedQuantity: entry.quantity,
+        remainingQuantity: entry.quantity,
+        unitCost: entry.unitCost,
+        priceListVersionId: activePriceList._id || null,
+        receivedAt,
+      });
+      await InventoryItem.updateOne({ _id: entry.item._id, ownerId }, { $inc: { quantity: entry.quantity } });
+      const movement = await InventoryMovement.create({
+        ownerId,
+        itemId: entry.item._id,
+        lotId: lot._id,
+        type: 'receive',
+        quantityDelta: entry.quantity,
+        unitCost: entry.unitCost,
+        receivedAt,
+        actorId: ownerId,
+        reason: `${reason} (Ngày nhập: ${receivedAt.toLocaleDateString('vi-VN')})`,
+      });
+      createdMovements.push(movement);
+    }
+
+    const totalQuantity = validatedLines.reduce((sum, l) => sum + l.quantity, 0);
+    await logAudit(
+      req,
+      'INVENTORY_BATCH_RECEIVE',
+      `Nhập kho ${validatedLines.length} mặt hàng (tổng ${totalQuantity} SP), ngày nhập ${receivedAt.toLocaleDateString('vi-VN')}: ${validatedLines.map(l => `${l.sku} × ${l.quantity}`).join(', ')}`
+    );
+    console.log('[Inventory] Batch stock received:', {
+      ownerId,
+      linesCount: validatedLines.length,
+      totalQuantity,
+      receivedAt: receivedAt.toISOString(),
+    });
+    res.status(201).json({
+      success: true,
+      receivedCount: validatedLines.length,
+      totalQuantity,
+      receivedAt: receivedAt.toISOString(),
+      movements: createdMovements,
+    });
+  } catch (error: any) {
+    console.error('[Inventory] Batch receive failed:', error);
+    res.status(500).json({ message: error.message || 'Không thể nhập kho.' });
+  }
+});
+
+router.post('/items/:id/adjust', inventorySeller, async (req: Request, res: Response) => {
   try {
     const delta = Number(req.body.quantityDelta); const reason = String(req.body.reason || '').trim();
     if (!Number.isInteger(delta) || delta === 0 || !reason) return res.status(400).json({ message: 'Nhập số lượng điều chỉnh và lý do.' });
@@ -253,10 +623,10 @@ router.post('/items/:id/adjust', inventory, async (req: Request, res: Response) 
   } catch (error: any) { console.error('[Inventory] Adjustment failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.get('/movements', inventory, async (req: Request, res: Response) => {
+router.get('/movements', inventorySeller, async (req: Request, res: Response) => {
   try {
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 30)));
-    const movements = await InventoryMovement.find({ ownerId: idOf(req) }).populate('itemId', 'sku name').sort({ createdAt: -1 }).limit(limit).lean();
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    const movements = await InventoryMovement.find({ ownerId: idOf(req) }).populate('itemId', 'sku skus name').sort({ createdAt: -1 }).limit(limit).lean();
     res.json(movements);
   } catch (error: any) { console.error('[Inventory] Movement history failed:', error); res.status(500).json({ message: error.message }); }
 });
@@ -463,7 +833,7 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
     for (const input of req.body.lines) {
       const quantity = Number(input.quantity);
       if (!Number.isInteger(quantity) || quantity <= 0) throw new Error('Số lượng mặt hàng không hợp lệ.');
-      const item: any = await InventoryItem.findOne({ _id: input.itemId, ownerId, archived: false }).lean();
+      const item: any = await InventoryItem.findOne({ _id: input.itemId, ownerId }).lean();
       if (!item) throw new Error('Mặt hàng không thuộc kho của bạn.');
       const acceptedSkus = skusForItem(item);
       const requestedSku = String(input.sku || item.sku).trim().toUpperCase();
@@ -475,7 +845,7 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
       const defaultUnitPrice = Number(priceEntry[defaultPriceField]);
       const unitPrice = Number(priceEntry[priceField]);
       if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) throw new Error('Đơn giá phải là số nguyên không âm.');
-      const updated = await InventoryItem.findOneAndUpdate({ _id: item._id, ownerId, archived: false, quantity: { $gte: quantity } }, { $inc: { quantity: -quantity } }, { new: true });
+      const updated = await InventoryItem.findOneAndUpdate({ _id: item._id, ownerId, quantity: { $gte: quantity } }, { $inc: { quantity: -quantity } }, { new: true });
       if (!updated) throw new Error(`Tồn kho không đủ cho ${item.name}.`);
       let needed = quantity; const lots = await InventoryLot.find({ ownerId, itemId: item._id, remainingQuantity: { $gt: 0 } }).sort({ receivedAt: 1 });
       let cost = 0; const deductions: any[] = [];
@@ -516,7 +886,7 @@ router.post('/sales', inventorySeller, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/sales/:id/buyer', inventory, async (req: Request, res: Response) => {
+router.put('/sales/:id/buyer', inventorySeller, async (req: Request, res: Response) => {
   try {
     const sale: any = await Sale.findOne({ _id: req.params.id, ownerId: idOf(req) });
     if (!sale || sale.status === 'cancelled' || sale.status === 'returned') return res.status(404).json({ message: 'Không tìm thấy hoá đơn có thể sửa.' });
@@ -536,7 +906,7 @@ router.put('/sales/:id/buyer', inventory, async (req: Request, res: Response) =>
   } catch (error: any) { console.error('[Inventory] Buyer update failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.post('/sales/:id/return', inventory, async (req: Request, res: Response) => {
+router.post('/sales/:id/return', inventorySeller, async (req: Request, res: Response) => {
   const ownerId = idOf(req); const changedItems: Array<{ itemId: any; quantity: number }> = []; const createdLots: any[] = []; const createdMovements: any[] = []; let lockedSaleId: any = null;
   try {
     let sale: any = await Sale.findOne({ _id: req.params.id, ownerId });
@@ -577,7 +947,7 @@ router.post('/sales/:id/return', inventory, async (req: Request, res: Response) 
   }
 });
 
-router.post('/sales/:id/cancel', inventory, async (req: Request, res: Response) => {
+router.post('/sales/:id/cancel', inventorySeller, async (req: Request, res: Response) => {
   const ownerId = idOf(req); const changedItems: Array<{ itemId: any; quantity: number }> = []; const createdLots: any[] = []; const createdMovements: any[] = []; let lockedSaleId: any = null;
   try {
     let sale: any = await Sale.findOne({ _id: req.params.id, ownerId }); const reason = String(req.body.reason || '').trim();
@@ -606,7 +976,7 @@ router.post('/sales/:id/cancel', inventory, async (req: Request, res: Response) 
   }
 });
 
-router.delete('/sales/cancelled', inventory, async (req: Request, res: Response) => {
+router.delete('/sales/cancelled', inventorySeller, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
     console.log('[Inventory] Delete all cancelled sales started:', { ownerId });
@@ -627,7 +997,7 @@ router.delete('/sales/cancelled', inventory, async (req: Request, res: Response)
   }
 });
 
-router.delete('/sales/:id', inventory, async (req: Request, res: Response) => {
+router.delete('/sales/:id', inventorySeller, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
     console.log('[Inventory] Delete cancelled sale started:', { ownerId, saleId: req.params.id });
@@ -650,21 +1020,29 @@ router.delete('/sales/:id', inventory, async (req: Request, res: Response) => {
   }
 });
 
-router.get('/overview', inventory, async (req: Request, res: Response) => {
+router.get('/overview', inventorySeller, async (req: Request, res: Response) => {
   try {
-    const ownerId = idOf(req); const [items, lots, priceList, sales] = await Promise.all([InventoryItem.find({ ownerId, archived: false }).lean(), InventoryLot.find({ ownerId, remainingQuantity: { $gt: 0 } }).lean(), currentPrices(new Date()), Sale.find({ ownerId }).sort({ soldAt: -1 }).limit(5000).lean()]);
+    const ownerId = idOf(req);
+    const canManageCatalog = Boolean(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE));
+    const [items, lots, priceList, sales] = await Promise.all([
+      syncAndLoadPersonalItems(ownerId, canManageCatalog),
+      InventoryLot.find({ ownerId, remainingQuantity: { $gt: 0 } }).lean(),
+      currentPrices(new Date()),
+      Sale.find({ ownerId }).sort({ soldAt: -1 }).limit(5000).lean(),
+    ]);
+    const activeItems = (items as any[]).filter(item => !item.archived || Number(item.quantity || 0) > 0);
     const priceMap = new Map<string, any>((priceList?.entries || []).map((entry: any) => [String(entry.sku), entry] as [string, any]));
-    const itemMap = new Map(items.map((item: any) => [String(item._id), item]));
+    const itemMap = new Map(activeItems.map((item: any) => [String(item._id), item]));
     let costValue = 0; for (const lot of lots as any[]) costValue += lot.remainingQuantity * lot.unitCost;
     const estimated = { price100: 0, price25: 0, price35: 0, price42: 0, price50: 0 };
-    for (const item of items as any[]) { const price: any = priceMap.get(item.sku); if (price) for (const key of Object.keys(estimated) as Array<keyof typeof estimated>) estimated[key] += item.quantity * price[key]; }
-    const lowStock = (items as any[]).filter(item => item.quantity <= item.lowStockThreshold);
+    for (const item of activeItems as any[]) { const price: any = priceMap.get(item.sku) || item.prices; if (price) for (const key of Object.keys(estimated) as Array<keyof typeof estimated>) estimated[key] += item.quantity * price[key]; }
+    const lowStock = (activeItems as any[]).filter(item => !item.archived && item.quantity <= item.lowStockThreshold);
     const monthly = sales.filter((sale: any) => sale.status !== 'cancelled').reduce((acc: any, sale: any) => { const date = new Date(sale.soldAt); const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; if (!acc[key]) acc[key] = { month: key, sales: 0, pv: 0, orders: 0 }; const net = netSaleTotals(sale); acc[key].sales += net.sales; acc[key].pv += net.pv; acc[key].orders++; return acc; }, {});
-    res.json({ itemCount: items.length, totalUnits: (items as any[]).reduce((s, i) => s + i.quantity, 0), costValue, estimated, lowStock: lowStock.map((i: any) => ({ id: String(i._id), sku: i.sku, name: i.name, quantity: i.quantity, threshold: i.lowStockThreshold })), monthly: Object.values(monthly).slice(-12), recentSales: sales.slice(0, 10), itemMap: Object.fromEntries([...itemMap.entries()]) });
+    res.json({ itemCount: activeItems.length, totalUnits: (activeItems as any[]).reduce((s, i) => s + i.quantity, 0), costValue, estimated, lowStock: lowStock.map((i: any) => ({ id: String(i._id), sku: i.sku, name: i.name, quantity: i.quantity, threshold: i.lowStockThreshold })), monthly: Object.values(monthly).slice(-12), recentSales: sales.slice(0, 10), itemMap: Object.fromEntries([...itemMap.entries()]) });
   } catch (error: any) { console.error('[Inventory] Overview failed:', error); res.status(500).json({ message: error.message }); }
 });
 
-router.get('/reports/member-purchases', inventory, async (req: Request, res: Response) => {
+router.get('/reports/member-purchases', inventorySeller, async (req: Request, res: Response) => {
   try {
     const period = String(req.query.period || 'month'); const now = new Date(); const from = validDate(req.query.from) || new Date(now.getFullYear(), now.getMonth(), 1); const to = validDate(req.query.to) || now;
     if (period === 'quarter' && !req.query.from) from.setMonth(Math.floor(now.getMonth() / 3) * 3, 1);

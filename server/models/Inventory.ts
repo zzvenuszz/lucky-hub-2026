@@ -42,6 +42,7 @@ const InventoryMovementSchema = new mongoose.Schema({
   type: { type: String, enum: ['receive', 'sale', 'return', 'adjustment', 'cancel'], required: true },
   quantityDelta: { type: Number, required: true },
   unitCost: { type: Number, default: 0 },
+  receivedAt: { type: Date, default: null },
   referenceId: { type: mongoose.Schema.Types.ObjectId, default: null },
   reason: { type: String, default: '' },
   actorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

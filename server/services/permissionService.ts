@@ -36,15 +36,22 @@ export async function getEffectivePermissions(
     return cached.permissions;
   }
 
-  // Lấy user để biết groupId
+  // Lấy user để biết groupId (fallback qua Group.members nếu groupId chưa đồng bộ)
   let groupPermissions: string[] = [];
   try {
     const user = await User.findById(userId).select('groupId');
+    let group: any = null;
     if (user && user.groupId) {
-      const group = await Group.findById(user.groupId).select('permissions');
-      if (group) {
-        groupPermissions = group.permissions || [];
+      group = await Group.findById(user.groupId).select('permissions isActive');
+    }
+    if (!group && user) {
+      group = await Group.findOne({ members: user._id, isActive: true }).select('_id permissions isActive');
+      if (group?._id) {
+        await User.updateOne({ _id: user._id }, { $set: { groupId: group._id } });
       }
+    }
+    if (group && group.isActive !== false) {
+      groupPermissions = group.permissions || [];
     }
   } catch (err: any) {
     console.error(`[PermissionService] Error fetching group: ${err.message}`);

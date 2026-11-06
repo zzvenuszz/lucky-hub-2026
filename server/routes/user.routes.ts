@@ -191,7 +191,19 @@ router.put('/:id',
         const log = new AuditLog({ actorId: req.user!.userId, actorName: req.user!.fullName, targetId: String(u._id), targetName: u.fullName, type: 'SPONSOR_UPDATE', details: `Người bảo trợ ${previousSponsorNumber || 'không có'} → ${u.sponsorMemberNumber || 'không có'}`, timestamp: new Date().toISOString() });
         await log.save();
       }
-      res.json({ ...result, id: u._id });
+      const { getEffectivePermissions } = await import('../services/permissionService.ts');
+      const effectivePermissions = isSelf ? req.user!.permissions : await getEffectivePermissions(String(u._id));
+      const userGroup = u.groupId
+        ? await Group.findById(u.groupId).select('name permissions').lean()
+        : null;
+      console.log(`[UserRoutes] Updated user ${u._id}, permissions=${effectivePermissions.length}`);
+      res.json({
+        ...result,
+        id: u._id,
+        groupName: userGroup?.name || (result as any).groupName || '',
+        groupPermissions: effectivePermissions,
+        permissions: effectivePermissions,
+      });
     } catch (err: any) {
       res.status(err.code === 11000 ? 409 : 500).json({ message: err.code === 11000 ? 'Mã hội viên đã được sử dụng.' : err.message });
     }

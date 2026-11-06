@@ -65,8 +65,8 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
     <form onSubmit={onSubmit} className="max-h-[calc(100dvh-24px)] w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-48px)] sm:p-6">
       <header className="sticky top-0 z-10 -mx-4 -mt-4 flex items-start justify-between gap-4 border-b bg-white p-4 sm:-mx-6 sm:-mt-6 sm:p-6">
         <div>
-          <h2 id="create-product-title" className="text-xl font-black">Thêm sản phẩm vào kho</h2>
-          <p className="mt-1 text-sm font-normal text-slate-500">Nhập thông tin sản phẩm và tồn kho ban đầu.</p>
+          <h2 id="create-product-title" className="text-xl font-black">Thêm mẫu sản phẩm dùng chung</h2>
+          <p className="mt-1 text-sm font-normal text-slate-500">Tạo mẫu sản phẩm chung và bảng giá; mỗi kho cá nhân sẽ tự nhập số lượng tồn kho riêng.</p>
         </div>
         <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng thêm sản phẩm" className="rounded-xl bg-slate-100 px-3 py-2 font-bold disabled:opacity-50">✕</button>
       </header>
@@ -77,7 +77,7 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
           <input id="create-item-sku" data-testid="create-item-sku" required value={draft.sku} onChange={event => setDraft(old => ({ ...old, sku: event.target.value }))} placeholder="SKU1, SKU2, SKU3" className="min-w-0 flex-1 rounded-xl bg-slate-100 p-3 text-sm font-normal" />
           <button type="button" onClick={onScanBarcode} className="shrink-0 rounded-xl bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800" aria-label="Quét mã vạch bằng camera">📷 Quét mã</button>
         </div>
-        <p className="mt-1 text-xs font-normal text-slate-500">Có thể nhập nhiều SKU, phân cách bằng dấu phẩy. Tất cả dùng chung tồn kho, PV và giá.</p>
+        <p className="mt-1 text-xs font-normal text-slate-500">Có thể nhập nhiều SKU, phân cách bằng dấu phẩy. Tất cả dùng chung PV và giá.</p>
       </div>
       <label className="block text-sm font-bold text-slate-700">Tên hàng hoá<input data-testid="create-item-name" required value={draft.name} onChange={event => setDraft(old => ({ ...old, name: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       <div>
@@ -91,12 +91,8 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" min="0" step="0.01" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
-        <label className="block text-sm font-bold text-slate-700">Số lượng ban đầu<input type="number" min="0" value={draft.quantity} onChange={event => setDraft(old => ({ ...old, quantity: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-bold text-slate-700">Giá vốn mỗi sản phẩm<CurrencyInput value={draft.unitCost} onValueChange={value => setDraft(old => ({ ...old, unitCost: value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
-        <label className="block text-sm font-bold text-slate-700">Cảnh báo tồn khi còn<input type="number" min="0" value={draft.lowStockThreshold} onChange={event => setDraft(old => ({ ...old, lowStockThreshold: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" min="0" step="0.01" placeholder="Điểm PV" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="block text-sm font-bold text-slate-700">Giá vốn tham chiếu<CurrencyInput placeholder="Giá vốn" value={draft.unitCost} onValueChange={value => setDraft(old => ({ ...old, unitCost: value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       </div>
       {canPrices ? (
         <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
