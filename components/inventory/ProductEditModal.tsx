@@ -70,8 +70,8 @@ const ProductEditModal: React.FC<ProductEditModalProps> = memo(({
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" min="0" step="0.01" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
-        <label className="block text-sm font-bold text-slate-700">Cảnh báo tồn khi còn<input required type="number" min="0" value={draft.lowStockThreshold} onChange={event => setDraft(old => ({ ...old, lowStockThreshold: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" inputMode="decimal" min="0" step="0.01" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="block text-sm font-bold text-slate-700">Cảnh báo tồn khi còn<input required type="number" inputMode="numeric" min="0" value={draft.lowStockThreshold} onChange={event => setDraft(old => ({ ...old, lowStockThreshold: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       </div>
       <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Số lượng tồn hiện tại được giữ nguyên. Dùng “Nhập hàng” hoặc “Điều chỉnh” để thay đổi tồn và lưu nhật ký.</div>
 

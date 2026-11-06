@@ -301,7 +301,7 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
                     <label className="block text-xs font-bold text-slate-600">
                       Số lượng nhập
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min="1"
                         step="1"
                         required

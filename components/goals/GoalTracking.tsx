@@ -311,12 +311,12 @@ const GoalTracking: React.FC<GoalTrackingProps> = memo(({ currentUser, refreshTr
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Giá trị hiện tại</label>
-              <input type="number" value={newGoal.startValue} onChange={e => setNewGoal({...newGoal, startValue: parseFloat(e.target.value) || 0})} className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-bold text-slate-500 outline-none" readOnly />
+              <input type="number" inputMode="numeric" value={newGoal.startValue} onChange={e => setNewGoal({...newGoal, startValue: parseFloat(e.target.value) || 0})} className="w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-bold text-slate-500 outline-none" readOnly />
               <p className="mt-1 text-[10px] text-slate-400">Tự động cập nhật từ chỉ số mới nhất</p>
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Mục tiêu muốn đạt</label>
-              <input type="number" value={newGoal.targetValue} onChange={e => setNewGoal({...newGoal, targetValue: parseFloat(e.target.value) || 0})} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-300 focus:ring-2 focus:ring-emerald-100" step="0.1" />
+              <input type="number" inputMode="numeric" value={newGoal.targetValue} onChange={e => setNewGoal({...newGoal, targetValue: parseFloat(e.target.value) || 0})} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-300 focus:ring-2 focus:ring-emerald-100" step="0.1" />
             </div>
             <div>
               <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Thời gian thực hiện</label>

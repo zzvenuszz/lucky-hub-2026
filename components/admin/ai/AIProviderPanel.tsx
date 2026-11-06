@@ -865,7 +865,7 @@ const AIProviderPanel: React.FC = memo(() => {
               <div>
                 <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Timeout (ms)</label>
                 <input
-                  type="number"
+                  type="number" inputMode="numeric"
                   value={formData.defaultTimeoutMs}
                   onChange={e => handleFormChange('defaultTimeoutMs', parseInt(e.target.value))}
                   className="w-full px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
@@ -876,7 +876,7 @@ const AIProviderPanel: React.FC = memo(() => {
             <div>
               <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Retries</label>
               <input
-                type="number"
+                type="number" inputMode="numeric"
                 value={formData.defaultRetries}
                 onChange={e => handleFormChange('defaultRetries', parseInt(e.target.value))}
                 className="w-full px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
@@ -926,7 +926,7 @@ const AIProviderPanel: React.FC = memo(() => {
                       />
                       <div className="flex items-center gap-2">
                         <input
-                          type="number"
+                          type="number" inputMode="numeric"
                           value={key.priority}
                           onChange={e => handleApiKeyChange(i, 'priority', parseInt(e.target.value))}
                           className="w-16 px-3 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-emerald-500 font-mono text-center"

@@ -710,7 +710,7 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
                         <div>
                           <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Priority</label>
                           <input
-                            type="number"
+                            type="number" inputMode="numeric"
                             value={provider.priority}
                             onChange={(e) => {
                               const updatedProviders = settings?.email.providers.map(p =>
@@ -790,7 +790,7 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
                     <div>
                       <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Priority</label>
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min="1"
                         value={emailForm.priority}
                         onChange={(e) => handleEmailProviderChange('priority', parseInt(e.target.value) || 1)}
@@ -1126,7 +1126,7 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
                     <div>
                       <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Priority</label>
                       <input
-                        type="number"
+                        type="number" inputMode="numeric"
                         min="1"
                         value={storageForm.priority}
                         onChange={(e) => handleStorageProviderChange('priority', parseInt(e.target.value) || 1)}

@@ -129,7 +129,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, 
         </div>
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Chiều cao (CM)</label>
-          <input required type="number" value={formData.height} onChange={e => { const d = {...formData, height: Number(e.target.value)}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
+          <input required type="number" inputMode="numeric" value={formData.height} onChange={e => { const d = {...formData, height: Number(e.target.value)}; setFormData(d); onUpdate(d, false); }} className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Giới tính</label>

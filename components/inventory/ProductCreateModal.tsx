@@ -91,7 +91,7 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" min="0" step="0.01" placeholder="Điểm PV" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" inputMode="decimal" min="0" step="0.01" placeholder="Điểm PV" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
         <label className="block text-sm font-bold text-slate-700">Giá vốn tham chiếu<CurrencyInput placeholder="Giá vốn" value={draft.unitCost} onValueChange={value => setDraft(old => ({ ...old, unitCost: value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       </div>
       {canPrices ? (

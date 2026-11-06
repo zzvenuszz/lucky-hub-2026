@@ -77,20 +77,20 @@ const StockActionModal: React.FC<StockActionModalProps> = memo(({
       {isThreshold ? (
         <label className="block text-sm font-bold">
           Cảnh báo tồn kho cá nhân khi số lượng còn từ mức này trở xuống
-          <input required type="number" min="0" step="1" value={threshold} onChange={event => setThreshold(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" data-testid="personal-threshold-input" />
+          <input required type="number" inputMode="numeric" min="0" step="1" value={threshold} onChange={event => setThreshold(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" data-testid="personal-threshold-input" />
           <span className="mt-1 block text-xs font-normal text-slate-500">Ngưỡng này chỉ áp dụng riêng cho kho cá nhân của bạn.</span>
         </label>
       ) : isReceive ? (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-bold">Số lượng nhập<input required type="number" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
+            <label className="block text-sm font-bold">Số lượng nhập<input required type="number" inputMode="numeric" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
             <label className="block text-sm font-bold">Ngày nhập<input required type="datetime-local" value={receivedAt} onChange={event => setReceivedAt(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
           </div>
           <label className="block text-sm font-bold">Ghi chú nhập kho<input maxLength={250} value={reason} onChange={event => setReason(event.target.value)} placeholder="Ví dụ: Nhập hàng đợt 1" className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
         </>
       ) : (
         <>
-          <label className="block text-sm font-bold">Điều chỉnh số lượng (tăng dương, giảm âm)<input required type="number" step="1" value={quantityDelta} onChange={event => setQuantityDelta(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
+          <label className="block text-sm font-bold">Điều chỉnh số lượng (tăng dương, giảm âm)<input required type="number" inputMode="decimal" step="1" value={quantityDelta} onChange={event => setQuantityDelta(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
           <label className="block text-sm font-bold">Lý do điều chỉnh<input required maxLength={250} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
         </>
       )}

@@ -400,7 +400,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                             </td>
                             {['weight','bodyFat','muscleMass','balanceIndex','visceralFat','boneMinerals','waterPercent','energy','bioAge'].map(field => (
                               <td key={field} className="p-2">
-                                <input type="number" step="0.1" value={editingData?.[field] ?? ''} onChange={e => setEditingData({...editingData, [field]: e.target.value})} className="w-full px-2 py-1.5 bg-white rounded-lg border border-amber-200 outline-none text-[10px] text-center font-bold focus:ring-2 focus:ring-amber-400" />
+                                <input type="number" inputMode="decimal" step="0.1" value={editingData?.[field] ?? ''} onChange={e => setEditingData({...editingData, [field]: e.target.value})} className="w-full px-2 py-1.5 bg-white rounded-lg border border-amber-200 outline-none text-[10px] text-center font-bold focus:ring-2 focus:ring-amber-400" />
                               </td>
                             ))}
                             <td className="p-2 text-center">
@@ -475,7 +475,7 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{field.label}</label>
                     <input 
                       required 
-                      type="number" 
+                      type="number" inputMode="decimal"
                       step="0.1" 
                       placeholder={field.placeholder}
                       value={(formData as any)[field.key]} 

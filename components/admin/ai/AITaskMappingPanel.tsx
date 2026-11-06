@@ -709,7 +709,7 @@ const AITaskMappingPanel: React.FC = memo(() => {
                         </select>
 
                         <input
-                          type="number"
+                          type="number" inputMode="numeric"
                           value={pp.weight}
                           onChange={e => {
                             const newPriority = [...config.providerPriority];
@@ -765,7 +765,7 @@ const AITaskMappingPanel: React.FC = memo(() => {
                                   <span className="text-xs text-slate-600">Enabled</span>
                                 </label>
                                 <input
-                                  type="number"
+                                  type="number" inputMode="numeric"
                                   value={pm.weight}
                                   onChange={e => {
                                     const newModels = [...config.modelPriority];

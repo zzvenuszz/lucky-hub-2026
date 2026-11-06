@@ -348,15 +348,15 @@ const MetricFormSubModal: React.FC<MetricFormSubModalProps> = memo(({ metricForm
         <div className="space-y-3">
           <div>
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg) *</label>
-            <input type="number" step="0.1" value={metricWeight} onChange={e => setMetricWeight(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1" placeholder="VD: 65.5" />
+            <input type="number" inputMode="decimal" step="0.1" value={metricWeight} onChange={e => setMetricWeight(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1" placeholder="VD: 65.5" />
           </div>
           <div>
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ cơ thể (%)</label>
-            <input type="number" step="0.1" value={metricBodyFat} onChange={e => setMetricBodyFat(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1" placeholder="VD: 22.5" />
+            <input type="number" inputMode="decimal" step="0.1" value={metricBodyFat} onChange={e => setMetricBodyFat(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1" placeholder="VD: 22.5" />
           </div>
           <div>
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ bắp (kg)</label>
-            <input type="number" step="0.1" value={metricMuscleMass} onChange={e => setMetricMuscleMass(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1" placeholder="VD: 42.0" />
+            <input type="number" inputMode="decimal" step="0.1" value={metricMuscleMass} onChange={e => setMetricMuscleMass(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm mt-1" placeholder="VD: 42.0" />
           </div>
         </div>
         <div className="flex gap-3 pt-2">
