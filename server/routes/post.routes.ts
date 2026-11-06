@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Router, Request, Response } from 'express';
 import { Post } from '../models/Post.ts';
 import { Notification } from '../models/Notification.ts';
+import { publishNotification } from '../websocket/chatSocket.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { AuditLogType } from '../../types.ts';
 import { authMiddleware, optionalAuth } from '../middleware/authMiddleware.ts';
@@ -187,6 +188,7 @@ router.put('/:postId/react', async (req: Request, res: Response) => {
         link: `/posts/${postId}`
       });
       await notification.save();
+      publishNotification(String(post.userId), notification);
     }
 
     console.log(`[PostReact] ✅ Post ${postId} react updated (${reactions.length} total)`);
@@ -275,6 +277,7 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
         actorName: req.user!.fullName,
       });
       await notif.save();
+      publishNotification(String(post.userId), notif);
     }
 
     // Notification cho tagged users
@@ -290,6 +293,7 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
             actorName: req.user!.fullName,
           });
           await notif.save();
+          publishNotification(String(tag.userId), notif);
         }
       }
     }
@@ -307,6 +311,7 @@ router.post('/:postId/comments', authMiddleware, async (req: Request, res: Respo
           actorName: req.user!.fullName,
         });
         await notif.save();
+        publishNotification(String(parentComment.userId), notif);
       }
     }
 

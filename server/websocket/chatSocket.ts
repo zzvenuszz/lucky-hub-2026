@@ -22,6 +22,23 @@ function sendToUser(userId: string, message: any) {
   });
 }
 
+export function publishNotification(userId: string, notification: any) {
+  sendToUser(userId, {
+    event: 'notification:new',
+    payload: {
+      userId,
+      id: String(notification._id || notification.id || ''),
+      type: notification.type || 'system',
+      message: notification.message,
+      link: notification.link,
+      timestamp: notification.timestamp || notification.createdAt || new Date().toISOString(),
+      referenceId: notification.referenceId,
+      actorId: notification.actorId,
+      actorName: notification.actorName,
+    },
+  });
+}
+
 let wssRef: WebSocketServer | null = null;
 
 export function initChatWebSocket(wss: WebSocketServer) {
@@ -322,7 +339,7 @@ export function initChatWebSocket(wss: WebSocketServer) {
             const { targetUserId, type, message, link } = payload;
             const notif = new Notification({ userId: targetUserId, type, message, link, read: false });
             await notif.save();
-            sendToUser(targetUserId, { event: 'notification:new', payload: { type, message, link, timestamp: new Date().toISOString(), id: notif._id.toString() } });
+            publishNotification(String(targetUserId), notif);
             break;
           }
 

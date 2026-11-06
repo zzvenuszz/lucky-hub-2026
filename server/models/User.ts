@@ -28,6 +28,12 @@ const UserSchema = new mongoose.Schema({
   groupId: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', default: null },
   nutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
   pendingNutritionGroupId: { type: mongoose.Schema.Types.ObjectId, ref: 'NutritionGroup', default: null },
+  notificationPreferences: {
+    community: { type: Boolean, default: true },
+    goals: { type: Boolean, default: true },
+    metrics: { type: Boolean, default: true },
+    system: { type: Boolean, default: true },
+  },
 }, { timestamps: true });
 
 UserSchema.index({ memberNumber: 1 }, { unique: true, partialFilterExpression: { memberNumber: { $gt: '' } }, name: 'unique_member_number' });

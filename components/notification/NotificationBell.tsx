@@ -2,224 +2,234 @@ import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from '
 import { User } from '../../types.ts';
 import NotificationPanel, { NotificationItem } from './NotificationPanel.tsx';
 import { useToast } from '../system/ToastProvider.tsx';
+import wsService from '../../services/wsService.ts';
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  getNotificationCategory,
+  NotificationCategory,
+  NotificationPreferences,
+} from './notificationCategories.ts';
 
 interface NotificationBellProps {
   currentUser: User;
   onNavigate?: (tab: string, data?: any) => void;
 }
 
-const POLL_INTERVAL = 30000; // Poll mỗi 30 giây
-const SEEN_NOTIFS_KEY = 'lucky_hub_seen_notifications';
+const POLL_INTERVAL = 12000;
 
 const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, onNavigate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [preferences, setPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
+  const preferencesRef = useRef<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [isLoading, setIsLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const pollTimerRef = useRef<number | null>(null);
-  const currentUserId = (currentUser as any).id || (currentUser as any)._id;
-  const { addToast, isMuted, setMuted } = useToast();
-  const prevUnreadRef = useRef<number>(0);
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const hasLoadedRef = useRef(false);
+  const fetchingRef = useRef(false);
+  const currentUserId = String((currentUser as any).id || (currentUser as any)._id || '');
+  const { addToast } = useToast();
 
-  // Lấy danh sách ID đã "seen" (đã hiển thị popup) từ localStorage
-  const getSeenIds = useCallback((): Set<string> => {
-    try {
-      const saved = localStorage.getItem(`${SEEN_NOTIFS_KEY}_${currentUserId}`);
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch { return new Set(); }
+  useEffect(() => {
+    knownIdsRef.current = new Set();
+    hasLoadedRef.current = false;
+    preferencesRef.current = DEFAULT_NOTIFICATION_PREFERENCES;
+    setNotifications([]);
+    setPreferences(DEFAULT_NOTIFICATION_PREFERENCES);
   }, [currentUserId]);
 
-  // Lưu ID đã seen
-  const addSeenIds = useCallback((ids: string[]) => {
-    try {
-      const seen = getSeenIds();
-      ids.forEach(id => seen.add(id));
-      localStorage.setItem(`${SEEN_NOTIFS_KEY}_${currentUserId}`, JSON.stringify(Array.from(seen)));
-    } catch { /* ignore */ }
-  }, [currentUserId, getSeenIds]);
-
-  // Fetch notifications từ API
-  const fetchNotifications = useCallback(async () => {
+  const fetchPreferences = useCallback(async () => {
     if (!currentUserId) return;
+    try {
+      const response = await fetch('/api/notifications/preferences', { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+      const loadedPreferences = { ...DEFAULT_NOTIFICATION_PREFERENCES, ...(result.preferences || {}) };
+      preferencesRef.current = loadedPreferences;
+      setPreferences(loadedPreferences);
+      console.log('[NotificationBell] Loaded account notification preferences');
+    } catch (error) {
+      console.error('[NotificationBell] Preference fetch error:', error);
+    }
+  }, [currentUserId]);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!currentUserId || fetchingRef.current) return;
+    fetchingRef.current = true;
     setIsLoading(true);
     try {
-      const resp = await fetch(`/api/notifications/${currentUserId}`);
-      if (resp.ok) {
-        const data: NotificationItem[] = await resp.json();
-        setNotifications(prev => {
-          // Fix bug: dùng Set seenIds để tránh popup lại thông báo cũ
-          const prevUnread = prevUnreadRef.current;
-          const newUnread = data.filter(n => !n.read).length;
-          const seenIds = getSeenIds();
-          
-          if (newUnread > prevUnread && !isMuted) {
-            const freshNotifs = data.filter(n => !n.read && !seenIds.has(n.id));
-            if (freshNotifs.length > 0) {
-              const latest = freshNotifs[freshNotifs.length - 1];
-              addToast({
-                type: 'info',
-                title: 'Thông báo mới',
-                message: latest.message?.substring(0, 120),
-                duration: 4000,
-              });
-              // Đánh dấu là đã seen
-              addSeenIds(freshNotifs.map(n => n.id));
-            }
-          }
-          prevUnreadRef.current = newUnread;
-          return data;
+      const response = await fetch(`/api/notifications/${currentUserId}`, { credentials: 'same-origin' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result: NotificationItem[] = await response.json();
+      const data = (Array.isArray(result) ? result : [])
+        .filter(item => item.type !== 'message')
+        .sort((a, b) => new Date(b.timestamp || b.createdAt || 0).getTime() - new Date(a.timestamp || a.createdAt || 0).getTime());
+
+      if (hasLoadedRef.current) {
+        const seenIds = new Set<string>();
+        try {
+          const stored = localStorage.getItem(`lucky_hub_seen_notifications_${currentUserId}`);
+          if (stored) JSON.parse(stored).forEach((id: string) => seenIds.add(id));
+        } catch { /* ignore invalid local cache */ }
+
+        const freshEnabled = data.filter(item =>
+          !item.read && !knownIdsRef.current.has(item.id) && preferencesRef.current[getNotificationCategory(item.type)] && !seenIds.has(item.id)
+        );
+        freshEnabled.forEach(item => {
+          addToast({ type: 'info', title: 'Thông báo mới', message: item.message?.substring(0, 120), duration: 4000 });
+          window.dispatchEvent(new CustomEvent('notification:received', { detail: { ...item, userId: currentUserId } }));
         });
-        console.log(`[NotificationBell] Fetched ${data.length} notifications, unread: ${data.filter(n => !n.read).length}`);
+        if (freshEnabled.length) {
+          try {
+            freshEnabled.forEach(item => seenIds.add(item.id));
+            localStorage.setItem(`lucky_hub_seen_notifications_${currentUserId}`, JSON.stringify(Array.from(seenIds).slice(-300)));
+          } catch { /* ignore storage errors */ }
+        }
       }
-    } catch (err: any) {
-      console.error('[NotificationBell] Fetch error:', err);
+
+      knownIdsRef.current = new Set(data.map(item => item.id));
+      hasLoadedRef.current = true;
+      setNotifications(data);
+      console.log(`[NotificationBell] Synced ${data.length} notifications; enabled unread: ${data.filter(item => !item.read && preferencesRef.current[getNotificationCategory(item.type)]).length}`);
+    } catch (error) {
+      console.error('[NotificationBell] Fetch error:', error);
     } finally {
+      fetchingRef.current = false;
       setIsLoading(false);
     }
-  }, [currentUserId, addToast, isMuted, getSeenIds, addSeenIds]);
+  }, [currentUserId, addToast]);
 
-  // Fetch khi mount + polling định kỳ
+  const syncNotifications = useCallback(async () => {
+    await fetchPreferences();
+    await fetchNotifications();
+  }, [fetchNotifications, fetchPreferences]);
+
   useEffect(() => {
-    fetchNotifications();
-    pollTimerRef.current = window.setInterval(fetchNotifications, POLL_INTERVAL);
+    syncNotifications();
+    pollTimerRef.current = window.setInterval(syncNotifications, POLL_INTERVAL);
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') {
+        syncNotifications();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisible);
     return () => {
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
+      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+      document.removeEventListener('visibilitychange', handleVisible);
     };
-  }, [fetchNotifications]);
+  }, [syncNotifications]);
 
-  // Listen for real-time notifications via WS
   useEffect(() => {
-    const handleNewNotif = (e: CustomEvent) => {
-      const detail = e.detail;
-      if (detail && detail.userId === currentUserId) {
-        // Trigger fetch immediately
-        fetchNotifications();
-      }
+    const handleRealtimeNotification = (data: any) => {
+      if (data?.userId && data.userId !== currentUserId) return;
+      console.log('[NotificationBell] WebSocket notification received; syncing inbox');
+      fetchNotifications();
+      window.setTimeout(fetchNotifications, 500);
     };
-    window.addEventListener('notification:received' as any, handleNewNotif as any);
-    return () => window.removeEventListener('notification:received' as any, handleNewNotif as any);
+    return wsService.on('notification:new', handleRealtimeNotification);
   }, [currentUserId, fetchNotifications]);
 
-  // Close panel khi click outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+    const handleClickOutside = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) setIsOpen(false);
     };
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    if (isOpen) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
-  // Lọc bỏ notification type 'message' (tin nhắn chat) vì chat đã có badge riêng
-  const chatFilteredNotifications = useMemo(() => 
-    notifications.filter(n => n.type !== 'message'), 
-  [notifications]);
-  const unreadCount = chatFilteredNotifications.filter(n => !n.read).length;
+  const unreadCount = useMemo(() => notifications.filter(item =>
+    !item.read && preferences[getNotificationCategory(item.type)]
+  ).length, [notifications, preferences]);
+  const visibleNotifications = useMemo(() => notifications.filter(item =>
+    preferences[getNotificationCategory(item.type)]
+  ), [notifications, preferences]);
 
-  // Mark all as read qua API
+  const handleToggleCategory = useCallback(async (category: NotificationCategory) => {
+    const previousValue = preferencesRef.current[category];
+    const nextValue = !previousValue;
+    const optimistic = { ...preferencesRef.current, [category]: nextValue };
+    preferencesRef.current = optimistic;
+    setPreferences(optimistic);
+    try {
+      const response = await fetch('/api/notifications/preferences', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: { [category]: nextValue } }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      console.log(`[NotificationBell] ${category} notifications ${nextValue ? 'enabled' : 'disabled'} for account`);
+    } catch (error) {
+      const reverted = { ...preferencesRef.current, [category]: previousValue };
+      preferencesRef.current = reverted;
+      setPreferences(reverted);
+      addToast({ type: 'error', title: 'Không lưu được tùy chọn', message: 'Kiểm tra kết nối rồi thử lại.', duration: 4500 });
+      console.error(`[NotificationBell] Failed to update ${category} preference:`, error);
+    }
+  }, [addToast]);
+
   const handleMarkAllRead = useCallback(async () => {
-    try {
-      const resp = await fetch(`/api/notifications/read-all/${currentUserId}`, { 
-        method: 'PUT',
-      });
-      if (resp.ok) {
-        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-        console.log('[NotificationBell] Marked all as read');
+    const unreadEnabled = notifications.filter(item => !item.read && preferences[getNotificationCategory(item.type)]);
+    const results = await Promise.all(unreadEnabled.map(async item => {
+      try {
+        const response = await fetch(`/api/notifications/${item.id}/read`, { method: 'PUT', credentials: 'same-origin' });
+        return response.ok ? item.id : null;
+      } catch (error) {
+        console.error('[NotificationBell] MarkRead error:', error);
+        return null;
       }
-    } catch (err: any) {
-      console.error('[NotificationBell] MarkAllRead error:', err);
-    }
-  }, [currentUserId]);
+    }));
+    const readIds = new Set(results.filter((id): id is string => Boolean(id)));
+    setNotifications(previous => previous.map(item => readIds.has(item.id) ? { ...item, read: true } : item));
+    console.log(`[NotificationBell] Marked ${readIds.size} enabled notifications as read`);
+  }, [notifications, preferences]);
 
-  // Mark single notification as read + navigate
-  const handleNotificationClick = useCallback(async (notif: NotificationItem) => {
-    // Đóng panel ngay lập tức để UI không bị delay
+  const handleNotificationClick = useCallback(async (notification: NotificationItem) => {
     setIsOpen(false);
-
-    // Gọi API mark read TRƯỚC - await để đảm bảo thành công
     try {
-      const resp = await fetch(`/api/notifications/${notif.id}/read`, { 
-        method: 'PUT',
-      });
-      if (resp.ok) {
-        setNotifications(prev => prev.map(n =>
-          n.id === notif.id ? { ...n, read: true } : n
-        ));
-        console.log(`[NotificationBell] Marked notification ${notif.id} as read`);
-      } else {
-        // Nếu API lỗi (404, server error), không update state
-        console.error(`[NotificationBell] MarkRead failed: ${resp.status} ${resp.statusText}`);
-      }
-    } catch (err: any) {
-      console.error('[NotificationBell] MarkRead network error:', err);
-      // Không update state nếu lỗi mạng - lần fetch tiếp theo sẽ khắc phục
+      const response = await fetch(`/api/notifications/${notification.id}/read`, { method: 'PUT', credentials: 'same-origin' });
+      if (response.ok) setNotifications(previous => previous.map(item => item.id === notification.id ? { ...item, read: true } : item));
+      else console.error(`[NotificationBell] MarkRead failed: ${response.status} ${response.statusText}`);
+    } catch (error) {
+      console.error('[NotificationBell] MarkRead network error:', error);
     }
 
-    // Navigate dựa trên type và link
-    if (notif.link) {
-      if (notif.link.startsWith('/posts/')) {
-        const postId = notif.link.replace('/posts/', '');
-        // Chuyển tab community trước
-        if (onNavigate) onNavigate('community');
-        // Dispatch event để App.tsx bắt và mở PostDetail modal
-        window.dispatchEvent(new CustomEvent('navigate:post', { 
-          detail: { postId } 
-        }));
-      } else if (notif.link === '/goals' || notif.type === 'goal_completed' || notif.type === 'goal_reminder') {
-        if (onNavigate) onNavigate('dashboard');
-      } else if (notif.link.startsWith('/chat/')) {
-        if (onNavigate) onNavigate('chat');
-      } else if (notif.link === '/metrics') {
-        if (onNavigate) onNavigate('metrics');
-      }
-      console.log('[NotificationBell] Navigate to:', notif.link);
+    if (!notification.link) return;
+    if (notification.link.startsWith('/posts/')) {
+      const postId = notification.link.replace('/posts/', '');
+      onNavigate?.('community');
+      window.dispatchEvent(new CustomEvent('navigate:post', { detail: { postId } }));
+    } else if (notification.link === '/goals' || notification.type === 'goal_completed' || notification.type === 'goal_reminder') {
+      onNavigate?.('dashboard');
+    } else if (notification.link === '/metrics') {
+      onNavigate?.('metrics');
     }
+    console.log('[NotificationBell] Navigate to:', notification.link);
   }, [onNavigate]);
-
-  const handleClose = useCallback(() => {
-    setIsOpen(false);
-  }, []);
 
   return (
     <div className="relative shrink-0" ref={panelRef}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-          isOpen
-            ? 'bg-emerald-100 text-emerald-600'
-            : 'bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600'
-        }`}
+        onClick={() => setIsOpen(open => !open)}
+        aria-label={`Thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ''}`}
+        aria-expanded={isOpen}
+        className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
         title="Thông báo"
       >
-        {isLoading ? (
-          <span className="inline-block w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-        ) : (
-          <span className="text-lg">{isMuted ? '🔕' : '🔔'}</span>
-        )}
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-lg shadow-rose-200">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
+        {isLoading ? <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" /> : <span className="text-lg">🔔</span>}
+        {unreadCount > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white shadow-lg">{unreadCount > 99 ? '99+' : unreadCount}</span>}
       </button>
-
       {isOpen && (
-        <>
-          <NotificationPanel
-            notifications={chatFilteredNotifications}
-            onMarkAllRead={handleMarkAllRead}
-            onNotificationClick={handleNotificationClick}
-            onClose={handleClose}
-            isMuted={isMuted}
-            onToggleMute={() => setMuted(!isMuted)}
-          />
-        </>
+        <NotificationPanel
+          notifications={visibleNotifications}
+          preferences={preferences}
+          onToggleCategory={handleToggleCategory}
+          onMarkAllRead={handleMarkAllRead}
+          onNotificationClick={handleNotificationClick}
+          onClose={() => setIsOpen(false)}
+        />
       )}
     </div>
   );

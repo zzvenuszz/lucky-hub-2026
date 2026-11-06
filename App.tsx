@@ -252,16 +252,19 @@ const App: React.FC = () => {
       
       console.log(`[App] WebSocket connected for user ${uid}`);
 
-      // Lắng nghe notification real-time (global)
-      const unsubNotif = wsService.on('notification:new', (data: any) => {
-        console.log(`[App] New notification:`, data.message?.substring(0, 50));
+      // NotificationBell lọc theo tùy chọn từng nhóm trước khi phát sự kiện này.
+      const handleNotificationReceived = (event: Event) => {
+        const data = (event as CustomEvent).detail;
+        if (!data || data.userId !== uid || !data.message) return;
+        console.log(`[App] New notification:`, data.message.substring(0, 50));
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification('Lucky Hub', { body: data.message });
         }
-      });
+      };
+      window.addEventListener('notification:received', handleNotificationReceived);
 
       return () => {
-        unsubNotif();
+        window.removeEventListener('notification:received', handleNotificationReceived);
         wsService.disconnect();
       };
     } else {
@@ -666,7 +669,7 @@ const App: React.FC = () => {
       <ModalStackProvider>
       <ToastProvider>
       <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
-        <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={() => setIsChatOpen(!isChatOpen)} isSystemLogOpen={isLogOpen} onSystemLogToggle={() => setIsLogOpen(open => !open)} branding={systemBranding}>
+        <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={(open) => setIsChatOpen(previous => typeof open === 'boolean' ? open : !previous)} isSystemLogOpen={isLogOpen} onSystemLogToggle={() => setIsLogOpen(open => !open)} branding={systemBranding}>
         {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={(targetId) => handleOpenMetricForm(targetId)} refreshTrigger={refreshTrigger} />}
         {activeTab === 'community' && <NewsFeed currentUser={currentUser!} users={users} />}
         {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}

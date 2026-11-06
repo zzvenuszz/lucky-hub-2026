@@ -3,6 +3,7 @@ import { Metric } from '../models/Metric.ts';
 import { User } from '../models/User.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { Notification } from '../models/Notification.ts';
+import { publishNotification } from '../websocket/chatSocket.ts';
 import { AuditLogType } from '../../types.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission, can } from '../middleware/requirePermission.ts';
@@ -89,6 +90,7 @@ router.post('/', validateBody(
         link: `/metrics`
       });
       await notification.save();
+      publishNotification(String(metricData.userId), notification);
     }
 
     res.json({ ...m.toObject(), id: m._id });

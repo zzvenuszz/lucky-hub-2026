@@ -32,7 +32,7 @@ const ChatSystem: React.FC<ChatSystemProps> = memo(({ onClose, currentUser }) =>
   }, [selectedChat, clearChat]);
 
   return (
-    <div className="fixed left-0 right-0 top-[60px] bottom-[calc(70px+env(safe-area-inset-bottom,0px))] z-[999] flex w-auto max-w-none flex-col overflow-hidden border-y border-slate-200 bg-white/95 shadow-[0_30px_80px_rgba(15,23,42,0.18)] backdrop-blur-xl md:bottom-6 md:left-auto md:right-4 md:top-auto md:h-[600px] md:max-h-[85vh] md:w-[400px] md:max-w-[calc(100vw-2rem)] md:rounded-[32px] md:border">
+    <div data-chat-panel="true" className="fixed left-0 right-0 top-[60px] bottom-[calc(70px+env(safe-area-inset-bottom,0px))] z-[999] flex w-auto max-w-none flex-col overflow-hidden border-y border-slate-200 bg-white/95 shadow-[0_30px_80px_rgba(15,23,42,0.18)] backdrop-blur-xl md:bottom-6 md:left-auto md:right-4 md:top-auto md:h-[600px] md:max-h-[85vh] md:w-[400px] md:max-w-[calc(100vw-2rem)] md:rounded-[32px] md:border">
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600 p-4 text-white">
         <div className="flex items-center gap-3">
           {!showContacts && (

@@ -11,7 +11,7 @@ interface WorkspaceShellProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   isChatOpen?: boolean;
-  onChatToggle?: () => void;
+  onChatToggle?: (open?: boolean) => void;
   isSystemLogOpen?: boolean;
   onSystemLogToggle?: () => void;
   branding: SystemBranding;
@@ -94,13 +94,21 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
   }, [activeTab, navGroups]);
 
   const navigate = useCallback((tab: string) => {
+    onChatToggle?.(false);
     setActiveTab(tab);
     setIsDrawerOpen(false);
     setIsMoreOpen(false);
     setIsAccountOpen(false);
     console.log(`[WorkspaceShell] Navigation: ${tab}`);
     window.debugLog?.(`[WorkspaceShell] Điều hướng đến ${tab}`, 'navigation');
-  }, [setActiveTab]);
+  }, [setActiveTab, onChatToggle]);
+
+  const handleShellClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isChatOpen) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('[data-chat-panel="true"]') || target.closest('[data-chat-toggle="true"]')) return;
+    onChatToggle?.(false);
+  }, [isChatOpen, onChatToggle]);
 
   useEffect(() => {
     const closeMenus = (event: KeyboardEvent) => {
@@ -139,7 +147,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
   console.log(`[WorkspaceShell] Render: user=${user.fullName}, activeTab=${activeTab}`);
 
   return (
-    <div className="lh-workspace">
+    <div className="lh-workspace" onClickCapture={handleShellClickCapture}>
       <style>{`
         .lh-workspace{--lh-ink:#172722;--lh-muted:#718079;--lh-line:#e5eae5;--lh-canvas:#f4f6f2;--lh-paper:#fff;--lh-green:#226b4b;--lh-green-dark:#194f3b;--lh-lime:#d5ef91;--lh-coral:#df795b;min-height:100vh;background:var(--lh-canvas);color:var(--lh-ink);font-family:'DM Sans','Manrope',sans-serif}
         .lh-workspace *{box-sizing:border-box}
@@ -185,7 +193,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
         .lh-footer p{margin:0}
         .lh-mobile-nav,.lh-mobile-more,.lh-drawer-backdrop{display:none}
         @media(max-width:1199px){.lh-side{transform:translateX(-102%);box-shadow:18px 0 42px #1022181a}.lh-side.is-open{transform:translateX(0)}.lh-main{margin-left:0}.lh-menu-trigger{display:grid}.lh-topbar{padding:0 24px}.lh-content{padding-inline:24px}.lh-drawer-backdrop{position:fixed;inset:0;z-index:65;display:block;background:#15231db3;backdrop-filter:blur(2px)}}
-        @media(max-width:767px){.lh-side{display:none}.lh-menu-trigger{display:none}.lh-drawer-backdrop[aria-label="Đóng menu điều hướng"]{display:none}.lh-topbar{height:60px;padding:0 15px}.lh-page-title{font-size:18px}.lh-context,.lh-account-copy,.lh-account-trigger>svg{display:none}.lh-account-trigger{padding:0;border:0}.lh-account-trigger img{width:34px;height:34px}.lh-topbar-actions{gap:8px}.lh-icon-button{width:36px;height:36px;border-radius:11px}.lh-content{padding:18px 15px 28px}.lh-footer{padding:0 15px calc(82px + env(safe-area-inset-bottom,0px))}.lh-mobile-nav{position:fixed;inset:auto 0 0;z-index:60;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--lh-line);background:#fffF;box-shadow:0 -8px 28px #1727220d;backdrop-filter:blur(18px)}.lh-mobile-nav button{min-width:0;min-height:46px;display:flex;align-items:center;justify-content:center;border:0;border-radius:11px;background:transparent;color:#849088;cursor:pointer}.lh-mobile-nav button.is-active{color:var(--lh-green-dark)}.lh-mobile-nav button.is-active .lh-mobile-icon{background:#eaf3e8;color:var(--lh-green-dark)}.lh-mobile-icon{width:38px;height:34px;display:grid;place-items:center;border-radius:11px}.lh-mobile-more{position:fixed;inset:auto 10px calc(70px + env(safe-area-inset-bottom,0px));z-index:80;display:block;padding:13px;border:1px solid var(--lh-line);border-radius:16px;background:white;box-shadow:0 16px 44px #17272221}.lh-mobile-more-heading{padding:3px 8px 10px;color:var(--lh-muted);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.lh-mobile-more button{width:100%;min-height:45px;display:flex;align-items:center;gap:11px;padding:0 9px;border:0;border-radius:9px;background:transparent;color:var(--lh-ink);font:700 12px inherit;text-align:left}.lh-mobile-more button:hover{background:#f2f5ef}.lh-member-card{display:none}.lh-account-menu{position:fixed;top:58px;right:10px}}
+        @media(max-width:767px){.lh-side{display:none}.lh-menu-trigger{display:none}.lh-drawer-backdrop[aria-label="Đóng menu điều hướng"]{display:none}.lh-topbar{height:60px;padding:0 15px}.lh-page-title{font-size:18px}.lh-context,.lh-account-copy,.lh-account-trigger>svg{display:none}.lh-account-trigger{padding:0;border:0}.lh-account-trigger img{width:34px;height:34px}.lh-topbar-actions{gap:8px}.lh-icon-button{width:36px;height:36px;border-radius:11px}.lh-content{padding:18px 15px 28px}.lh-footer{padding:0 15px calc(82px + env(safe-area-inset-bottom,0px))}.lh-mobile-nav{position:fixed;inset:auto 0 0;z-index:60;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--lh-line);background:#fffF;box-shadow:0 -8px 28px #1727220d;backdrop-filter:blur(18px)}.lh-mobile-nav button{min-width:0;min-height:46px;display:flex;align-items:center;justify-content:center;border:0;border-radius:11px;background:transparent;color:#849088;cursor:pointer}.lh-mobile-nav button.is-active{color:var(--lh-green-dark)}.lh-mobile-nav button.is-active .lh-mobile-icon{background:#eaf3e8;color:var(--lh-green-dark)}.lh-mobile-icon{width:38px;height:34px;display:grid;place-items:center;border-radius:11px}.lh-mobile-more{position:fixed;inset:auto 10px calc(70px + env(safe-area-inset-bottom,0px));z-index:80;display:block;padding:13px;border:1px solid var(--lh-line);border-radius:16px;background:white;box-shadow:0 16px 44px #17272221}.lh-mobile-more-heading{padding:3px 8px 10px;color:var(--lh-muted);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.lh-mobile-more button{width:100%;min-height:45px;display:flex;align-items:center;gap:11px;padding:0 9px;border:0;border-radius:9px;background:transparent;color:var(--lh-ink);font:700 12px inherit;text-align:left}.lh-mobile-more button:hover{background:#f2f5ef}.lh-member-card{display:none}.lh-account-menu{position:fixed;top:58px;right:10px}}
         @media(prefers-reduced-motion:reduce){.lh-workspace *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}
       `}</style>
 
@@ -220,7 +228,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
           </div>
           <div className="lh-topbar-actions">
             <div className="lh-topbar-notifications"><NotificationBell currentUser={user} /></div>
-            <button className={`lh-icon-button lh-desktop-chat${isChatOpen ? ' is-active' : ''}`} aria-label={isChatOpen ? 'Đóng tin nhắn' : 'Mở tin nhắn'} title="Tin nhắn" onClick={onChatToggle}><Icon name="chat" size={19} /></button>
+            <button data-chat-toggle="true" className={`lh-icon-button lh-desktop-chat${isChatOpen ? ' is-active' : ''}`} aria-label={isChatOpen ? 'Đóng tin nhắn' : 'Mở tin nhắn'} title="Tin nhắn" onClick={() => onChatToggle?.()}><Icon name="chat" size={19} /></button>
             <div className="lh-account" ref={accountRef} onBlur={event => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsAccountOpen(false);
             }}>
@@ -245,7 +253,6 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
         <button className={activeTab === 'dashboard' ? 'is-active' : ''} aria-current={activeTab === 'dashboard' ? 'page' : undefined} aria-label="Tổng quan" title="Tổng quan" onClick={() => navigate('dashboard')}><span className="lh-mobile-icon"><Icon name="overview" size={20} /></span></button>
         <button className={activeTab === 'community' ? 'is-active' : ''} aria-current={activeTab === 'community' ? 'page' : undefined} aria-label="Cộng đồng" title="Cộng đồng" onClick={() => navigate('community')}><span className="lh-mobile-icon"><Icon name="community" size={20} /></span></button>
         <button className={activeTab === 'metrics' ? 'is-active' : ''} aria-current={activeTab === 'metrics' ? 'page' : undefined} aria-label="Sức khỏe" title="Sức khỏe" onClick={() => navigate('metrics')}><span className="lh-mobile-icon"><Icon name="health" size={20} /></span></button>
-        <button className={isChatOpen ? 'is-active' : ''} aria-pressed={!!isChatOpen} aria-label="Tin nhắn" title="Tin nhắn" onClick={onChatToggle}><span className="lh-mobile-icon"><Icon name="chat" size={20} /></span></button>
         <button className={isMoreOpen ? 'is-active' : ''} aria-expanded={isMoreOpen} aria-label="Khác" title="Khác" onClick={() => setIsMoreOpen(open => !open)}><span className="lh-mobile-icon"><Icon name="more" size={20} /></span></button>
       </nav>
     </div>

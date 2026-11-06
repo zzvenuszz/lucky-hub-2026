@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Goal } from '../models/Goal.ts';
 import { Metric } from '../models/Metric.ts';
 import { Notification } from '../models/Notification.ts';
+import { publishNotification } from '../websocket/chatSocket.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 
 const router = Router();
@@ -115,13 +116,14 @@ router.post('/check-reminders/:userId', async (req: Request, res: Response) => {
 
       if (shouldSend) {
         // Tạo Notification trong DB
-        await Notification.create({
+        const notification = await Notification.create({
           userId: goal.userId,
           type: 'goal_reminder',
           message,
           link: '/goals',
           referenceId: goal._id.toString(),
         });
+        publishNotification(String(goal.userId), notification);
 
         // Cập nhật lastReminderSent
         goal.lastReminderSent = now;
@@ -153,12 +155,13 @@ router.post('/:goalId/notify-completed', async (req: Request, res: Response) => 
 
     if (goal.status !== 'completed') return res.json({ message: 'Goal chưa hoàn thành' });
 
-    await Notification.create({
+    const notification = await Notification.create({
       userId: goal.userId, type: 'goal_completed',
       message: `🎉 Chúc mừng! Bạn đã hoàn thành mục tiêu "${goal.type}"!`,
       link: '/goals',
       referenceId: goal._id.toString(),
     });
+    publishNotification(String(goal.userId), notification);
 
     res.json({ success: true });
   } catch (err: any) {

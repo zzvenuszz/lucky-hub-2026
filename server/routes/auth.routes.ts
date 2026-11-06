@@ -12,6 +12,7 @@ import { validateBody, sanitizeText } from '../../services/validationService.ts'
 import { Group } from '../models/Group.ts';
 import { NutritionGroup } from '../models/NutritionGroup.ts';
 import { Notification } from '../models/Notification.ts';
+import { publishNotification } from '../websocket/chatSocket.ts';
 import { clearSessionCookie, getSessionIdFromCookie, isSessionIdleExpired, setSessionCookie } from '../utils/sessionCookie.ts';
 
 const router = Router();
@@ -145,6 +146,7 @@ router.post('/register', validateBody(
                     actorName: newUser.fullName,
                   });
                   await notif.save();
+                  publishNotification(String(targetId), notif);
                 } catch (notifErr: any) {
                   console.warn(`[Auth] Could not send notification to NDD owner:`, notifErr.message);
                 }
