@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
-import { BrowserQRCodeReader } from '@zxing/browser';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 import type { IScannerControls } from '@zxing/browser';
-import { DecodeHintType } from '@zxing/library';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 
 interface BarcodeScannerProps {
   onDetected: (value: string) => void;
@@ -23,8 +23,29 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
         return;
       }
       try {
-        const hints = new Map<DecodeHintType, boolean>([[DecodeHintType.TRY_HARDER, true]]);
-        const reader = new BrowserQRCodeReader(hints);
+        const hints = new Map<DecodeHintType, BarcodeFormat[] | boolean>([
+          [DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.QR_CODE,
+            BarcodeFormat.CODE_128,
+            BarcodeFormat.CODE_39,
+            BarcodeFormat.CODE_93,
+            BarcodeFormat.EAN_8,
+            BarcodeFormat.EAN_13,
+            BarcodeFormat.UPC_A,
+            BarcodeFormat.UPC_E,
+            BarcodeFormat.UPC_EAN_EXTENSION,
+            BarcodeFormat.ITF,
+            BarcodeFormat.CODABAR,
+            BarcodeFormat.DATA_MATRIX,
+            BarcodeFormat.PDF_417,
+            BarcodeFormat.AZTEC,
+            BarcodeFormat.MAXICODE,
+            BarcodeFormat.RSS_14,
+            BarcodeFormat.RSS_EXPANDED,
+          ]],
+          [DecodeHintType.TRY_HARDER, true],
+        ]);
+        const reader = new BrowserMultiFormatReader(hints);
         const controls = await reader.decodeFromConstraints(
           {
             audio: false,
@@ -43,7 +64,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
             if (!value) return;
             isMounted = false;
             controlsRef.current?.stop();
-            console.log('[InventoryBarcode] Barcode detected:', value);
+            console.log('[InventoryBarcode] Code detected:', { format: result.getBarcodeFormat(), value });
             onDetectedRef.current(value);
           },
         );
