@@ -37,6 +37,7 @@ const toDateTimeLocalValue = (date: Date = new Date()) => {
 };
 const parseDateTimeLocalValue = (value: string) => new Date(value);
 const normalizeSkuInput = (value: string) => [...new Set(value.split(/[\n,]/).map(sku => sku.trim().toUpperCase()).filter(Boolean))];
+const UNGROUPED_CATEGORY_FILTER = '__ungrouped__';
 const tabs: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'overview', label: 'Tổng quan', icon: '◫' }, { id: 'stock', label: 'Kho hàng', icon: '▣' }, { id: 'sale', label: 'Bán hàng', icon: '＋' },
   { id: 'history', label: 'Lịch sử', icon: '↻' }, { id: 'prices', label: 'Bảng giá', icon: '＄' }, { id: 'reports', label: 'Báo cáo', icon: '▤' }, { id: 'levels', label: 'Tuyến hội viên', icon: '⌘' }, { id: 'settings', label: 'Hoá đơn', icon: '⚙' },
@@ -61,6 +62,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const [sales, setSales] = useState<any[]>([]); const [members, setMembers] = useState<any[]>([]); const [downline, setDownline] = useState<any[]>([]); const [preference, setPreference] = useState<any>({ format: 'pdf' });
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const [invoice, setInvoice] = useState<any>(null);
   const [q, setQ] = useState(''); const [memberQuery, setMemberQuery] = useState(''); const [selectedMember, setSelectedMember] = useState<any>(null);
+  const [stockCategoryFilter, setStockCategoryFilter] = useState('');
   const [buyerAddress, setBuyerAddress] = useState(''); const [buyerPhone, setBuyerPhone] = useState('');
   const [buyerType, setBuyerType] = useState<'member' | 'custom'>('custom'); const [customBuyer, setCustomBuyer] = useState('');
   const [draft, setDraft] = useState({ sku: '', name: '', categoryId: '', pv: '0', quantity: '0', unitCost: '0', lowStockThreshold: '5', imageUrl: '' });
@@ -172,11 +174,28 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   }), [canInventory, canPrices, canLevels, canUseInventory]);
   useEffect(() => { if (!visibleTabs.some(item => item.id === tab)) setTab(visibleTabs[0]?.id || 'prices'); }, [visibleTabs, tab]);
   const showMessage = useCallback((text: string) => { setMessage(text); }, []);
+  const handleStockCategoryFilterChange = useCallback((categoryId: string) => {
+    setStockCategoryFilter(categoryId);
+    console.log('[InventoryUI] Stock category filter changed:', categoryId || 'all');
+  }, []);
+  const clearStockCategoryFilter = useCallback(() => {
+    setStockCategoryFilter('');
+    console.log('[InventoryUI] Stock category filter cleared');
+  }, []);
   useEffect(() => { if (!message) return; const timer = window.setTimeout(() => setMessage(''), 4500); return () => window.clearTimeout(timer); }, [message]);
   const reload = useCallback(async () => { await loadCore(); await loadPrices(); }, [loadCore, loadPrices]);
-  const filteredItems = items.filter(item => `${item.name} ${item.sku} ${(item.skus || []).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+  const searchedItems = items.filter(item => `${item.name} ${item.sku} ${(item.skus || []).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
+  const filteredItems = searchedItems.filter(item => {
+    if (!stockCategoryFilter) return true;
+    if (stockCategoryFilter === UNGROUPED_CATEGORY_FILTER) {
+      return !String(item.categoryId || '').trim() && !String(item.categoryName || '').trim();
+    }
+    const selectedCategory = categories.find(category => String(category._id) === stockCategoryFilter);
+    return String(item.categoryId || '') === stockCategoryFilter
+      || (!item.categoryId && selectedCategory && item.categoryName === selectedCategory.name);
+  });
   // Sản phẩm đã ngừng bán vẫn được bán tiếp nếu kho cá nhân còn tồn > 0 cho đến khi tồn = 0
-  const saleItems = filteredItems.filter(item => !item.archived || Number(item.quantity || 0) > 0);
+  const saleItems = searchedItems.filter(item => !item.archived || Number(item.quantity || 0) > 0);
   const filteredSales = sales.filter(sale => `${sale.invoiceNumber} ${sale.buyerName} ${sale.lines?.map((line: any) => `${line.name} ${line.sku}`).join(' ')}`.toLowerCase().includes(historyQuery.toLowerCase()));
   const updateCartLine = (id: string, patch: any) => setCart(lines => lines.map(line => line.itemId === id ? { ...line, ...patch } : line));
   const addToCart = (item: any, scannedSku = item.sku) => {
@@ -428,6 +447,15 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
             <button type="button" aria-label="Nhập hàng" data-testid="open-batch-receive" onClick={() => setShowBatchReceiveModal(true)} className="shrink-0 whitespace-nowrap rounded-xl bg-teal-700 px-3 py-2.5 text-xs font-black text-white shadow-sm hover:bg-teal-800 sm:px-4 sm:py-3 sm:text-sm">+ Thêm</button>
             {canManageCatalog && <button type="button" aria-label="Thêm sản phẩm" data-testid="open-create-product" onClick={() => setShowProductModal(true)} className="shrink-0 whitespace-nowrap rounded-xl bg-emerald-700 px-3 py-2.5 text-xs font-black text-white shadow-sm hover:bg-emerald-800 sm:px-4 sm:py-3 sm:text-sm">+SP</button>}
           </div>
+          <div className="flex items-center gap-2" data-testid="stock-category-filter-row">
+            <label htmlFor="stock-category-filter" className="shrink-0 text-xs font-bold text-slate-600">Nhóm sản phẩm</label>
+            <select id="stock-category-filter" data-testid="stock-category-filter" value={stockCategoryFilter} onChange={event => handleStockCategoryFilterChange(event.target.value)} className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 sm:max-w-xs sm:py-2.5 sm:text-sm">
+              <option value="">Tất cả nhóm</option>
+              {categories.map(category => <option key={category._id} value={String(category._id)}>{category.name}</option>)}
+              <option value={UNGROUPED_CATEGORY_FILTER}>Chưa phân nhóm</option>
+            </select>
+            {stockCategoryFilter && <button type="button" data-testid="clear-stock-category-filter" onClick={clearStockCategoryFilter} className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600" aria-label="Bỏ lọc nhóm sản phẩm">× Bỏ lọc</button>}
+          </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {filteredItems.map(item => <article key={item.id} className={`overflow-hidden rounded-2xl border ${item.archived ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200'}`}>
@@ -454,7 +482,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
             </div>
           </article>)}
         </div>
-        {!filteredItems.length && <p className="py-10 text-center text-sm text-slate-500">Kho chưa có hàng.</p>}
+        {!filteredItems.length && <p className="py-10 text-center text-sm text-slate-500">{items.length ? 'Không có sản phẩm phù hợp với tìm kiếm hoặc bộ lọc.' : 'Kho chưa có hàng.'}</p>}
         <div className="mt-6 border-t pt-5" data-testid="inventory-movements-log">
           <h3 className="font-black">Nhật ký nhập kho & xuất tồn</h3>
           <div className="mt-3 space-y-2">
