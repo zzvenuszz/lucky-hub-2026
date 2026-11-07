@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BrowserQRCodeReader } from '@zxing/browser';
 import type { IScannerControls } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { DecodeHintType } from '@zxing/library';
 
 interface BarcodeScannerProps {
   onDetected: (value: string) => void;
@@ -11,6 +11,8 @@ interface BarcodeScannerProps {
 const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClose }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
+  const onDetectedRef = useRef(onDetected);
+  onDetectedRef.current = onDetected;
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
@@ -21,19 +23,16 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
         return;
       }
       try {
-        const hints = new Map<DecodeHintType, BarcodeFormat[] | boolean>([
-          [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]],
-          [DecodeHintType.TRY_HARDER, true],
-        ]);
-        const reader = new BrowserMultiFormatReader(hints);
+        const hints = new Map<DecodeHintType, boolean>([[DecodeHintType.TRY_HARDER, true]]);
+        const reader = new BrowserQRCodeReader(hints);
         const controls = await reader.decodeFromConstraints(
           {
             audio: false,
             video: {
               facingMode: { ideal: 'environment' },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              frameRate: { ideal: 30, max: 30 },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+              frameRate: { ideal: 30 },
               advanced: [{ focusMode: 'continuous' } as unknown as MediaTrackConstraintSet],
             },
           },
@@ -45,7 +44,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
             isMounted = false;
             controlsRef.current?.stop();
             console.log('[InventoryBarcode] Barcode detected:', value);
-            onDetected(value);
+            onDetectedRef.current(value);
           },
         );
         if (isMounted) {
@@ -71,7 +70,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
       controlsRef.current?.stop();
       controlsRef.current = null;
     };
-  }, [onDetected]);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="barcode-scanner-title">
@@ -85,7 +84,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
         </div>
         <div className="relative aspect-[4/3] bg-slate-950">
           <video ref={videoRef} className="h-full w-full object-cover" autoPlay muted playsInline aria-label="Hình ảnh từ camera để quét mã vạch" />
-          <div className="pointer-events-none absolute inset-x-[12%] top-1/2 h-24 -translate-y-1/2 rounded-xl border-2 border-emerald-300 shadow-[0_0_0_999px_rgba(0,0,0,0.28)]" />
+          <div className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[min(72%,280px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-2 border-emerald-300 shadow-[0_0_0_999px_rgba(0,0,0,0.28)]" />
           {errorMessage && <div role="alert" className="absolute inset-x-4 bottom-4 rounded-xl bg-white p-3 text-sm font-semibold text-rose-700 shadow">{errorMessage}</div>}
         </div>
         <div className="p-4 text-center text-xs text-slate-500">Camera chỉ hoạt động trên HTTPS hoặc localhost và cần bạn cấp quyền truy cập.</div>
