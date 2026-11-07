@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import type { IScannerControls } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 
 interface BarcodeScannerProps {
   onDetected: (value: string) => void;
@@ -20,9 +21,22 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
         return;
       }
       try {
-        const reader = new BrowserMultiFormatReader();
+        const hints = new Map<DecodeHintType, BarcodeFormat[] | boolean>([
+          [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]],
+          [DecodeHintType.TRY_HARDER, true],
+        ]);
+        const reader = new BrowserMultiFormatReader(hints);
         const controls = await reader.decodeFromConstraints(
-          { audio: false, video: { facingMode: { ideal: 'environment' } } },
+          {
+            audio: false,
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: 30, max: 30 },
+              advanced: [{ focusMode: 'continuous' } as unknown as MediaTrackConstraintSet],
+            },
+          },
           videoRef.current || undefined,
           (result) => {
             if (!result || !isMounted) return;
@@ -34,7 +48,12 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
             onDetected(value);
           },
         );
-        if (isMounted) controlsRef.current = controls;
+        if (isMounted) {
+          controlsRef.current = controls;
+          console.log('[InventoryBarcode] Camera started:', videoRef.current?.srcObject instanceof MediaStream
+            ? videoRef.current.srcObject.getVideoTracks()[0]?.getSettings()
+            : undefined);
+        }
         else controls.stop();
       } catch (error: any) {
         console.error('[InventoryBarcode] Camera start failed:', error);

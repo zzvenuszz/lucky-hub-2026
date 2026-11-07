@@ -22,7 +22,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [preferences, setPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const preferencesRef = useRef<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
-  const [isLoading, setIsLoading] = useState(false);
+  const [bellShakeVersion, setBellShakeVersion] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
   const pollTimerRef = useRef<number | null>(null);
   const knownIdsRef = useRef<Set<string>>(new Set());
@@ -57,7 +57,6 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
   const fetchNotifications = useCallback(async () => {
     if (!currentUserId || fetchingRef.current) return;
     fetchingRef.current = true;
-    setIsLoading(true);
     try {
       const response = await fetch(`/api/notifications/${currentUserId}`, { credentials: 'same-origin' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -81,6 +80,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
           window.dispatchEvent(new CustomEvent('notification:received', { detail: { ...item, userId: currentUserId } }));
         });
         if (freshEnabled.length) {
+          setBellShakeVersion(version => version + 1);
           try {
             freshEnabled.forEach(item => seenIds.add(item.id));
             localStorage.setItem(`lucky_hub_seen_notifications_${currentUserId}`, JSON.stringify(Array.from(seenIds).slice(-300)));
@@ -96,7 +96,6 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
       console.error('[NotificationBell] Fetch error:', error);
     } finally {
       fetchingRef.current = false;
-      setIsLoading(false);
     }
   }, [currentUserId, addToast]);
 
@@ -211,6 +210,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
 
   return (
     <div className="relative shrink-0" ref={panelRef}>
+      <style>{`@keyframes notification-bell-shake { 0%, 100% { transform: rotate(0); } 10%, 30%, 50% { transform: rotate(-10deg); } 20%, 40%, 60% { transform: rotate(10deg); } 70% { transform: rotate(-4deg); } 80% { transform: rotate(4deg); } 90% { transform: rotate(0); } } .notification-bell-shake { display: inline-block; transform-origin: 50% 15%; animation: notification-bell-shake 900ms ease-in-out 1; } @media (prefers-reduced-motion: reduce) { .notification-bell-shake { animation: none; } }`}</style>
       <button
         onClick={() => setIsOpen(open => !open)}
         aria-label={`Thông báo${unreadCount ? `, ${unreadCount} chưa đọc` : ''}`}
@@ -218,7 +218,7 @@ const NotificationBell: React.FC<NotificationBellProps> = memo(({ currentUser, o
         className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${isOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
         title="Thông báo"
       >
-        {isLoading ? <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent" /> : <span className="text-lg">🔔</span>}
+        <span key={bellShakeVersion} className={`text-lg ${bellShakeVersion ? 'notification-bell-shake' : ''}`}>🔔</span>
         {unreadCount > 0 && <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white shadow-lg">{unreadCount > 99 ? '99+' : unreadCount}</span>}
       </button>
       {isOpen && (
