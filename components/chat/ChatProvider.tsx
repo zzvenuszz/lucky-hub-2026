@@ -36,7 +36,6 @@ interface ChatProviderProps {
   users: User[];
   knowledge: AIKnowledge[];
   rules: AIRule[];
-  preloadedChats: ChatSession[];
   children: React.ReactNode;
 }
 
@@ -55,7 +54,7 @@ export const useChat = () => {
 
 // ===== Provider Component =====
 const ChatProvider: React.FC<ChatProviderProps> = memo(({ 
-  currentUser, users, knowledge, rules, preloadedChats, children 
+  currentUser, users, knowledge, rules, children
 }) => {
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatSession | null>(null);
@@ -77,12 +76,14 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
   const isProcessingRef = useRef(false);
   const pendingQueueRef = useRef<{ chatId: string; text: string }[]>([]);
   const currentUserRef = useRef(currentUser);
+  const usersRef = useRef(users);
   const knowledgeRef = useRef(knowledge);
   const rulesRef = useRef(rules);
   const latestMetricRef = useRef(latestMetric);
 
   // Sync refs
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+  useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { knowledgeRef.current = knowledge; }, [knowledge]);
   useEffect(() => { rulesRef.current = rules; }, [rules]);
   useEffect(() => { latestMetricRef.current = latestMetric; }, [latestMetric]);
@@ -129,46 +130,44 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
 
   // ===== Load initial data =====
   useEffect(() => {
+    let active = true;
     const load = async () => {
       try {
         console.log(`[ChatProvider] Loading data for user ${currentUid}`);
-        
-        // Load metrics riêng - nếu lỗi thì bỏ qua, không ảnh hưởng đến chat
-        try {
-          const metrics = await Database.getMetrics(currentUid);
-          if (metrics?.length) {
-            const sorted = [...metrics].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            setLatestMetric(sorted[0]);
-          }
-        } catch (metricErr) {
-          console.warn(`[ChatProvider] Failed to load metrics, continuing without them:`, metricErr);
+        const [metricsResult, chatsResult, contactsResult] = await Promise.allSettled([
+          Database.getMetrics(currentUid),
+          Database.getChats(),
+          fetch('/api/chats/contacts', { headers: { 'Content-Type': 'application/json' } }).then(async response => {
+            if (!response.ok) throw new Error('Failed to fetch contacts');
+            return response.json();
+          }),
+        ]);
+
+        if (metricsResult.status === 'fulfilled' && metricsResult.value?.length) {
+          const sorted = [...metricsResult.value].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          if (active) setLatestMetric(sorted[0]);
+        } else if (metricsResult.status === 'rejected') {
+          console.warn('[ChatProvider] Failed to load metrics, continuing without them:', metricsResult.reason);
         }
-        
-        const allChats = preloadedChats.length > 0 ? preloadedChats : (await Database.getChats() || []);
-        
-        // Gọi API lấy danh sách contacts được phép chat (dựa trên backend permissions)
+
+        const allChats = chatsResult.status === 'fulfilled' ? chatsResult.value || [] : [];
+        if (chatsResult.status === 'rejected') console.warn('[ChatProvider] Failed to load chats:', chatsResult.reason);
+
         let contacts: any[] = [];
-        try {
-          const res = await fetch('/api/chats/contacts', {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          });
-          if (res.ok) {
-            contacts = await res.json();
-            console.log(`[ChatProvider] Loaded ${contacts.length} contacts from API`);
-          } else {
-            throw new Error('Failed to fetch contacts');
-          }
-        } catch (err) {
-          console.warn(`[ChatProvider] Failed to load contacts from API, falling back to local logic:`, err);
+        if (contactsResult.status === 'fulfilled') {
+          contacts = contactsResult.value || [];
+          console.log(`[ChatProvider] Loaded ${contacts.length} contacts from API`);
+        } else {
+          console.warn('[ChatProvider] Failed to load contacts from API, falling back to local logic:', contactsResult.reason);
           // Fallback: sử dụng logic cũ nếu API fail
-          const userNutritionGroup = (currentUser as any).nutritionGroupId;
-          const userPerms = (currentUser as any).groupPermissions || [];
+          const latestUser = currentUserRef.current;
+          const userNutritionGroup = (latestUser as any).nutritionGroupId;
+          const userPerms = (latestUser as any).groupPermissions || [];
           const isAdmin = userPerms.includes('admin:panel');
           const isCoach = userPerms.includes('coach:access');
+          const availableUsers = usersRef.current.length ? usersRef.current : await Database.getUsers().catch(() => []);
           
-          contacts = users.filter(u => {
+          contacts = availableUsers.filter(u => {
             const uId = String((u as any).id || (u as any)._id);
             if (uId === currentUid) return false;
             if (isAdmin || isCoach) return true;
@@ -213,6 +212,7 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
         };
         
         const newChats = [aiChat, ...activeChats];
+        if (!active) return;
         setChats(newChats);
 
         // Lưu contacts map để getOtherUser fallback
@@ -228,7 +228,8 @@ const ChatProvider: React.FC<ChatProviderProps> = memo(({
       }
     };
     load();
-  }, [currentUid, users, preloadedChats]);
+    return () => { active = false; };
+  }, [currentUid]);
 
   // Rebuild unread counts khi chats, lastReadTimestamps, selectedChat hoặc isChatOpen thay đổi
   useEffect(() => {

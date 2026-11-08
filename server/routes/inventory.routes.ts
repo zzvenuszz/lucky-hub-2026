@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
@@ -86,7 +87,10 @@ router.get('/members', inventorySeller, async (req: Request, res: Response) => {
 const syncAndLoadPersonalItems = async (ownerId: string, canManageCatalog: boolean) => {
   const [prices, allSystemItems] = await Promise.all([
     currentPrices(new Date()),
-    InventoryItem.find({}).sort({ updatedAt: -1 }).lean(),
+    InventoryItem.find({})
+      .select('_id ownerId sku skus name categoryId categoryName imageUrl pv lowStockThreshold archived quantity updatedAt')
+      .sort({ updatedAt: -1 })
+      .lean(),
   ]);
   const priceMap = new Map<string, any>(
     (prices?.entries || []).map((entry: any) => [String(entry.sku).trim().toUpperCase(), entry] as [string, any])
@@ -177,12 +181,17 @@ const syncAndLoadPersonalItems = async (ownerId: string, canManageCatalog: boole
   }
 
   if (newPersonalDocs.length) {
-    for (const doc of newPersonalDocs) {
-      try {
-        await InventoryItem.create(doc);
-      } catch (_err) {
-        // Ignore duplicate key race condition
-      }
+    try {
+      await InventoryItem.insertMany(newPersonalDocs, { ordered: false });
+      console.log('[Inventory] Personal catalog entries synchronized:', { ownerId, created: newPersonalDocs.length });
+    } catch (error: any) {
+      // unordered insert keeps successful documents and ignores duplicate-key races, as before.
+      console.warn('[Inventory] Some personal catalog entries were not inserted:', {
+        ownerId,
+        requested: newPersonalDocs.length,
+        inserted: error.insertedDocs?.length || 0,
+        code: error.code,
+      });
     }
   }
 
@@ -209,6 +218,21 @@ const syncAndLoadPersonalItems = async (ownerId: string, canManageCatalog: boole
       if (Number(item.quantity || 0) > 0) return true;
       return item.hasActivePrice && !item.archived;
     });
+};
+
+const personalItemsLoadInFlight = new Map<string, Promise<any[]>>();
+const loadPersonalItems = async (ownerId: string, canManageCatalog: boolean) => {
+  const key = `${ownerId}:${canManageCatalog ? 'catalog' : 'seller'}`;
+  let pending = personalItemsLoadInFlight.get(key);
+  if (!pending) {
+    pending = syncAndLoadPersonalItems(ownerId, canManageCatalog);
+    personalItemsLoadInFlight.set(key, pending);
+  }
+  try {
+    return await pending;
+  } finally {
+    if (personalItemsLoadInFlight.get(key) === pending) personalItemsLoadInFlight.delete(key);
+  }
 };
 
 router.get('/categories', inventoryOrPrice, async (_req: Request, res: Response) => {
@@ -239,7 +263,7 @@ router.get('/items', inventoryOrPrice, async (req: Request, res: Response) => {
   try {
     const ownerId = idOf(req);
     const canManageCatalog = Boolean(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE));
-    const items = await syncAndLoadPersonalItems(ownerId, canManageCatalog);
+    const items = await loadPersonalItems(ownerId, canManageCatalog);
     res.json(items);
   } catch (error: any) { console.error('[Inventory] Items load failed:', error); res.status(500).json({ message: 'Không thể tải kho hàng.' }); }
 });
@@ -501,7 +525,7 @@ router.post('/receive-batch', inventorySeller, async (req: Request, res: Respons
     }
 
     const canManageCatalog = Boolean(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE));
-    await syncAndLoadPersonalItems(ownerId, canManageCatalog);
+    await loadPersonalItems(ownerId, canManageCatalog);
 
     const activePriceList = await currentPrices(new Date());
     if (!activePriceList?.entries?.length) {
@@ -1024,11 +1048,45 @@ router.get('/overview', inventorySeller, async (req: Request, res: Response) => 
   try {
     const ownerId = idOf(req);
     const canManageCatalog = Boolean(req.user?.permissions.includes(RESOURCES.PRICELIST.MANAGE));
-    const [items, lots, priceList, sales] = await Promise.all([
-      syncAndLoadPersonalItems(ownerId, canManageCatalog),
+    const [items, lots, priceList, recentSales, monthly] = await Promise.all([
+      loadPersonalItems(ownerId, canManageCatalog),
       InventoryLot.find({ ownerId, remainingQuantity: { $gt: 0 } }).lean(),
       currentPrices(new Date()),
-      Sale.find({ ownerId }).sort({ soldAt: -1 }).limit(5000).lean(),
+      Sale.find({ ownerId }).sort({ soldAt: -1 }).limit(10).lean(),
+      Sale.aggregate([
+        { $match: { ownerId: new mongoose.Types.ObjectId(ownerId) } },
+        { $sort: { soldAt: -1 } },
+        { $limit: 5000 },
+        { $match: { status: { $ne: 'cancelled' } } },
+        { $project: {
+          month: { $dateToString: { format: '%Y-%m', date: '$soldAt', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } },
+          netSales: { $max: [0, { $subtract: [
+            { $ifNull: ['$total', 0] },
+            { $sum: { $map: { input: { $ifNull: ['$returnEvents', []] }, as: 'event', in: { $ifNull: ['$$event.refundAmount', 0] } } } },
+          ] }] },
+          netPv: { $max: [0, { $subtract: [
+            { $ifNull: ['$totalPv', 0] },
+            { $sum: { $map: {
+              input: { $ifNull: ['$returnedLines', []] },
+              as: 'returned',
+              in: { $multiply: [
+                { $ifNull: ['$$returned.quantity', 0] },
+                { $let: {
+                  vars: { matchedLine: { $arrayElemAt: [{ $filter: {
+                    input: { $ifNull: ['$lines', []] },
+                    as: 'line',
+                    cond: { $eq: ['$$line.itemId', '$$returned.itemId'] },
+                  } }, 0] } },
+                  in: { $ifNull: ['$$matchedLine.pv', 0] },
+                } },
+              ] },
+            } } },
+          ] }] },
+        } },
+        { $group: { _id: '$month', sales: { $sum: '$netSales' }, pv: { $sum: '$netPv' }, orders: { $sum: 1 } } },
+        { $sort: { _id: -1 } },
+        { $project: { _id: 0, month: '$_id', sales: 1, pv: 1, orders: 1 } },
+      ]),
     ]);
     const activeItems = (items as any[]).filter(item => !item.archived || Number(item.quantity || 0) > 0);
     const priceMap = new Map<string, any>((priceList?.entries || []).map((entry: any) => [String(entry.sku), entry] as [string, any]));
@@ -1037,8 +1095,7 @@ router.get('/overview', inventorySeller, async (req: Request, res: Response) => 
     const estimated = { price100: 0, price25: 0, price35: 0, price42: 0, price50: 0 };
     for (const item of activeItems as any[]) { const price: any = priceMap.get(item.sku) || item.prices; if (price) for (const key of Object.keys(estimated) as Array<keyof typeof estimated>) estimated[key] += item.quantity * price[key]; }
     const lowStock = (activeItems as any[]).filter(item => !item.archived && item.quantity <= item.lowStockThreshold);
-    const monthly = sales.filter((sale: any) => sale.status !== 'cancelled').reduce((acc: any, sale: any) => { const date = new Date(sale.soldAt); const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; if (!acc[key]) acc[key] = { month: key, sales: 0, pv: 0, orders: 0 }; const net = netSaleTotals(sale); acc[key].sales += net.sales; acc[key].pv += net.pv; acc[key].orders++; return acc; }, {});
-    res.json({ itemCount: activeItems.length, totalUnits: (activeItems as any[]).reduce((s, i) => s + i.quantity, 0), costValue, estimated, lowStock: lowStock.map((i: any) => ({ id: String(i._id), sku: i.sku, name: i.name, quantity: i.quantity, threshold: i.lowStockThreshold })), monthly: Object.values(monthly).slice(-12), recentSales: sales.slice(0, 10), itemMap: Object.fromEntries([...itemMap.entries()]) });
+    res.json({ itemCount: activeItems.length, totalUnits: (activeItems as any[]).reduce((s, i) => s + i.quantity, 0), costValue, estimated, lowStock: lowStock.map((i: any) => ({ id: String(i._id), sku: i.sku, name: i.name, quantity: i.quantity, threshold: i.lowStockThreshold })), monthly: monthly.slice(-12), recentSales, itemMap: Object.fromEntries([...itemMap.entries()]) });
   } catch (error: any) { console.error('[Inventory] Overview failed:', error); res.status(500).json({ message: error.message }); }
 });
 

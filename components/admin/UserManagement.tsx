@@ -53,27 +53,27 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
     return map;
   }, [allGroups]);
 
-  // Load tất cả groups khi mount
+  // Load nhóm một lần khi mở trang quản trị; danh sách user refresh không làm đổi groups.
   useEffect(() => {
     Database.getGroups().then(setAllGroups).catch(() => {});
-  }, [users]);
+  }, []);
 
   // Load danh sách groups khi mở modal edit
   const loadUserGroups = useCallback(async (userId: string) => {
     try {
-      const [g, userGroups] = await Promise.all([
-        Database.getGroups(),
-        Database.getUserGroups(userId)
+      const [availableGroups, userGroups] = await Promise.all([
+        allGroups.length ? Promise.resolve(allGroups) : Database.getGroups(),
+        Database.getUserGroups(userId),
       ]);
-      setGroups(g || []);
-      setAllGroups(g || []);
+      setGroups(availableGroups || []);
+      if (!allGroups.length) setAllGroups(availableGroups || []);
       // Lấy group ID đầu tiên user thuộc về (single group)
       const currentGroup = (userGroups || [])[0];
       setSelectedGroupId(currentGroup ? (currentGroup._id || currentGroup.id) : '');
     } catch (err: any) {
       console.error('[UserManagement] Load groups error:', err);
     }
-  }, []);
+  }, [allGroups]);
 
   const handleUpdateUser = async () => {
     if (!editingUser) return;
@@ -120,6 +120,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
               await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
             }
           }
+          const updatedGroups = await Database.getGroups();
+          setAllGroups(updatedGroups || []);
         } catch (groupErr: any) {
           console.error('[UserManagement] Group update error:', groupErr);
         }

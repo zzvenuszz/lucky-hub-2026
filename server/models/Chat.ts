@@ -40,4 +40,7 @@ const ChatSchema = new mongoose.Schema({
   lastReadBy: { type: Map, of: String },
 }, { timestamps: true });
 
+ChatSchema.index({ memberId: 1, coachId: 1 }, { name: 'chats_by_member_coach' });
+ChatSchema.index({ coachId: 1, memberId: 1 }, { name: 'chats_by_coach_member' });
+
 export const Chat = mongoose.model('Chat', ChatSchema);

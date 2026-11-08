@@ -42,4 +42,7 @@ const PostSchema = new mongoose.Schema({
   commentCount: { type: Number, default: 0 },
 }, { timestamps: true });
 
+PostSchema.index({ createdAt: -1 }, { name: 'posts_by_created_at' });
+PostSchema.index({ hashtags: 1, createdAt: -1 }, { name: 'posts_by_hashtag_created_at' });
+
 export const Post = mongoose.model('Post', PostSchema);

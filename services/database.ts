@@ -2,31 +2,47 @@ import { User, HealthMetric, AIKnowledge, AccountStatus, HealthGoal, ChatSession
 
 const API_BASE = '/api';
 let isOfflineMode = false;
+const inFlightGetRequests = new Map<string, Promise<unknown>>();
 
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   return headers;
 }
 
+function getRequestScope(): string {
+  try {
+    const user = JSON.parse(localStorage.getItem('lucky_hub_user') || 'null');
+    return String(user?.id || user?._id || 'anonymous');
+  } catch {
+    return 'anonymous';
+  }
+}
+
 async function request<T>(url: string, method = 'GET', body?: any, timeout = 15000): Promise<T | null> {
   if (isOfflineMode) return null;
+  const normalizedMethod = method.toUpperCase();
+  const inFlightKey = `${getRequestScope()}:${url}`;
+  if (normalizedMethod === 'GET') {
+    const pendingRequest = inFlightGetRequests.get(inFlightKey);
+    if (pendingRequest) return pendingRequest as Promise<T | null>;
+  }
+
+  const requestPromise = (async (): Promise<T | null> => {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   const startTime = Date.now();
   
   try {
     const res = await fetch(url, {
-      method,
+      method: normalizedMethod,
       headers: getAuthHeaders(),
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal
     });
     
-    const duration = Date.now() - startTime;
-    clearTimeout(id);
-    
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
+      const duration = Date.now() - startTime;
       const msg = errorData.message || `Lỗi API ${res.status}`;
       
       // Xử lý session hết hạn
@@ -35,20 +51,31 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
         window.dispatchEvent(new CustomEvent('session:invalidated', { detail: errorData }));
       }
       
-      if (window.debugLog) window.debugLog(`[DB] FAIL ${method} ${url}: ${msg}`, "error", duration);
+      if (window.debugLog) window.debugLog(`[DB] FAIL ${normalizedMethod} ${url}: ${msg}`, "error", duration);
       throw new Error(msg);
     }
-    
-    if (window.debugLog) window.debugLog(`[DB] OK ${method} ${url}`, "database", duration);
-    return await res.json();
+    const data = await res.json();
+    const duration = Date.now() - startTime;
+    if (window.debugLog) window.debugLog(`[DB] OK ${normalizedMethod} ${url}`, "database", duration);
+    return data;
   } catch (e: any) {
     const duration = Date.now() - startTime;
-    clearTimeout(id);
     if (e.name === 'AbortError') {
       throw new Error('Timeout: Server không phản hồi');
     }
     if (window.debugLog) window.debugLog(`[DB] ERROR ${url}: ${e.message}`, "error", duration);
     throw e;
+  } finally {
+    clearTimeout(id);
+  }
+  })();
+
+  if (normalizedMethod !== 'GET') return requestPromise;
+  inFlightGetRequests.set(inFlightKey, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    if (inFlightGetRequests.get(inFlightKey) === requestPromise) inFlightGetRequests.delete(inFlightKey);
   }
 }
 

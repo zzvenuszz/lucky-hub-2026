@@ -16,5 +16,6 @@ GroupSchema.index({ isDefault: 1 }, {
   partialFilterExpression: { isDefault: true },
   name: 'unique_default_group'
 });
+GroupSchema.index({ members: 1 }, { name: 'groups_by_member' });
 
 export const Group = mongoose.model('Group', GroupSchema);

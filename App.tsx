@@ -58,7 +58,6 @@ const App: React.FC = () => {
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0); 
   const [existingMetrics, setExistingMetrics] = useState<HealthMetric[]>([]);
-  const [preloadedChats, setPreloadedChats] = useState<any[]>([]);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [lockUntil, setLockUntil] = useState<string | null>(null);
@@ -424,85 +423,69 @@ const App: React.FC = () => {
     };
   }, [currentUser, handleLogout]);
 
+  const activeUserId = currentUser ? String((currentUser as any).id || (currentUser as any)._id || '') : '';
   const fetchData = useCallback(async () => {
-    // Tách riêng từng API call để một lỗi không làm hỏng các call khác
+    // Tải độc lập song song để thời gian chờ không cộng dồn theo từng endpoint.
     let usersData: User[] = [];
     let knowledgeData: any[] = [];
     let rulesData: AIRule[] = [];
-    let chatsData: any[] = [];
 
-    try {
-      usersData = await Database.getUsers();
-      setUsers(usersData || []);
-    } catch (err) {
-      console.warn('[App] Failed to load users:', err);
-    }
-    
-    try {
-      knowledgeData = await Database.getKnowledge();
-      setKnowledge(knowledgeData || []);
-    } catch (err) {
-      console.warn('[App] Failed to load knowledge:', err);
-    }
-    
-    try {
-      rulesData = await Database.getRules();
-      setRules(rulesData || []);
-    } catch (err) {
-      console.warn('[App] Failed to load rules:', err);
-    }
-    
-    try {
-      chatsData = await Database.getChats();
-      setPreloadedChats(chatsData || []);
-    } catch (err) {
-      console.warn('[App] Failed to load chats:', err);
-    }
-
-    if (currentUser) {
+    const loadUsers = async () => {
+      try { usersData = await Database.getUsers(); setUsers(usersData || []); }
+      catch (err) { console.warn('[App] Failed to load users:', err); }
+    };
+    const loadKnowledge = async () => {
+      try { knowledgeData = await Database.getKnowledge(); setKnowledge(knowledgeData || []); }
+      catch (err) { console.warn('[App] Failed to load knowledge:', err); }
+    };
+    const loadRules = async () => {
+      try { rulesData = await Database.getRules(); setRules(rulesData || []); }
+      catch (err) { console.warn('[App] Failed to load rules:', err); }
+    };
+    const loadCurrentUser = async () => {
       try {
         const meRes = await fetch('/api/users/me', { credentials: 'same-origin' });
-        if (meRes.ok) {
-          const refreshedMe = await meRes.json();
-          setCurrentUser(prev => {
-            if (!prev) return refreshedMe;
-            const prevPerms = JSON.stringify((prev as any).permissions || []);
-            const nextPerms = JSON.stringify(refreshedMe.permissions || []);
-            const prevGroup = (prev as any).groupName || '';
-            const nextGroup = refreshedMe.groupName || '';
-            if (prevPerms === nextPerms && prevGroup === nextGroup && prev.fullName === refreshedMe.fullName && prev.avatar === refreshedMe.avatar && prev.memberLevel === refreshedMe.memberLevel) {
-              return prev;
-            }
-            const merged = { ...prev, ...refreshedMe };
-            localStorage.setItem(LS_USER, JSON.stringify(merged));
-            console.log(`[App] Refreshed currentUser permissions: ${refreshedMe.permissions?.length || 0}`);
-            return merged;
-          });
-        }
-      } catch (err) {
-        console.warn('[App] Failed to refresh currentUser:', err);
-      }
-
+        if (!meRes.ok) return;
+        const refreshedMe = await meRes.json();
+        setCurrentUser(prev => {
+          if (!prev) return refreshedMe;
+          const prevPerms = JSON.stringify((prev as any).permissions || []);
+          const nextPerms = JSON.stringify(refreshedMe.permissions || []);
+          const prevGroup = (prev as any).groupName || '';
+          const nextGroup = refreshedMe.groupName || '';
+          if (prevPerms === nextPerms && prevGroup === nextGroup && prev.fullName === refreshedMe.fullName && prev.avatar === refreshedMe.avatar && prev.memberLevel === refreshedMe.memberLevel) return prev;
+          const merged = { ...prev, ...refreshedMe };
+          localStorage.setItem(LS_USER, JSON.stringify(merged));
+          console.log(`[App] Refreshed currentUser permissions: ${refreshedMe.permissions?.length || 0}`);
+          return merged;
+        });
+      } catch (err) { console.warn('[App] Failed to refresh currentUser:', err); }
+    };
+    const loadMetrics = async () => {
+      if (!activeUserId) return;
       try {
-        const uid = (currentUser as any).id || (currentUser as any)._id;
-        const m = await Database.getMetrics(uid);
-        setExistingMetrics(m || []);
-      } catch (err) {
-        console.warn('[App] Failed to load metrics:', err);
-      }
-    }
+        const metrics = await Database.getMetrics(activeUserId);
+        setExistingMetrics(metrics || []);
+        cacheManager.set(`metrics_${activeUserId}`, metrics || [], 5);
+      } catch (err) { console.warn('[App] Failed to load metrics:', err); }
+    };
+
+    await Promise.all([
+      loadUsers(), loadKnowledge(), loadRules(),
+      ...(activeUserId ? [loadCurrentUser(), loadMetrics()] : []),
+    ]);
 
     if (window.debugLog) window.debugLog(
-      `[App] Nhận dữ liệu: ${usersData?.length || 0} users, ${knowledgeData?.length || 0} kiến thức, ${rulesData?.length || 0} quy tắc, ${chatsData?.length || 0} chats`,
+      `[App] Nhận dữ liệu: ${usersData?.length || 0} users, ${knowledgeData?.length || 0} kiến thức, ${rulesData?.length || 0} quy tắc`,
       "system"
     );
-  }, [currentUser]);
+  }, [activeUserId]);
 
   // Sử dụng useRef để lưu fetchData function, tránh stale closure trong interval
   const fetchDataRef = useRef(fetchData);
   fetchDataRef.current = fetchData;
 
-  useEffect(() => { 
+  useEffect(() => {
     if (currentUser) {
       fetchDataRef.current();
       // Refresh dữ liệu mỗi 10 phút (tối ưu hóa performance)
@@ -511,7 +494,18 @@ const App: React.FC = () => {
       }, 600000);
       return () => clearInterval(mainInterval);
     }
-  }, [currentUser, refreshTrigger]);
+  }, [activeUserId]);
+
+  useEffect(() => {
+    if (!activeUserId || refreshTrigger === 0) return;
+    let active = true;
+    Database.getMetrics(activeUserId).then(metrics => {
+      if (!active) return;
+      setExistingMetrics(metrics || []);
+      cacheManager.set(`metrics_${activeUserId}`, metrics || [], 5);
+    }).catch(err => console.warn('[App] Failed to refresh metrics:', err));
+    return () => { active = false; };
+  }, [activeUserId, refreshTrigger]);
 
 
   const handleLogin = async (data: any) => {
@@ -668,7 +662,7 @@ const App: React.FC = () => {
     <ErrorBoundary>
       <ModalStackProvider>
       <ToastProvider>
-      <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} preloadedChats={preloadedChats}>
+      <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules}>
         <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={(open) => setIsChatOpen(previous => typeof open === 'boolean' ? open : !previous)} isSystemLogOpen={isLogOpen} onSystemLogToggle={() => setIsLogOpen(open => !open)} branding={systemBranding}>
         {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={(targetId) => handleOpenMetricForm(targetId)} refreshTrigger={refreshTrigger} />}
         {activeTab === 'community' && <NewsFeed currentUser={currentUser!} users={users} />}

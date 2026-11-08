@@ -16,15 +16,16 @@ router.get('/', async (req: Request, res: Response) => {
   
   // Lấy danh sách contact được phép chat
   const contactIds = await getChatContactIds(userId);
+  const allowedContacts = new Set(contactIds);
   
   const chats = await Chat.find({
     $or: [{ memberId: userId }, { coachId: userId }]
-  });
+  }).lean();
   
   // Chỉ giữ lại chats với người nằm trong contact list
   const filteredChats = chats.filter(chat => {
     const otherId = String(chat.memberId) === userId ? String(chat.coachId) : String(chat.memberId);
-    return contactIds.includes(otherId);
+    return allowedContacts.has(otherId);
   });
   
   console.log(`[Chat] User ${userId}: ${filteredChats.length}/${chats.length} chats after permission filter`);

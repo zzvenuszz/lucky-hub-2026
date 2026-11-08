@@ -14,4 +14,6 @@ const MetricSchema = new mongoose.Schema({
   visceralFat: Number,
 }, { timestamps: true });
 
+MetricSchema.index({ userId: 1, date: -1 }, { name: 'metrics_by_user_date' });
+
 export const Metric = mongoose.model('Metric', MetricSchema);

@@ -26,15 +26,14 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
   if (search) query.content = { $regex: search, $options: 'i' };
   if (hashtag) query.hashtags = hashtag;
 
-  const total = await Post.countDocuments(query);
-  const p = await Post.find(query)
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
+  const [total, posts] = await Promise.all([
+    Post.countDocuments(query),
+    Post.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+  ]);
 
   const totalPages = Math.ceil(total / limit);
   res.json({
-    posts: p.map(i => ({ ...i.toObject(), id: i._id })),
+    posts: posts.map(i => ({ ...i, id: i._id })),
     pagination: { page, limit, total, totalPages, hasMore: page < totalPages }
   });
 });
