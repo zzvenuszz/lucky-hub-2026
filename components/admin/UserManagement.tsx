@@ -4,6 +4,7 @@ import { Database } from '../../services/database.ts';
 import { useToast } from '../system/ToastProvider.tsx';
 import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 import LoadingButton from '../system/LoadingButton.tsx';
+import UserGroupLoading from './UserGroupLoading.tsx';
 
 interface UserManagementProps {
   users: User[];
@@ -311,8 +312,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
                   </td>
                   <td>
                     {allGroups.length === 0 ? (
-                      <span className="px-2 py-1 bg-slate-100 text-slate-400 rounded-lg text-[9px] font-black uppercase inline-flex items-center gap-1">
-                        <span className="inline-block w-2.5 h-2.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                      <span role="status" className="px-2 py-1 bg-slate-100 text-slate-500 rounded-lg text-[9px] font-black uppercase inline-flex items-center gap-1">
+                        <UserGroupLoading />
                         Đang tải...
                       </span>
                     ) : groupName ? (
