@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Database } from '../../services/database.ts';
 import CurrencyInput from './CurrencyInput.tsx';
 import { formatVND } from '../../utils/formatters.ts';
@@ -51,7 +51,31 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
   const [effectiveFrom, setEffectiveFrom] = useState(todayInputValue);
   const [effectiveTo, setEffectiveTo] = useState('');
   const [entries, setEntries] = useState<Record<string, Record<PriceField, string>>>({});
+  const [selectedVersionIds, setSelectedVersionIds] = useState<Set<string>>(new Set());
   const hasHistory = versions.length > 0;
+  const allVersionsSelected = versions.length > 0 && selectedVersionIds.size === versions.length;
+
+  useEffect(() => {
+    const availableIds = new Set(versions.map(version => version._id));
+    setSelectedVersionIds(previous => {
+      const next = new Set([...previous].filter(id => availableIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [versions]);
+
+  const toggleVersionSelection = useCallback((versionId: string) => {
+    setSelectedVersionIds(previous => {
+      const next = new Set(previous);
+      if (next.has(versionId)) next.delete(versionId);
+      else next.add(versionId);
+      return next;
+    });
+  }, []);
+
+  const toggleAllVersionSelection = useCallback(() => {
+    setSelectedVersionIds(allVersionsSelected ? new Set() : new Set(versions.map(version => version._id)));
+    console.log(`[PriceListUI] ${allVersionsSelected ? 'Cleared' : 'Selected'} all price list versions`, { count: versions.length });
+  }, [allVersionsSelected, versions]);
   const groupedProducts = useMemo(() => {
     const groups = new Map<string, Product[]>();
     products.filter(product => product.sku).forEach(product => {
@@ -132,10 +156,52 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
   const remove = async (version: PriceVersion) => {
     if (!confirm(`Xóa bảng giá “${version.name}”? Nếu bảng giá đang được hóa đơn hoặc lô nhập tham chiếu, hệ thống sẽ từ chối xóa.`)) return;
     setBusy(true);
-    try { await Database.inventory.deletePriceList(version._id); await onSaved(); onMessage('Đã xóa bảng giá.'); }
+    try {
+      await Database.inventory.deletePriceList(version._id);
+      setSelectedVersionIds(previous => { const next = new Set(previous); next.delete(version._id); return next; });
+      await onSaved(); onMessage('Đã xóa bảng giá.');
+    }
     catch (error: any) { console.error('[PriceListUI] Delete failed:', error); onMessage(error.message || 'Không thể xóa bảng giá.'); }
     finally { setBusy(false); }
   };
+  const removeSelected = useCallback(async () => {
+    const selectedVersions = versions.filter(version => selectedVersionIds.has(version._id));
+    if (!selectedVersions.length) return;
+    if (!confirm(`Bạn có chắc muốn xóa ${selectedVersions.length} bảng giá đã chọn? Các bảng được hóa đơn tham chiếu sẽ không thể xóa.`)) return;
+
+    setBusy(true);
+    const deletedIds: string[] = [];
+    const failed: Array<{ version: PriceVersion; message: string }> = [];
+    console.log('[PriceListUI] Bulk delete started:', { count: selectedVersions.length });
+    try {
+      for (const version of selectedVersions) {
+        try {
+          await Database.inventory.deletePriceList(version._id);
+          deletedIds.push(version._id);
+          console.log('[PriceListUI] Bulk delete succeeded:', { id: version._id, name: version.name });
+        } catch (error: any) {
+          const message = error?.message || 'Không thể xóa bảng giá.';
+          failed.push({ version, message });
+          console.error('[PriceListUI] Bulk delete failed:', { id: version._id, name: version.name, error });
+        }
+      }
+
+      setSelectedVersionIds(new Set(failed.map(entry => entry.version._id)));
+      await onSaved();
+      if (failed.length) {
+        const details = failed.slice(0, 2).map(entry => `${entry.version.name}: ${entry.message}`).join(' · ');
+        const remaining = failed.length > 2 ? ` · Còn ${failed.length - 2} lỗi khác.` : '';
+        onMessage(`Đã xóa ${deletedIds.length}/${selectedVersions.length} bảng giá. ${details}${remaining}`);
+      } else {
+        onMessage(`Đã xóa ${deletedIds.length} bảng giá.`);
+      }
+    } catch (error: any) {
+      console.error('[PriceListUI] Bulk delete refresh failed:', error);
+      onMessage(error?.message || `Đã xóa ${deletedIds.length} bảng giá nhưng không thể tải lại danh sách.`);
+    } finally {
+      setBusy(false);
+    }
+  }, [onMessage, onSaved, selectedVersionIds, versions]);
   const exportPdf = (version: PriceVersion) => {
     const win = window.open('', '_blank', 'width=1100,height=850');
     if (!win) return onMessage('Trình duyệt đã chặn cửa sổ xuất PDF. Hãy cho phép popup rồi thử lại.');
@@ -179,12 +245,20 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
   return <div className="space-y-4 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-black">Danh sách bảng giá</h2><p className="mt-1 text-sm text-slate-500">Giá bán được áp dụng theo ngày hiệu lực của từng bảng.</p></div>{canManage && <button onClick={openCreate} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white">+ Tạo mới bảng giá</button>}</div>
     <div className="space-y-3">
-      {versions.map(version => <details key={version._id} className="group rounded-2xl border border-slate-200 p-4">
+      {canManage && versions.length > 0 && <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-50 p-3" data-testid="price-list-bulk-toolbar">
+        <span className="mr-auto text-xs font-semibold text-slate-600">{selectedVersionIds.size} / {versions.length} đã chọn</span>
+        <button type="button" data-testid="toggle-all-price-lists" disabled={busy} onClick={toggleAllVersionSelection} className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-700 ring-1 ring-slate-200 disabled:opacity-50">{allVersionsSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</button>
+        <button type="button" data-testid="bulk-delete-price-lists" disabled={busy || selectedVersionIds.size === 0} onClick={() => void removeSelected()} className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{busy ? 'Đang xóa…' : `Xóa đã chọn${selectedVersionIds.size ? ` (${selectedVersionIds.size})` : ''}`}</button>
+      </div>}
+      {versions.map(version => <div key={version._id} className="flex items-start gap-2">
+        {canManage && <input type="checkbox" aria-label={`Chọn bảng giá ${version.name || dateOnly(version.effectiveFrom)}`} data-testid={`select-price-list-${version._id}`} checked={selectedVersionIds.has(version._id)} disabled={busy} onChange={() => toggleVersionSelection(version._id)} className="mt-5 h-4 w-4 shrink-0 cursor-pointer accent-emerald-700 disabled:cursor-not-allowed" />}
+        <details className="group min-w-0 flex-1 rounded-2xl border border-slate-200 p-4">
         <summary className="flex cursor-pointer list-none items-start justify-between gap-3"><span className="min-w-0"><span className="block font-black">{version.name || 'Bảng giá'}</span><span className="mt-1 block text-sm text-slate-600">Hiệu lực từ {dateOnly(version.effectiveFrom)}{version.effectiveTo ? ` đến ${inclusiveEndLabel(version.effectiveTo)}` : ' · chưa đặt ngày kết thúc'}</span></span><span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${currentStatus(version) === 'Đang hiệu lực' ? 'bg-emerald-100 text-emerald-800' : currentStatus(version) === 'Sắp hiệu lực' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>{currentStatus(version)}</span></summary>
         <div className="mt-3 flex flex-wrap justify-end gap-2">{canManage && <><button disabled={busy} onClick={() => openEdit(version)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold">Sửa</button><button disabled={busy} onClick={() => remove(version)} className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">Xóa</button></>}<button onClick={() => exportPdf(version)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold">In / Lưu PDF</button><button onClick={() => void exportImage(version)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold">Lưu ảnh</button></div>
         <p className="mt-2 text-xs text-slate-500">{rowsForVersion(version).length} sản phẩm · <span className="group-open:hidden">Xem giá</span><span className="hidden group-open:inline">Thu gọn</span></p>
         <div className="mt-4 overflow-x-auto border-t pt-3"><table className="w-full min-w-[800px] text-left text-xs"><thead><tr><th className="p-2">Sản phẩm · SKU / PV</th>{TIERS.map(tier => <th key={tier.field} className={`p-2 text-right ${tier.text}`}>{tier.label}</th>)}</tr></thead><tbody>{rowsForVersion(version).map(row => <tr key={`${row.sku}-${row.name}`} className="border-t border-slate-100"><td className="p-2"><b>{row.name}</b><span className="mt-1 block text-slate-600">{row.skus.join(', ')} · {row.pv} PV</span></td>{TIERS.map(tier => <td key={tier.field} className={`p-2 text-right ${tier.text}`}>{formatVND(row.prices[tier.field])}</td>)}</tr>)}</tbody></table></div>
-      </details>)}
+        </details>
+      </div>)}
       {!versions.length && <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">Chưa có bảng giá nào.</div>}
     </div>
     {open && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-2 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="price-list-modal-title">

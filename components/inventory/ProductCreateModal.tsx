@@ -1,5 +1,4 @@
 import React, { memo } from 'react';
-import CurrencyInput from './CurrencyInput.tsx';
 
 interface ProductDraft {
   sku: string;
@@ -7,30 +6,14 @@ interface ProductDraft {
   categoryId: string;
   pv: string;
   quantity: string;
-  unitCost: string;
   lowStockThreshold: string;
   imageUrl: string;
 }
 
-interface DraftPrices {
-  price100: string;
-  price25: string;
-  price35: string;
-  price42: string;
-  price50: string;
-}
-
-interface PriceTier { field: keyof DraftPrices; label: string; }
-
 interface ProductCreateModalProps {
   draft: ProductDraft;
   setDraft: React.Dispatch<React.SetStateAction<ProductDraft>>;
-  draftPrices: DraftPrices;
-  setDraftPrices: React.Dispatch<React.SetStateAction<DraftPrices>>;
   categories: any[];
-  priceTiers: PriceTier[];
-  canPrices: boolean;
-  pricesReady: boolean;
   busy: boolean;
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -42,12 +25,7 @@ interface ProductCreateModalProps {
 const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
   draft,
   setDraft,
-  draftPrices,
-  setDraftPrices,
   categories,
-  priceTiers,
-  canPrices,
-  pricesReady,
   busy,
   onClose,
   onSubmit,
@@ -66,7 +44,7 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
       <header className="sticky top-0 z-10 -mx-4 -mt-4 flex items-start justify-between gap-4 border-b bg-white p-4 sm:-mx-6 sm:-mt-6 sm:p-6">
         <div>
           <h2 id="create-product-title" className="text-xl font-black">Thêm mẫu sản phẩm dùng chung</h2>
-          <p className="mt-1 text-sm font-normal text-slate-500">Tạo mẫu sản phẩm chung và bảng giá; mỗi kho cá nhân sẽ tự nhập số lượng tồn kho riêng.</p>
+          <p className="mt-1 text-sm font-normal text-slate-500">Tạo mẫu sản phẩm chung; mỗi kho cá nhân sẽ tự nhập số lượng tồn kho riêng.</p>
         </div>
         <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng thêm sản phẩm" className="rounded-xl bg-slate-100 px-3 py-2 font-bold disabled:opacity-50">✕</button>
       </header>
@@ -90,24 +68,11 @@ const ProductCreateModal: React.FC<ProductCreateModalProps> = memo(({
           <button type="button" onClick={onCreateCategory} className="shrink-0 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">+ Tạo</button>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" inputMode="decimal" min="0" step="0.01" placeholder="Điểm PV" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
-        <label className="block text-sm font-bold text-slate-700">Giá vốn tham chiếu<CurrencyInput placeholder="Giá vốn" value={draft.unitCost} onValueChange={value => setDraft(old => ({ ...old, unitCost: value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
-      </div>
-      {canPrices ? (
-        <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-          <div>
-            <h3 className="text-sm font-black text-emerald-950">Bảng giá sản phẩm</h3>
-            <p className="mt-1 text-xs font-normal text-emerald-800">Nhập số tiền áp dụng cho từng mốc. Hệ thống không tự tính từ giá gốc.</p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {priceTiers.map(tier => <label key={tier.field} className="block text-xs font-bold text-slate-700">{tier.label}<CurrencyInput required value={draftPrices[tier.field]} onValueChange={value => setDraftPrices(old => ({ ...old, [tier.field]: value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal" /></label>)}
-          </div>
-        </div>
-      ) : <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Bảng giá chung do người có quyền quản lý bảng giá cập nhật.</p>}
+      <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" inputMode="decimal" min="0" step="0.01" placeholder="Điểm PV" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+      <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Giá bán và giá vốn được quản lý riêng trong tab Bảng giá. Tạo sản phẩm không tự tạo phiên bản bảng giá.</p>
       <label className="block text-sm font-bold text-slate-700">Hình ảnh<input type="file" accept="image/*" onChange={event => onUploadImage(event.target.files?.[0])} className="mt-1 w-full rounded-xl bg-slate-50 p-2 text-xs font-normal" /></label>
       {draft.imageUrl && <img src={draft.imageUrl} alt="Xem trước hình ảnh sản phẩm" className="h-24 w-24 rounded-xl object-cover" />}
-      <button disabled={busy || (canPrices && !pricesReady)} className="w-full rounded-xl bg-emerald-700 py-3 font-black text-white disabled:opacity-50">{busy ? 'Đang lưu…' : canPrices && !pricesReady ? 'Đang tải bảng giá…' : 'Thêm vào kho'}</button>
+      <button disabled={busy} className="w-full rounded-xl bg-emerald-700 py-3 font-black text-white disabled:opacity-50">{busy ? 'Đang lưu…' : 'Thêm vào kho'}</button>
     </form>
   </div>
 ));

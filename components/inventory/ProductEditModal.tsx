@@ -1,5 +1,4 @@
 import React, { memo } from 'react';
-import CurrencyInput from './CurrencyInput.tsx';
 
 interface ProductDraft {
   sku: string;
@@ -10,26 +9,11 @@ interface ProductDraft {
   imageUrl: string;
 }
 
-interface ProductPrices {
-  costReference: string;
-  price100: string;
-  price25: string;
-  price35: string;
-  price42: string;
-  price50: string;
-}
-
-interface PriceTier { field: keyof Omit<ProductPrices, 'costReference'>; label: string; }
-
 interface ProductEditModalProps {
   productName: string;
   draft: ProductDraft;
   setDraft: React.Dispatch<React.SetStateAction<ProductDraft>>;
-  prices: ProductPrices;
-  setPrices: React.Dispatch<React.SetStateAction<ProductPrices>>;
   categories: any[];
-  priceTiers: PriceTier[];
-  canPrices: boolean;
   busy: boolean;
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
@@ -38,8 +22,7 @@ interface ProductEditModalProps {
 }
 
 const ProductEditModal: React.FC<ProductEditModalProps> = memo(({
-  productName, draft, setDraft, prices, setPrices, categories, priceTiers,
-  canPrices, busy, onClose, onSubmit, onCreateCategory, onUploadImage,
+  productName, draft, setDraft, categories, busy, onClose, onSubmit, onCreateCategory, onUploadImage,
 }) => (
   <div
     className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/65 p-3 sm:p-6"
@@ -75,17 +58,7 @@ const ProductEditModal: React.FC<ProductEditModalProps> = memo(({
       </div>
       <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Số lượng tồn hiện tại được giữ nguyên. Dùng “Nhập hàng” hoặc “Điều chỉnh” để thay đổi tồn và lưu nhật ký.</div>
 
-      <div className="space-y-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-        <div>
-          <h3 className="text-sm font-black text-emerald-950">Giá vốn tham chiếu và mức giá bán</h3>
-          <p className="mt-1 text-xs font-normal text-emerald-800">Lưu thay đổi sẽ tạo phiên bản bảng giá chung mới; các lô nhập và hóa đơn cũ giữ nguyên giá lịch sử.</p>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-xs font-bold text-slate-700">Giá nhập tham chiếu<CurrencyInput value={prices.costReference} readOnly={!canPrices} onValueChange={value => setPrices(old => ({ ...old, costReference: value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal read-only:bg-slate-100" /></label>
-          {priceTiers.map(tier => <label key={tier.field} className="block text-xs font-bold text-slate-700">{tier.label}<CurrencyInput value={prices[tier.field]} readOnly={!canPrices} onValueChange={value => setPrices(old => ({ ...old, [tier.field]: value }))} className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal read-only:bg-slate-100" /></label>)}
-        </div>
-        {!canPrices && <p className="text-xs text-slate-600">Bạn chỉ có thể xem giá. Cần quyền quản lý bảng giá để thay đổi.</p>}
-      </div>
+      <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Bảng giá được tạo và quản lý riêng trong tab Bảng giá. Sửa thông tin sản phẩm không tự tạo phiên bản bảng giá.</div>
 
       <label className="block text-sm font-bold text-slate-700">Hình ảnh<input type="file" accept="image/*" onChange={event => onUploadImage(event.target.files?.[0])} className="mt-1 w-full rounded-xl bg-slate-50 p-2 text-xs font-normal" /></label>
       {draft.imageUrl && <img src={draft.imageUrl} alt="Xem trước hình ảnh sản phẩm" className="h-24 w-24 rounded-xl object-cover" />}
