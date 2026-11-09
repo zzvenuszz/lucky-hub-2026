@@ -56,6 +56,53 @@ const reflowPriceListIntervals = async (versions: any[]) => {
   });
   if (operations.length) await PriceListVersion.bulkWrite(operations);
 };
+const updateLivePriceListSkuEntries = async (sourceSkus: string[], targetSku?: string) => {
+  const sourceSet = new Set(normalizeSkus(sourceSkus));
+  const normalizedTarget = targetSku ? normalizeSkus([targetSku])[0] : '';
+  if (!sourceSet.size) return { updatedVersions: 0, changedEntries: 0 };
+
+  const now = new Date();
+  const versions = await PriceListVersion.find({ $or: [{ effectiveTo: null }, { effectiveTo: { $gt: now } }] })
+    .select('_id entries')
+    .lean() as any[];
+  const operations: any[] = [];
+  let changedEntries = 0;
+
+  for (const version of versions) {
+    const entries = Array.isArray(version.entries) ? version.entries : [];
+    const sourceIndexes = entries
+      .map((entry: any, index: number) => ({ entry, index, sku: String(entry.sku || '').trim().toUpperCase() }))
+      .filter((item: any) => sourceSet.has(item.sku));
+    if (!sourceIndexes.length) continue;
+
+    const targetExists = Boolean(normalizedTarget && entries.some((entry: any) => String(entry.sku || '').trim().toUpperCase() === normalizedTarget));
+    const replacementIndex = !targetExists && normalizedTarget
+      ? (sourceIndexes.find((item: any) => item.sku === [...sourceSet][0]) || sourceIndexes[0]).index
+      : -1;
+    let replacementWritten = false;
+    const nextEntries = entries.flatMap((entry: any, index: number) => {
+      const sku = String(entry.sku || '').trim().toUpperCase();
+      if (!sourceSet.has(sku)) return [entry];
+      if (index === replacementIndex && !replacementWritten) {
+        replacementWritten = true;
+        return [{ ...entry, sku: normalizedTarget }];
+      }
+      return [];
+    });
+
+    changedEntries += sourceIndexes.length;
+    operations.push({ updateOne: { filter: { _id: version._id }, update: { $set: { entries: nextEntries } } } });
+  }
+
+  if (operations.length) await PriceListVersion.bulkWrite(operations, { ordered: true });
+  const result = { updatedVersions: operations.length, changedEntries };
+  if (operations.length) {
+    console.log('[Inventory] Live price list SKU entries updated:', {
+      sourceSkus: [...sourceSet], targetSku: normalizedTarget || null, ...result,
+    });
+  }
+  return result;
+};
 const invoiceNumber = (at: Date) => {
   const pad = (value: number) => String(value).padStart(2, '0');
   const date = `${pad(at.getDate())}${pad(at.getMonth() + 1)}${at.getFullYear()}`;
@@ -354,6 +401,7 @@ router.put('/items/:id', inventoryOrPrice, async (req: Request, res: Response) =
     }
 
     const existingSkus = skusForItem(existing);
+    let removedPriceListSkus: string[] = [];
     const allMatchingItems = await InventoryItem.find({
       $or: [{ sku: { $in: existingSkus } }, { skus: { $in: existingSkus } }],
     }).lean() as any[];
@@ -375,6 +423,7 @@ router.put('/items/:id', inventoryOrPrice, async (req: Request, res: Response) =
     if (req.body.skus !== undefined || req.body.sku !== undefined) {
       const skus = normalizeSkus(req.body.skus ?? req.body.sku);
       if (!skus.length) return res.status(400).json({ message: 'Nhập ít nhất một SKU hợp lệ.' });
+      removedPriceListSkus = existingSkus.filter(sku => !skus.includes(sku));
       const matchingIds = allMatchingItems.map(doc => doc._id);
       const conflict = await InventoryItem.findOne({
         _id: { $nin: matchingIds },
@@ -407,6 +456,9 @@ router.put('/items/:id', inventoryOrPrice, async (req: Request, res: Response) =
     if (Object.keys(templatePatch).length > 0) {
       await InventoryItem.updateMany({ _id: { $in: matchingIds } }, { $set: templatePatch });
     }
+    if (removedPriceListSkus.length && templatePatch.sku) {
+      await updateLivePriceListSkuEntries(removedPriceListSkus, templatePatch.sku);
+    }
     if (req.body.lowStockThreshold !== undefined) {
       await InventoryItem.updateOne(
         { _id: existing._id, ownerId: actorId },
@@ -415,7 +467,7 @@ router.put('/items/:id', inventoryOrPrice, async (req: Request, res: Response) =
     }
 
     const item = await InventoryItem.findById(existing._id);
-    console.log('[Inventory] Product template updated across system:', { actorId, itemId: String(existing._id), updatedDocs: matchingIds.length, archived: item?.archived });
+    console.log('[Inventory] Product template updated across system:', { actorId, itemId: String(existing._id), updatedDocs: matchingIds.length, archived: item?.archived, remappedPriceListSkus: removedPriceListSkus.length });
     res.json(item);
   } catch (error: any) { console.error('[Inventory] Update item failed:', error); res.status(error.code === 11000 ? 409 : 500).json({ message: error.code === 11000 ? 'SKU đã tồn tại trong kho.' : error.message }); }
 });
@@ -449,6 +501,7 @@ router.delete('/items/:id', priceManager, async (req: Request, res: Response) =>
       return res.status(409).json({ message: 'Mặt hàng đã có trên hóa đơn nên không thể xóa hẳn. Hãy dùng “Ngừng bán” để giữ nguyên lịch sử.' });
     }
 
+    await updateLivePriceListSkuEntries(existingSkus);
     await Promise.all([
       InventoryLot.deleteMany({ itemId: { $in: matchingIds } }),
       InventoryMovement.deleteMany({ itemId: { $in: matchingIds } }),
