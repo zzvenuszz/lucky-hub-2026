@@ -25,6 +25,40 @@ import '../models/NutritionBranch.ts';
 
 const router = Router();
 
+const linkPendingSponsorMembers = async (sponsor: any): Promise<{ linkedCount: number; skippedCycleCount: number }> => {
+  const sponsorNumber = String(sponsor?.memberNumber || '').trim().toUpperCase();
+  if (!sponsor?._id || !sponsorNumber) return { linkedCount: 0, skippedCycleCount: 0 };
+
+  const pendingMembers = await User.find({ sponsorMemberNumber: sponsorNumber, sponsorUserId: null, _id: { $ne: sponsor._id } })
+    .select('_id fullName')
+    .lean() as any[];
+  let linkedCount = 0;
+  let skippedCycleCount = 0;
+
+  for (const member of pendingMembers) {
+    const memberId = String(member._id);
+    let cursor: any = sponsor;
+    const visited = new Set<string>();
+    let createsCycle = false;
+    while (cursor?.sponsorUserId) {
+      const ancestorId = String(cursor.sponsorUserId);
+      if (ancestorId === memberId) { createsCycle = true; break; }
+      if (visited.has(ancestorId)) { createsCycle = true; break; }
+      visited.add(ancestorId);
+      cursor = await User.findById(ancestorId).select('sponsorUserId').lean();
+    }
+    if (createsCycle) { skippedCycleCount += 1; continue; }
+
+    const result = await User.updateOne(
+      { _id: member._id, sponsorMemberNumber: sponsorNumber, sponsorUserId: null },
+      { $set: { sponsorUserId: sponsor._id } },
+    );
+    if (result.modifiedCount > 0) linkedCount += 1;
+  }
+
+  return { linkedCount, skippedCycleCount };
+};
+
 // Tất cả user routes đều cần auth
 router.use(authMiddleware);
 
@@ -95,6 +129,53 @@ router.get('/coach-candidates', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/sponsor-tree/:id', async (req: Request, res: Response) => {
+  try {
+    if (!req.user!.permissions.includes(RESOURCES.SPONSOR_TREE.VIEW)) {
+      return res.status(403).json({ message: 'Bạn không có quyền xem tuyến bảo trợ.' });
+    }
+    const targetId = req.params.id;
+    if (targetId !== req.user!.userId && !req.user!.permissions.includes(RESOURCES.METRICS.VIEW_ANY)) {
+      return res.status(403).json({ message: 'Bạn chỉ được xem tuyến bảo trợ của hồ sơ mình có quyền xem.' });
+    }
+
+    let cursor: any = await User.findById(targetId).select('_id fullName memberNumber memberLevel sponsorUserId sponsorMemberNumber').lean();
+    if (!cursor) return res.status(404).json({ message: 'Không tìm thấy hội viên.' });
+
+    const chain: any[] = [cursor];
+    const visited = new Set<string>([String(cursor._id)]);
+    let pendingSponsorNumber = '';
+    while (cursor.sponsorUserId) {
+      const sponsorId = String(cursor.sponsorUserId);
+      if (visited.has(sponsorId)) {
+        console.warn('[SponsorTree] Cycle detected while loading upline:', { targetId, sponsorId });
+        return res.status(409).json({ message: 'Tuyến bảo trợ có dữ liệu vòng lặp, không thể hiển thị sơ đồ.' });
+      }
+      visited.add(sponsorId);
+      const sponsor = await User.findById(sponsorId).select('_id fullName memberNumber memberLevel sponsorUserId sponsorMemberNumber').lean();
+      if (!sponsor) {
+        pendingSponsorNumber = String(cursor.sponsorMemberNumber || '').trim().toUpperCase();
+        break;
+      }
+      chain.push(sponsor);
+      cursor = sponsor;
+    }
+    if (!cursor.sponsorUserId && cursor.sponsorMemberNumber) pendingSponsorNumber = String(cursor.sponsorMemberNumber).trim().toUpperCase();
+
+    const nodes = chain.reverse().map(member => ({
+      id: String(member._id),
+      fullName: String(member.fullName || '').trim() || 'Hội viên',
+      memberNumber: String(member.memberNumber || '').trim(),
+      memberLevel: member.memberLevel || 'customer',
+    }));
+    console.log('[SponsorTree] Upline loaded:', { actorId: req.user!.userId, targetId, nodeCount: nodes.length, hasPendingSponsor: Boolean(pendingSponsorNumber) });
+    res.json({ nodes, pendingSponsorNumber });
+  } catch (error: any) {
+    console.error('[SponsorTree] Upline lookup failed:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // PUT /api/users/:id - Cập nhật user
 // - User thường chỉ được sửa hồ sơ của chính mình
 // - Admin có quyền users:update mới được sửa hồ sơ người khác
@@ -152,20 +233,29 @@ router.put('/:id',
           const sponsorNumber = String(req.body.sponsorMemberNumber ?? '').trim().toUpperCase();
           const validMemberNumber = (value: string) => !value || /^(VA\d{8}|VNY\d{7})$/.test(value);
           if (!validMemberNumber(sponsorNumber)) return res.status(400).json({ message: 'Mã người bảo trợ không đúng định dạng.' });
+          const requestedMemberNumber = String(req.body.memberNumber ?? '').trim().toUpperCase();
+          if (sponsorNumber && 'memberNumber' in req.body && sponsorNumber === requestedMemberNumber) {
+            return res.status(400).json({ message: 'Không thể dùng mã hội viên của chính mình làm mã người bảo trợ.' });
+          }
           if (sponsorNumber) {
             const sponsor = await User.findOne({ memberNumber: sponsorNumber }).select('_id memberNumber');
-            if (!sponsor) return res.status(400).json({ message: 'Không tìm thấy người bảo trợ theo mã hội viên.' });
-            if (String(sponsor._id) === String(targetId)) return res.status(400).json({ message: 'Không thể tự bảo trợ chính mình.' });
-            let cursor: any = sponsor;
-            const seen = new Set<string>([String(targetId)]);
-            while (cursor?.sponsorUserId) {
-              const id = String(cursor.sponsorUserId);
-              if (seen.has(id)) return res.status(400).json({ message: 'Quan hệ người bảo trợ tạo thành vòng lặp.' });
-              seen.add(id);
-              cursor = await User.findById(id).select('sponsorUserId').lean();
+            if (sponsor) {
+              if (String(sponsor._id) === String(targetId)) return res.status(400).json({ message: 'Không thể tự bảo trợ chính mình.' });
+              let cursor: any = sponsor;
+              const seen = new Set<string>([String(targetId)]);
+              while (cursor?.sponsorUserId) {
+                const id = String(cursor.sponsorUserId);
+                if (seen.has(id)) return res.status(400).json({ message: 'Quan hệ người bảo trợ tạo thành vòng lặp.' });
+                seen.add(id);
+                cursor = await User.findById(id).select('sponsorUserId').lean();
+              }
+              data.sponsorUserId = sponsor._id;
+              data.sponsorMemberNumber = sponsorNumber;
+            } else {
+              data.sponsorUserId = null;
+              data.sponsorMemberNumber = sponsorNumber;
+              console.log('[UserRoutes] Sponsor number saved pending registration:', { targetId, sponsorNumber });
             }
-            data.sponsorUserId = sponsor._id;
-            data.sponsorMemberNumber = sponsorNumber;
           } else {
             data.sponsorUserId = null;
             data.sponsorMemberNumber = '';
@@ -195,6 +285,16 @@ router.put('/:id',
       if (!u) return res.status(404).json({ message: 'User not found' });
 
       const result = u.toObject();
+      if (u.memberNumber) {
+        try {
+          const linkResult = await linkPendingSponsorMembers(u);
+          if (linkResult.linkedCount || linkResult.skippedCycleCount) {
+            console.log('[UserRoutes] Pending sponsor links processed:', { sponsorId: String(u._id), linkedCount: linkResult.linkedCount, skippedCycleCount: linkResult.skippedCycleCount });
+          }
+        } catch (linkError) {
+          console.error('[UserRoutes] Pending sponsor linking failed:', { sponsorId: String(u._id), error: linkError });
+        }
+      }
       if ((isSelf || hasUpdatePerm) && 'sponsorMemberNumber' in req.body) {
         const log = new AuditLog({ actorId: req.user!.userId, actorName: req.user!.fullName, targetId: String(u._id), targetName: u.fullName, type: 'SPONSOR_UPDATE', details: `Người bảo trợ ${previousSponsorNumber || 'không có'} → ${u.sponsorMemberNumber || 'không có'}`, timestamp: new Date().toISOString() });
         await log.save();

@@ -8,6 +8,7 @@ import BodyCompositionPie from './BodyCompositionPie.tsx';
 import TrendChart from './TrendChart.tsx';
 import GoalTracking from '../goals/GoalTracking.tsx';
 import LoadingButton from '../system/LoadingButton.tsx';
+import SponsorTreeSection from './SponsorTreeSection.tsx';
 
 interface DashboardProps {
   user: User;
@@ -33,6 +34,7 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
   const [metrics, setMetrics] = useState<HealthMetric[]>([]);
   const [timeRange, setTimeRange] = useState('7d');
   const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>(['weight', 'bodyFat', 'muscleMass']);
+  const canViewSponsorTree = Boolean((user as any).permissions?.includes('members:sponsor-tree:view'));
 
   useEffect(() => {
     const cacheKey = `metrics_${selectedUserId}`;
@@ -136,6 +138,8 @@ const Dashboard: React.FC<DashboardProps> = memo(({ user, users, onAddMetric, re
           <GoalTracking currentUser={user} refreshTrigger={refreshTrigger} />
         </div>
       )}
+
+      {canViewSponsorTree && <SponsorTreeSection userId={selectedUserId} />}
     </div>
   );
 });

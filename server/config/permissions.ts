@@ -61,6 +61,9 @@ export const RESOURCES = {
     MANAGE: 'members:level:manage',
     MANAGE_ANY: 'members:level:manage:any',
   },
+  SPONSOR_TREE: {
+    VIEW: 'members:sponsor-tree:view',
+  },
 } as const;
 
 /**
@@ -110,4 +113,5 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.PRICELIST.MANAGE]: 'Quản lý bảng giá chung',
   [RESOURCES.MEMBER_LEVEL.MANAGE]: 'Quản lý cấp độ hội viên trong tuyến dưới',
   [RESOURCES.MEMBER_LEVEL.MANAGE_ANY]: 'Quản lý cấp độ của mọi hội viên',
+  [RESOURCES.SPONSOR_TREE.VIEW]: 'Xem tuyến bảo trợ',
 };

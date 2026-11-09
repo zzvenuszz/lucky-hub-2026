@@ -90,6 +90,7 @@ export const Database = {
   checkHealth: async () => request(`${API_BASE}/health`),
   getUsers: async () => (await request<User[]>(`${API_BASE}/users`)) ?? [],
   updateUser: (id: string, data: Partial<User>) => request<User>(`${API_BASE}/users/${id}`, 'PUT', data),
+  getSponsorUpline: (userId: string) => request<{ nodes: Array<{ id: string; fullName: string; memberNumber: string; memberLevel: string }>; pendingSponsorNumber: string }>(`${API_BASE}/users/sponsor-tree/${encodeURIComponent(userId)}`),
   inventory: {
     getCategories: () => request<any[]>(`${API_BASE}/inventory/categories`),
     createCategory: (name: string) => request<any>(`${API_BASE}/inventory/categories`, 'POST', { name }),
