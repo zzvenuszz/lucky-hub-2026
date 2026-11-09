@@ -65,7 +65,7 @@ export const readPriceListFile = async (file: File): Promise<PriceListFileImport
     throw new Error('Chỉ hỗ trợ tệp .csv và .ods.');
   }
 
-  console.log('[PriceListImport] File read started:', { name: file.name, size: file.size, extension });
+  console.log(`[PriceListImport] File read started: ${JSON.stringify({ name: file.name, size: file.size, extension })}`);
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: false });
   const firstSheetName = workbook.SheetNames[0];
   const sheet = firstSheetName ? workbook.Sheets[firstSheetName] : undefined;
@@ -85,14 +85,15 @@ export const readPriceListFile = async (file: File): Promise<PriceListFileImport
   });
   if (!priceColumns.size) throw new Error('Không tìm thấy cột giá 100%, 25%, 35%, 42% hoặc 50%.');
 
-  console.log('[PriceListImport] Detected table columns:', {
+  const detectedColumns = {
     fileName: file.name,
     sheetName: firstSheetName,
     headerRow: headerIndex + 1,
     headers,
     skuColumn,
     priceColumns: Object.fromEntries(priceColumns),
-  });
+  };
+  console.log(`[PriceListImport] Detected table columns: ${JSON.stringify(detectedColumns)}`);
 
   const rows: ImportedPriceRow[] = [];
   const seenSkus = new Set<string>();
@@ -110,7 +111,6 @@ export const readPriceListFile = async (file: File): Promise<PriceListFileImport
   });
 
   if (!rows.length) throw new Error('Không tìm thấy dòng dữ liệu có mã sản phẩm trong tệp.');
-  console.log('[PriceListImport] File parsed:', { name: file.name, rowCount: rows.length, duplicateSkuCount: duplicateSkus.size });
-  console.table(rows.map(row => ({ row: row.rowNumber, sku: row.sku })));
+  console.log(`[PriceListImport] File parsed: ${JSON.stringify({ name: file.name, rowCount: rows.length, duplicateSkuCount: duplicateSkus.size, skuRows: rows.map(row => ({ row: row.rowNumber, sku: row.sku })) })}`);
   return { rows, duplicateSkus: [...duplicateSkus] };
 };

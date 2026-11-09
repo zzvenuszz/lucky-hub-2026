@@ -141,11 +141,6 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
           candidateSkus: productCodes.join(' | '),
         };
       });
-      console.groupCollapsed('[PriceListUI] Import matching diagnostics');
-      console.log('File and catalog counts:', { fileName: file.name, fileSkuCount: result.rows.length, catalogProductCount: catalogDiagnostics.length });
-      console.log('Imported SKU values:', result.rows.map(row => row.sku));
-      console.table(catalogDiagnostics);
-
       const nextEntries: Record<string, Record<PriceField, string>> = {};
       products.filter(product => product.sku).forEach(product => {
         nextEntries[product.sku] = Object.fromEntries(TIERS.map(tier => [tier.field, ''])) as Record<PriceField, string>;
@@ -168,15 +163,25 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
       });
 
       const unmatchedSkus = result.rows.filter(row => !matchedFileSkus.has(row.sku)).map(row => row.sku);
-      console.log('SKU matching results:', { matchedProducts, unmatchedFileSkuCount: unmatchedSkus.length, productsMissingPrices, duplicateFileSkus: result.duplicateSkus });
-      console.table(matchDiagnostics);
-      console.log('Unmatched SKU values from file:', unmatchedSkus);
-      console.groupEnd();
+      const debugDetails = {
+        fileName: file.name,
+        fileSkuCount: result.rows.length,
+        importedSkus: result.rows.map(row => row.sku),
+        catalogProductCount: catalogDiagnostics.length,
+        catalog: catalogDiagnostics,
+        matchedProducts,
+        unmatchedFileSkuCount: unmatchedSkus.length,
+        unmatchedFileSkus: unmatchedSkus,
+        productsMissingPrices,
+        duplicateFileSkus: result.duplicateSkus,
+        productMatches: matchDiagnostics,
+      };
+      console.log(`[PriceListUI] Import matching diagnostics: ${JSON.stringify(debugDetails)}`);
       const unmatchedSummary = unmatchedSkus.length ? ` · ${unmatchedSkus.length} mã không khớp${unmatchedSkus.length <= 5 ? `: ${unmatchedSkus.join(', ')}` : ` (ví dụ: ${unmatchedSkus.slice(0, 5).join(', ')})`}` : '';
       const duplicateSummary = result.duplicateSkus.length ? ` · ${result.duplicateSkus.length} mã trùng trong file, dùng dòng xuất hiện đầu tiên` : '';
       setEntries(nextEntries);
       setImportSummary(`Đã ghép ${matchedProducts}/${products.filter(product => product.sku).length} sản phẩm · ${productsMissingPrices} sản phẩm còn thiếu ít nhất một mức giá${unmatchedSummary}${duplicateSummary}.`);
-      console.log('[PriceListUI] File import applied:', { fileName: file.name, matchedProducts, unmatchedSkuCount: unmatchedSkus.length, productsMissingPrices, duplicateSkuCount: result.duplicateSkus.length });
+      console.log(`[PriceListUI] File import applied: ${JSON.stringify({ fileName: file.name, matchedProducts, unmatchedSkuCount: unmatchedSkus.length, productsMissingPrices, duplicateSkuCount: result.duplicateSkus.length })}`);
     } catch (error: any) {
       console.error('[PriceListUI] File import failed:', error);
       onMessage(error?.message || 'Không thể đọc dữ liệu từ tệp.');
