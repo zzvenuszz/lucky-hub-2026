@@ -1,5 +1,4 @@
 import React, { memo, useCallback, useEffect, useState } from 'react';
-import { jsPDF } from 'jspdf';
 import { formatVND } from '../../utils/formatters.ts';
 
 interface InvoicePreviewProps { sale: any; seller: any; defaultFormat: 'pdf' | 'image'; onClose: () => void; }
@@ -130,6 +129,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     try {
       const canvas = renderInvoiceCanvas();
       if (!canvas) return;
+      const { jsPDF } = await import('jspdf');
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
       const pageWidth = 210;
       const pageHeight = 297;

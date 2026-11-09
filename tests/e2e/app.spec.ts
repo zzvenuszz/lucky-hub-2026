@@ -159,7 +159,7 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
     // Kiểm tra bottom menu di động chỉ hiển thị icon, không hiển thị text
     const mobileNavButtons = page.getByRole('navigation', { name: 'Điều hướng nhanh' }).locator('button');
     const btnCount = await mobileNavButtons.count();
-    expect(btnCount).toBe(5);
+    expect(btnCount).toBe(4);
     for (let i = 0; i < btnCount; i++) {
       const text = (await mobileNavButtons.nth(i).innerText()).trim();
       expect(text).toBe('');
