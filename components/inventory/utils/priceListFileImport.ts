@@ -85,6 +85,15 @@ export const readPriceListFile = async (file: File): Promise<PriceListFileImport
   });
   if (!priceColumns.size) throw new Error('Không tìm thấy cột giá 100%, 25%, 35%, 42% hoặc 50%.');
 
+  console.log('[PriceListImport] Detected table columns:', {
+    fileName: file.name,
+    sheetName: firstSheetName,
+    headerRow: headerIndex + 1,
+    headers,
+    skuColumn,
+    priceColumns: Object.fromEntries(priceColumns),
+  });
+
   const rows: ImportedPriceRow[] = [];
   const seenSkus = new Set<string>();
   const duplicateSkus = new Set<string>();
@@ -102,5 +111,6 @@ export const readPriceListFile = async (file: File): Promise<PriceListFileImport
 
   if (!rows.length) throw new Error('Không tìm thấy dòng dữ liệu có mã sản phẩm trong tệp.');
   console.log('[PriceListImport] File parsed:', { name: file.name, rowCount: rows.length, duplicateSkuCount: duplicateSkus.size });
+  console.table(rows.map(row => ({ row: row.rowNumber, sku: row.sku })));
   return { rows, duplicateSkus: [...duplicateSkus] };
 };

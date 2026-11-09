@@ -132,17 +132,33 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
       const result = await readPriceListFile(file);
       const firstRowBySku = new Map<string, typeof result.rows[number]>();
       result.rows.forEach(row => { if (!firstRowBySku.has(row.sku)) firstRowBySku.set(row.sku, row); });
+      const catalogDiagnostics = products.filter(product => product.sku).map(product => {
+        const productCodes = [...new Set([String(product.sku).trim().toUpperCase(), ...skuList(product)])];
+        return {
+          product: product.name,
+          primarySku: String(product.sku),
+          alternateSkus: Array.isArray(product.skus) ? product.skus.join(' | ') : '(skus field missing)',
+          candidateSkus: productCodes.join(' | '),
+        };
+      });
+      console.groupCollapsed('[PriceListUI] Import matching diagnostics');
+      console.log('File and catalog counts:', { fileName: file.name, fileSkuCount: result.rows.length, catalogProductCount: catalogDiagnostics.length });
+      console.log('Imported SKU values:', result.rows.map(row => row.sku));
+      console.table(catalogDiagnostics);
+
       const nextEntries: Record<string, Record<PriceField, string>> = {};
       products.filter(product => product.sku).forEach(product => {
         nextEntries[product.sku] = Object.fromEntries(TIERS.map(tier => [tier.field, ''])) as Record<PriceField, string>;
       });
 
       const matchedFileSkus = new Set<string>();
+      const matchDiagnostics: Array<{ product: string; primarySku: string; candidateSkus: string; matchedFileSku: string }> = [];
       let matchedProducts = 0;
       let productsMissingPrices = 0;
       products.filter(product => product.sku).forEach(product => {
         const productCodes = [...new Set([String(product.sku).trim().toUpperCase(), ...skuList(product)])];
         const matchedRow = productCodes.map(code => firstRowBySku.get(code)).find(Boolean);
+        matchDiagnostics.push({ product: product.name, primarySku: String(product.sku), candidateSkus: productCodes.join(' | '), matchedFileSku: matchedRow?.sku || '' });
         if (!matchedRow) return;
 
         matchedProducts += 1;
@@ -152,6 +168,10 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
       });
 
       const unmatchedSkus = result.rows.filter(row => !matchedFileSkus.has(row.sku)).map(row => row.sku);
+      console.log('SKU matching results:', { matchedProducts, unmatchedFileSkuCount: unmatchedSkus.length, productsMissingPrices, duplicateFileSkus: result.duplicateSkus });
+      console.table(matchDiagnostics);
+      console.log('Unmatched SKU values from file:', unmatchedSkus);
+      console.groupEnd();
       const unmatchedSummary = unmatchedSkus.length ? ` · ${unmatchedSkus.length} mã không khớp${unmatchedSkus.length <= 5 ? `: ${unmatchedSkus.join(', ')}` : ` (ví dụ: ${unmatchedSkus.slice(0, 5).join(', ')})`}` : '';
       const duplicateSummary = result.duplicateSkus.length ? ` · ${result.duplicateSkus.length} mã trùng trong file, dùng dòng xuất hiện đầu tiên` : '';
       setEntries(nextEntries);
