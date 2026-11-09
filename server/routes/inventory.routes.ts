@@ -670,7 +670,7 @@ router.get('/price-list', async (req: Request, res: Response) => {
 router.get('/price-list/products', priceManager, async (_req: Request, res: Response) => {
   try {
     const [items, active] = await Promise.all([
-      InventoryItem.find({ archived: { $ne: true } }).select('sku name imageUrl pv categoryName -_id').sort({ name: 1 }).lean(),
+      InventoryItem.find({ archived: { $ne: true } }).select('sku skus name imageUrl pv categoryName -_id').sort({ name: 1 }).lean(),
       currentPrices(new Date()),
     ]);
     const priceMap = new Map<string, any>((active?.entries || []).map((entry: any) => [String(entry.sku), entry] as [string, any]));
