@@ -707,13 +707,13 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     {invoice && <InvoicePreview sale={invoice} seller={{ name: invoice.sellerName || sellerProfile.name, address: invoice.sellerAddress || sellerProfile.address, phone: invoice.sellerPhone || sellerProfile.phone }} defaultFormat={sellerSettings?.format === 'image' ? 'image' : 'pdf'} onClose={() => setInvoice(null)} />}
     {tab === 'sale' && canUseInventory && <>
       <style>{`[data-sale-summary-bar]{bottom:calc(86px + env(safe-area-inset-bottom,0px))}@media(min-width:768px){[data-sale-summary-bar]{bottom:0}}`}</style>
-      <div data-sale-summary-bar data-testid="sale-summary-bar" className="fixed inset-x-0 z-[55] border-t border-emerald-700 bg-emerald-400 px-3 py-2.5 text-black shadow-[0_-6px_24px_rgba(15,23,42,0.15)] sm:px-6 sm:py-3">
+      {cart.length > 0 && <div data-sale-summary-bar data-testid="sale-summary-bar" className="fixed inset-x-0 z-[55] border-t border-emerald-700 bg-emerald-400 px-3 py-2.5 text-black shadow-[0_-6px_24px_rgba(15,23,42,0.15)] sm:px-6 sm:py-3">
         <div className="mx-auto grid max-w-7xl grid-cols-3 items-center whitespace-nowrap text-[clamp(8px,2.8vw,14px)] font-black sm:text-sm">
           <span className="min-w-0 text-left">{PRICE_TIERS.find(tier => tier.field === orderPriceField)?.discount || '0%'}</span>
           <span className="min-w-0 text-center">{totalPv} PV</span>
           <span className="min-w-0 text-right">Tổng: {money(total)}</span>
         </div>
-      </div>
+      </div>}
     </>}
   </section>;
 });

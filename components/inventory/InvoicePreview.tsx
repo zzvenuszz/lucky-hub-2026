@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useState } from 'react';
+import { jsPDF } from 'jspdf';
 import { formatVND } from '../../utils/formatters.ts';
 
 interface InvoicePreviewProps { sale: any; seller: any; defaultFormat: 'pdf' | 'image'; onClose: () => void; }
@@ -7,6 +8,7 @@ const escapeHtml = (value: any) => String(value ?? '').replace(/[&<>"']/g, char 
 
 const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defaultFormat, onClose }) => {
   const [imageUrl, setImageUrl] = useState('');
+  const [pdfUrl, setPdfUrl] = useState('');
   const isProvisional = Boolean(sale.isProvisional);
   const isDemo = Boolean(sale.isDemo);
   const invoiceHeading = isDemo ? 'HÓA ĐƠN BÁN HÀNG · DEMO' : isProvisional ? 'PHIẾU TẠM TÍNH' : 'HÓA ĐƠN BÁN HÀNG';
@@ -15,6 +17,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     : 'HÓA ĐƠN TẠM TÍNH · CHỈ DÙNG XEM TRƯỚC, CHƯA THANH TOÁN';
 
   useEffect(() => () => { if (imageUrl) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
+  useEffect(() => () => { if (pdfUrl) URL.revokeObjectURL(pdfUrl); }, [pdfUrl]);
 
   const printPdf = useCallback(() => {
     console.log('[InvoicePreview] PDF view opened:', { invoiceNumber: sale.invoiceNumber, isProvisional, isDemo });
@@ -41,8 +44,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     console.log('[InvoicePreview] Printable invoice ready:', { invoiceNumber: sale.invoiceNumber, provisional: isProvisional });
   }, [sale, seller, invoiceHeading, isProvisional, isDemo, provisionalNotice]);
 
-  const downloadImage = useCallback(() => {
-    console.log('[InvoicePreview] PNG export started:', { invoiceNumber: sale.invoiceNumber, isProvisional, isDemo });
+  const renderInvoiceCanvas = useCallback(() => {
     const canvas = document.createElement('canvas');
     const width = 1000;
     const rows = sale.lines || [];
@@ -55,7 +57,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     canvas.width = width;
     canvas.height = topHeight + metaHeight + 90 + rows.length * 66 + noteHeight + 80;
     const ctx = canvas.getContext('2d');
-    if (!ctx) { alert('Không thể tạo ảnh hóa đơn trên thiết bị này.'); return; }
+    if (!ctx) { alert('Không thể dựng hóa đơn trên thiết bị này.'); return null; }
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#087b58'; ctx.fillRect(0, 0, width, 164);
     ctx.fillStyle = '#ffffff'; ctx.font = 'bold 32px Arial'; ctx.fillText(invoiceHeading, 42, 58);
@@ -109,12 +111,72 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
       const note = String(sale.note);
       ctx.fillText(note.slice(0, 110), 48, y + 51);
     }
+    return canvas;
+  }, [sale, seller, invoiceHeading, isProvisional, isDemo, provisionalNotice]);
+
+  const downloadImage = useCallback(() => {
+    console.log('[InvoicePreview] PNG export started:', { invoiceNumber: sale.invoiceNumber, isProvisional, isDemo });
+    const canvas = renderInvoiceCanvas();
+    if (!canvas) return;
     canvas.toBlob(blob => {
       if (!blob) { alert('Không thể tạo file ảnh hóa đơn.'); return; }
       const url = URL.createObjectURL(blob); setImageUrl(old => { if (old) URL.revokeObjectURL(old); return url; });
       console.log('[InvoicePreview] PNG generated:', { invoiceNumber: sale.invoiceNumber, bytes: blob.size, provisional: isProvisional });
     }, 'image/png');
-  }, [sale, seller, invoiceHeading, isProvisional, isDemo, provisionalNotice]);
+  }, [sale.invoiceNumber, isProvisional, isDemo, renderInvoiceCanvas]);
+
+  const exportPdf = useCallback(async () => {
+    console.log('[InvoicePreview] PDF export started:', { invoiceNumber: sale.invoiceNumber, isProvisional, isDemo });
+    try {
+      const canvas = renderInvoiceCanvas();
+      if (!canvas) return;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const sourcePageHeight = Math.floor(canvas.width * pageHeight / pageWidth);
+      let sourceY = 0;
+      let pageIndex = 0;
+      while (sourceY < canvas.height) {
+        const sliceHeight = Math.min(sourcePageHeight, canvas.height - sourceY);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+        const context = pageCanvas.getContext('2d');
+        if (!context) throw new Error('Không thể dựng trang PDF trên thiết bị này.');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        context.drawImage(canvas, 0, sourceY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+        if (pageIndex > 0) pdf.addPage('a4', 'portrait');
+        const renderedHeight = sliceHeight * pageWidth / canvas.width;
+        pdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageWidth, renderedHeight, undefined, 'FAST');
+        sourceY += sliceHeight;
+        pageIndex += 1;
+      }
+      const blob = pdf.output('blob');
+      const file = new File([blob], `${sale.invoiceNumber}.pdf`, { type: 'application/pdf' });
+      console.log('[InvoicePreview] PDF generated:', { invoiceNumber: sale.invoiceNumber, bytes: blob.size, pages: pageIndex });
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const isIOSWebClip = isIOS && (Boolean((navigator as any).standalone) || window.matchMedia('(display-mode: standalone)').matches);
+      if (isIOS && navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ files: [file], title: `${invoiceHeading} ${sale.invoiceNumber}` });
+        console.log('[InvoicePreview] PDF shared to iOS share sheet:', { invoiceNumber: sale.invoiceNumber });
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      if (isIOSWebClip) {
+        setPdfUrl(old => { if (old) URL.revokeObjectURL(old); return url; });
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = file.name;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
+    } catch (error: any) {
+      console.error('[InvoicePreview] PDF export failed:', error);
+      if (error?.name !== 'AbortError') alert(error?.message || 'Không thể xuất file PDF hóa đơn.');
+    }
+  }, [sale, invoiceHeading, isProvisional, isDemo, renderInvoiceCanvas]);
 
   const shareImage = useCallback(async () => {
     if (!imageUrl) return;
@@ -145,7 +207,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
   return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Xem trước hoá đơn">
     <div className="max-h-[95vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-8">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-black text-slate-900">{imageUrl ? `Ảnh hóa đơn${isDemo ? ' DEMO' : isProvisional ? ' tạm tính' : ''}` : 'Xem trước hoá đơn'}</h2><button onClick={onClose} className="rounded-xl bg-slate-100 px-4 py-2 font-bold">Đóng</button></div>
-      {!imageUrl ? <><article className="mx-auto max-w-xl overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-sm">
+      {pdfUrl ? <div className="mx-auto w-full space-y-3"><div className="flex flex-wrap justify-end gap-2"><a href={pdfUrl} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Mở PDF</a><button onClick={() => setPdfUrl('')} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Quay lại hóa đơn</button></div><iframe title={`PDF hóa đơn ${sale.invoiceNumber}`} src={pdfUrl} className="h-[70vh] w-full rounded-xl border border-slate-200" /><p className="text-center text-xs text-slate-500">Nếu PDF chưa hiện trong khung, bấm “Mở PDF” để xem và lưu vào Tệp.</p></div> : !imageUrl ? <><article className="mx-auto max-w-xl overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-sm">
         <div className="border-b-4 border-emerald-700 px-6 py-5 sm:px-9"><h1 className="text-2xl font-black text-emerald-800">{invoiceHeading}</h1>
           <div className="mt-2 text-sm leading-6 text-slate-600"><p><b>Người bán:</b> {seller?.name}</p><p><b>Địa chỉ người bán:</b> {seller?.address}</p><p><b>SĐT người bán:</b> {seller?.phone}</p></div>
         </div>
@@ -155,7 +217,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
         <div className="mx-5 my-5 rounded-lg border-2 border-emerald-700 bg-emerald-50 px-4 py-3 text-right sm:mx-8"><p className="text-lg font-black text-emerald-900">Tổng: {money(sale.total)}</p><p className="text-sm text-emerald-800">Tổng PV: {sale.totalPv}</p></div>{sale.note && <p className="mx-5 mb-5 rounded-lg border-l-4 border-emerald-600 bg-slate-50 p-3 text-sm sm:mx-8"><b>Ghi chú:</b> {sale.note}</p>}
         {sale.buyerChanges?.length > 0 && <div className="mx-5 mb-4 rounded-xl bg-indigo-50 p-3 text-xs text-indigo-900 sm:mx-8"><b>Lịch sử cập nhật người mua</b>{sale.buyerChanges.map((change: any, index: number) => <p key={index} className="mt-1">{change.fromName} → {change.toName} · {new Date(change.createdAt).toLocaleString('vi-VN')}</p>)}</div>}
         {sale.returnEvents?.length > 0 && <div className="mx-5 mb-5 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 sm:mx-8"><b>Lịch sử hoàn hàng</b>{sale.returnEvents.map((event: any, index: number) => <p key={index} className="mt-1">{event.reason} · {money(event.refundAmount)} · {new Date(event.createdAt).toLocaleString('vi-VN')}</p>)}</div>}
-      </article><div className="mt-5 flex flex-wrap justify-end gap-2"><button onClick={defaultFormat === 'image' ? downloadImage : printPdf} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Xuất theo mặc định: {defaultFormat === 'image' ? 'Ảnh PNG' : 'PDF'}</button><button onClick={downloadImage} className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white">Tải ảnh PNG</button><button onClick={printPdf} className="rounded-xl bg-slate-700 px-4 py-3 text-sm font-bold text-white">In / Lưu PDF</button></div></> : <div className="mx-auto max-w-xl"><div className="mb-3 flex flex-wrap justify-end gap-2"><button onClick={saveImage} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Lưu ảnh</button><button onClick={shareImage} className="rounded-xl bg-slate-800 px-4 py-3 text-sm font-bold text-white">Chia sẻ</button><button onClick={() => setImageUrl('')} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Quay lại hóa đơn</button></div><img src={imageUrl} alt={`Ảnh hóa đơn ${sale.invoiceNumber}`} className="h-auto w-full rounded-xl border border-slate-200" /><p className="mt-2 text-center text-xs text-slate-500">Ảnh hóa đơn {sale.invoiceNumber}. Trên điện thoại, có thể nhấn giữ ảnh để lưu.</p></div>}
+      </article><div className="mt-5 flex flex-wrap justify-end gap-2"><button onClick={defaultFormat === 'image' ? downloadImage : exportPdf} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Xuất theo mặc định: {defaultFormat === 'image' ? 'Ảnh PNG' : 'PDF'}</button><button onClick={downloadImage} className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white">Tải ảnh PNG</button><button onClick={exportPdf} className="rounded-xl bg-slate-700 px-4 py-3 text-sm font-bold text-white">Xuất file PDF</button><button onClick={printPdf} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">In hóa đơn</button></div></> : <div className="mx-auto max-w-xl"><div className="mb-3 flex flex-wrap justify-end gap-2"><button onClick={saveImage} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Lưu ảnh</button><button onClick={shareImage} className="rounded-xl bg-slate-800 px-4 py-3 text-sm font-bold text-white">Chia sẻ</button><button onClick={() => setImageUrl('')} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Quay lại hóa đơn</button></div><img src={imageUrl} alt={`Ảnh hóa đơn ${sale.invoiceNumber}`} className="h-auto w-full rounded-xl border border-slate-200" /><p className="mt-2 text-center text-xs text-slate-500">Ảnh hóa đơn {sale.invoiceNumber}. Trên điện thoại, có thể nhấn giữ ảnh để lưu.</p></div>}
     </div>
   </div>;
 });
