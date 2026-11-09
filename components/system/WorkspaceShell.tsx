@@ -15,6 +15,7 @@ interface WorkspaceShellProps {
   isSystemLogOpen?: boolean;
   onSystemLogToggle?: () => void;
   branding: SystemBranding;
+  saleCartShortcut?: { count: number; onClick: () => void } | null;
 }
 
 type IconName = 'overview' | 'community' | 'health' | 'coach' | 'branch' | 'admin' | 'chat' | 'more' | 'profile' | 'logout' | 'menu' | 'close' | 'chevron' | 'inventory' | 'report';
@@ -43,7 +44,7 @@ const Icon: React.FC<{ name: IconName; size?: number }> = ({ name, size = 20 }) 
   </svg>
 );
 
-const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, children, activeTab, setActiveTab, isChatOpen, onChatToggle, isSystemLogOpen, onSystemLogToggle, branding }) => {
+const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, children, activeTab, setActiveTab, isChatOpen, onChatToggle, isSystemLogOpen, onSystemLogToggle, branding, saleCartShortcut }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
@@ -172,6 +173,9 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
         .lh-main{min-height:100vh;margin-left:250px;display:flex;flex-direction:column}
         .lh-topbar{height:72px;position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:#f4f6f2ed;border-bottom:1px solid #e5eae5cc;backdrop-filter:blur(16px)}
         .lh-topbar-left,.lh-topbar-actions{display:flex;align-items:center;gap:14px}
+        .lh-sale-cart-shortcut{position:relative;width:38px;height:38px;display:grid;place-items:center;border:1px solid #b8d9c2;border-radius:12px;background:#e7f5e9;color:#194f3b;cursor:pointer;transition:background .16s,transform .16s}
+        .lh-sale-cart-shortcut:hover{background:#d8eddb;transform:translateY(-1px)}
+        .lh-sale-cart-count{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;display:grid;place-items:center;border:2px solid #f4f6f2;border-radius:999px;background:#dc2626;color:white;font-size:9px;font-weight:900;line-height:1}
         .lh-page-title{margin:0;font-family:'Manrope',sans-serif;font-size:20px;font-weight:800;letter-spacing:0;text-transform:uppercase}
         .lh-context{margin-top:3px;color:var(--lh-muted);font-size:11px}
         .lh-icon-button{width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--lh-line);border-radius:12px;background:var(--lh-paper);color:#46564c;cursor:pointer;transition:background .16s,border-color .16s}
@@ -228,6 +232,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
           </div>
           <div className="lh-topbar-actions">
             <div className="lh-topbar-notifications"><NotificationBell currentUser={user} /></div>
+            {activeTab === 'inventory' && saleCartShortcut && <button type="button" className="lh-sale-cart-shortcut" aria-label={`Đến giỏ hàng${saleCartShortcut.count ? `, ${saleCartShortcut.count} sản phẩm` : ''}`} title="Đến giỏ hàng" onClick={saleCartShortcut.onClick} data-testid="sale-cart-shortcut"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>{saleCartShortcut.count > 0 && <span className="lh-sale-cart-count">{saleCartShortcut.count > 99 ? '99+' : saleCartShortcut.count}</span>}</button>}
             <button data-chat-toggle="true" className={`lh-icon-button lh-desktop-chat${isChatOpen ? ' is-active' : ''}`} aria-label={isChatOpen ? 'Đóng tin nhắn' : 'Mở tin nhắn'} title="Tin nhắn" onClick={() => onChatToggle?.()}><Icon name="chat" size={19} /></button>
             <div className="lh-account" ref={accountRef} onBlur={event => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsAccountOpen(false);

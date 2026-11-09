@@ -47,6 +47,8 @@ const App: React.FC = () => {
   const rememberMeRef = useRef<boolean>(false);
   const logoutRequestRef = useRef<Promise<void> | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [saleCartShortcut, setSaleCartShortcut] = useState<{ count: number; onClick: () => void } | null>(null);
+  const handleSaleCartShortcutChange = useCallback((shortcut: { count: number; onClick: () => void } | null) => setSaleCartShortcut(shortcut), []);
   const [isRegistering, setIsRegistering] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [knowledge, setKnowledge] = useState<any[]>([]);
@@ -663,7 +665,7 @@ const App: React.FC = () => {
       <ModalStackProvider>
       <ToastProvider>
       <ChatProvider currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules}>
-        <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={(open) => setIsChatOpen(previous => typeof open === 'boolean' ? open : !previous)} isSystemLogOpen={isLogOpen} onSystemLogToggle={() => setIsLogOpen(open => !open)} branding={systemBranding}>
+        <Layout user={currentUser!} onLogout={handleLogout} activeTab={activeTab} setActiveTab={setActiveTab} isChatOpen={isChatOpen} onChatToggle={(open) => setIsChatOpen(previous => typeof open === 'boolean' ? open : !previous)} isSystemLogOpen={isLogOpen} onSystemLogToggle={() => setIsLogOpen(open => !open)} branding={systemBranding} saleCartShortcut={saleCartShortcut}>
         {activeTab === 'dashboard' && <Dashboard user={currentUser!} users={users} onAddMetric={(targetId) => handleOpenMetricForm(targetId)} refreshTrigger={refreshTrigger} />}
         {activeTab === 'community' && <NewsFeed currentUser={currentUser!} users={users} />}
         {activeTab === 'metrics' && <MetricsManagement user={currentUser!} users={users} onAddMetric={(uid) => handleOpenMetricForm(uid)} refreshTrigger={refreshTrigger} />}
@@ -698,7 +700,7 @@ const App: React.FC = () => {
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
         {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} />}
         {activeTab === 'systemndd' && <BranchManager />}
-        {activeTab === 'inventory' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} />}
+        {activeTab === 'inventory' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} onSaleCartShortcutChange={handleSaleCartShortcutChange} />}
         {activeTab === 'inventory-reports' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} initialTab="reports" />}
         {activeTab === 'inventory-prices' && (currentUser! as any).permissions?.includes('pricelist:manage') && <InventoryDashboard user={currentUser!} initialPricesOnly />}
         {activeTab === 'member-levels' && ((currentUser! as any).permissions?.includes('members:level:manage') || (currentUser! as any).permissions?.includes('members:level:manage:any')) && <InventoryDashboard user={currentUser!} initialLevelsOnly />}
