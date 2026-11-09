@@ -128,6 +128,7 @@ export const Database = {
     memberPurchases: (id: string) => request<any>(`${API_BASE}/inventory/members/${id}/purchases`),
   },
   deleteUser: (id: string) => request(`${API_BASE}/users/${id}`, 'DELETE'),
+  resetUserInventoryData: (id: string, confirmationText: string) => request<any>(`${API_BASE}/users/${id}/inventory-data`, 'DELETE', { confirmationText }),
   
   // Metrics
   getMetrics: async (userId?: string) => (userId ? await request<HealthMetric[]>(`${API_BASE}/metrics/${userId}`) : await request<HealthMetric[]>(`${API_BASE}/all-metrics`)) ?? [],

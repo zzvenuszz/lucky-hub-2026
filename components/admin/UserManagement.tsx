@@ -5,6 +5,7 @@ import { useToast } from '../system/ToastProvider.tsx';
 import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 import LoadingButton from '../system/LoadingButton.tsx';
 import UserGroupLoading from './UserGroupLoading.tsx';
+import UserInventoryResetModal from './UserInventoryResetModal.tsx';
 
 interface UserManagementProps {
   users: User[];
@@ -26,11 +27,15 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [resettingInventoryUser, setResettingInventoryUser] = useState<User | null>(null);
+  const [resettingBusy, setResettingBusy] = useState(false);
   const editModalId = useMemo(() => `user-edit_${Math.random().toString(36).slice(2, 9)}`, []);
   const deleteModalId = useMemo(() => `user-delete_${Math.random().toString(36).slice(2, 9)}`, []);
-  useBodyScrollLock(!!editingUser || !!deletingUser);
+  const resetInventoryModalId = useMemo(() => `user-reset-inv_${Math.random().toString(36).slice(2, 9)}`, []);
+  useBodyScrollLock(!!editingUser || !!deletingUser || !!resettingInventoryUser);
   useModalStack(editModalId, () => setEditingUser(null));
   useModalStack(deleteModalId, () => setDeletingUser(null));
+  useModalStack(resetInventoryModalId, () => setResettingInventoryUser(null));
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
@@ -202,6 +207,38 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
     }
   };
 
+  // Xóa toàn bộ dữ liệu tồn kho và hóa đơn của một người dùng
+  const handleResetUserInventory = useCallback(async (confirmationText: string) => {
+    if (!resettingInventoryUser) return;
+    const uid = getUserId(resettingInventoryUser);
+    setResettingBusy(true);
+    setActionMessage(null);
+    console.log('[UserManagement] Reset user inventory & sales started:', {
+      userId: uid,
+      username: resettingInventoryUser.username,
+    });
+    try {
+      const res = await Database.resetUserInventoryData(uid, confirmationText);
+      console.log('[UserManagement] Reset user inventory & sales completed:', res);
+      addToast({
+        type: 'success',
+        title: 'Đã xóa dữ liệu kho & HĐ',
+        message: res?.message || `Đã xóa toàn bộ tồn kho và hóa đơn của @${resettingInventoryUser.username}.`,
+      });
+      setResettingInventoryUser(null);
+      onRefresh();
+    } catch (err: any) {
+      console.error('[UserManagement] Reset user inventory & sales failed:', err);
+      addToast({
+        type: 'error',
+        title: 'Lỗi xóa dữ liệu',
+        message: err.message || 'Không thể xóa dữ liệu kho và hóa đơn.',
+      });
+    } finally {
+      setResettingBusy(false);
+    }
+  }, [resettingInventoryUser, getUserId, addToast, onRefresh]);
+
   const filteredUsers = users.filter(u => 
     u.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.username.toLowerCase().includes(searchTerm.toLowerCase())
@@ -281,6 +318,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
                   className={`flex-1 py-2 rounded-xl bg-amber-50 text-amber-600 font-black text-[9px] uppercase tracking-wider transition-all ${sendingEmail === uid ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-100'}`}
                 >
                   {sendingEmail === uid ? '⏳' : '📧'} Email
+                </button>
+                <button
+                  type="button"
+                  data-testid={`reset-inventory-mobile-${uid}`}
+                  onClick={() => setResettingInventoryUser(u)}
+                  className="flex-1 py-2 rounded-xl bg-orange-50 text-orange-700 font-black text-[9px] uppercase tracking-wider hover:bg-orange-100 transition-all"
+                >
+                  🧹 Kho/HĐ
                 </button>
                 <button 
                   onClick={() => setDeletingUser(u)}
@@ -368,6 +413,14 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
                     >
                       {sendingEmail === uid ? 'Đang gửi...' : 'Gửi email khôi phục'}
                     </button>
+                    <button
+                      type="button"
+                      data-testid={`reset-inventory-desktop-${uid}`}
+                      onClick={() => setResettingInventoryUser(u)}
+                      className="text-orange-600 font-black text-[9px] hover:underline"
+                    >
+                      Xóa kho &amp; HĐ
+                    </button>
                     <button 
                       onClick={() => setDeletingUser(u)} 
                       className="text-rose-600 font-black text-[9px] hover:underline"
@@ -420,6 +473,15 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
             </div>
           </div>
         </div>
+      )}
+
+      {resettingInventoryUser && (
+        <UserInventoryResetModal
+          user={resettingInventoryUser}
+          busy={resettingBusy}
+          onClose={() => setResettingInventoryUser(null)}
+          onConfirm={handleResetUserInventory}
+        />
       )}
 
       {editingUser && (

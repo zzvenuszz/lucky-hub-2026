@@ -12,6 +12,7 @@ import { PasswordResetToken } from '../models/PasswordResetToken.ts';
 import { LoginAttempt } from '../models/LoginAttempt.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { Group } from '../models/Group.ts';
+import { InventoryItem, InventoryLot, InventoryMovement, Sale } from '../models/Inventory.ts';
 import { AuditLogType } from '../../types.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
@@ -463,6 +464,75 @@ router.post('/:id/send-reset-email',
       }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+// DELETE /api/users/:id/inventory-data - Xóa toàn bộ dữ liệu tồn kho và hóa đơn của một user
+router.delete('/:id/inventory-data',
+  requirePermission([RESOURCES.USERS.DELETE, RESOURCES.USERS.UPDATE]),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.params.id;
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ message: 'ID người dùng không hợp lệ' });
+      }
+      const user = await User.findById(userId);
+      if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+
+      const confirmationText = String(req.body?.confirmationText || '').trim();
+      const expectedWithSpace = `XÁC NHẬN XÓA DỮ LIỆU ${user.username}`;
+      const expectedWithoutSpace = `XÁC NHẬN XÓA DỮ LIỆU${user.username}`;
+      if (confirmationText !== expectedWithSpace && confirmationText !== expectedWithoutSpace) {
+        return res.status(400).json({
+          message: `Chuỗi xác nhận không khớp. Vui lòng nhập chính xác: ${expectedWithSpace}`,
+        });
+      }
+
+      console.log('[UserRoutes] Resetting inventory and sales data for user:', {
+        actorId: req.user?.userId,
+        targetUserId: userId,
+        username: user.username,
+      });
+
+      const [salesDel, lotsDel, movementsDel, itemsReset] = await Promise.all([
+        Sale.deleteMany({ ownerId: user._id }),
+        InventoryLot.deleteMany({ ownerId: user._id }),
+        InventoryMovement.deleteMany({ ownerId: user._id }),
+        InventoryItem.updateMany({ ownerId: user._id }, { $set: { quantity: 0 } }),
+      ]);
+
+      const log = new AuditLog({
+        actorId: req.user?.userId || 'admin',
+        actorName: req.user?.fullName || 'Admin',
+        targetId: userId,
+        targetName: user.fullName,
+        type: AuditLogType.REGISTER,
+        details: `Admin xóa toàn bộ tồn kho (${itemsReset.modifiedCount || 0} SP về 0, ${lotsDel.deletedCount || 0} lô, ${movementsDel.deletedCount || 0} nhật ký) và ${salesDel.deletedCount || 0} hóa đơn của @${user.username} (${user.fullName})`,
+        timestamp: new Date().toISOString(),
+      });
+      await log.save();
+
+      console.log('[UserRoutes] ✅ Inventory and sales data reset completed:', {
+        targetUserId: userId,
+        username: user.username,
+        deletedSalesCount: salesDel.deletedCount || 0,
+        deletedLotsCount: lotsDel.deletedCount || 0,
+        deletedMovementsCount: movementsDel.deletedCount || 0,
+        resetItemsCount: itemsReset.modifiedCount || 0,
+      });
+
+      res.json({
+        success: true,
+        message: `Đã xóa toàn bộ tồn kho và ${salesDel.deletedCount || 0} hóa đơn của @${user.username}.`,
+        deletedSalesCount: salesDel.deletedCount || 0,
+        deletedLotsCount: lotsDel.deletedCount || 0,
+        deletedMovementsCount: movementsDel.deletedCount || 0,
+        resetItemsCount: itemsReset.modifiedCount || 0,
+      });
+    } catch (err: any) {
+      console.error('[UserRoutes] Reset user inventory data error:', err.message);
+      res.status(500).json({ message: err.message || 'Không thể xóa dữ liệu kho và hóa đơn.' });
     }
   }
 );

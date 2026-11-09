@@ -19,7 +19,8 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
     memberLevel: 'supervisor',
     phoneNumber: '0900000001',
     address: 'Hà Nội',
-    permissions: ['inventory:manage', 'inventory:sell', 'pricelist:manage', 'members:level:manage'],
+    status: 'ACTIVE',
+    permissions: ['inventory:manage', 'inventory:sell', 'pricelist:manage', 'members:level:manage', 'admin:panel', 'users:view', 'users:update', 'users:delete'],
   };
 
   await page.addInitScript((user) => {
@@ -135,6 +136,23 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
       pendingGroup: null,
     }),
   }));
+  await page.route('**/api/admin/groups', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ _id: 'g1', id: 'g1', name: 'Admin', permissions: [], isDefault: false, members: ['u_test_1'] }]),
+  }));
+  await page.route('**/api/users/u_test_1/inventory-data', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      success: true,
+      message: 'Đã xóa toàn bộ tồn kho và 1 hóa đơn của @tester.',
+      deletedSalesCount: 1,
+      deletedLotsCount: 1,
+      deletedMovementsCount: 1,
+      resetItemsCount: 1,
+    }),
+  }));
 
   await page.goto('/');
   const isMobile = (page.viewportSize()?.width || 1024) < 768;
@@ -240,6 +258,17 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await page.getByTestId('submit-batch-receive').click();
   await expect(page.getByTestId('batch-receive-modal')).toHaveCount(0);
 
+  // Kiểm tra tab Bán hàng: bật DEMO -> thêm hàng vào giỏ -> tắt DEMO phải tự xóa sạch giỏ hàng
+  await nav.getByRole('button', { name: /Bán hàng/ }).click();
+  const demoToggle = page.getByTestId('toggle-sale-demo-mode');
+  await demoToggle.click();
+  await expect(demoToggle).toHaveText('DEMO: Đang bật');
+  await page.getByRole('button', { name: /Hỗn hợp dinh dưỡng F1/ }).click();
+  await expect(page.getByRole('heading', { name: /Giỏ hàng/ })).toContainText('(1)');
+  await demoToggle.click();
+  await expect(demoToggle).toHaveText('Bật chế độ DEMO');
+  await expect(page.getByRole('heading', { name: /Giỏ hàng/ })).toContainText('(0)');
+
   // Kiểm tra xóa hóa đơn đã hủy trong tab Lịch sử
   await nav.getByRole('button', { name: /Lịch sử/ }).click();
   await expect(page.getByTestId('delete-all-cancelled-sales')).toBeVisible();
@@ -289,6 +318,31 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   expect(infoRect).not.toBeNull();
   expect(avatarRect!.x).toBeLessThan(infoRect!.x);
   expect(avatarRect!.y + avatarRect!.height).toBeLessThanOrEqual(headerRect!.y + headerRect!.height + 2);
+
+  // Kiểm tra chức năng Admin xóa toàn bộ dữ liệu tồn kho & hóa đơn của một user
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Quản trị' }).click();
+    await page.getByTestId('reset-inventory-mobile-u_test_1').click();
+  } else {
+    await page.getByRole('button', { name: 'Quản trị' }).click();
+    await page.getByTestId('reset-inventory-desktop-u_test_1').click();
+  }
+  await expect(page.getByTestId('reset-user-inventory-modal')).toBeVisible();
+  await expect(page.getByTestId('reset-user-inventory-phrase')).toHaveText('XÁC NHẬN XÓA DỮ LIỆU tester');
+  const confirmBtn = page.getByTestId('confirm-reset-user-inventory');
+  const resetInput = page.getByTestId('reset-user-inventory-input');
+  await expect(confirmBtn).toBeDisabled();
+
+  // Kiểm tra chặn dán (paste) vào ô xác nhận
+  await resetInput.dispatchEvent('paste');
+  await expect(page.getByTestId('reset-user-inventory-paste-warning')).toBeVisible();
+
+  // Nhập chính xác chuỗi xác nhận và bấm nút Xác nhận xóa dữ liệu
+  await resetInput.fill('XÁC NHẬN XÓA DỮ LIỆU tester');
+  await expect(confirmBtn).toBeEnabled();
+  await confirmBtn.click();
+  await expect(page.getByTestId('reset-user-inventory-modal')).toHaveCount(0);
 });
 
 test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {
