@@ -835,19 +835,24 @@ router.put('/members/:id/level', anyLevelManager, async (req: Request, res: Resp
   try {
     const target = await User.findById(req.params.id).select('fullName memberLevel sponsorUserId memberNumber');
     if (!target) return res.status(404).json({ message: 'Không tìm thấy hội viên.' });
-    let cursor: any = target; let isDownline = false; const visited = new Set<string>();
     const hasGlobalLevelPermission = req.user!.permissions.includes(RESOURCES.MEMBER_LEVEL.MANAGE_ANY);
-    while (cursor?.sponsorUserId) {
-      const sponsorId = String(cursor.sponsorUserId);
-      if (sponsorId === String(idOf(req))) { isDownline = true; break; }
-      if (visited.has(sponsorId)) return res.status(409).json({ message: 'Phát hiện vòng lặp trong quan hệ bảo trợ.' });
-      visited.add(sponsorId); cursor = await User.findById(sponsorId).select('sponsorUserId').lean();
+    console.log('[Inventory] Member level update started:', { actorId: String(idOf(req)), targetId: String(target._id), hasGlobalLevelPermission, requestedLevel: req.body.memberLevel });
+    if (!hasGlobalLevelPermission) {
+      let cursor: any = target; let isDownline = false; const visited = new Set<string>();
+      while (cursor?.sponsorUserId) {
+        const sponsorId = String(cursor.sponsorUserId);
+        if (sponsorId === String(idOf(req))) { isDownline = true; break; }
+        if (visited.has(sponsorId)) return res.status(409).json({ message: 'Phát hiện vòng lặp trong quan hệ bảo trợ.' });
+        visited.add(sponsorId); cursor = await User.findById(sponsorId).select('sponsorUserId').lean();
+      }
+      if (!isDownline) return res.status(403).json({ message: 'Chỉ được đổi cấp độ thành viên trong tuyến dưới của bạn.' });
     }
-    if (!hasGlobalLevelPermission && !isDownline) return res.status(403).json({ message: 'Chỉ được đổi cấp độ thành viên trong tuyến dưới của bạn.' });
     const levels = ['customer', 'member', 'senior_consultant', 'success_builder', 'supervisor'];
-    if (!levels.includes(req.body.memberLevel) || (req.body.memberLevel !== 'customer' && !target.memberNumber)) return res.status(400).json({ message: 'Cấp độ không hợp lệ hoặc hội viên chưa có mã thẻ.' });
+    if (!levels.includes(req.body.memberLevel)) return res.status(400).json({ message: 'Cấp độ không hợp lệ.' });
+    if (req.body.memberLevel !== 'customer' && !target.memberNumber) return res.status(400).json({ message: 'Hội viên cần có mã hội viên trước khi gán cấp độ này.' });
     const previous = target.memberLevel; target.memberLevel = req.body.memberLevel; await target.save();
     await logAudit(req, 'MEMBER_LEVEL_UPDATE', `Cấp độ ${previous} → ${target.memberLevel}; lý do: ${String(req.body.reason || 'Không ghi lý do')}`, String(target._id), target.fullName);
+    console.log('[Inventory] Member level update completed:', { actorId: String(idOf(req)), targetId: String(target._id), previousLevel: previous, memberLevel: target.memberLevel });
     res.json({ id: String(target._id), memberLevel: target.memberLevel });
   } catch (error: any) { console.error('[Inventory] Member level update failed:', error); res.status(500).json({ message: error.message }); }
 });

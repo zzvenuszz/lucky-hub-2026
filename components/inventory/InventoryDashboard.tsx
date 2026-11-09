@@ -23,12 +23,12 @@ const LEVELS = [
   { id: 'success_builder', label: 'Nhà kiến tạo thành công', price: 'price42' },
   { id: 'supervisor', label: 'Giám sát viên', price: 'price50' },
 ];
-const PRICE_TIERS: Array<{ field: PriceField; label: string }> = [
-  { field: 'price100', label: 'Giá Lẻ' },
-  { field: 'price25', label: 'Giá -25%' },
-  { field: 'price35', label: 'Giá -35%' },
-  { field: 'price42', label: 'Giá -42%' },
-  { field: 'price50', label: 'Giá -50%' },
+const PRICE_TIERS: Array<{ field: PriceField; label: string; discount: string }> = [
+  { field: 'price100', label: 'Giá Lẻ', discount: '0%' },
+  { field: 'price25', label: 'Giá -25%', discount: '25%' },
+  { field: 'price35', label: 'Giá -35%', discount: '35%' },
+  { field: 'price42', label: 'Giá -42%', discount: '42%' },
+  { field: 'price50', label: 'Giá -50%', discount: '50%' },
 ];
 const money = formatVND;
 const toDateTimeLocalValue = (date: Date = new Date()) => {
@@ -50,7 +50,8 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const canUseInventory = canInventory || canSell;
   const canPrices = permissions.includes('pricelist:manage');
   const canManageCatalog = canPrices;
-  const canLevels = permissions.includes('members:level:manage') || permissions.includes('members:level:manage:any');
+  const canManageAllLevels = permissions.includes('members:level:manage:any');
+  const canLevels = permissions.includes('members:level:manage') || canManageAllLevels;
   const [tab, setTab] = useState<Tab>(initialTab ? initialTab : initialLevelsOnly ? 'levels' : initialPricesOnly ? 'prices' : 'overview');
   useEffect(() => {
     if (initialTab) setTab(initialTab);
@@ -63,6 +64,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState(''); const [invoice, setInvoice] = useState<any>(null);
   const [q, setQ] = useState(''); const [memberQuery, setMemberQuery] = useState(''); const [selectedMember, setSelectedMember] = useState<any>(null);
   const [stockCategoryFilter, setStockCategoryFilter] = useState('');
+  const [saleCategoryFilter, setSaleCategoryFilter] = useState('');
   const [buyerAddress, setBuyerAddress] = useState(''); const [buyerPhone, setBuyerPhone] = useState('');
   const [buyerType, setBuyerType] = useState<'member' | 'custom'>('custom'); const [customBuyer, setCustomBuyer] = useState('');
   const [draft, setDraft] = useState({ sku: '', name: '', categoryId: '', pv: '0', quantity: '0', lowStockThreshold: '5', imageUrl: '' });
@@ -75,7 +77,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const [newCategoryName, setNewCategoryName] = useState(''); const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
   const [showSaleBarcodeScanner, setShowSaleBarcodeScanner] = useState(false);
-  const [cart, setCart] = useState<any[]>([]); const [note, setNote] = useState(''); const [soldAt, setSoldAt] = useState(toDateTimeLocalValue()); const [soldAtEdited, setSoldAtEdited] = useState(false); const [demoMode, setDemoMode] = useState(false);
+  const [cart, setCart] = useState<any[]>([]); const [orderPriceField, setOrderPriceField] = useState<PriceField>('price100'); const [note, setNote] = useState(''); const [soldAt, setSoldAt] = useState(toDateTimeLocalValue()); const [soldAtEdited, setSoldAtEdited] = useState(false); const [demoMode, setDemoMode] = useState(false);
   const [levelEntries, setLevelEntries] = useState<any[]>([]); const [reportPeriod, setReportPeriod] = useState('month'); const [memberReport, setMemberReport] = useState<any[]>([]);
   const [priceEffective, setPriceEffective] = useState(toDateTimeLocalValue());
   const [returnReason, setReturnReason] = useState(''); const [sellerSettings, setSellerSettings] = useState<any>({ format: 'pdf', shopName: '', phone: '', address: '' });
@@ -147,7 +149,31 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
       .catch(error => { if (active) setMessage(error.message); });
     return () => { active = false; };
   }, [tab, soldAt, soldAtEdited, canUseInventory]);
-  useEffect(() => { if (!salePriceList || !cart.length) return; const levelInfo = LEVELS.find(entry => entry.id === (selectedMember?.memberLevel || 'customer')) || LEVELS[0]; setCart(lines => lines.map(line => { const entry = salePriceList.entries?.find((price: any) => price.sku === (line.priceSku || line.sku)) || salePriceList.entries?.find((price: any) => (line.skus || []).includes(price.sku)); if (!entry) return line; const nextDefaultField = levelInfo.price; const selectedField = line.manualPriceLevel ? line.priceField : nextDefaultField; return { ...line, defaultPriceField: nextDefaultField, defaultUnitPrice: Number(entry[nextDefaultField] || 0), priceField: selectedField, priceLevel: PRICE_TIERS.find(tier => tier.field === selectedField)?.label || 'Giá Lẻ', unitPrice: Number(entry[selectedField] || 0) }; })); }, [salePriceList, selectedMember]);
+  useEffect(() => {
+    const memberDefault = buyerType === 'member'
+      ? (LEVELS.find(entry => entry.id === (selectedMember?.memberLevel || 'customer')) || LEVELS[0]).price
+      : 'price100';
+    setOrderPriceField(memberDefault as PriceField);
+    setCart(lines => lines.map(line => ({ ...line, defaultPriceField: memberDefault, priceField: memberDefault, manualPriceLevel: false })));
+    console.log('[InventoryUI] Basket default price loaded:', { buyerType, memberLevel: selectedMember?.memberLevel || 'customer', priceField: memberDefault });
+  }, [buyerType, selectedMember]);
+  useEffect(() => {
+    if (!salePriceList || !cart.length) return;
+    setCart(lines => lines.map(line => {
+      const entry = salePriceList.entries?.find((price: any) => price.sku === (line.priceSku || line.sku))
+        || salePriceList.entries?.find((price: any) => (line.skus || []).includes(price.sku));
+      if (!entry) return line;
+      const selectedField = line.manualPriceLevel ? line.priceField : orderPriceField;
+      return {
+        ...line,
+        defaultPriceField: orderPriceField,
+        defaultUnitPrice: Number(entry[orderPriceField] || 0),
+        priceField: selectedField,
+        priceLevel: PRICE_TIERS.find(tier => tier.field === selectedField)?.label || 'Giá Lẻ',
+        unitPrice: Number(entry[selectedField] || 0),
+      };
+    }));
+  }, [salePriceList, selectedMember, orderPriceField]);
   useEffect(() => { if (tab === 'history' && canUseInventory) Database.inventory.getSales().then(result => setSales(result?.sales || [])).catch(error => setMessage(error.message)); }, [tab, canUseInventory]);
   useEffect(() => { if (memberQuery.trim().length < 2) { setMembers([]); return; } const timer = window.setTimeout(() => Database.inventory.findMembers(memberQuery).then(data => setMembers(data || [])).catch(error => setMessage(error.message)), 250); return () => window.clearTimeout(timer); }, [memberQuery]);
 
@@ -168,6 +194,14 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     setStockCategoryFilter('');
     console.log('[InventoryUI] Stock category filter cleared');
   }, []);
+  const handleSaleCategoryFilterChange = useCallback((categoryId: string) => {
+    setSaleCategoryFilter(categoryId);
+    console.log('[InventoryUI] Sale category filter changed:', categoryId || 'all');
+  }, []);
+  const clearSaleCategoryFilter = useCallback(() => {
+    setSaleCategoryFilter('');
+    console.log('[InventoryUI] Sale category filter cleared');
+  }, []);
   useEffect(() => { if (!message) return; const timer = window.setTimeout(() => setMessage(''), 4500); return () => window.clearTimeout(timer); }, [message]);
   const reload = useCallback(async () => { await loadCore(); await loadPrices(); }, [loadCore, loadPrices]);
   const searchedItems = items.filter(item => `${item.name} ${item.sku} ${(item.skus || []).join(' ')}`.toLowerCase().includes(q.toLowerCase()));
@@ -181,9 +215,40 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
       || (!item.categoryId && selectedCategory && item.categoryName === selectedCategory.name);
   });
   // Sản phẩm đã ngừng bán vẫn được bán tiếp nếu kho cá nhân còn tồn > 0 cho đến khi tồn = 0
-  const saleItems = searchedItems.filter(item => demoMode || !item.archived || Number(item.quantity || 0) > 0);
+  const saleItems = searchedItems.filter(item => {
+    if (!demoMode && item.archived && Number(item.quantity || 0) <= 0) return false;
+    if (!saleCategoryFilter) return true;
+    if (saleCategoryFilter === UNGROUPED_CATEGORY_FILTER) return !String(item.categoryId || '').trim() && !String(item.categoryName || '').trim();
+    const selectedCategory = categories.find(category => String(category._id) === saleCategoryFilter);
+    return String(item.categoryId || '') === saleCategoryFilter
+      || (!item.categoryId && selectedCategory && item.categoryName === selectedCategory.name);
+  });
   const filteredSales = sales.filter(sale => `${sale.invoiceNumber} ${sale.buyerName} ${sale.lines?.map((line: any) => `${line.name} ${line.sku}`).join(' ')}`.toLowerCase().includes(historyQuery.toLowerCase()));
   const updateCartLine = (id: string, patch: any) => setCart(lines => lines.map(line => line.itemId === id ? { ...line, ...patch } : line));
+  const handleOrderPriceFieldChange = useCallback((field: PriceField) => {
+    setOrderPriceField(field);
+    setCart(lines => lines.map(line => {
+      const entry = salePriceList?.entries?.find((price: any) => price.sku === (line.priceSku || line.sku))
+        || salePriceList?.entries?.find((price: any) => (line.skus || []).includes(price.sku));
+      return {
+        ...line,
+        defaultPriceField: field,
+        priceField: field,
+        manualPriceLevel: false,
+        priceLevel: PRICE_TIERS.find(tier => tier.field === field)?.label || 'Giá Lẻ',
+        unitPrice: Number(entry?.[field] || 0),
+        defaultUnitPrice: Number(entry?.[field] || 0),
+      };
+    }));
+    console.log('[InventoryUI] Basket default price changed:', { priceField: field, lineCount: cart.length });
+  }, [cart.length, salePriceList]);
+  const clearCart = useCallback(() => {
+    if (!cart.length) return;
+    const clearedCount = cart.length;
+    setCart([]);
+    setNote('');
+    console.log('[InventoryUI] Cart cleared:', { clearedCount });
+  }, [cart.length]);
   const addToCart = (item: any, scannedSku = item.sku) => {
     if (!demoMode && Number(item.quantity || 0) <= 0) {
       showMessage(`Sản phẩm ${item.name} chưa có tồn kho trong kho cá nhân của bạn.`);
@@ -192,9 +257,8 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     const existing = cart.find(line => line.itemId === item.id);
     if (existing) updateCartLine(item.id, { quantity: demoMode ? existing.quantity + 1 : Math.min(item.quantity, existing.quantity + 1) });
     else {
-      const level = selectedMember?.memberLevel || 'customer'; const levelInfo = LEVELS.find(entry => entry.id === level) || LEVELS[0];
       const price = salePriceList?.entries?.find((entry: any) => entry.sku === item.sku) || salePriceList?.entries?.find((entry: any) => (item.skus || [item.sku]).includes(entry.sku));
-      setCart(lines => [...lines, { itemId: item.id, sku: scannedSku, priceSku: item.sku, skus: item.skus || [item.sku], name: item.name, pv: item.pv, available: item.quantity, quantity: 1, priceField: levelInfo.price, defaultPriceField: levelInfo.price, manualPriceLevel: false, unitPrice: Number(price?.[levelInfo.price] || 0), defaultUnitPrice: Number(price?.[levelInfo.price] || 0), priceLevel: PRICE_TIERS.find(tier => tier.field === levelInfo.price)?.label || 'Giá Lẻ' }]);
+      setCart(lines => [...lines, { itemId: item.id, sku: scannedSku, priceSku: item.sku, skus: item.skus || [item.sku], name: item.name, pv: item.pv, available: item.quantity, quantity: 1, priceField: orderPriceField, defaultPriceField: orderPriceField, manualPriceLevel: false, unitPrice: Number(price?.[orderPriceField] || 0), defaultUnitPrice: Number(price?.[orderPriceField] || 0), priceLevel: PRICE_TIERS.find(tier => tier.field === orderPriceField)?.label || 'Giá Lẻ' }]);
     }
   };
   const handleSaleBarcodeDetected = useCallback((value: string) => {
@@ -365,7 +429,20 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   };
   const createCategory = async () => { const name = newCategoryName.trim(); if (!name) return; try { const category = await Database.inventory.createCategory(name); setCategories(old => [...old, category].sort((a, b) => a.name.localeCompare(b.name, 'vi'))); if (categoryTarget === 'edit') setEditDraft(old => ({ ...old, categoryId: category._id })); else setDraft(old => ({ ...old, categoryId: category._id })); setNewCategoryName(''); setShowCategoryModal(false); showMessage(`Đã tạo danh mục “${category.name}”.`); } catch (error: any) { showMessage(error.message); } };
   const handleBarcodeDetected = useCallback((sku: string) => { setDraft(old => ({ ...old, sku })); setShowBarcodeScanner(false); showMessage(`Đã quét SKU ${sku}.`); }, [showMessage]);
-  const saveLevel = async (member: any) => { const level = levelEntries.find(entry => entry.id === member.id)?.value || member.memberLevel; const reason = levelEntries.find(entry => entry.id === member.id)?.reason || ''; try { await Database.inventory.setMemberLevel(member.id, { memberLevel: level, reason }); showMessage(`Đã cập nhật cấp độ ${member.fullName}.`); setDownline(await Database.inventory.downline() || []); } catch (error: any) { showMessage(error.message); } };
+  const saveLevel = async (member: any) => {
+    const level = levelEntries.find(entry => entry.id === member.id)?.value || member.memberLevel;
+    const reason = levelEntries.find(entry => entry.id === member.id)?.reason || '';
+    console.log('[InventoryUI] Member level update started:', { memberId: member.id, memberName: member.fullName, memberLevel: level, canManageAllLevels });
+    try {
+      await Database.inventory.setMemberLevel(member.id, { memberLevel: level, reason });
+      console.log('[InventoryUI] Member level update completed:', { memberId: member.id, memberLevel: level });
+      showMessage(`Đã cập nhật cấp độ ${member.fullName}.`);
+      setDownline(await Database.inventory.downline() || []);
+    } catch (error: any) {
+      console.error('[InventoryUI] Member level update failed:', { memberId: member.id, memberLevel: level, error });
+      showMessage(error.message);
+    }
+  };
   const openMemberPurchases = useCallback(async (memberId: string) => { try { const result = await Database.inventory.memberPurchases(memberId); setSales(result?.sales || []); setTab('history'); } catch (error: any) { showMessage(error.message); } }, [showMessage]);
   const handleReturn = async (sale: any) => { const reason = prompt('Nhập lý do trả hàng:'); if (!reason?.trim()) return; const line = sale.lines.find((entry: any) => (sale.returnedLines || []).filter((ret: any) => ret.itemId === entry.itemId).reduce((s: number, ret: any) => s + ret.quantity, 0) < entry.quantity); if (!line) return showMessage('Hoá đơn này đã hoàn đủ hàng.'); const already = (sale.returnedLines || []).filter((ret: any) => ret.itemId === line.itemId).reduce((s: number, ret: any) => s + ret.quantity, 0); const remaining = line.quantity - already; const qty = Number(prompt(`Số lượng trả (${line.name}, tối đa ${remaining}):`, String(remaining))); if (!Number.isInteger(qty) || qty < 1 || qty > remaining) return; try { await Database.inventory.returnSale(sale._id, { reason, lines: [{ itemId: line.itemId, quantity: qty }] }); await reload(); showMessage('Đã ghi nhận hoàn hàng.'); } catch (error: any) { showMessage(error.message); } };
   const cancelSale = async (sale: any) => { const reason = prompt('Nhập lý do huỷ đơn:'); if (!reason?.trim()) return; if (!confirm(`Huỷ hoá đơn ${sale.invoiceNumber} và trả hàng về kho?`)) return; try { await Database.inventory.cancelSale(sale._id, reason); await reload(); showMessage('Đã huỷ hoá đơn và hoàn kho.'); } catch (error: any) { showMessage(error.message); } };
@@ -516,15 +593,20 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
       {buyerType === 'member' && <div className="relative"><input value={selectedMember ? getMemberIdentityLabel(selectedMember) : memberQuery} onChange={e => { setSelectedMember(null); setBuyerAddress(''); setBuyerPhone(''); setMemberQuery(e.target.value); }} placeholder="Tìm theo mã hoặc tên hội viên" className="w-full rounded-xl bg-slate-100 p-3" />{members.length > 0 && !selectedMember && <div className="absolute z-20 mt-1 max-h-52 w-full overflow-y-auto rounded-xl border bg-white shadow-xl">{members.map(member => <button key={member.id} onClick={() => { setSelectedMember(member); setBuyerAddress(member.address || ''); setBuyerPhone(member.phoneNumber || ''); setMemberQuery(''); }} className="block w-full p-3 text-left text-sm hover:bg-emerald-50">{getMemberIdentityLabel(member)}</button>)}</div>}</div>}
       {buyerType === 'custom' && <input required value={customBuyer} onChange={e => setCustomBuyer(e.target.value)} placeholder="Tên khách lẻ" className="w-full rounded-xl bg-slate-100 p-3" />}
       <div className="grid gap-3 rounded-2xl bg-emerald-50/70 p-4 sm:grid-cols-2"><p className="text-xs text-emerald-900 sm:col-span-2">{buyerType === 'member' ? 'Thông tin được điền từ hồ sơ hội viên; người bán có thể bổ sung hoặc sửa nếu hồ sơ còn thiếu.' : 'Nhập thông tin liên hệ người mua để lưu trên hóa đơn.'}</p><label className="text-xs font-bold text-slate-600">Địa chỉ người mua<input required value={buyerAddress} onChange={e => setBuyerAddress(e.target.value)} placeholder="Địa chỉ" className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal" /></label><label className="text-xs font-bold text-slate-600">Số điện thoại người mua<input required type="tel" value={buyerPhone} onChange={e => setBuyerPhone(e.target.value)} placeholder="Số điện thoại" className="mt-1 w-full rounded-xl bg-white p-3 text-sm font-normal" /></label></div>
-      <div className="flex gap-2"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm hàng trong kho" className="min-w-0 flex-1 rounded-xl bg-slate-100 p-3" /><button type="button" onClick={() => setShowSaleBarcodeScanner(true)} className="shrink-0 rounded-xl bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800">📷 Quét mã</button></div><div className="grid gap-2 sm:grid-cols-2">{saleItems.map(item => <button key={item.id} onClick={() => addToCart(item)} disabled={!demoMode && item.quantity <= 0} className="flex items-center justify-between rounded-xl border p-3 text-left disabled:opacity-40"><span><b>{item.name}</b>{item.archived && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">Bán nốt tồn</span>}<small className="block text-slate-500">{(item.skus?.length ? item.skus : [item.sku]).join(', ')} · {item.quantity} tồn · {item.pv} PV</small></span><span className="rounded-lg bg-emerald-50 px-3 py-2 font-black text-emerald-800">+</span></button>)}</div></div>
-      <aside className="h-fit space-y-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="text-lg font-black">Giỏ hàng <span className="text-sm text-slate-400">({cart.length})</span></h2>{cart.map(line => <div key={line.itemId} className="rounded-xl bg-slate-50 p-3"><div className="flex justify-between gap-2 text-sm"><b>{line.name}</b><button onClick={() => setCart(old => old.filter(x => x.itemId !== line.itemId))} aria-label="Xoá hàng">×</button></div><div className="mt-2 grid grid-cols-2 gap-2"><label className="text-xs text-slate-500">Số lượng<input type="number" inputMode="numeric" min="1" max={!demoMode && line.available > 0 ? line.available : undefined} value={line.quantity} onChange={e => { const requested = Math.max(1, Number(e.target.value) || 1); updateCartLine(line.itemId, { quantity: !demoMode && line.available > 0 ? Math.min(line.available, requested) : requested }); }} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900" /></label><label className="text-xs text-slate-500">Mức giá<select value={line.priceField} onChange={e => { const priceField = e.target.value; const tier = PRICE_TIERS.find(option => option.field === priceField) || PRICE_TIERS[0]; const entry = salePriceList?.entries?.find((price: any) => price.sku === (line.priceSku || line.sku)) || salePriceList?.entries?.find((price: any) => (line.skus || []).includes(price.sku)); updateCartLine(line.itemId, { priceField, priceLevel: tier.label, manualPriceLevel: true, unitPrice: Number(entry?.[priceField] || 0) }); }} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900">{PRICE_TIERS.map(tier => <option key={tier.field} value={tier.field}>{tier.label}</option>)}</select></label></div><p className="mt-2 text-[11px] text-slate-500">{line.priceLevel}: {money(line.unitPrice)}{line.manualPriceLevel && line.priceField !== line.defaultPriceField ? ` · Cấp bậc người mua: ${PRICE_TIERS.find(tier => tier.field === line.defaultPriceField)?.label || 'Giá Lẻ'}` : ''}</p></div>)}<textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú trên hoá đơn (không bắt buộc)" className="min-h-20 w-full rounded-xl bg-slate-100 p-3 text-sm" /><div className="flex justify-between text-sm"><span>Tổng PV</span><b>{totalPv}</b></div><div className="flex justify-between border-t pt-3 text-lg"><b>Tổng tiền</b><b>{money(total)}</b></div><button disabled={busy || !hasSellerDetails || !cart.length || !buyerAddress.trim() || !buyerPhone.trim() || (buyerType === 'member' && !selectedMember) || (buyerType === 'custom' && !customBuyer.trim())} onClick={submitSale} className="w-full rounded-xl bg-emerald-700 py-3 font-black text-white disabled:opacity-40">{busy ? 'Đang lưu…' : 'Xác nhận bán hàng'}</button><button type="button" disabled={busy || !hasSellerDetails || !cart.length || !buyerAddress.trim() || !buyerPhone.trim() || (buyerType === 'member' && !selectedMember) || (buyerType === 'custom' && !customBuyer.trim())} onClick={previewProvisionalInvoice} className="w-full rounded-xl bg-amber-100 py-3 font-black text-amber-900 disabled:opacity-40">Xem trước / In tạm tính</button></aside>
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm hàng trong kho" className="min-w-0 flex-1 rounded-xl bg-slate-100 p-3" /><button type="button" onClick={() => setShowSaleBarcodeScanner(true)} className="shrink-0 rounded-xl bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800">📷 Quét mã</button></div>
+        <div className="flex flex-wrap items-center gap-2"><label htmlFor="sale-category-filter" className="text-xs font-bold text-slate-600">Danh mục</label><select id="sale-category-filter" data-testid="sale-category-filter" value={saleCategoryFilter} onChange={event => handleSaleCategoryFilterChange(event.target.value)} className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold sm:max-w-xs sm:text-sm"><option value="">Tất cả danh mục</option><option value={UNGROUPED_CATEGORY_FILTER}>Chưa phân loại</option>{categories.map(category => <option key={category._id} value={String(category._id)}>{category.name}</option>)}</select>{saleCategoryFilter && <button type="button" data-testid="clear-sale-category-filter" onClick={clearSaleCategoryFilter} className="rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600" aria-label="Bỏ lọc danh mục bán hàng">× Bỏ lọc</button>}</div>
+        <div className="grid gap-2 sm:grid-cols-2">{saleItems.map(item => <button key={item.id} onClick={() => addToCart(item)} disabled={!demoMode && item.quantity <= 0} className="flex items-center justify-between rounded-xl border p-3 text-left disabled:opacity-40"><span><b>{item.name}</b>{item.archived && <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">Bán nốt tồn</span>}<small className="block text-slate-500">{(item.skus?.length ? item.skus : [item.sku]).join(', ')} · {item.quantity} tồn · {item.pv} PV</small></span><span className="rounded-lg bg-emerald-50 px-3 py-2 font-black text-emerald-800">+</span></button>)}</div>
+        {!saleItems.length && <p className="py-6 text-center text-sm text-slate-500">Không có sản phẩm phù hợp với tìm kiếm hoặc danh mục.</p>}
+      </div></div>
+      <aside className="h-fit space-y-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-black">Giỏ hàng <span className="text-sm text-slate-400">({cart.length})</span></h2><div className="flex flex-wrap items-center gap-2"><label htmlFor="order-default-price" className="text-xs font-bold text-slate-600">Chiết khấu mặc định</label><select id="order-default-price" data-testid="order-default-price" value={orderPriceField} onChange={event => handleOrderPriceFieldChange(event.target.value as PriceField)} className="max-w-44 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-800">{PRICE_TIERS.map(tier => <option key={tier.field} value={tier.field}>{tier.discount} · {tier.label}</option>)}</select>{cart.length > 0 && <button type="button" data-testid="clear-sale-cart" onClick={clearCart} className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs font-bold text-rose-700">Xóa trống giỏ</button>}</div></div>{cart.map(line => <div key={line.itemId} className="rounded-xl bg-slate-50 p-3"><div className="flex justify-between gap-2 text-sm"><b>{line.name}</b><button onClick={() => setCart(old => old.filter(x => x.itemId !== line.itemId))} aria-label="Xoá hàng">×</button></div><div className="mt-2 grid grid-cols-2 gap-2"><label className="text-xs text-slate-500">Số lượng<input type="number" inputMode="numeric" min="1" max={!demoMode && line.available > 0 ? line.available : undefined} value={line.quantity} onChange={e => { const requested = Math.max(1, Number(e.target.value) || 1); updateCartLine(line.itemId, { quantity: !demoMode && line.available > 0 ? Math.min(line.available, requested) : requested }); }} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900" /></label><label className="text-xs text-slate-500">Mức giá<select value={line.priceField} onChange={e => { const priceField = e.target.value as PriceField; const tier = PRICE_TIERS.find(option => option.field === priceField) || PRICE_TIERS[0]; const entry = salePriceList?.entries?.find((price: any) => price.sku === (line.priceSku || line.sku)) || salePriceList?.entries?.find((price: any) => (line.skus || []).includes(price.sku)); updateCartLine(line.itemId, { priceField, priceLevel: tier.label, manualPriceLevel: true, unitPrice: Number(entry?.[priceField] || 0) }); }} className="mt-1 w-full rounded-lg bg-white p-2 text-sm text-slate-900">{PRICE_TIERS.map(tier => <option key={tier.field} value={tier.field}>{tier.label}</option>)}</select></label></div><p className="mt-2 text-[11px] text-slate-500">{line.priceLevel}: {money(line.unitPrice)}{line.manualPriceLevel && line.priceField !== line.defaultPriceField ? ` · Mặc định đơn: ${PRICE_TIERS.find(tier => tier.field === line.defaultPriceField)?.discount || '0%'}` : ''}</p></div>)}<textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú trên hoá đơn (không bắt buộc)" className="min-h-20 w-full rounded-xl bg-slate-100 p-3 text-sm" /><div className="flex justify-between text-sm"><span>Tổng PV</span><b>{totalPv}</b></div><div className="flex justify-between border-t pt-3 text-lg"><b>Tổng tiền</b><b>{money(total)}</b></div><button disabled={busy || !hasSellerDetails || !cart.length || !buyerAddress.trim() || !buyerPhone.trim() || (buyerType === 'member' && !selectedMember) || (buyerType === 'custom' && !customBuyer.trim())} onClick={submitSale} className="w-full rounded-xl bg-emerald-700 py-3 font-black text-white disabled:opacity-40">{busy ? 'Đang lưu…' : 'Xác nhận bán hàng'}</button><button type="button" disabled={busy || !hasSellerDetails || !cart.length || !buyerAddress.trim() || !buyerPhone.trim() || (buyerType === 'member' && !selectedMember) || (buyerType === 'custom' && !customBuyer.trim())} onClick={previewProvisionalInvoice} className="w-full rounded-xl bg-amber-100 py-3 font-black text-amber-900 disabled:opacity-40">Xem trước / In tạm tính</button></aside>
     </div>}
 
     {tab === 'history' && canUseInventory && <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><input value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} placeholder="Lọc theo mã hoá đơn, người mua, SKU hoặc mặt hàng" className="min-w-0 flex-1 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-emerald-500" />{canUseInventory && cancelledSalesCount > 0 && <button type="button" disabled={busy} onClick={deleteAllCancelledSales} className="shrink-0 rounded-2xl bg-rose-600 px-4 py-4 text-xs font-black text-white shadow-sm hover:bg-rose-700 disabled:opacity-50" data-testid="delete-all-cancelled-sales">🗑 Xóa tất cả đơn đã hủy ({cancelledSalesCount})</button>}</div>{filteredSales.map(sale => <article key={sale._id} className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><div className="flex flex-wrap items-center gap-2"><b className="text-lg">{sale.invoiceNumber}</b><span className={`rounded-full px-3 py-1 text-xs font-bold ${sale.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : sale.status === 'cancelled' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>{({ completed: 'Hoàn tất', partially_returned: 'Hoàn một phần', returned: 'Đã hoàn', cancelled: 'Đã huỷ' } as any)[sale.status]}</span></div><p className="mt-1 text-sm text-slate-500">{new Date(sale.soldAt).toLocaleString('vi-VN')} · {sale.buyerName} · {sale.totalPv} PV</p>{sale.status === 'cancelled' && sale.cancelReason && <p className="mt-1 text-xs text-rose-700">Lý do huỷ: {sale.cancelReason}</p>}</div><div className="flex flex-wrap gap-2"><button onClick={() => setInvoice(sale)} className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white">Xem hoá đơn</button>{canUseInventory && !['cancelled', 'returned'].includes(sale.status) && <><button onClick={() => changeBuyer(sale)} className="rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800">Sửa người mua</button><button onClick={() => handleReturn(sale)} className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">Trả hàng</button>{sale.status === 'completed' && <button onClick={() => cancelSale(sale)} className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800">Huỷ đơn</button>}</>}{canUseInventory && sale.status === 'cancelled' && <button type="button" disabled={busy} onClick={() => deleteCancelledSale(sale)} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50" data-testid={`delete-cancelled-sale-${sale._id}`}>Xóa hóa đơn</button>}</div></div><div className="mt-3 flex justify-between border-t pt-3 text-sm"><span>{sale.lines?.map((line: any) => `${line.name} × ${line.quantity}`).join(' · ')}</span><b>{money(sale.total)}</b></div>{sale.returnEvents?.map((event: any, i: number) => <p key={i} className="mt-2 text-xs text-amber-800">Đợt trả: {event.reason} · hoàn {money(event.refundAmount)}</p>)}</article>)}{!filteredSales.length && <p className="rounded-3xl bg-white p-10 text-center text-slate-500">Không có giao dịch phù hợp.</p>}</div>}
 
     {tab === 'reports' && canUseInventory && <InventoryReportPanel onOpenMemberPurchases={openMemberPurchases} onMessage={showMessage} />}
 
-    {tab === 'levels' && canLevels && <div className="space-y-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Quản lý cấp độ tuyến dưới</h2><p className="text-sm text-slate-500">Bạn chỉ có thể cập nhật cấp độ thành viên nằm trong tuyến dưới của mình.</p>{downline.map(member => { const selected = levelEntries.find(entry => entry.id === member.id); return <div key={member.id} className="grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-[1fr_220px_1fr_auto] md:items-end"><div><b>{member.fullName}</b><div className="text-xs text-slate-500">{member.memberNumber || 'Chưa có mã'}</div></div><label className="text-xs font-bold text-slate-500">Cấp độ<select value={selected?.value || member.memberLevel} onChange={e => setLevelEntries(old => [...old.filter(x => x.id !== member.id), { id: member.id, value: e.target.value, reason: selected?.reason || '' }])} className="mt-1 w-full rounded-xl bg-white p-3 text-sm">{LEVELS.map(level => <option key={level.id} value={level.id}>{level.label}</option>)}</select></label><input value={selected?.reason || ''} onChange={e => setLevelEntries(old => [...old.filter(x => x.id !== member.id), { id: member.id, value: selected?.value || member.memberLevel, reason: e.target.value }])} placeholder="Lý do cập nhật" className="rounded-xl bg-white p-3 text-sm" /><button onClick={() => saveLevel(member)} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Lưu</button></div>; })}{!downline.length && <p className="py-8 text-center text-sm text-slate-500">Chưa có thành viên trong tuyến dưới.</p>}</div>}
+    {tab === 'levels' && canLevels && <div className="space-y-3 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">{canManageAllLevels ? 'Quản lý cấp độ mọi hội viên' : 'Quản lý cấp độ tuyến dưới'}</h2><p className="text-sm text-slate-500">{canManageAllLevels ? 'Bạn có thể cập nhật cấp độ của mọi hội viên.' : 'Bạn chỉ có thể cập nhật cấp độ thành viên nằm trong tuyến dưới của mình.'}</p>{downline.map(member => { const selected = levelEntries.find(entry => entry.id === member.id); return <div key={member.id} className="grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-[1fr_220px_1fr_auto] md:items-end"><div><b>{member.fullName}</b><div className="text-xs text-slate-500">{member.memberNumber || 'Chưa có mã'}</div></div><label className="text-xs font-bold text-slate-500">Cấp độ<select value={selected?.value || member.memberLevel} onChange={e => setLevelEntries(old => [...old.filter(x => x.id !== member.id), { id: member.id, value: e.target.value, reason: selected?.reason || '' }])} className="mt-1 w-full rounded-xl bg-white p-3 text-sm">{LEVELS.map(level => <option key={level.id} value={level.id}>{level.label}</option>)}</select></label><input value={selected?.reason || ''} onChange={e => setLevelEntries(old => [...old.filter(x => x.id !== member.id), { id: member.id, value: selected?.value || member.memberLevel, reason: e.target.value }])} placeholder="Lý do cập nhật" className="rounded-xl bg-white p-3 text-sm" /><button onClick={() => saveLevel(member)} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Lưu</button></div>; })}{!downline.length && <p className="py-8 text-center text-sm text-slate-500">Chưa có thành viên trong tuyến dưới.</p>}</div>}
 
     {tab === 'settings' && canUseInventory && <div className="mx-auto max-w-2xl space-y-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200"><h2 className="text-xl font-black">Thông tin người bán trên hoá đơn</h2><div className="rounded-2xl bg-slate-50 p-4 text-sm"><p><b>Người bán:</b> {sellerProfile.name || 'Chưa cập nhật trong hồ sơ'}</p><p className="mt-2"><b>Địa chỉ:</b> {sellerProfile.address || 'Chưa cập nhật trong hồ sơ'}</p><p className="mt-2"><b>Số điện thoại:</b> {sellerProfile.phone || 'Chưa cập nhật trong hồ sơ'}</p><p className="mt-3 text-xs text-slate-500">Cập nhật thông tin người bán trong Hồ sơ cá nhân; thông tin không nhập riêng tại đây.</p></div><label className="block text-sm font-bold">Định dạng xuất mặc định<select value={sellerSettings.format} onChange={e => setSellerSettings({ ...sellerSettings, format: e.target.value })} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal"><option value="pdf">PDF / In</option><option value="image">Ảnh PNG</option></select></label><button onClick={saveSettings} className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white">Lưu định dạng</button></div>}
 
