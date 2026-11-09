@@ -315,6 +315,44 @@ router.get('/items', inventoryOrPrice, async (req: Request, res: Response) => {
   } catch (error: any) { console.error('[Inventory] Items load failed:', error); res.status(500).json({ message: 'Không thể tải kho hàng.' }); }
 });
 
+router.put('/items/bulk-pv', priceManager, async (req: Request, res: Response) => {
+  try {
+    const rows = req.body?.items;
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500) {
+      return res.status(400).json({ message: 'Chọn từ 1 đến 500 sản phẩm để cập nhật PV.' });
+    }
+    const normalized = rows.map((row: any) => ({ itemId: String(row?.itemId || ''), pv: Number(row?.pv) }));
+    if (normalized.some((row: any) => !mongoose.Types.ObjectId.isValid(row.itemId) || !Number.isFinite(row.pv) || row.pv < 0)) {
+      return res.status(400).json({ message: 'Mã sản phẩm hoặc điểm PV không hợp lệ.' });
+    }
+    const ids = normalized.map((row: any) => row.itemId);
+    if (new Set(ids).size !== ids.length) return res.status(400).json({ message: 'Danh sách có sản phẩm bị lặp.' });
+    const ownerId = idOf(req);
+    console.log('[Inventory] Bulk PV update started:', { ownerId, itemCount: normalized.length });
+    const ownedItems = await InventoryItem.find({ _id: { $in: ids }, ownerId }).select('_id sku skus').lean() as any[];
+    if (ownedItems.length !== normalized.length) {
+      return res.status(404).json({ message: 'Một số sản phẩm không tồn tại trong danh mục của bạn. Tải lại danh sách rồi thử lại.' });
+    }
+    const pvById = new Map(normalized.map((row: any) => [row.itemId, row.pv]));
+    const operations = ownedItems.map((item: any) => {
+      const skus = [...new Set([...(item.skus || []), item.sku].map((sku: any) => String(sku || '').trim().toUpperCase()).filter(Boolean))];
+      return {
+        updateMany: {
+          filter: { $or: [{ sku: { $in: skus } }, { skus: { $in: skus } }] },
+          update: { $set: { pv: pvById.get(String(item._id)) } },
+        },
+      };
+    });
+    const result = await InventoryItem.bulkWrite(operations);
+    const updatedCount = normalized.length;
+    console.log('[Inventory] Bulk PV update completed:', { ownerId, updatedCount, modifiedDocuments: result.modifiedCount || 0 });
+    return res.json({ updatedCount, modifiedDocuments: result.modifiedCount || 0 });
+  } catch (error: any) {
+    console.error('[Inventory] Bulk PV update failed:', error);
+    return res.status(500).json({ message: error.message || 'Không thể cập nhật hàng loạt điểm PV.' });
+  }
+});
+
 router.post('/items', priceManager, async (req: Request, res: Response) => {
   try {
     const { name, imageUrl, pv, lowStockThreshold = 5 } = req.body;

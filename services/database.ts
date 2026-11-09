@@ -97,6 +97,7 @@ export const Database = {
     getItems: () => request<any[]>(`${API_BASE}/inventory/items`),
     createItem: (data: any) => request<any>(`${API_BASE}/inventory/items`, 'POST', data),
     updateItem: (id: string, data: any) => request<any>(`${API_BASE}/inventory/items/${id}`, 'PUT', data),
+    updateItemsPvBatch: (items: Array<{ itemId: string; pv: number }>) => request<any>(`${API_BASE}/inventory/items/bulk-pv`, 'PUT', { items }),
     updateThreshold: (id: string, lowStockThreshold: number) => request<any>(`${API_BASE}/inventory/items/${id}/threshold`, 'PUT', { lowStockThreshold }),
     deleteItem: (id: string) => request<any>(`${API_BASE}/inventory/items/${id}`, 'DELETE'),
     receiveStock: (id: string, data: any) => request<any>(`${API_BASE}/inventory/items/${id}/receive`, 'POST', data),

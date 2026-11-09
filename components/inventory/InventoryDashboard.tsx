@@ -69,6 +69,8 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const [buyerType, setBuyerType] = useState<'member' | 'custom'>('custom'); const [customBuyer, setCustomBuyer] = useState('');
   const [draft, setDraft] = useState({ sku: '', name: '', categoryId: '', pv: '0', quantity: '0', lowStockThreshold: '5', imageUrl: '' });
   const [showProductModal, setShowProductModal] = useState(false);
+  const [bulkPvEditing, setBulkPvEditing] = useState(false);
+  const [bulkPvDrafts, setBulkPvDrafts] = useState<Record<string, string>>({});
   const [showBatchReceiveModal, setShowBatchReceiveModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [stockAction, setStockAction] = useState<{ action: 'receive' | 'adjust' | 'threshold'; item: any } | null>(null);
@@ -443,6 +445,39 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
       showMessage(error.message || 'Không thể cập nhật sản phẩm.');
     } finally { setBusy(false); }
   };
+  const saveBulkPv = async () => {
+    const invalidDraft = Object.entries(bulkPvDrafts).find(([, rawPv]) => rawPv.trim() !== '' && (!Number.isFinite(Number(rawPv)) || Number(rawPv) < 0));
+    if (invalidDraft) {
+      showMessage('Điểm PV mới phải là số từ 0 trở lên.');
+      return;
+    }
+    const updates = Object.entries(bulkPvDrafts).flatMap(([itemId, rawPv]) => {
+      const item = items.find(candidate => String(candidate.id || candidate._id) === itemId);
+      const pv = Number(rawPv);
+      return item && rawPv.trim() !== '' && Number.isFinite(pv) && pv >= 0 && pv !== Number(item.pv)
+        ? [{ itemId, pv }]
+        : [];
+    });
+    if (!updates.length) {
+      showMessage('Chưa có điểm PV nào thay đổi.');
+      return;
+    }
+    setBusy(true);
+    console.log('[InventoryUI] Bulk PV update started:', { itemCount: updates.length });
+    try {
+      const result = await Database.inventory.updateItemsPvBatch(updates);
+      console.log('[InventoryUI] Bulk PV update completed:', result);
+      setBulkPvEditing(false);
+      setBulkPvDrafts({});
+      await reload();
+      showMessage(`Đã cập nhật điểm PV cho ${result?.updatedCount ?? updates.length} sản phẩm.`);
+    } catch (error: any) {
+      console.error('[InventoryUI] Bulk PV update failed:', error);
+      showMessage(error.message || 'Không thể cập nhật hàng loạt điểm PV.');
+    } finally {
+      setBusy(false);
+    }
+  };
   const archiveProduct = async (item: any) => {
     const archived = !item.archived;
     const otherStockNote = Number(item.otherUsersStock || 0) > 0 ? ` Lưu ý: Kho của người dùng khác hiện còn ${item.otherUsersStock} sản phẩm.` : '';
@@ -551,6 +586,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
             <button type="button" aria-label="Nhập hàng" data-testid="open-batch-receive" onClick={() => setShowBatchReceiveModal(true)} className="shrink-0 whitespace-nowrap rounded-xl bg-teal-700 px-3 py-2.5 text-xs font-black text-white shadow-sm hover:bg-teal-800 sm:px-4 sm:py-3 sm:text-sm">+ Thêm</button>
             {canManageCatalog && <button type="button" aria-label="Thêm sản phẩm" data-testid="open-create-product" onClick={() => setShowProductModal(true)} className="shrink-0 whitespace-nowrap rounded-xl bg-emerald-700 px-3 py-2.5 text-xs font-black text-white shadow-sm hover:bg-emerald-800 sm:px-4 sm:py-3 sm:text-sm">+SP</button>}
           </div>
+          {canManageCatalog && <div className="flex justify-end"><button type="button" data-testid="toggle-bulk-pv-edit" onClick={() => { setBulkPvEditing(value => !value); setBulkPvDrafts({}); }} className="w-full whitespace-nowrap rounded-xl bg-indigo-700 px-3 py-2.5 text-xs font-black text-white shadow-sm hover:bg-indigo-800 sm:w-auto sm:px-4 sm:py-3 sm:text-sm">{bulkPvEditing ? 'Đóng sửa PV' : 'Sửa PV hàng loạt'}</button></div>}
           <div className="flex items-center gap-2" data-testid="stock-category-filter-row">
             <label htmlFor="stock-category-filter" className="shrink-0 text-xs font-bold text-slate-600">Nhóm sản phẩm</label>
             <select id="stock-category-filter" data-testid="stock-category-filter" value={stockCategoryFilter} onChange={event => handleStockCategoryFilterChange(event.target.value)} className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-emerald-500 sm:max-w-xs sm:py-2.5 sm:text-sm">
@@ -561,6 +597,19 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
             {stockCategoryFilter && <button type="button" data-testid="clear-stock-category-filter" onClick={clearStockCategoryFilter} className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600" aria-label="Bỏ lọc nhóm sản phẩm">× Bỏ lọc</button>}
           </div>
         </div>
+        {bulkPvEditing && canManageCatalog && <section className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 sm:p-4" data-testid="bulk-pv-editor">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h3 className="font-black text-indigo-950">Cập nhật điểm PV</h3><p className="text-xs text-indigo-800">Nhập PV mới cho các sản phẩm đang hiển thị; chỉ dòng có thay đổi sẽ được lưu.</p></div>
+            <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => { setBulkPvEditing(false); setBulkPvDrafts({}); }} className="rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-700">Huỷ</button><button type="button" data-testid="save-bulk-pv" disabled={busy} onClick={saveBulkPv} className="rounded-xl bg-indigo-700 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{busy ? 'Đang lưu…' : 'Lưu PV hàng loạt'}</button></div>
+          </div>
+          <div className="mt-3 max-h-80 overflow-auto rounded-xl bg-white">
+            {filteredItems.map(item => { const itemId = String(item.id || item._id); return <label key={itemId} className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-0">
+              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{item.name}</span><span className="text-xs text-slate-500">{(item.skus?.length ? item.skus : [item.sku]).join(', ')} · PV hiện tại {item.pv}</span></span>
+              <span className="flex shrink-0 items-center gap-2 text-xs font-bold text-slate-600">PV mới<input aria-label={`PV mới cho ${item.name}`} data-testid={`bulk-pv-${itemId}`} type="number" min="0" step="0.01" value={bulkPvDrafts[itemId] ?? String(item.pv ?? 0)} onChange={event => setBulkPvDrafts(current => ({ ...current, [itemId]: event.target.value }))} className="w-24 rounded-lg border border-slate-200 px-2 py-2 text-right text-sm font-black text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500" /></span>
+            </label>; })}
+            {!filteredItems.length && <p className="p-4 text-center text-sm text-slate-500">Không có sản phẩm phù hợp để cập nhật.</p>}
+          </div>
+        </section>}
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {filteredItems.map(item => <article key={item.id} className={`overflow-hidden rounded-2xl border ${item.archived ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200'}`}>
             <div className="flex gap-3 p-4">
@@ -659,10 +708,10 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     {tab === 'sale' && canUseInventory && <>
       <style>{`[data-sale-summary-bar]{bottom:calc(86px + env(safe-area-inset-bottom,0px))}@media(min-width:768px){[data-sale-summary-bar]{bottom:0}}`}</style>
       <div data-sale-summary-bar data-testid="sale-summary-bar" className="fixed inset-x-0 z-[55] border-t border-emerald-700 bg-emerald-400 px-3 py-2.5 text-black shadow-[0_-6px_24px_rgba(15,23,42,0.15)] sm:px-6 sm:py-3">
-        <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 whitespace-nowrap text-[11px] font-black sm:gap-6 sm:text-sm">
-          <span>{PRICE_TIERS.find(tier => tier.field === orderPriceField)?.discount || '0%'}</span>
-          <span>{totalPv} PV</span>
-          <span>Tổng: {money(total)}</span>
+        <div className="mx-auto grid max-w-7xl grid-cols-3 items-center whitespace-nowrap text-[clamp(8px,2.8vw,14px)] font-black sm:text-sm">
+          <span className="min-w-0 text-left">{PRICE_TIERS.find(tier => tier.field === orderPriceField)?.discount || '0%'}</span>
+          <span className="min-w-0 text-center">{totalPv} PV</span>
+          <span className="min-w-0 text-right">Tổng: {money(total)}</span>
         </div>
       </div>
     </>}
