@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo, useCallback, useMemo } from 'react';
-import { User, AccountStatus } from '../../types.ts';
+import { User, AccountStatus, HealthGoal } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import { useToast } from '../system/ToastProvider.tsx';
 import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
@@ -80,12 +80,26 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
     if (!editingUser) return;
     setSaving(true);
     const uid = getUserId(editingUser);
+    console.log('[UserManagement] Member profile update started:', { userId: uid });
+    const originalUser = users.find(user => getUserId(user) === uid);
 
-    // Chỉ update những field cần thiết, KHÔNG gửi role
+    const requestedLevel = editingUser.memberLevel || 'customer';
+    const memberNumber = String(editingUser.memberNumber || '').trim().toUpperCase();
+    const sponsorMemberNumber = String(editingUser.sponsorMemberNumber || '').trim().toUpperCase();
     const updateData: any = {
+      username: editingUser.username,
+      email: editingUser.email,
       fullName: editingUser.fullName,
       status: editingUser.status,
+      birthDate: editingUser.birthDate || '',
+      height: Number(editingUser.height || 0),
+      weight: Number(editingUser.weight || 0),
+      gender: editingUser.gender || 'Nam',
+      healthGoals: editingUser.healthGoals || [],
+      avatar: editingUser.avatar || '',
     };
+    if (memberNumber !== String(originalUser?.memberNumber || '').trim().toUpperCase()) updateData.memberNumber = memberNumber;
+    if (sponsorMemberNumber !== String(originalUser?.sponsorMemberNumber || '').trim().toUpperCase()) updateData.sponsorMemberNumber = sponsorMemberNumber;
     if ('phoneNumber' in editingUser) updateData.phoneNumber = editingUser.phoneNumber || '';
     if ('address' in editingUser) updateData.address = editingUser.address || '';
     if ((editingUser as any).password && (editingUser as any).password.trim() !== '') {
@@ -94,46 +108,46 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
 
     try {
       await Database.updateUser(uid, updateData);
-      console.log('[UserManagement] Profile contact fields saved:', { userId: uid });
-      const originalUser = users.find(user => getUserId(user) === uid);
-      if (canManageMemberLevels && editingUser.memberLevel && editingUser.memberLevel !== (originalUser?.memberLevel || 'customer')) {
-        await Database.inventory.setMemberLevel(uid, { memberLevel: editingUser.memberLevel, reason: 'Cập nhật cấp độ từ Admin Panel' });
+      console.log('[UserManagement] Member profile fields saved:', { userId: uid });
+      if (canManageMemberLevels && memberNumber && requestedLevel !== (originalUser?.memberLevel || 'customer')) {
+        await Database.inventory.setMemberLevel(uid, { memberLevel: requestedLevel, reason: 'Cập nhật cấp độ từ Admin Panel' });
+      } else if (canManageMemberLevels && !memberNumber && requestedLevel !== 'customer') {
+        console.log('[UserManagement] Member level reset to customer because member number was cleared:', { userId: uid });
       }
 
-      // Cập nhật group membership (single group)
-      if (selectedGroupId) {
-        try {
-          const freshGroups = await Database.getGroups();
-          for (const group of freshGroups) {
-            const gid = group.id || group._id;
-            if (gid === selectedGroupId) continue;
-            const currentMembers = group.members?.map((m: any) => m._id || m) || [];
-            if (currentMembers.includes(uid)) {
-              await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
-            }
+      // Cập nhật group membership (single group), cho phép bỏ khỏi mọi nhóm.
+      try {
+        const freshGroups = await Database.getGroups();
+        for (const group of freshGroups) {
+          const gid = group.id || group._id;
+          if (gid === selectedGroupId) continue;
+          const currentMembers = group.members?.map((m: any) => m._id || m) || [];
+          if (currentMembers.includes(uid)) {
+            await Database.updateGroupMembers(gid, currentMembers.filter((id: string) => id !== uid));
           }
-          // Thêm user vào group được chọn
-          const targetGroup = freshGroups.find((g: any) => (g.id || g._id) === selectedGroupId);
-          if (targetGroup) {
-            const tgtId = targetGroup.id || targetGroup._id;
-            const targetMembers = targetGroup.members?.map((m: any) => m._id || m) || [];
-            if (!targetMembers.includes(uid)) {
-              await Database.updateGroupMembers(tgtId, [...targetMembers, uid]);
-            }
-          }
-          const updatedGroups = await Database.getGroups();
-          setAllGroups(updatedGroups || []);
-        } catch (groupErr: any) {
-          console.error('[UserManagement] Group update error:', groupErr);
         }
+        if (selectedGroupId) {
+          // Thêm user vào group được chọn
+          const targetGroup = freshGroups.find((group: any) => (group.id || group._id) === selectedGroupId);
+          if (targetGroup) {
+            const targetId = targetGroup.id || targetGroup._id;
+            const targetMembers = targetGroup.members?.map((member: any) => member._id || member) || [];
+            if (!targetMembers.includes(uid)) await Database.updateGroupMembers(targetId, [...targetMembers, uid]);
+          }
+        }
+        const updatedGroups = await Database.getGroups();
+        setAllGroups(updatedGroups || []);
+      } catch (groupErr: any) {
+        console.error('[UserManagement] Group update error:', groupErr);
       }
 
       // ĐÓNG MODAL VÀ REFRESH SAU CÙNG
       setEditingUser(null);
+      console.log('[UserManagement] Member profile update completed:', { userId: uid });
       addToast({ type: 'success', title: 'Đã cập nhật', message: 'Thông tin hội viên đã được lưu.' });
       onRefresh();
     } catch (err: any) {
-      setEditingUser(null);
+      console.error('[UserManagement] Member profile update failed:', { userId: uid, error: err });
       addToast({ type: 'error', title: 'Lỗi', message: err.message || 'Không thể cập nhật.' });
     } finally {
       setSaving(false);
@@ -413,21 +427,76 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
           <form onSubmit={(e) => { e.preventDefault(); handleUpdateUser(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật Hội viên</h4>
             
-            {/* Thông tin cơ bản */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Họ tên</label>
-              <input value={editingUser.fullName} onChange={e => setEditingUser({...editingUser, fullName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tên đăng nhập</label>
+                <input required value={editingUser.username || ''} onChange={e => setEditingUser({...editingUser, username: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Email</label>
+                <input required type="email" value={editingUser.email || ''} onChange={e => setEditingUser({...editingUser, email: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Họ tên</label>
+                <input required value={editingUser.fullName || ''} onChange={e => setEditingUser({...editingUser, fullName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Số điện thoại</label>
                 <input type="tel" value={editingUser.phoneNumber || ''} onChange={e => setEditingUser({...editingUser, phoneNumber: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Địa chỉ</label>
+              <input value={editingUser.address || ''} onChange={e => setEditingUser({...editingUser, address: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Địa chỉ</label>
-                <input value={editingUser.address || ''} onChange={e => setEditingUser({...editingUser, address: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mã số hội viên</label>
+                <input value={editingUser.memberNumber || ''} onChange={e => { const memberNumber = e.target.value.toUpperCase(); const memberLevel = !memberNumber ? 'customer' : (!editingUser.memberNumber && (editingUser.memberLevel || 'customer') === 'customer' ? 'member' : editingUser.memberLevel); setEditingUser({...editingUser, memberNumber, memberLevel}); }} placeholder="VA12345678 hoặc VNY1234567" className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs uppercase" />
               </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mã người bảo trợ</label>
+                <input value={editingUser.sponsorMemberNumber || ''} onChange={e => setEditingUser({...editingUser, sponsorMemberNumber: e.target.value.toUpperCase()})} placeholder="Mã hội viên người bảo trợ" className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs uppercase" />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ngày sinh</label>
+                <input type="date" value={String(editingUser.birthDate || '').slice(0, 10)} onChange={e => setEditingUser({...editingUser, birthDate: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Giới tính</label>
+                <select value={editingUser.gender || 'Nam'} onChange={e => setEditingUser({...editingUser, gender: e.target.value as User['gender']})} className="w-full px-4 py-3 bg-slate-50 rounded-xl font-bold text-xs"><option value="Nam">Nam</option><option value="Nữ">Nữ</option></select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Chiều cao (cm)</label>
+                <input type="number" min="0" value={editingUser.height || 0} onChange={e => setEditingUser({...editingUser, height: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
+                <input type="number" min="0" step="0.1" value={editingUser.weight || 0} onChange={e => setEditingUser({...editingUser, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mục tiêu sức khỏe</label>
+              <div className="grid gap-1 sm:grid-cols-2 rounded-xl bg-slate-50 p-3">
+                {Object.values(HealthGoal).map(goal => <label key={goal} className="flex items-center gap-2 rounded-lg p-2 text-xs font-semibold text-slate-700 hover:bg-white"><input type="checkbox" checked={(editingUser.healthGoals || []).includes(goal)} onChange={e => { const currentGoals = editingUser.healthGoals || []; const healthGoals = e.target.checked ? [...currentGoals, goal] : currentGoals.filter(value => value !== goal); setEditingUser({...editingUser, healthGoals}); }} className="accent-emerald-600" />{goal}</label>)}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Ảnh đại diện (URL)</label>
+              <input type="url" value={editingUser.avatar || ''} onChange={e => setEditingUser({...editingUser, avatar: e.target.value})} placeholder="https://..." className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
             </div>
             
             <div className="space-y-1">
@@ -440,7 +509,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mật khẩu mới (Để trống nếu không đổi)</label>
               <input 
-                type="text" 
+              type="password"
+              autoComplete="new-password"
                 placeholder="Nhập mật khẩu mới..."
                 onChange={e => setEditingUser({...editingUser, password: e.target.value})} 
                 className="w-full px-4 py-3 bg-rose-50/30 text-rose-700 rounded-xl outline-none font-bold text-xs border border-rose-100 focus:border-rose-300" 
@@ -454,6 +524,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
                 <span className="font-normal text-[9px] text-slate-300">(chọn 1 nhóm cho hội viên)</span>
               </label>
               <div className="space-y-1.5">
+                <label className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${selectedGroupId ? 'bg-slate-50 border-transparent hover:border-slate-200' : 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-200'}`}>
+                  <input type="radio" name="userGroup" checked={!selectedGroupId} onChange={() => setSelectedGroupId('')} className="accent-emerald-600" />
+                  <span className="font-bold text-xs text-slate-700">Không thuộc nhóm</span>
+                </label>
                 {groups.map(group => {
                   const gid = group.id || group._id;
                   const isSelected = selectedGroupId === gid;
