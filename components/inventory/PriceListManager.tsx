@@ -1,7 +1,8 @@
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Database } from '../../services/database.ts';
 import CurrencyInput from './CurrencyInput.tsx';
 import { formatVND } from '../../utils/formatters.ts';
+import { readPriceListFile } from './utils/priceListFileImport.ts';
 
 interface Product { sku: string; skus?: string[]; name: string; pv: number; imageUrl?: string; categoryName?: string; prices?: Record<string, number> | null; }
 interface PriceVersion { _id: string; name: string; effectiveFrom: string; effectiveTo?: string | null; endDateExplicit?: boolean; entries?: Array<Record<string, any>>; }
@@ -47,7 +48,10 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<PriceVersion | null>(null);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState('');
   const [name, setName] = useState('');
+  const importFileInput = useRef<HTMLInputElement>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(todayInputValue);
   const [effectiveTo, setEffectiveTo] = useState('');
   const [entries, setEntries] = useState<Record<string, Record<PriceField, string>>>({});
@@ -111,12 +115,55 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
       const source = product.prices || {};
       initial[product.sku] = Object.fromEntries(TIERS.map(tier => [tier.field, !hasHistory && source[tier.field] !== undefined ? String(source[tier.field]) : ''])) as Record<PriceField, string>;
     });
-    setEntries(initial); setName(''); setEffectiveFrom(todayInputValue()); setEffectiveTo(''); setEditing(null); setOpen(true);
+    setEntries(initial); setName(''); setEffectiveFrom(todayInputValue()); setEffectiveTo(''); setEditing(null); setImportSummary(''); setOpen(true);
   };
   const openEdit = (version: PriceVersion) => {
     setEditing(version); setName(version.name || ''); setEffectiveFrom(dateToInput(version.effectiveFrom)); setEffectiveTo(inclusiveEndInput(version.effectiveTo)); setOpen(true);
   };
   const updatePrice = (sku: string, field: PriceField, value: string) => setEntries(old => ({ ...old, [sku]: { ...old[sku], [field]: value } }));
+  const importPrices = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setImporting(true);
+    setImportSummary('');
+    try {
+      const result = await readPriceListFile(file);
+      const firstRowBySku = new Map<string, typeof result.rows[number]>();
+      result.rows.forEach(row => { if (!firstRowBySku.has(row.sku)) firstRowBySku.set(row.sku, row); });
+      const nextEntries: Record<string, Record<PriceField, string>> = {};
+      products.filter(product => product.sku).forEach(product => {
+        nextEntries[product.sku] = Object.fromEntries(TIERS.map(tier => [tier.field, ''])) as Record<PriceField, string>;
+      });
+
+      const matchedFileSkus = new Set<string>();
+      let matchedProducts = 0;
+      let productsMissingPrices = 0;
+      products.filter(product => product.sku).forEach(product => {
+        const productCodes = [...new Set([String(product.sku).trim().toUpperCase(), ...skuList(product)])];
+        const matchedRow = productCodes.map(code => firstRowBySku.get(code)).find(Boolean);
+        if (!matchedRow) return;
+
+        matchedProducts += 1;
+        matchedFileSkus.add(matchedRow.sku);
+        nextEntries[product.sku] = { ...matchedRow.prices };
+        if (TIERS.some(tier => !matchedRow.prices[tier.field])) productsMissingPrices += 1;
+      });
+
+      const unmatchedSkus = result.rows.filter(row => !matchedFileSkus.has(row.sku)).map(row => row.sku);
+      const unmatchedSummary = unmatchedSkus.length ? ` · ${unmatchedSkus.length} mã không khớp${unmatchedSkus.length <= 5 ? `: ${unmatchedSkus.join(', ')}` : ` (ví dụ: ${unmatchedSkus.slice(0, 5).join(', ')})`}` : '';
+      const duplicateSummary = result.duplicateSkus.length ? ` · ${result.duplicateSkus.length} mã trùng trong file, dùng dòng xuất hiện đầu tiên` : '';
+      setEntries(nextEntries);
+      setImportSummary(`Đã ghép ${matchedProducts}/${products.filter(product => product.sku).length} sản phẩm · ${productsMissingPrices} sản phẩm còn thiếu ít nhất một mức giá${unmatchedSummary}${duplicateSummary}.`);
+      console.log('[PriceListUI] File import applied:', { fileName: file.name, matchedProducts, unmatchedSkuCount: unmatchedSkus.length, productsMissingPrices, duplicateSkuCount: result.duplicateSkus.length });
+    } catch (error: any) {
+      console.error('[PriceListUI] File import failed:', error);
+      onMessage(error?.message || 'Không thể đọc dữ liệu từ tệp.');
+    } finally {
+      setImporting(false);
+    }
+  }, [onMessage, products]);
   const save = async () => {
     if (!name.trim()) return onMessage('Nhập tên bảng giá.');
     if (!effectiveFrom) return onMessage('Chọn ngày bắt đầu hiệu lực.');
@@ -263,11 +310,12 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
     </div>
     {open && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-2 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="price-list-modal-title">
       <div className="flex max-h-[96vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b p-4 sm:p-5"><div><h2 id="price-list-modal-title" className="text-lg font-black sm:text-xl">{editing ? 'Sửa bảng giá' : 'Tạo bảng giá mới'}</h2><p className="mt-1 text-xs text-slate-500">{editing ? 'Sửa tên và thời gian hiệu lực của phiên bản.' : 'Nhập giá mới cho toàn bộ sản phẩm trong kho.'}</p></div><button onClick={() => setOpen(false)} aria-label="Đóng" className="rounded-lg bg-slate-100 px-3 py-2 text-lg font-bold">×</button></div>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b p-4 sm:p-5"><div><h2 id="price-list-modal-title" className="text-lg font-black sm:text-xl">{editing ? 'Sửa bảng giá' : 'Tạo bảng giá mới'}</h2><p className="mt-1 text-xs text-slate-500">{editing ? 'Sửa tên và thời gian hiệu lực của phiên bản.' : 'Nhập giá mới cho toàn bộ sản phẩm trong kho.'}</p></div><div className="flex items-center gap-2">{!editing && <><input ref={importFileInput} type="file" accept=".csv,.ods,text/csv" onChange={event => void importPrices(event)} className="hidden" aria-label="Chọn file bảng giá để import" /><button type="button" onClick={() => importFileInput.current?.click()} disabled={importing || busy} className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800 ring-1 ring-emerald-200 disabled:opacity-50">{importing ? 'Đang đọc file…' : 'Import từ file'}</button></>}<button onClick={() => setOpen(false)} aria-label="Đóng" className="rounded-lg bg-slate-100 px-3 py-2 text-lg font-bold">×</button></div></div>
         <div className="grid gap-3 border-b bg-slate-50 p-4 md:grid-cols-3">
           <label className="text-sm font-bold">Tên bảng giá<input value={name} onChange={event => setName(event.target.value)} maxLength={100} className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 font-normal" placeholder="Ví dụ: Bảng giá tháng 11/2026" /></label>
           <label className="text-sm font-bold">Ngày bắt đầu hiệu lực<input type="date" value={effectiveFrom} onChange={event => setEffectiveFrom(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 font-normal" /></label>
           <label className="text-sm font-bold">Ngày kết thúc hiệu lực <span className="font-normal text-slate-500">(không bắt buộc)</span><input type="date" min={effectiveFrom} value={effectiveTo} onChange={event => setEffectiveTo(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 font-normal" /></label>
+          {!editing && importSummary && <p className="md:col-span-3 text-xs leading-5 text-slate-600" role="status">{importSummary}</p>}
         </div>
         {!editing && <div className="flex-1 overflow-auto">
           {groupedProducts.length ? groupedProducts.map(([category, group]) => <section key={category} className="mb-5"><h3 className="sticky left-0 z-10 border-y bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-900">{category}</h3>
@@ -277,7 +325,7 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
             </tr>)}</tbody></table></div>
           </section>) : <p className="p-8 text-center text-sm text-slate-500">Chưa có sản phẩm trong kho.</p>}
         </div>}
-        <div className="flex flex-wrap justify-end gap-2 border-t bg-white p-4"><button onClick={() => setOpen(false)} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Hủy</button><button onClick={() => void save()} disabled={busy || (!editing && !products.length)} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50">{busy ? 'Đang lưu…' : editing ? 'Lưu thay đổi' : 'Lưu bảng giá'}</button></div>
+        <div className="flex flex-wrap justify-end gap-2 border-t bg-white p-4"><button onClick={() => setOpen(false)} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Hủy</button><button onClick={() => void save()} disabled={busy || importing || (!editing && !products.length)} className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50">{busy ? 'Đang lưu…' : editing ? 'Lưu thay đổi' : 'Lưu bảng giá'}</button></div>
       </div>
     </div>}
   </div>;
