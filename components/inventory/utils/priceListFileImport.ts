@@ -29,6 +29,8 @@ const normalizeHeader = (value: unknown) => String(value ?? '')
 
 const normalizeSku = (value: unknown) => String(value ?? '').trim().toUpperCase();
 
+export const normalizePriceListSkuForMatch = (value: unknown) => normalizeSku(value).replace(/VN$/, '');
+
 const parsePrice = (value: unknown, rowNumber: number, field: ImportedPriceField): string => {
   const source = String(value ?? '').trim();
   if (!source || source === '-' || source === '—') return '';

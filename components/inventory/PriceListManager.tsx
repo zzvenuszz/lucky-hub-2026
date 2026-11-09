@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import { Database } from '../../services/database.ts';
 import CurrencyInput from './CurrencyInput.tsx';
 import { formatVND } from '../../utils/formatters.ts';
-import { readPriceListFile } from './utils/priceListFileImport.ts';
+import { normalizePriceListSkuForMatch, readPriceListFile } from './utils/priceListFileImport.ts';
 
 interface Product { sku: string; skus?: string[]; name: string; pv: number; imageUrl?: string; categoryName?: string; prices?: Record<string, number> | null; }
 interface PriceVersion { _id: string; name: string; effectiveFrom: string; effectiveTo?: string | null; endDateExplicit?: boolean; entries?: Array<Record<string, any>>; }
@@ -131,7 +131,14 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
     try {
       const result = await readPriceListFile(file);
       const firstRowBySku = new Map<string, typeof result.rows[number]>();
+      const fileRowsByNormalizedSku = new Map<string, typeof result.rows>();
       result.rows.forEach(row => { if (!firstRowBySku.has(row.sku)) firstRowBySku.set(row.sku, row); });
+      result.rows.forEach(row => {
+        const normalizedSku = normalizePriceListSkuForMatch(row.sku);
+        const matchingRows = fileRowsByNormalizedSku.get(normalizedSku) || [];
+        matchingRows.push(row);
+        fileRowsByNormalizedSku.set(normalizedSku, matchingRows);
+      });
       const catalogDiagnostics = products.filter(product => product.sku).map(product => {
         const productCodes = [...new Set([String(product.sku).trim().toUpperCase(), ...skuList(product)])];
         return {
@@ -147,17 +154,22 @@ const PriceListManager: React.FC<Props> = memo(({ versions, products, canManage,
       });
 
       const matchedFileSkus = new Set<string>();
-      const matchDiagnostics: Array<{ product: string; primarySku: string; candidateSkus: string; matchedFileSku: string }> = [];
+      const matchDiagnostics: Array<{ product: string; primarySku: string; candidateSkus: string; matchedFileSkus: string; matchMethod: string }> = [];
       let matchedProducts = 0;
       let productsMissingPrices = 0;
       products.filter(product => product.sku).forEach(product => {
         const productCodes = [...new Set([String(product.sku).trim().toUpperCase(), ...skuList(product)])];
-        const matchedRow = productCodes.map(code => firstRowBySku.get(code)).find(Boolean);
-        matchDiagnostics.push({ product: product.name, primarySku: String(product.sku), candidateSkus: productCodes.join(' | '), matchedFileSku: matchedRow?.sku || '' });
+        const exactRows = productCodes.map(code => firstRowBySku.get(code)).filter(Boolean) as typeof result.rows;
+        const normalizedRows = [...new Map(productCodes.flatMap(code => fileRowsByNormalizedSku.get(normalizePriceListSkuForMatch(code)) || []).map(row => [row.sku, row])).values()];
+        const matchingRows = [...new Map([...exactRows, ...normalizedRows].map(row => [row.sku, row])).values()];
+        const normalizedPrimarySku = normalizePriceListSkuForMatch(product.sku);
+        const matchedRow = exactRows.find(row => normalizePriceListSkuForMatch(row.sku) === normalizedPrimarySku) || exactRows[0] || normalizedRows.find(row => normalizePriceListSkuForMatch(row.sku) === normalizedPrimarySku) || normalizedRows[0];
+        const matchMethod = exactRows.length ? 'exact' : normalizedRows.length ? 'removed-vn-suffix' : '';
+        matchDiagnostics.push({ product: product.name, primarySku: String(product.sku), candidateSkus: productCodes.join(' | '), matchedFileSkus: matchingRows.map(row => row.sku).join(' | '), matchMethod });
         if (!matchedRow) return;
 
         matchedProducts += 1;
-        matchedFileSkus.add(matchedRow.sku);
+        matchingRows.forEach(row => matchedFileSkus.add(row.sku));
         nextEntries[product.sku] = { ...matchedRow.prices };
         if (TIERS.some(tier => !matchedRow.prices[tier.field])) productsMissingPrices += 1;
       });
