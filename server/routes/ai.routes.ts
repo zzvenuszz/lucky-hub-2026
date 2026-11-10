@@ -143,14 +143,14 @@ KHÔNG suy luận dài dòng, KHÔNG giải thích từng bước, trả về NG
         }
       }
     };
-    console.log(`[VisionExtract] 🤖 [${requestId}] Step 2: Calling AI Router (task=vision, timeoutMs=60000, retries=1, reasoningEffort=low)...`);
+    console.log(`[VisionExtract] 🤖 [${requestId}] Step 2: Calling AI Router (task=vision, timeoutMs=60000, retries=1, reasoningEffort=none)...`);
     const response = await callAI(requestId, 'vision', payload, {
       userId,
       modelName: 'auto',
       timeoutMs: 60000,
       retries: 1,
       temperature: 0.1,
-      reasoningEffort: 'low',
+      reasoningEffort: 'none',
     });
     console.log(`[VisionExtract] 📥 [${requestId}] Step 3: AI responded in ${Date.now() - startedAt}ms | provider=${response.providerUsed} | model=${response.resolvedModel || response.modelUsed} | rawText=${response.text.slice(0, 300)}`);
     const sanitized = sanitizeJSON(response.text);
@@ -181,12 +181,12 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
 YÊU CẦU TỐC ĐỘ & ĐỊNH DẠNG:
 - KHÔNG suy luận dài dòng, KHÔNG kiểm tra lặp lại nhiều lần, KHÔNG viết lời giải thích, CHỈ trả về NGAY LẬP TỨC mảng JSON array thuần túy.
 - Mỗi dòng trong bảng là 1 phần tử object theo đúng mẫu:
-{"date":"YYYY-MM-DD","weight":65.5,"bodyFat":18.5,"muscleMass":48.0,"waterPercent":60.0,"boneMinerals":2.5,"visceralFat":8,"energy":1500,"bioAge":30,"balanceIndex":80}
+{"date":"DD/MM/YYYY","weight":65.5,"bodyFat":18.5,"muscleMass":48.0,"waterPercent":60.0,"boneMinerals":2.5,"visceralFat":8,"energy":1500,"bioAge":30,"balanceIndex":80}
 - Tất cả số liệu phải là kiểu NUMBER (không dùng chuỗi). weight (cân nặng) PHẢI > 0.
 - Trường nào trống hoặc không đọc được thì bỏ qua trường đó (không dùng null, không tự đoán).
-- date: chuyển DD/MM thành YYYY-MM-DD.`;
+- date: Giữ nguyên thứ tự NGÀY/THÁNG (DD/MM) như trong bảng và gắn thêm năm thành DD/MM/YYYY.`;
     if (selectedYear) {
-      prompt += `\n- Nếu ngày trong ảnh không ghi năm, dùng năm ${selectedYear} (ví dụ "10/05" -> "${selectedYear}-05-10").`;
+      prompt += `\n- Nếu ngày trong ảnh không ghi năm, dùng năm ${selectedYear} (ví dụ thấy "10/05" tức ngày 10 tháng 05 -> ghi "10/05/${selectedYear}").`;
     }
 
     const payload = {
@@ -207,14 +207,14 @@ YÊU CẦU TỐC ĐỘ & ĐỊNH DẠNG:
         }
       }
     };
-    console.log(`[BulkExtract] 🤖 [${requestId}] Step 2: Calling AI Router (task=vision, timeoutMs=90000, retries=0, temp=0.1, reasoningEffort=low)...`);
+    console.log(`[BulkExtract] 🤖 [${requestId}] Step 2: Calling AI Router (task=vision, timeoutMs=90000, retries=0, temp=0.1, reasoningEffort=none)...`);
     const response = await callAI(requestId, 'vision', payload, {
       userId,
       modelName: 'auto',
       timeoutMs: 90000,
       retries: 0,
       temperature: 0.1,
-      reasoningEffort: 'low',
+      reasoningEffort: 'none',
     });
     console.log(`[BulkExtract] 📥 [${requestId}] Step 3: AI responded in ${Date.now() - startedAt}ms | provider=${response.providerUsed} | model=${response.resolvedModel || response.modelUsed} | rawLen=${response.text.length} | preview=${response.text.slice(0, 300)}`);
     const sanitized = sanitizeJSON(response.text);

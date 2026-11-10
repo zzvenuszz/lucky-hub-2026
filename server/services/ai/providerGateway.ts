@@ -222,7 +222,10 @@ export async function callGateway(
 
       if (config.temperature !== undefined) body.temperature = config.temperature;
       if (config.maxTokens && config.maxTokens > 0) body.max_tokens = config.maxTokens;
-      if (config.reasoningEffort) {
+      if (config.reasoningEffort === 'none') {
+        body.reasoning = { enabled: false };
+        body.chat_template_kwargs = { enable_thinking: false };
+      } else if (config.reasoningEffort) {
         body.reasoning_effort = config.reasoningEffort;
         body.reasoning = { effort: config.reasoningEffort };
       }
