@@ -94,6 +94,15 @@ export const stripVietnameseAccents = (input: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
+export const formatTransferDescription = (buyerName?: string, invoiceNumber?: string): string => {
+  const cleanBuyer = stripVietnameseAccents(String(buyerName || '')).toUpperCase();
+  const cleanInvoice = stripVietnameseAccents(String(invoiceNumber || ''));
+  const parts = [cleanBuyer, 'thanh toan', cleanInvoice].filter(Boolean);
+  const description = stripVietnameseAccents(parts.join(' '));
+  console.log('[VietQR] Formatted transfer description:', { buyerName, invoiceNumber, description });
+  return description;
+};
+
 export const computeCrc16Ccitt = (payload: string): string => {
   let crc = 0xffff;
   for (let i = 0; i < payload.length; i += 1) {

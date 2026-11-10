@@ -4,6 +4,7 @@ import {
   buildVietQrPayload,
   drawQrMatrixToContext,
   findVietQrProvider,
+  formatTransferDescription,
   generateVietQrDataUrl,
 } from '../../utils/vietQr.ts';
 
@@ -24,6 +25,11 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
   const bankProvider = useMemo(() => findVietQrProvider(sellerBankCode), [sellerBankCode]);
   const bankDisplayName = bankProvider ? bankProvider.shortName : sellerBankCode;
 
+  const transferDescription = useMemo(() => {
+    if (!activeQr) return '';
+    return formatTransferDescription(sale.buyerName, sale.invoiceNumber);
+  }, [activeQr, sale.buyerName, sale.invoiceNumber]);
+
   const qrPayload = useMemo(() => {
     if (!activeQr) return '';
     return buildVietQrPayload({
@@ -31,9 +37,9 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
       accountNumber: sellerBankAccount,
       accountName: seller?.name || '',
       amount: Number(sale.total) || 0,
-      description: String(sale.invoiceNumber || ''),
+      description: transferDescription,
     });
-  }, [activeQr, sellerBankCode, sellerBankAccount, seller?.name, sale.total, sale.invoiceNumber]);
+  }, [activeQr, sellerBankCode, sellerBankAccount, seller?.name, sale.total, transferDescription]);
 
   const qrDataUrl = useMemo(() => {
     if (!activeQr) return '';
@@ -43,11 +49,11 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
         accountNumber: sellerBankAccount,
         accountName: seller?.name || '',
         amount: Number(sale.total) || 0,
-        description: String(sale.invoiceNumber || ''),
+        description: transferDescription,
       },
       260
     );
-  }, [activeQr, sellerBankCode, sellerBankAccount, seller?.name, sale.total, sale.invoiceNumber]);
+  }, [activeQr, sellerBankCode, sellerBankAccount, seller?.name, sale.total, transferDescription]);
 
   useEffect(() => {
     if (!canEnableQr && qrEnabled) {

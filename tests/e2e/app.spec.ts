@@ -429,8 +429,15 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
 
   const qrToggle = page.getByTestId('invoice-qr-toggle');
   await expect(qrToggle).toBeEnabled();
+  const qrLogs: string[] = [];
+  page.on('console', msg => {
+    if (msg.text().includes('[VietQR] Formatted transfer description:')) {
+      qrLogs.push(msg.text());
+    }
+  });
   await qrToggle.click();
   await expect(qrToggle).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(() => qrLogs.join(' ')).toContain('NGUYEN VAN A thanh toan LK-05112026-1000-0001');
 
   const qrBox = page.getByTestId('invoice-qr-box');
   const buyerInfo = page.getByTestId('invoice-buyer-info');
