@@ -111,19 +111,21 @@ router.post('/extract', async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId || 'anonymous';
     console.log(`[VisionExtract] 🚀 [${requestId}] Step 1: Received single-image extract request | user=${userId} | base64Len=${imageBase64.length} | selectedYear=${selectedYear || 'auto'}`);
 
-    let prompt = `Phân tích ẢNH CHỤP KẾT QUẢ ĐO InBody/CÂN ĐIỆN TỬ này.
-QUAN TRỌNG: Chỉ trích xuất các số liệu CÓ THỰC trong ảnh. Nếu không thấy số liệu nào, để mặc định 0.
-KHÔNG suy luận dài dòng, KHÔNG giải thích từng bước, trả về NGAY LẬP TỨC JSON object thuần túy với các trường kiểu number:
-- weight (kg, số thực > 0): Cân nặng
-- bodyFat (%, số thực): Mỡ cơ thể
-- muscleMass (kg, số thực): Lượng cơ
-- waterPercent (%, số thực): Tỷ lệ nước
-- boneMinerals (kg, số thực): Khoáng chất
-- visceralFat (số nguyên): Mỡ nội tạng
-- energy (kcal, số nguyên): Năng lượng
-- bioAge (số nguyên): Tuổi sinh học
-- balanceIndex (số nguyên): Cân đối
-- date (YYYY-MM-DD): Ngày đo`;
+    let prompt = `Phân tích ẢNH CHỤP KẾT QUẢ ĐO InBody/CÂN ĐIỆN TỬ hoặc PHIẾU ĐO CHỈ SỐ SỨC KHỎE này.
+NGUYÊN TẮC ĐỌC CHÍNH XÁC:
+1. Quan sát kỹ nhãn/tiêu đề của từng chỉ số trong ảnh để ánh xạ đúng vào trường tương ứng, không lấy nhầm giá trị của chỉ số khác:
+   - weight: Cân nặng / Trọng lượng (kg)
+   - bodyFat: Mỡ cơ thể / % Mỡ / Tỷ lệ mỡ (%)
+   - muscleMass: Lượng cơ / Khối lượng cơ (kg)
+   - waterPercent: Tỷ lệ nước / % Nước (%)
+   - boneMinerals: Khoáng chất / Khối lượng xương (kg)
+   - visceralFat: Mỡ nội tạng
+   - energy: Năng lượng / Chuyển hóa cơ bản / BMR / Kcal
+   - bioAge: Tuổi sinh học / Tuổi cơ thể
+   - balanceIndex: Chỉ số cân đối / Vóc dáng
+   - date: Ngày đo (YYYY-MM-DD)
+2. Đọc đầy đủ cả phần nguyên và phần thập phân của từng con số (dấu phẩy ',' trong ảnh phải chuyển thành dấu chấm '.' trong JSON). Chỉ trích xuất các số liệu CÓ THỰC trong ảnh; nếu không thấy chỉ số nào thì để 0.
+3. KHÔNG suy luận dài dòng, KHÔNG giải thích, chỉ trả về NGAY LẬP TỨC JSON object thuần túy với các trường số kiểu number.`;
     if (selectedYear) {
       prompt += `\nLưu ý: Nếu ngày đo không ghi rõ năm, hãy dùng năm ${selectedYear}.`;
     }
@@ -177,14 +179,33 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId || 'anonymous';
     console.log(`[BulkExtract] 🚀 [${requestId}] Step 1: Received bulk-extract request | user=${userId} | base64Len=${imageBase64.length} (~${Math.round(imageBase64.length * 0.75 / 1024)}KB) | selectedYear=${selectedYear || 'auto'}`);
 
-    let prompt = `Đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe trong ảnh và trích xuất các dòng dữ liệu thành JSON array.
-YÊU CẦU TỐC ĐỘ & ĐỊNH DẠNG:
-- KHÔNG suy luận dài dòng, KHÔNG kiểm tra lặp lại nhiều lần, KHÔNG viết lời giải thích, CHỈ trả về NGAY LẬP TỨC mảng JSON array thuần túy.
-- Mỗi dòng trong bảng là 1 phần tử object theo đúng mẫu:
-{"date":"DD/MM/YYYY","weight":65.5,"bodyFat":18.5,"muscleMass":48.0,"waterPercent":60.0,"boneMinerals":2.5,"visceralFat":8,"energy":1500,"bioAge":30,"balanceIndex":80}
-- Tất cả số liệu phải là kiểu NUMBER (không dùng chuỗi). weight (cân nặng) PHẢI > 0.
-- Trường nào trống hoặc không đọc được thì bỏ qua trường đó (không dùng null, không tự đoán).
-- date: Giữ nguyên thứ tự NGÀY/THÁNG (DD/MM) như trong bảng và gắn thêm năm thành DD/MM/YYYY.`;
+    let prompt = `Bạn là chuyên gia OCR đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe. Hãy xem kỹ ảnh và trích xuất các dòng dữ liệu thành JSON array.
+
+NGUYÊN TẮC ĐỌC BẢNG CẨN THẬN & CHÍNH XÁC:
+1. XÁC ĐỊNH ĐÚNG CỘT THEO TIÊU ĐỀ BẢNG (HEADER):
+   - Quan sát kỹ dòng tiêu đề ở đầu bảng để xác định chính xác vị trí từng cột trước khi đọc dữ liệu, vì mỗi mẫu sổ tay có thể sắp xếp thứ tự cột khác nhau:
+     * date: Cột Ngày / Ngày tháng
+     * weight: Cột Cân nặng / Trọng lượng
+     * bodyFat: Cột Mỡ cơ thể / % Mỡ / Tỷ lệ mỡ
+     * waterPercent: Cột % Nước / Tỷ lệ nước
+     * muscleMass: Cột Lượng cơ / Khối lượng cơ / Cơ
+     * balanceIndex: Cột Cân đối / Vóc dáng
+     * boneMinerals: Cột Khoáng chất / Xương / Khối xương
+     * visceralFat: Cột Mỡ nội tạng / MNT
+     * energy: Cột Năng lượng / Kcal / BMR / Chuyển hóa
+     * bioAge: Cột Tuổi sinh học / Tuổi SH / Tuổi cơ thể
+2. GIÓNG HÀNG NGANG & CỘT DỌC CHÍNH XÁC:
+   - Đọc lần lượt từng dòng từ trên xuống dưới. Ở mỗi dòng, gióng thẳng theo đúng cột dọc của từng chỉ số; tuyệt đối không đọc lệch sang cột bên cạnh (ví dụ không nhầm lẫn giữa cột % Mỡ cơ thể với cột Vóc dáng/Cân đối, cột Xương hay cột Mỡ nội tạng).
+3. ĐỌC TRỌN VẸN CHỮ SỐ VIẾT TAY TRONG TỪNG Ô:
+   - Quan sát toàn bộ chiều rộng của mỗi ô (kể cả các chữ số viết sát đường kẻ dọc của bảng) để đọc đầy đủ tất cả các chữ số của phần nguyên và phần thập phân, tuyệt đối không bỏ sót chữ số hàng chục ở đầu hoặc chỉ đọc mỗi chữ số cuối.
+   - Nếu chữ viết tay có dấu phẩy thập phân (ví dụ "36,5") hoặc dấu chấm ("36.5"), hãy chuyển thành số thực chuẩn trong JSON (36.5).
+   - Đối chiếu nét chữ giữa các dòng trên/dưới trong cùng một cột dọc để nhận diện chính xác các chữ số viết tay khó nhìn.
+4. ĐỊNH DẠNG ĐẦU RA:
+   - Chỉ trả về NGAY LẬP TỨC mảng JSON array thuần túy, KHÔNG giải thích dài dòng, mỗi dòng là 1 object theo mẫu:
+     {"date":"DD/MM/YYYY","weight":65.5,"bodyFat":18.5,"muscleMass":48.0,"waterPercent":60.0,"boneMinerals":2.5,"visceralFat":8,"energy":1500,"bioAge":30,"balanceIndex":80}
+   - Tất cả các chỉ số phải là kiểu NUMBER (không dùng string). weight PHẢI > 0.
+   - Ô nào để trống hoặc không có dữ liệu thì bỏ qua trường đó (không dùng null, không tự đoán).
+   - date: Giữ nguyên thứ tự NGÀY/THÁNG (DD/MM) như trong bảng và gắn thêm năm thành DD/MM/YYYY.`;
     if (selectedYear) {
       prompt += `\n- Nếu ngày trong ảnh không ghi năm, dùng năm ${selectedYear} (ví dụ thấy "10/05" tức ngày 10 tháng 05 -> ghi "10/05/${selectedYear}").`;
     }

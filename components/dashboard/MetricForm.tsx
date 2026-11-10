@@ -189,9 +189,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             if (!img.naturalWidth || !img.naturalHeight) {
               throw new Error('Ảnh không có kích thước hợp lệ.');
             }
-            const maxWidth = isBulk ? 1280 : 1600;
-            const maxHeight = isBulk ? 2000 : 4000;
-            const quality = isBulk ? 0.80 : 0.85;
+            const maxWidth = isBulk ? 1800 : 1600;
+            const maxHeight = isBulk ? 2400 : 4000;
+            const quality = isBulk ? 0.85 : 0.85;
             const scale = Math.min(1, maxWidth / img.naturalWidth, maxHeight / img.naturalHeight);
             const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
