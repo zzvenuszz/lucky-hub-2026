@@ -66,10 +66,16 @@ const getAuthHeaders = () => {
 export const extractMetricsFromImage = async (base64Image: string, selectedYear?: string): Promise<Partial<HealthMetric> | null> => {
   const startTime = Date.now();
   const log = (msg: string, type: string = 'ai', duration?: number) => {
+    if (type === 'error') {
+      console.error(`[VisionOCR][Single] ❌ ${msg}`, duration !== undefined ? `(${duration}ms)` : '');
+    } else {
+      console.log(`[VisionOCR][Single] ${msg}`, duration !== undefined ? `(${duration}ms)` : '');
+    }
     if (window.debugLog) window.debugLog(`[AI OCR] ${msg}`, type, duration);
   };
 
-  log("Bắt đầu trích xuất chỉ số...");
+  const resolvedYear = selectedYear && selectedYear !== 'auto' ? selectedYear : new Date().getFullYear().toString();
+  log(`Step 1: Bắt đầu gửi ảnh đơn tới /api/ai/extract | base64Len=${base64Image.length} (~${Math.round(base64Image.length * 0.75 / 1024)}KB) | year=${resolvedYear}`);
 
   try {
     const res = await fetch('/api/ai/extract', {
@@ -77,32 +83,35 @@ export const extractMetricsFromImage = async (base64Image: string, selectedYear?
       headers: getAuthHeaders(),
       body: JSON.stringify({ 
         imageBase64: base64Image,
-        selectedYear: selectedYear && selectedYear !== 'auto' ? selectedYear : new Date().getFullYear().toString()
+        selectedYear: resolvedYear
       })
     });
 
     const duration = Date.now() - startTime;
+    log(`Step 2: Server phản hồi HTTP ${res.status} sau ${duration}ms`, res.ok ? 'ai' : 'error', duration);
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
+      console.error('[VisionOCR][Single] ❌ Chi tiết lỗi từ server:', errData);
       throw new Error(errData.message || `Server trả về lỗi ${res.status}`);
     }
     
     const result = await res.json();
+    console.log('[VisionOCR][Single] 📋 Step 3: Dữ liệu JSON thô từ AI:', result);
     if (!result || typeof result !== 'object' || Array.isArray(result)) {
       throw new Error('AI trả về dữ liệu không đúng định dạng.');
     }
     if (!Number.isFinite(Number(result.weight)) || Number(result.weight) <= 0) {
-      log("Không nhận diện được số liệu.", "error", duration);
+      log(`Step 4: Không nhận diện được cân nặng hợp lệ (weight=${result.weight}).`, "error", duration);
       return null;
     }
 
     result.date = processYearLogic(result.date);
-    log(`Trích xuất thành công ngày ${result.date}`, "ai", duration);
+    log(`Step 4: ✅ Trích xuất thành công ngày ${result.date} (weight=${result.weight}kg)`, "ai", duration);
     return result;
   } catch (e: any) {
     const duration = Date.now() - startTime;
-    log(`LỖI: ${e.message}`, "error", duration);
+    log(`LỖI sau ${duration}ms: ${e.message}`, "error", duration);
     throw e;
   }
 };

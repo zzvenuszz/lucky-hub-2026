@@ -137,6 +137,11 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   }, [editingData]);
 
   const log = (msg: string, type: 'info' | 'ai' | 'error' | 'success' | 'system' = 'info') => {
+    if (type === 'error') {
+      console.error(`[MetricForm][Vision] ❌ ${msg}`);
+    } else {
+      console.log(`[MetricForm][Vision] [${type.toUpperCase()}] ${msg}`);
+    }
     if (window.debugLog) window.debugLog(`[MetricForm] ${msg}`, type);
   };
 
@@ -152,10 +157,11 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     if (!file) return;
     e.currentTarget.value = '';
     
+    const uploadStart = Date.now();
     setLoadingAI(true);
     setBulkMode(isBulk);
     setStatusMsg(null);
-    log(`Bắt đầu xử lý file: ${file.name} (Chế độ: ${isBulk ? 'Hàng loạt' : 'Đơn lẻ'}, Năm chọn: ${selectedYearAI})`, 'system');
+    log(`Step 1: Bắt đầu xử lý file "${file.name}" (${Math.round(file.size / 1024)}KB, type=${file.type || 'unknown'}) | Chế độ: ${isBulk ? 'Hàng loạt (Bulk)' : 'Đơn lẻ (Single)'} | Năm chọn: ${selectedYearAI}`, 'system');
 
     const now = new Date();
     const currentYear = selectedYearAI === 'auto' ? now.getFullYear() : parseInt(selectedYearAI);
@@ -173,7 +179,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         reader.readAsDataURL(file);
       });
 
-      log('Đã đọc file xong, bắt đầu nén ảnh để tối ưu payload...', 'system');
+      log(`Step 2: Đã đọc file thành DataURL (${imageDataUrl.length} chars) sau ${Date.now() - uploadStart}ms. Bắt đầu nén ảnh...`, 'system');
+      const compressStart = Date.now();
       const compressedBase64 = await new Promise<string>((resolve, reject) => {
         const img = new Image();
         img.onerror = () => reject(new Error('Không thể giải mã ảnh đã chọn.'));
@@ -182,8 +189,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             if (!img.naturalWidth || !img.naturalHeight) {
               throw new Error('Ảnh không có kích thước hợp lệ.');
             }
-            const maxWidth = 1600;
-            const maxHeight = 4000;
+            const maxWidth = isBulk ? 1280 : 1600;
+            const maxHeight = isBulk ? 2000 : 4000;
+            const quality = isBulk ? 0.80 : 0.85;
             const scale = Math.min(1, maxWidth / img.naturalWidth, maxHeight / img.naturalHeight);
             const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
@@ -191,16 +199,18 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             const ctx = canvas.getContext('2d');
             if (!ctx) throw new Error('Không khởi tạo được bộ xử lý ảnh.');
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+            const b64 = canvas.toDataURL('image/jpeg', quality).split(',')[1];
+            log(`Step 3: Nén ảnh hoàn tất trong ${Date.now() - compressStart}ms | Kích thước gốc: ${img.naturalWidth}x${img.naturalHeight} -> Sau nén: ${canvas.width}x${canvas.height} | Payload base64: ${b64.length} chars (~${Math.round(b64.length * 0.75 / 1024)}KB)`, 'system');
+            resolve(b64);
           } catch (error) {
             reject(error);
           }
         };
         img.src = imageDataUrl;
       });
-      log('Nén ảnh xong, gửi yêu cầu phân tích tới server.', 'ai');
 
       if (!isBulk) {
+        log('Step 4: Chuyển sang gọi extractMetricsFromImage (chế độ đơn lẻ)...', 'ai');
         const extracted = await extractMetricsFromImage(compressedBase64, selectedYearAI);
         if (extracted && Number(extracted.weight) > 0) {
           setFormData(prev => ({
@@ -210,12 +220,13 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
             balanceIndex: extracted.balanceIndex ?? 0,
             date: extracted.date || prev.date
           }));
+          log(`Step 5: ✅ Hoàn tất phân tích ảnh đơn trong ${Date.now() - uploadStart}ms!`, 'success');
           setStatusMsg({
             text: `✅ Lucky AI đã trích xuất xong cho ngày ${formatDateVN(extracted.date || '')}!`,
             type: 'success'
           });
         } else {
-          log('AI đã trả kết quả nhưng không có chỉ số cân nặng hợp lệ trong ảnh đơn.', 'error');
+          log('Step 5: AI đã trả kết quả nhưng không có chỉ số cân nặng hợp lệ trong ảnh đơn.', 'error');
           setStatusMsg({
             text: '⚠️ Lucky AI không tìm thấy chỉ số sức khỏe hợp lệ.',
             type: 'error'
@@ -225,27 +236,34 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
       }
 
       setBulkPreview([]);
-      log(`Đang gọi endpoint /api/ai/bulk-extract với năm: ${selectedYearAI}...`, 'ai');
+      const resolvedYear = selectedYearAI !== 'auto' ? selectedYearAI : now.getFullYear().toString();
+      const apiStart = Date.now();
+      log(`Step 4: Đang gọi POST /api/ai/bulk-extract với selectedYear=${resolvedYear}...`, 'ai');
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       const res = await fetch('/api/ai/bulk-extract', {
         method: 'POST',
         headers,
         body: JSON.stringify({
           imageBase64: compressedBase64,
-          selectedYear: selectedYearAI !== 'auto' ? selectedYearAI : now.getFullYear().toString()
+          selectedYear: resolvedYear
         })
       });
 
+      const apiDuration = Date.now() - apiStart;
+      log(`Step 5: Server phản hồi HTTP ${res.status} (${res.statusText}) sau ${apiDuration}ms`, res.ok ? 'ai' : 'error');
+
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
+        console.error('[MetricForm][Vision] ❌ Chi tiết lỗi từ /api/ai/bulk-extract:', errBody);
         throw new Error(errBody.message || `Server trả về lỗi ${res.status}`);
       }
 
       const data: unknown = await res.json();
+      console.log('[MetricForm][Vision] 📋 Step 6: Dữ liệu JSON thô từ /api/ai/bulk-extract:', data);
       if (!Array.isArray(data)) {
         throw new Error('AI trả về danh sách bản ghi không đúng định dạng.');
       }
-      log(`AI đã phản hồi. Nhận được ${data.length} bản ghi thô.`, 'ai');
+      log(`Step 6: AI đã phản hồi ${data.length} bản ghi thô. Đang lọc và chuẩn hóa...`, 'ai');
 
       const processedData = data
         .filter((item: any) => item && typeof item === 'object' && Number.isFinite(Number(item.weight)) && Number(item.weight) > 0)
@@ -263,17 +281,20 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
           return normalized;
         });
 
+      console.log('[MetricForm][Vision] ✅ Step 7: Dữ liệu sau chuẩn hóa:', processedData);
+
       if (processedData.length > 0) {
-        log(`Xử lý thành công ${processedData.length} bản ghi với năm ${selectedYearAI}.`, 'success');
+        log(`Step 7: ✅ Xử lý thành công ${processedData.length}/${data.length} bản ghi với năm ${selectedYearAI} (tổng thời gian: ${Date.now() - uploadStart}ms).`, 'success');
         setBulkPreview(processedData);
         setStatusMsg({ text: `✅ Đã quét thành công ${processedData.length} bản ghi!`, type: 'success' });
       } else {
-        log('AI trả kết quả nhưng không có dòng dữ liệu nào chứa cân nặng hợp lệ.', 'error');
+        log(`Step 7: AI trả về ${data.length} dòng nhưng không có dòng nào chứa cân nặng (weight > 0) hợp lệ.`, 'error');
         setStatusMsg({ text: '⚠️ Không tìm thấy danh sách chỉ số hợp lệ.', type: 'error' });
       }
     } catch (err: any) {
       const message = err?.message || 'Lỗi không xác định';
-      log(`Lỗi phân tích ${isBulk ? 'hàng loạt' : 'đơn lẻ'}: ${message}`, 'error');
+      console.error(`[MetricForm][Vision] ❌ Lỗi phân tích ${isBulk ? 'hàng loạt' : 'đơn lẻ'} sau ${Date.now() - uploadStart}ms:`, err);
+      log(`Lỗi phân tích ${isBulk ? 'hàng loạt' : 'đơn lẻ'} (sau ${Date.now() - uploadStart}ms): ${message}`, 'error');
       setStatusMsg({
         text: `⚠️ ${isBulk ? 'Lỗi phân tích ảnh hàng loạt' : 'Lỗi phân tích ảnh'}: ${message}`,
         type: 'error'

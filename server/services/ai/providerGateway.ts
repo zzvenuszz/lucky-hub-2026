@@ -23,6 +23,7 @@ export interface GatewayConfig {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'none';
   timeoutMs: number;
   retries: number;
   authType: 'bearer' | 'google' | 'api_key' | 'none';
@@ -89,14 +90,15 @@ function buildAuthHeaders(config: GatewayConfig): Record<string, string> {
 /** Parse response from various gateway formats */
 function parseGatewayResponse(raw: string, requestModel: string): { text: string; resolvedModel: string; usage?: any; cost?: number } {
   let parsed: any;
+  const cleanedRaw = raw.trim().replace(/data:\s*\[DONE\]\s*$/i, '').trim();
 
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(cleanedRaw);
   } catch {
     // Try to extract JSON from SSE stream
-    const lines = raw.split('\n').filter(l => l.startsWith('data: '));
+    const lines = raw.split('\n').filter(l => l.trim().startsWith('data:'));
     for (const line of lines) {
-      const data = line.slice(6).trim();
+      const data = line.trim().replace(/^data:\s*/, '').trim();
       if (data && data !== '[DONE]') {
         try {
           parsed = JSON.parse(data);
@@ -104,9 +106,20 @@ function parseGatewayResponse(raw: string, requestModel: string): { text: string
         } catch {}
       }
     }
+
+    // Fallback: extract outermost JSON object if response had trailing/leading non-JSON markers
+    if (!parsed) {
+      const objMatch = cleanedRaw.match(/(\{[\s\S]*\})/);
+      if (objMatch) {
+        try {
+          parsed = JSON.parse(objMatch[1]);
+        } catch {}
+      }
+    }
   }
 
   if (!parsed) {
+    console.error('[Gateway][Parse] ❌ Failed to parse raw response:', raw.slice(0, 400));
     throw new GatewayError('Empty or invalid response from gateway', 0, true, 'INVALID_RESPONSE');
   }
 
@@ -116,8 +129,13 @@ function parseGatewayResponse(raw: string, requestModel: string): { text: string
   const choice = root.choices?.[0];
 
   if (!choice) {
+    console.error('[Gateway][Parse] ❌ No choices in parsed response:', JSON.stringify(root).slice(0, 400));
     throw new GatewayError('No choices in response', 0, false, 'NO_CHOICES');
   }
+
+  // Extract usage
+  const usage = root.usage || choice.usage;
+  const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens;
 
   // Extract text content
   let text = '';
@@ -131,15 +149,28 @@ function parseGatewayResponse(raw: string, requestModel: string): { text: string
     text = choice.text;
   }
 
-  if (!text) {
-    throw new GatewayError('Empty content in response', 0, true, 'EMPTY_CONTENT');
+  if (!text || !text.trim()) {
+    const reasoningText = choice.message?.reasoning || choice.message?.reasoning_content || '';
+    console.warn(`[Gateway][Parse] ⚠️ Empty message.content! finish_reason=${choice.finish_reason}, reasoning_tokens=${reasoningTokens ?? 'N/A'}, reasoning_length=${reasoningText.length}`);
+    // If reasoning contains a JSON array/object at the end, salvage it
+    const jsonFenceMatch = reasoningText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (jsonFenceMatch && jsonFenceMatch[1]?.trim()) {
+      text = jsonFenceMatch[1].trim();
+      console.log(`[Gateway][Parse] 💡 Salvaged JSON from reasoning code block (${text.length} chars)`);
+    }
+  }
+
+  if (!text || !text.trim()) {
+    throw new GatewayError(
+      `Empty content in response (finish_reason=${choice.finish_reason || 'unknown'}, reasoning_tokens=${reasoningTokens ?? 0})`,
+      0,
+      true,
+      'EMPTY_CONTENT'
+    );
   }
 
   // Extract resolved model (may differ from requested for router models)
   const resolvedModel = root.model || choice.message?.model || requestModel;
-
-  // Extract usage
-  const usage = root.usage || choice.usage;
 
   // Extract cost (OpenRouter specific)
   const cost = choice?.message?.provider_metadata?.gateway?.cost ||
@@ -178,6 +209,7 @@ export async function callGateway(
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const attemptStart = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
@@ -190,8 +222,14 @@ export async function callGateway(
 
       if (config.temperature !== undefined) body.temperature = config.temperature;
       if (config.maxTokens && config.maxTokens > 0) body.max_tokens = config.maxTokens;
+      if (config.reasoningEffort) {
+        body.reasoning_effort = config.reasoningEffort;
+        body.reasoning = { effort: config.reasoningEffort };
+      }
 
       const headers = buildAuthHeaders(config);
+
+      console.log(`[Gateway] 🚀 [${requestId}] Attempt ${attempt}/${maxAttempts} -> POST ${endpoint} | model=${config.model} | timeout=${config.timeoutMs}ms | temp=${config.temperature ?? 'default'} | reasoningEffort=${config.reasoningEffort ?? 'default'}`);
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -202,10 +240,15 @@ export async function callGateway(
 
       const raw = await response.text();
       clearTimeout(timeout);
+      const attemptElapsed = Date.now() - attemptStart;
+
+      console.log(`[Gateway] 📥 [${requestId}] Attempt ${attempt}/${maxAttempts} HTTP ${response.status} in ${attemptElapsed}ms | rawLen=${raw.length}`);
 
       if (!response.ok) {
         const retryable = isRetryableError(response.status);
         const rateLimited = isRateLimitError(response.status, raw);
+
+        console.error(`[Gateway] ❌ [${requestId}] HTTP ${response.status} error body:`, raw.slice(0, 500));
 
         lastError = new GatewayError(
           `Gateway HTTP ${response.status}: ${raw.slice(0, 500)}`,
@@ -216,7 +259,7 @@ export async function callGateway(
 
         if ((retryable || rateLimited) && attempt < maxAttempts) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000); // Exponential backoff max 10s
-          console.warn(`[Gateway] ${requestId} Attempt ${attempt}/${maxAttempts} failed (${response.status}), retrying in ${delay}ms...`);
+          console.warn(`[Gateway] 🔄 [${requestId}] Attempt ${attempt}/${maxAttempts} failed (${response.status}), retrying in ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
@@ -226,8 +269,9 @@ export async function callGateway(
       // Parse successful response
       const result = parseGatewayResponse(raw, config.model);
       const durationMs = Date.now() - startTime;
+      const reasoningTok = result.usage?.completion_tokens_details?.reasoning_tokens;
 
-      console.log(`[Gateway] ${requestId} OK ${durationMs}ms | model=${result.resolvedModel}${result.usage ? ` | tokens=${result.usage.total_tokens}` : ''}${result.cost !== undefined ? ` | cost=$${result.cost}` : ''}`);
+      console.log(`[Gateway] ✅ [${requestId}] OK ${durationMs}ms | resolvedModel=${result.resolvedModel} | contentLen=${result.text.length}${result.usage ? ` | promptTokens=${result.usage.prompt_tokens}, completionTokens=${result.usage.completion_tokens}${reasoningTok !== undefined ? ` (reasoning=${reasoningTok})` : ''}` : ''}${result.cost !== undefined ? ` | cost=$${result.cost}` : ''}`);
 
       return {
         text: result.text,
@@ -244,7 +288,7 @@ export async function callGateway(
         lastError = err;
         if (err.retryable && attempt < maxAttempts) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-          console.warn(`[Gateway] ${requestId} Attempt ${attempt}/${maxAttempts} failed: ${err.message}, retrying in ${delay}ms...`);
+          console.warn(`[Gateway] 🔄 [${requestId}] Attempt ${attempt}/${maxAttempts} failed: ${err.message}, retrying in ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
@@ -252,6 +296,7 @@ export async function callGateway(
       }
 
       if (err.name === 'AbortError') {
+        console.error(`[Gateway] ⏱️ [${requestId}] Attempt ${attempt}/${maxAttempts} timed out after ${config.timeoutMs}ms (elapsed=${Date.now() - attemptStart}ms)`);
         lastError = new GatewayError(`Gateway timeout after ${config.timeoutMs}ms`, 0, true, 'TIMEOUT');
         if (attempt < maxAttempts) {
           await new Promise(r => setTimeout(r, 1000 * attempt));

@@ -74,14 +74,33 @@ class EmailService {
 
       const providers = (email.providers || []).filter((provider: any) => provider.isActive)
         .sort((left: any, right: any) => left.priority - right.priority);
+      const envBrevoKey = process.env.BREVO_API_KEY || '';
+      const envSgKey = process.env.SENDGRID_API_KEY || '';
       if (providers.length > 0) {
         this.brevoApiKey = '';
         this.sgApiKey = '';
       }
       for (const provider of providers) {
-        const apiKey = typeof provider.apiKey === 'string' && provider.apiKey.split(':').length === 3
-          ? decrypt(provider.apiKey)
-          : provider.apiKey;
+        const rawKey = typeof provider.apiKey === 'string' ? provider.apiKey.trim() : '';
+        if (!rawKey) continue;
+        if (rawKey.includes('••••')) {
+          console.warn(`[EMAIL-SERVICE] ⚠️ Stored API key for provider "${provider.provider}" (${provider.label || 'no-label'}) is masked ("${rawKey}"). Falling back to environment variable if available.`);
+          if (provider.provider === 'brevo' && envBrevoKey) this.brevoApiKey = envBrevoKey;
+          if (provider.provider === 'sendgrid' && envSgKey && envSgKey !== 'your-sendgrid-api-key-here') {
+            this.sgApiKey = envSgKey;
+            sgMail.setApiKey(envSgKey);
+          }
+          continue;
+        }
+        let apiKey = rawKey;
+        if (rawKey.split(':').length === 3) {
+          try {
+            apiKey = decrypt(rawKey);
+          } catch (decErr: any) {
+            console.error(`[EMAIL-SERVICE] ❌ Failed to decrypt API key for provider "${provider.provider}":`, decErr.message);
+            continue;
+          }
+        }
         if (!apiKey) continue;
         if (provider.provider === 'brevo') this.brevoApiKey = apiKey;
         if (provider.provider === 'sendgrid') {
@@ -89,29 +108,58 @@ class EmailService {
           sgMail.setApiKey(apiKey);
         }
       }
+      if (!this.brevoApiKey && envBrevoKey && envBrevoKey !== 'your-brevo-api-key-here') {
+        this.brevoApiKey = envBrevoKey;
+      }
+      if (!this.sgApiKey && envSgKey && envSgKey !== 'your-sendgrid-api-key-here') {
+        this.sgApiKey = envSgKey;
+        sgMail.setApiKey(envSgKey);
+      }
       this.storedSettingsLoadedAt = Date.now();
+      console.log('[EMAIL-SERVICE] 🔄 Refreshed settings from DB:', {
+        senderEmail: this.senderEmail,
+        senderName: this.senderName,
+        activeProvidersInDb: providers.map((p: any) => `${p.provider}(${p.label || 'default'})`),
+        brevoKeyReady: !!this.brevoApiKey,
+        sendgridKeyReady: !!this.sgApiKey,
+      });
     } catch (error: any) {
       console.error('[EMAIL-SERVICE] Failed to load stored email settings:', error.message);
       logger.error('Email', `Could not load saved email settings: ${error.message}`);
     }
   }
 
+  private maskKeyForLog(key: string): string {
+    if (!key) return '(empty)';
+    if (key.length <= 10) return `${key.slice(0, 2)}***`;
+    return `${key.slice(0, 6)}...${key.slice(-4)} (len=${key.length})`;
+  }
+
   /**
    * Gửi email qua Brevo API (primary)
    */
-  private async sendViaBrevo(options: EmailOptions): Promise<SendResult> {
-    if (!this.brevoApiKey || this.brevoApiKey === 'your-brevo-api-key-here') {
-      return { success: false, provider: 'brevo', error: 'API key not configured' };
+  private async sendViaBrevo(options: EmailOptions, apiKeyOverride?: string): Promise<SendResult> {
+    const activeKey = apiKeyOverride || this.brevoApiKey;
+    if (!activeKey || activeKey === 'your-brevo-api-key-here') {
+      console.warn('[EMAIL-SERVICE] [Brevo] Step: Skipped — API key not configured');
+      return { success: false, provider: 'brevo', error: 'Brevo API key chưa được cấu hình' };
     }
 
+    const startedAt = Date.now();
     try {
-      console.log('[EMAIL-SERVICE] Sending via Brevo...');
+      console.log('[EMAIL-SERVICE] [Brevo] Step 1: Preparing HTTP POST to Brevo API:', {
+        endpoint: API_BREVO,
+        sender: { name: this.senderName, email: this.senderEmail },
+        to: options.to,
+        subject: options.subject,
+        apiKeyPreview: this.maskKeyForLog(activeKey),
+      });
 
       const response = await fetch(API_BREVO, {
         method: 'POST',
         headers: {
           'accept': 'application/json',
-          'api-key': this.brevoApiKey,
+          'api-key': activeKey,
           'content-type': 'application/json'
         },
         body: JSON.stringify({
@@ -126,31 +174,53 @@ class EmailService {
         })
       });
 
+      const durationMs = Date.now() - startedAt;
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error('[EMAIL-SERVICE] Brevo API error:', { status: response.status, body: errorBody });
-        return { success: false, provider: 'brevo', error: `HTTP ${response.status}: ${errorBody}` };
+        console.error('[EMAIL-SERVICE] [Brevo] ❌ Step 2: Brevo API returned error:', {
+          status: response.status,
+          statusText: response.statusText,
+          durationMs,
+          body: errorBody,
+        });
+        return { success: false, provider: 'brevo', error: `Brevo HTTP ${response.status}: ${errorBody}` };
       }
 
       const result = await response.json();
-      console.log('[EMAIL-SERVICE] Brevo sent successfully:', { messageId: result.messageId });
+      console.log('[EMAIL-SERVICE] [Brevo] ✅ Step 2: Brevo sent successfully:', {
+        messageId: result.messageId,
+        durationMs,
+      });
       return { success: true, provider: 'brevo' };
     } catch (error: any) {
-      console.error('[EMAIL-SERVICE] Brevo send failed:', error.message);
-      return { success: false, provider: 'brevo', error: error.message };
+      const durationMs = Date.now() - startedAt;
+      console.error('[EMAIL-SERVICE] [Brevo] ❌ Step 2: Brevo network/exception error:', {
+        message: error.message,
+        durationMs,
+      });
+      return { success: false, provider: 'brevo', error: `Brevo exception: ${error.message}` };
     }
   }
 
   /**
    * Gửi email qua SendGrid API (fallback)
    */
-  private async sendViaSendGrid(options: EmailOptions): Promise<SendResult> {
-    if (!this.sgApiKey || this.sgApiKey === 'your-sendgrid-api-key-here') {
-      return { success: false, provider: 'sendgrid', error: 'API key not configured' };
+  private async sendViaSendGrid(options: EmailOptions, apiKeyOverride?: string): Promise<SendResult> {
+    const activeKey = apiKeyOverride || this.sgApiKey;
+    if (!activeKey || activeKey === 'your-sendgrid-api-key-here') {
+      console.warn('[EMAIL-SERVICE] [SendGrid] Step: Skipped — API key not configured');
+      return { success: false, provider: 'sendgrid', error: 'SendGrid API key chưa được cấu hình' };
     }
 
+    const startedAt = Date.now();
     try {
-      console.log('[EMAIL-SERVICE] Sending via SendGrid (fallback)...');
+      sgMail.setApiKey(activeKey);
+      console.log('[EMAIL-SERVICE] [SendGrid] Step 1: Preparing request to SendGrid API:', {
+        from: { email: this.senderEmail, name: this.senderName },
+        to: options.to,
+        subject: options.subject,
+        apiKeyPreview: this.maskKeyForLog(activeKey),
+      });
 
       const msg = {
         to: options.to,
@@ -163,47 +233,109 @@ class EmailService {
         text: options.text || this.stripHtml(options.html)
       };
 
-      await sgMail.send(msg);
+      const [sgResponse] = await sgMail.send(msg);
+      const durationMs = Date.now() - startedAt;
 
-      console.log('[EMAIL-SERVICE] SendGrid sent successfully');
+      console.log('[EMAIL-SERVICE] [SendGrid] ✅ Step 2: SendGrid sent successfully:', {
+        statusCode: sgResponse?.statusCode,
+        durationMs,
+      });
       return { success: true, provider: 'sendgrid' };
     } catch (error: any) {
-      console.error('[EMAIL-SERVICE] SendGrid error:', {
+      const durationMs = Date.now() - startedAt;
+      const sgDetail = error.response?.body ? JSON.stringify(error.response.body) : error.message;
+      console.error('[EMAIL-SERVICE] [SendGrid] ❌ Step 2: SendGrid API error:', {
         message: error.message,
         code: error.code,
-        response: error.response?.body
+        durationMs,
+        responseBody: error.response?.body,
       });
-      return { success: false, provider: 'sendgrid', error: error.message };
+      return { success: false, provider: 'sendgrid', error: `SendGrid HTTP ${error.code || 'ERR'}: ${sgDetail}` };
     }
+  }
+
+  /**
+   * Send email with full diagnostic steps (used by Admin Test Email & internal logging)
+   */
+  public async sendEmailWithDiagnostic(
+    options: EmailOptions & { preferredProvider?: string; apiKeyOverride?: string }
+  ): Promise<{
+    success: boolean;
+    providerUsed?: string;
+    error?: string;
+    steps: string[];
+    details: Record<string, any>;
+  }> {
+    const steps: string[] = [];
+    const startedAt = Date.now();
+    const recordStep = (msg: string) => {
+      const entry = `[+${Date.now() - startedAt}ms] ${msg}`;
+      steps.push(entry);
+      console.log(`[EMAIL-DIAGNOSTIC] ${entry}`);
+    };
+
+    recordStep(`Bắt đầu gửi email tới "${options.to}" | Tiêu đề: "${options.subject}"`);
+    await this.refreshStoredSettings();
+    recordStep(`Cấu hình người gửi: "${this.senderName} <${this.senderEmail}>" | Preferred provider: ${options.preferredProvider || 'auto (Brevo -> SendGrid)'}`);
+
+    let cleanOverrideKey = options.apiKeyOverride?.trim() || '';
+    if (cleanOverrideKey.includes('••••')) {
+      recordStep(`⚠️ API Key truyền vào đang ở dạng bị che ("${cleanOverrideKey}"), tự động bỏ qua và dùng key gốc trong hệ thống.`);
+      cleanOverrideKey = '';
+    }
+
+    const attempts: Record<string, any> = {};
+
+    if (options.preferredProvider === 'sendgrid') {
+      recordStep(`Đang thử gửi qua SendGrid (key=${this.maskKeyForLog(cleanOverrideKey || this.sgApiKey)})...`);
+      const sgResult = await this.sendViaSendGrid(options, cleanOverrideKey || undefined);
+      attempts.sendgrid = sgResult;
+      if (sgResult.success) {
+        recordStep(`✅ Gửi thành công qua SendGrid!`);
+        return { success: true, providerUsed: 'sendgrid', steps, details: { attempts, durationMs: Date.now() - startedAt } };
+      }
+      recordStep(`❌ SendGrid thất bại: ${sgResult.error}. Chuyển sang fallback Brevo...`);
+      const brevoResult = await this.sendViaBrevo(options);
+      attempts.brevo = brevoResult;
+      if (brevoResult.success) {
+        recordStep(`✅ Gửi thành công qua Brevo (fallback)!`);
+        return { success: true, providerUsed: 'brevo', steps, details: { attempts, durationMs: Date.now() - startedAt } };
+      }
+      recordStep(`❌ Brevo (fallback) cũng thất bại: ${brevoResult.error}`);
+    } else {
+      recordStep(`Đang thử gửi qua Brevo (key=${this.maskKeyForLog(cleanOverrideKey || this.brevoApiKey)})...`);
+      const brevoResult = await this.sendViaBrevo(options, cleanOverrideKey || undefined);
+      attempts.brevo = brevoResult;
+      if (brevoResult.success) {
+        recordStep(`✅ Gửi thành công qua Brevo!`);
+        return { success: true, providerUsed: 'brevo', steps, details: { attempts, durationMs: Date.now() - startedAt } };
+      }
+      recordStep(`❌ Brevo thất bại: ${brevoResult.error}. Chuyển sang fallback SendGrid (key=${this.maskKeyForLog(this.sgApiKey)})...`);
+      const sgResult = await this.sendViaSendGrid(options);
+      attempts.sendgrid = sgResult;
+      if (sgResult.success) {
+        recordStep(`✅ Gửi thành công qua SendGrid (fallback)!`);
+        return { success: true, providerUsed: 'sendgrid', steps, details: { attempts, durationMs: Date.now() - startedAt } };
+      }
+      recordStep(`❌ SendGrid (fallback) cũng thất bại: ${sgResult.error}`);
+    }
+
+    const combinedError = `Brevo: ${attempts.brevo?.error || 'N/A'} | SendGrid: ${attempts.sendgrid?.error || 'N/A'}`;
+    logger.error('Email', `Both providers failed for ${options.to}. ${combinedError}`);
+    return {
+      success: false,
+      error: combinedError,
+      steps,
+      details: { attempts, senderEmail: this.senderEmail, senderName: this.senderName, durationMs: Date.now() - startedAt },
+    };
   }
 
   /**
    * Send email - thử Brevo trước, fallback SendGrid nếu lỗi
    */
   public async sendEmail(options: EmailOptions): Promise<boolean> {
-    console.log('[EMAIL-SERVICE] sendEmail called with:', { to: options.to, subject: options.subject });
-    await this.refreshStoredSettings();
-
-    // 1. Thử Brevo trước
-    const brevoResult = await this.sendViaBrevo(options);
-    if (brevoResult.success) {
-      logger.info('Email', `Sent via Brevo to ${options.to}`);
-      return true;
-    }
-
-    console.log('[EMAIL-SERVICE] Brevo failed, trying SendGrid fallback...', brevoResult.error);
-
-    // 2. Fallback sang SendGrid
-    const sgResult = await this.sendViaSendGrid(options);
-    if (sgResult.success) {
-      logger.info('Email', `Sent via SendGrid (fallback) to ${options.to}`);
-      return true;
-    }
-
-    // 3. Cả 2 đều fail
-    console.error('[EMAIL-SERVICE] Both providers failed:', { brevo: brevoResult.error, sendgrid: sgResult.error });
-    logger.error('Email', `Both providers failed for ${options.to}. Brevo: ${brevoResult.error}. SendGrid: ${sgResult.error}`);
-    return false;
+    const diag = await this.sendEmailWithDiagnostic(options);
+    return diag.success;
   }
 
   /**

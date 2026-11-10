@@ -157,10 +157,25 @@ router.post('/system-settings', async (req: Request, res: Response) => {
 
     if (email) {
       const { encrypt } = await getEncryption();
-      const providers = (email.providers || []).map((p: any) => ({
-        ...p,
-        apiKey: p.apiKey && !p.apiKey.includes('••••') ? encrypt(p.apiKey) : p.apiKey,
-      }));
+      const providers = (email.providers || []).map((p: any) => {
+        const oldProvider = settings?.email?.providers?.find(
+          (existing: any) =>
+            (p._id && existing._id?.toString() === p._id.toString()) ||
+            (existing.provider === p.provider && existing.label === p.label)
+        );
+        const submittedKey = typeof p.apiKey === 'string' ? p.apiKey.trim() : '';
+        let finalKey = '';
+        if (submittedKey && !submittedKey.includes('••••')) {
+          finalKey = submittedKey.split(':').length === 3 ? submittedKey : encrypt(submittedKey);
+        } else if (oldProvider?.apiKey && !String(oldProvider.apiKey).includes('••••')) {
+          const storedKey = String(oldProvider.apiKey);
+          finalKey = storedKey.split(':').length === 3 ? storedKey : encrypt(storedKey);
+        }
+        return {
+          ...p,
+          apiKey: finalKey,
+        };
+      });
       updateData.email = { ...email, providers };
     }
 
@@ -192,6 +207,8 @@ router.post('/system-settings', async (req: Request, res: Response) => {
       updateData.ai = { ...ai };
       if (ai.encryptionKey && !ai.encryptionKey.includes('••••')) {
         updateData.ai.encryptionKey = encrypt(ai.encryptionKey);
+      } else if (settings?.ai?.encryptionKey && !String(settings.ai.encryptionKey).includes('••••')) {
+        updateData.ai.encryptionKey = settings.ai.encryptionKey;
       }
     }
 
@@ -261,9 +278,10 @@ router.delete('/system-settings/:section/:providerId', async (req: Request, res:
 router.post('/test-email', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
   try {
     const { to, subject, html, providerId } = req.body;
+    console.log('[Admin][TestEmail] Step 1: Received /api/admin/test-email request:', { to, subject, providerId });
 
     if (!to) {
-      return res.status(400).json({ message: 'Email người nhận là bắt buộc' });
+      return res.status(400).json({ success: false, message: 'Email người nhận là bắt buộc' });
     }
 
     const settings = await SystemSettings.findOne({});
@@ -277,24 +295,41 @@ router.post('/test-email', requirePermission(RESOURCES.AI.MANAGE), async (req: R
       provider = settings.email.providers.find((p: any) => p.isActive);
     }
 
-    if (!provider) {
-      return res.status(400).json({ message: 'Không có provider email nào active' });
+    let decryptedKey = '';
+    if (provider?.apiKey) {
+      const { decrypt } = await getEncryption();
+      const raw = String(provider.apiKey).trim();
+      if (raw && !raw.includes('••••')) {
+        decryptedKey = raw.split(':').length === 3 ? decrypt(raw) : raw;
+      }
     }
 
-    const { decrypt } = await getEncryption();
-    const apiKey = decrypt(provider.apiKey);
-
-    const emailData = {
+    const diag = await emailService.sendEmailWithDiagnostic({
       to,
       subject: subject || 'Test Email - Lucky Hub',
       html: html || '<p>Đây là email test từ Lucky Hub Admin Panel</p>',
-      provider: provider.provider,
-      apiKey,
-    };
+      preferredProvider: provider?.provider,
+      apiKeyOverride: decryptedKey || undefined,
+    });
 
-    await emailService.sendEmail(emailData);
+    if (!diag.success) {
+      console.error('[Admin][TestEmail] ❌ Step 2: Failed to send test email:', diag);
+      return res.status(400).json({
+        success: false,
+        message: `Gửi email thất bại (${diag.error})`,
+        steps: diag.steps,
+        details: diag.details,
+      });
+    }
 
-    res.json({ success: true, message: `Đã gửi email test qua ${provider.provider}!` });
+    console.log('[Admin][TestEmail] ✅ Step 2: Sent test email successfully via', diag.providerUsed);
+    res.json({
+      success: true,
+      message: `Đã gửi email test thành công qua ${diag.providerUsed || provider?.provider || 'provider'}!`,
+      providerUsed: diag.providerUsed,
+      steps: diag.steps,
+      details: diag.details,
+    });
   } catch (err: any) {
     console.error('[Admin] Test email failed:', err);
     res.status(500).json({ success: false, message: err.message || 'Gửi email thất bại' });
@@ -305,9 +340,10 @@ router.post('/test-email', requirePermission(RESOURCES.AI.MANAGE), async (req: R
 router.post('/test-email/custom', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
   try {
     const { to, subject, html, providerId } = req.body;
+    console.log('[Admin][TestEmailCustom] Step 1: Received /api/admin/test-email/custom request:', { to, subject, providerId });
 
     if (!to) {
-      return res.status(400).json({ message: 'Email người nhận là bắt buộc' });
+      return res.status(400).json({ success: false, message: 'Email người nhận là bắt buộc' });
     }
 
     const settings = await SystemSettings.findOne({});
@@ -322,23 +358,44 @@ router.post('/test-email/custom', requirePermission(RESOURCES.AI.MANAGE), async 
     }
 
     if (!provider) {
-      return res.status(400).json({ message: 'Không có provider email nào active' });
+      return res.status(400).json({ success: false, message: 'Không có provider email nào active' });
     }
 
-    const { decrypt } = await getEncryption();
-    const apiKey = decrypt(provider.apiKey);
+    let decryptedKey = '';
+    if (provider?.apiKey) {
+      const { decrypt } = await getEncryption();
+      const raw = String(provider.apiKey).trim();
+      if (raw && !raw.includes('••••')) {
+        decryptedKey = raw.split(':').length === 3 ? decrypt(raw) : raw;
+      }
+    }
 
-    const emailData = {
+    const diag = await emailService.sendEmailWithDiagnostic({
       to,
       subject: subject || 'Test Email Tùy Chỉnh - Lucky Hub',
       html: html || '<p>Đây là email test tùy chỉnh từ Lucky Hub Admin Panel</p>',
-      provider: provider.provider,
-      apiKey,
-    };
+      preferredProvider: provider.provider,
+      apiKeyOverride: decryptedKey || undefined,
+    });
 
-    await emailService.sendEmail(emailData);
+    if (!diag.success) {
+      console.error('[Admin][TestEmailCustom] ❌ Step 2: Failed to send custom test email:', diag);
+      return res.status(400).json({
+        success: false,
+        message: `Gửi email thất bại (${diag.error})`,
+        steps: diag.steps,
+        details: diag.details,
+      });
+    }
 
-    res.json({ success: true, message: `Đã gửi email tùy chỉnh qua ${provider.provider}!` });
+    console.log('[Admin][TestEmailCustom] ✅ Step 2: Sent custom test email successfully via', diag.providerUsed);
+    res.json({
+      success: true,
+      message: `Đã gửi email tùy chỉnh thành công qua ${diag.providerUsed || provider.provider}!`,
+      providerUsed: diag.providerUsed,
+      steps: diag.steps,
+      details: diag.details,
+    });
   } catch (err: any) {
     console.error('[Admin] Custom test email failed:', err);
     res.status(500).json({ success: false, message: err.message || 'Gửi email thất bại' });

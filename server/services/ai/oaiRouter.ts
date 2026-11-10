@@ -47,6 +47,10 @@ export interface CallAIOptions {
   userId?: string;
   modelName?: string; // 'auto' or specific model override
   retries?: number;
+  timeoutMs?: number;
+  temperature?: number;
+  maxTokens?: number;
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'none';
   system?: string; // Override system prompt
 }
 
@@ -516,13 +520,14 @@ function buildGatewayConfig(option: ModelOption, callOptions: CallAIOptions): Ga
     baseUrl: option.provider.baseUrl || providerDef?.baseUrl || '',
     apiKey: option.apiKey.key,
     model: option.model.modelId,
-    temperature: callOptions.modelName && callOptions.modelName !== 'auto' ? undefined : undefined, // Use provider default
-    maxTokens: undefined,
-    timeoutMs: option.provider.defaultTimeoutMs || providerDef?.defaultTimeoutMs || 45000,
+    temperature: callOptions.temperature,
+    maxTokens: callOptions.maxTokens,
+    reasoningEffort: callOptions.reasoningEffort,
+    timeoutMs: callOptions.timeoutMs || option.provider.defaultTimeoutMs || providerDef?.defaultTimeoutMs || 45000,
     retries: callOptions.retries ?? option.provider.defaultRetries ?? providerDef?.defaultRetries ?? 2,
     authType: providerDef?.authType || 'bearer',
     customHeaders: option.provider.customHeaders?.reduce((acc: any, h: any) => {
-      acc[h.key] = h.value;
+      if (h?.key) acc[h.key] = h.isSecret && h.value ? decrypt(h.value) : h.value;
       return acc;
     }, {}),
   };

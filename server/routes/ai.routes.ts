@@ -15,12 +15,20 @@ const router = Router();
 function sanitizeJSON(text: string): string {
   if (!text) return text;
   let cleaned = text.trim();
+  // Loại bỏ thẻ suy luận <think>...</think> (hoặc <think> chưa đóng) của các model reasoning
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  cleaned = cleaned.replace(/^<think>[\s\S]*$/gi, '').trim();
   // Loại bỏ ```json ... ``` hoặc ``` ... ``` (có thể có xuống dòng)
-  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
-  cleaned = cleaned.replace(/\n?```\s*$/i, '');
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch && fenceMatch[1]?.trim()) {
+    cleaned = fenceMatch[1].trim();
+  } else {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '');
+    cleaned = cleaned.replace(/\n?```\s*$/i, '');
+  }
   // Fallback: tìm object/array JSON đầu tiên nếu vẫn còn ký tự lạ
   if (!cleaned.startsWith('{') && !cleaned.startsWith('[')) {
-    const objMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    const objMatch = cleaned.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
     if (objMatch) cleaned = objMatch[1];
   }
   return cleaned.trim();
@@ -101,10 +109,11 @@ router.post('/extract', async (req: Request, res: Response) => {
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
 
     const userId = (req as any).user?.userId || 'anonymous';
+    console.log(`[VisionExtract] 🚀 [${requestId}] Step 1: Received single-image extract request | user=${userId} | base64Len=${imageBase64.length} | selectedYear=${selectedYear || 'auto'}`);
 
     let prompt = `Phân tích ẢNH CHỤP KẾT QUẢ ĐO InBody/CÂN ĐIỆN TỬ này.
 QUAN TRỌNG: Chỉ trích xuất các số liệu CÓ THỰC trong ảnh. Nếu không thấy số liệu nào, để mặc định 0.
-YÊU CẦU ĐỊNH DẠNG: Trả về JSON object với các trường là số (number), không phải chuỗi (string).
+KHÔNG suy luận dài dòng, KHÔNG giải thích từng bước, trả về NGAY LẬP TỨC JSON object thuần túy với các trường kiểu number:
 - weight (kg, số thực > 0): Cân nặng
 - bodyFat (%, số thực): Mỡ cơ thể
 - muscleMass (kg, số thực): Lượng cơ
@@ -134,15 +143,25 @@ YÊU CẦU ĐỊNH DẠNG: Trả về JSON object với các trường là số 
         }
       }
     };
-    const response = await callAI(requestId, 'vision', payload, { userId, modelName: 'auto' });
-    const result = JSON.parse(sanitizeJSON(response.text));
+    console.log(`[VisionExtract] 🤖 [${requestId}] Step 2: Calling AI Router (task=vision, timeoutMs=60000, retries=1, reasoningEffort=low)...`);
+    const response = await callAI(requestId, 'vision', payload, {
+      userId,
+      modelName: 'auto',
+      timeoutMs: 60000,
+      retries: 1,
+      temperature: 0.1,
+      reasoningEffort: 'low',
+    });
+    console.log(`[VisionExtract] 📥 [${requestId}] Step 3: AI responded in ${Date.now() - startedAt}ms | provider=${response.providerUsed} | model=${response.resolvedModel || response.modelUsed} | rawText=${response.text.slice(0, 300)}`);
+    const sanitized = sanitizeJSON(response.text);
+    const result = JSON.parse(sanitized);
     if (!result || typeof result !== 'object' || Array.isArray(result)) {
       throw new Error('AI trả về dữ liệu chỉ số không đúng định dạng.');
     }
-    console.log(`[VisionExtract] Request ${requestId}: Completed in ${Date.now() - startedAt}ms`);
+    console.log(`[VisionExtract] ✅ [${requestId}] Step 4: Completed in ${Date.now() - startedAt}ms | result=`, result);
     res.json(result);
   } catch (err: any) {
-    console.error(`[VisionExtract] Request ${requestId}: Failed after ${Date.now() - startedAt}ms:`, err.message);
+    console.error(`[VisionExtract] ❌ [${requestId}] Failed after ${Date.now() - startedAt}ms:`, err.message);
     res.status(500).json({ message: err.message });
   }
 });
@@ -156,23 +175,18 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
     if (!imageBase64) return res.status(400).json({ message: "Thiếu dữ liệu ảnh" });
 
     const userId = (req as any).user?.userId || 'anonymous';
+    console.log(`[BulkExtract] 🚀 [${requestId}] Step 1: Received bulk-extract request | user=${userId} | base64Len=${imageBase64.length} (~${Math.round(imageBase64.length * 0.75 / 1024)}KB) | selectedYear=${selectedYear || 'auto'}`);
 
-    let prompt = `Bạn là chuyên gia đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe.
-Hãy xem ảnh và trích xuất DANH SÁCH các dòng dữ liệu thành JSON array.
-Mỗi dòng là một ngày đo lường với các thông số.
-
-YÊU CẦU ĐỊNH DẠNG NGHIÊM NGẶT - Trả về JSON array, mỗi phần tử là object:
-{ "date": "YYYY-MM-DD", "weight": 65.5, "bodyFat": 18.5, "muscleMass": 48.0, "waterPercent": 60.0, "boneMinerals": 2.5, "visceralFat": 8, "energy": 1500, "bioAge": 30, "balanceIndex": 80 }
-
-QUAN TRỌNG:
-- Đọc lần lượt từng dòng theo thứ tự xuất hiện; mỗi ngày đo phải là một object riêng, không gộp dòng và không bỏ qua dòng đọc được.
-- Tất cả số liệu phải là kiểu NUMBER (không phải string). Ví dụ: "weight": 65.5, KHÔNG phải "weight": "65.5"
-- weight (cân nặng) PHẢI > 0 cho mỗi dòng hợp lệ
-- Nếu không nhìn thấy giá trị cho trường nào, hãy bỏ qua trường đó; không dùng null và không tự đoán số liệu
-- date: Nếu thấy ngày dạng DD/MM thì chuyển thành YYYY-MM-DD
-- Nếu không thấy ngày, để ngày hiện tại`;
+    let prompt = `Đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe trong ảnh và trích xuất các dòng dữ liệu thành JSON array.
+YÊU CẦU TỐC ĐỘ & ĐỊNH DẠNG:
+- KHÔNG suy luận dài dòng, KHÔNG kiểm tra lặp lại nhiều lần, KHÔNG viết lời giải thích, CHỈ trả về NGAY LẬP TỨC mảng JSON array thuần túy.
+- Mỗi dòng trong bảng là 1 phần tử object theo đúng mẫu:
+{"date":"YYYY-MM-DD","weight":65.5,"bodyFat":18.5,"muscleMass":48.0,"waterPercent":60.0,"boneMinerals":2.5,"visceralFat":8,"energy":1500,"bioAge":30,"balanceIndex":80}
+- Tất cả số liệu phải là kiểu NUMBER (không dùng chuỗi). weight (cân nặng) PHẢI > 0.
+- Trường nào trống hoặc không đọc được thì bỏ qua trường đó (không dùng null, không tự đoán).
+- date: chuyển DD/MM thành YYYY-MM-DD.`;
     if (selectedYear) {
-      prompt += `\nRẤT QUAN TRỌNG VỀ NĂM: Nếu ngày trong ảnh không ghi rõ năm, hãy sử dụng năm ${selectedYear} (ví dụ: thấy "10/05" → "10/05/${selectedYear}").`;
+      prompt += `\n- Nếu ngày trong ảnh không ghi năm, dùng năm ${selectedYear} (ví dụ "10/05" -> "${selectedYear}-05-10").`;
     }
 
     const payload = {
@@ -193,16 +207,32 @@ QUAN TRỌNG:
         }
       }
     };
-    const response = await callAI(requestId, 'vision', payload, { userId, modelName: 'auto' });
+    console.log(`[BulkExtract] 🤖 [${requestId}] Step 2: Calling AI Router (task=vision, timeoutMs=90000, retries=0, temp=0.1, reasoningEffort=low)...`);
+    const response = await callAI(requestId, 'vision', payload, {
+      userId,
+      modelName: 'auto',
+      timeoutMs: 90000,
+      retries: 0,
+      temperature: 0.1,
+      reasoningEffort: 'low',
+    });
+    console.log(`[BulkExtract] 📥 [${requestId}] Step 3: AI responded in ${Date.now() - startedAt}ms | provider=${response.providerUsed} | model=${response.resolvedModel || response.modelUsed} | rawLen=${response.text.length} | preview=${response.text.slice(0, 300)}`);
     const sanitized = sanitizeJSON(response.text);
-    const parsed = JSON.parse(sanitized);
-    if (!Array.isArray(parsed)) {
-      throw new Error('AI trả về danh sách chỉ số không đúng định dạng.');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(sanitized);
+    } catch (parseErr: any) {
+      console.error(`[BulkExtract] ❌ [${requestId}] Step 4: JSON.parse failed on sanitized text:`, sanitized.slice(0, 500));
+      throw new Error(`Không thể đọc JSON từ phản hồi AI: ${parseErr.message}`);
     }
-    console.log(`[BulkExtract] Request ${requestId}: Completed in ${Date.now() - startedAt}ms with ${parsed.length} rows`);
+    if (!Array.isArray(parsed)) {
+      console.error(`[BulkExtract] ❌ [${requestId}] Step 4: Parsed JSON is not an array:`, typeof parsed);
+      throw new Error('AI trả về danh sách chỉ số không đúng định dạng mảng.');
+    }
+    console.log(`[BulkExtract] ✅ [${requestId}] Step 5: Completed in ${Date.now() - startedAt}ms with ${parsed.length} rows`);
     res.json(parsed);
   } catch (err: any) {
-    console.error(`[BulkExtract] Request ${requestId}: Failed after ${Date.now() - startedAt}ms:`, err.message);
+    console.error(`[BulkExtract] ❌ [${requestId}] Failed after ${Date.now() - startedAt}ms:`, err.message);
     res.status(500).json({ message: err.message });
   }
 });
