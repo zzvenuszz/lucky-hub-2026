@@ -181,41 +181,44 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
 
     let prompt = `Bạn là chuyên gia OCR đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe. Hãy xem kỹ ảnh và trích xuất dữ liệu thành JSON.
 
-QUY TRÌNH BẮT BUỘC ĐỂ ĐỌC ĐÚNG TỪNG CỘT THEO TIÊU ĐỀ ĐẦU BẢNG:
+QUY TRÌNH ĐỌC BẢNG CHÍNH XÁC:
 
-BƯỚC 1 — ĐỌC TIÊU ĐỀ CỘT Ở ĐẦU BẢNG TỪ TRÁI SANG PHẢI ("headerColumns"):
-- Đầu mỗi cột trong bảng đều có ghi tên loại chỉ số rất rõ ràng. Hãy đọc lần lượt từng tiêu đề cột ở đầu bảng từ TRÁI sang PHẢI và ánh xạ sang đúng tên trường (key) tương ứng:
-  * "date": Cột Ngày / Ngày tháng / Thời gian
-  * "weight": Cột Cân nặng / Trọng lượng
-  * "bodyFat": Cột Mỡ cơ thể / % Mỡ / Tỷ lệ mỡ
-  * "waterPercent": Cột % Nước / Tỷ lệ nước / Nước
-  * "muscleMass": Cột Cơ / Lượng cơ / Khối lượng cơ
-  * "balanceIndex": Cột Vóc dáng / Cân đối / Chỉ số cân đối
-  * "energy": Cột Năng lượng / Kcal / BMR / Chuyển hóa cơ bản
-  * "bioAge": Cột Tuổi sinh học / Tuổi SH / Tuổi cơ thể
-  * "boneMinerals": Cột Xương / Khoáng chất / Khối xương / Độ loãng xương
-  * "visceralFat": Cột Mỡ nội tạng / MNT / Nội tạng
-- Ghi danh sách các tên trường này theo ĐÚNG THỨ TỰ CỘT TỪ TRÁI SANG PHẢI xuất hiện trên tiêu đề đầu bảng vào mảng "headerColumns".
-- TUYỆT ĐỐI KHÔNG tự ý giả định thứ tự cột cố định, mà phải nhìn trực tiếp chữ in ở đầu mỗi cột trên tờ giấy để xác định cột nào là Năng lượng ("energy"), cột nào là Tuổi sinh học ("bioAge"), cột nào là Xương ("boneMinerals"), cột nào là Mỡ nội tạng ("visceralFat").
+BƯỚC 1 — ĐẾM VÀ ĐỌC TIÊU ĐỀ TỪNG CỘT TỪ TRÁI SANG PHẢI ("headerColumns"):
+- Quan sát toàn bộ các đường kẻ dọc chia cột từ mép trái sang mép phải của bảng để đếm và nhận diện đầy đủ tất cả các cột trên bảng (kể cả các cột có bề ngang hẹp).
+- Đọc chữ tiêu đề in ở đầu mỗi cột theo đúng thứ tự thực tế từ TRÁI sang PHẢI và ghi vào mảng "headerColumns" theo định dạng:
+  "Cột <số_thứ_tự>: <chữ_tiêu_đề_trên_bảng> => <tên_trường>"
+- Bảng ánh xạ giữa tiêu đề cột và tên trường (key):
+  * Ngày / Ngày tháng / Thời gian => "date"
+  * Cân nặng / Trọng lượng => "weight"
+  * Mỡ cơ thể / % Mỡ / Tỷ lệ mỡ => "bodyFat"
+  * % Nước / Tỷ lệ nước / Nước => "waterPercent"
+  * Cơ / Lượng cơ / Khối lượng cơ => "muscleMass"
+  * Vóc dáng / Cân đối / Chỉ số cân đối => "balanceIndex"
+  * Khoáng chất / Xương / Khối xương / Canxi / Độ loãng xương => "boneMinerals"
+  * Mỡ nội tạng / MNT / Nội tạng => "visceralFat"
+  * Năng lượng / Kcal / BMR / Chuyển hóa cơ bản => "energy"
+  * Tuổi sinh học / Tuổi SH / Tuổi cơ thể / Tuổi tế bào => "bioAge"
 
-BƯỚC 2 — ĐỌC TỪNG DÒNG THEO ĐÚNG THỨ TỰ CỘT ĐÃ XÁC ĐỊNH ("rows"):
-- Với mỗi dòng dữ liệu từ trên xuống dưới, hãy đọc từng ô từ TRÁI sang PHẢI và gán giá trị của ô thứ k vào đúng tên trường thứ k trong "headerColumns" (cột có tiêu đề gì ở trên đầu thì bắt buộc phải gán vào đúng trường đó).
-- Trong mỗi object của "rows", hãy viết các key theo ĐÚNG THỨ TỰ TỪ TRÁI SANG PHẢI của "headerColumns" để không bao giờ bị lệch cột hoặc đảo lộn chỉ số giữa các cột.
-- Quan sát toàn bộ chiều rộng của mỗi ô (kể cả chữ số viết sát đường kẻ dọc của bảng) để đọc đầy đủ tất cả chữ số phần nguyên và phần thập phân, không bỏ sót chữ số hàng chục ở đầu.
-- Nếu chữ viết tay có dấu phẩy thập phân (ví dụ "36,5") hoặc dấu chấm ("36.5"), hãy chuyển thành số thực chuẩn trong JSON (36.5).
-- Ô nào để trống hoặc không có số liệu thì bỏ qua trường đó (không dùng null, không tự đoán).
-- Tất cả các chỉ số phải là kiểu NUMBER (không dùng string). weight PHẢI > 0.
+BƯỚC 2 — ĐỌC ĐẦY ĐỦ CÁC CHỈ SỐ THEO TỪNG CỘT TRÊN MỖI DÒNG ("rows"):
+- Với mỗi dòng dữ liệu từ trên xuống dưới, hãy đọc đầy đủ các chỉ số theo từng cột từ TRÁI sang PHẢI, đảm bảo kiểm tra qua tất cả các cột đã liệt kê trong "headerColumns" mà không bỏ sót bất kỳ cột nào và không gộp hai cột liền kề làm một.
+- Ở mỗi ô, gióng thẳng theo cột dọc lên tiêu đề ở đầu cột đó để gán đúng vào trường tương ứng; viết các trường trong mỗi dòng theo đúng thứ tự cột từ trái sang phải của "headerColumns" để các chỉ số không bị đẩy lệch sang cột kế bên.
+- Đọc trọn vẹn tất cả các chữ số phần nguyên và phần thập phân trong mỗi ô (kể cả chữ số viết sát vạch kẻ dọc). Chuyển dấu phẩy thập phân (ví dụ "37,8") thành dấu chấm chuẩn trong JSON (37.8).
+- Tất cả các chỉ số phải là kiểu NUMBER (không dùng string). weight PHẢI > 0. Ô nào thực sự để trống không ghi số liệu thì bỏ qua trường đó.
 - Trường "date": Giữ nguyên thứ tự NGÀY/THÁNG (DD/MM) như trong bảng và gắn thêm năm thành DD/MM/YYYY.`;
     if (selectedYear) {
-      prompt += `\n- Nếu ngày trong ảnh không ghi năm, dùng năm ${selectedYear} (ví dụ thấy "10/05" tức ngày 10 tháng 05 -> ghi "10/05/${selectedYear}").`;
+      prompt += `\n- Nếu ngày trong ảnh không ghi năm, dùng năm ${selectedYear} (ví dụ thấy "09/10" tức ngày 09 tháng 10 -> ghi "09/10/${selectedYear}").`;
     }
     prompt += `
 
 ĐỊNH DẠNG ĐẦU RA (JSON Object thuần túy, KHÔNG giải thích):
 {
-  "headerColumns": ["date", "<tên_trường_cột_2>", "<tên_trường_cột_3>", "...theo đúng thứ tự tiêu đề cột từ trái sang phải trên bảng"],
+  "headerColumns": [
+    "Cột 1: <tiêu_đề_cột_1> => date",
+    "Cột 2: <tiêu_đề_cột_2> => <tên_trường_cột_2>",
+    "...liệt kê đầy đủ tất cả các cột từ trái sang phải trên bảng"
+  ],
   "rows": [
-    { "date": "DD/MM/YYYY", "<key_theo_đúng_thứ_tự_headerColumns>": <giá_trị_số_của_đúng_cột_đó> }
+    { "date": "DD/MM/YYYY", "<tên_trường_theo_đúng_thứ_tự_từng_cột_trong_headerColumns>": <giá_trị_số> }
   ]
 }`;
 
@@ -267,6 +270,9 @@ BƯỚC 2 — ĐỌC TỪNG DÒNG THEO ĐÚNG THỨ TỰ CỘT ĐÃ XÁC ĐỊNH
     const headerColumns = Array.isArray(parsed?.headerColumns) ? parsed.headerColumns : null;
     if (headerColumns) {
       console.log(`[BulkExtract] 📋 [${requestId}] Step 4a: Detected table header columns (left-to-right):`, headerColumns.join(' | '));
+      try {
+        res.setHeader('X-AI-Header-Columns', encodeURIComponent(JSON.stringify(headerColumns)));
+      } catch {}
     }
     const rows = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.rows) ? parsed.rows : null);
     if (!Array.isArray(rows)) {

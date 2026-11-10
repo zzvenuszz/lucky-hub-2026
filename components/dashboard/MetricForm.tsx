@@ -258,6 +258,12 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
         throw new Error(errBody.message || `Server trả về lỗi ${res.status}`);
       }
 
+      const rawHeaderCols = res.headers.get('X-AI-Header-Columns');
+      if (rawHeaderCols) {
+        try {
+          console.log('[MetricForm][Vision] 🧭 Thứ tự cột tiêu đề AI nhận diện (trái -> phải):', JSON.parse(decodeURIComponent(rawHeaderCols)));
+        } catch {}
+      }
       const data: unknown = await res.json();
       console.log('[MetricForm][Vision] 📋 Step 6: Dữ liệu JSON thô từ /api/ai/bulk-extract:', data);
       if (!Array.isArray(data)) {
