@@ -163,6 +163,23 @@
             from { opacity: 0; transform: translateX(100px); }
             to { opacity: 1; transform: translateX(0); }
         }
+
+        /* Prevent native date/datetime-local inputs from overflowing containers on mobile/WebKit */
+        input[type="datetime-local"],
+        input[type="date"] {
+            display: block;
+            box-sizing: border-box;
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        input[type="datetime-local"]::-webkit-date-and-time-value,
+        input[type="date"]::-webkit-date-and-time-value {
+            min-width: 0;
+            text-align: left;
+        }
     </style>
     <script type="importmap">
 {

@@ -1,5 +1,7 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import CurrencyInput from './CurrencyInput.tsx';
+import BarcodeScanner from './BarcodeScanner.tsx';
+import BatchReceiveScannedItemModal from './BatchReceiveScannedItemModal.tsx';
 import { formatVND } from '../../utils/formatters.ts';
 
 export interface BatchReceiveLine {
@@ -35,6 +37,8 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
   const [reason, setReason] = useState('');
   const [lines, setLines] = useState<BatchReceiveLine[]>([]);
   const [error, setError] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannedPrompt, setScannedPrompt] = useState<{ item: any; scannedCode: string } | null>(null);
 
   // Chỉ cho phép nhập các mẫu sản phẩm chưa ngừng bán và có trong bảng giá đang có hiệu lực
   const receivableItems = useMemo(
@@ -51,15 +55,16 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
     });
   }, [receivableItems, searchQuery]);
 
-  const addItemToList = useCallback((item: any) => {
+  const addItemToList = useCallback((item: any, addQuantity: number = 1) => {
     setError('');
+    const safeAdd = Math.max(1, Math.floor(Number(addQuantity) || 1));
     const itemId = String(item.id || item._id);
     setLines(prev => {
-      const existing = prev.find(line => line.itemId === itemId);
+      const existing = prev.find(line => line.itemId === itemId || line.sku === item.sku);
       if (existing) {
         return prev.map(line =>
-          line.itemId === itemId
-            ? { ...line, quantity: String((Number(line.quantity) || 0) + 1) }
+          line.itemId === existing.itemId
+            ? { ...line, quantity: String((Number(line.quantity) || 0) + safeAdd) }
             : line
         );
       }
@@ -73,13 +78,69 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
           name: item.name,
           pv: Number(item.pv || 0),
           currentStock: Number(item.quantity || 0),
-          quantity: '1',
+          quantity: String(safeAdd),
           unitCost: String(refCost),
         },
       ];
     });
-    console.log('[BatchReceiveModal] Added product to receiving list:', { sku: item.sku, name: item.name });
+    console.log('[BatchReceiveModal] Added product to receiving list:', {
+      sku: item.sku,
+      name: item.name,
+      addedQuantity: safeAdd,
+    });
   }, []);
+
+  const handleBarcodeDetected = useCallback(
+    (rawCode: string) => {
+      const code = String(rawCode || '').trim();
+      console.log('[BatchReceiveModal] Barcode detected:', { code });
+      setShowScanner(false);
+      if (!code) return;
+      const normalized = code.toLowerCase();
+      const matched =
+        receivableItems.find(item => {
+          const allSkus = (item.skus?.length ? item.skus : [item.sku]).map((s: any) =>
+            String(s || '').trim().toLowerCase()
+          );
+          return allSkus.includes(normalized);
+        }) ||
+        receivableItems.find(item => {
+          const allSkus = (item.skus?.length ? item.skus : [item.sku]).map((s: any) =>
+            String(s || '').trim().toLowerCase()
+          );
+          return allSkus.some((s: string) => s && (s.includes(normalized) || normalized.includes(s)));
+        });
+
+      if (!matched) {
+        console.warn('[BatchReceiveModal] Scanned code not found in receivable items:', { code });
+        setError(`Không tìm thấy sản phẩm có mã “${code}” trong danh mục khả dụng.`);
+        return;
+      }
+
+      setError('');
+      setScannedPrompt({ item: matched, scannedCode: code });
+    },
+    [receivableItems]
+  );
+
+  const handleConfirmScannedQuantity = useCallback(
+    (qty: number) => {
+      if (!scannedPrompt) return;
+      addItemToList(scannedPrompt.item, qty);
+      setScannedPrompt(null);
+    },
+    [addItemToList, scannedPrompt]
+  );
+
+  useEffect(() => {
+    if (!showScanner) return;
+    const onSimulateScan = (event: Event) => {
+      const detail = (event as CustomEvent<string>)?.detail;
+      if (detail) handleBarcodeDetected(detail);
+    };
+    window.addEventListener('luckyhub:simulate-barcode', onSimulateScan);
+    return () => window.removeEventListener('luckyhub:simulate-barcode', onSimulateScan);
+  }, [showScanner, handleBarcodeDetected]);
 
   const updateLine = useCallback((itemId: string, patch: Partial<BatchReceiveLine>) => {
     setError('');
@@ -183,8 +244,8 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
           </button>
         </header>
 
-        <div className="grid gap-3 rounded-2xl bg-slate-50 p-3 sm:grid-cols-2 sm:p-4">
-          <label className="min-w-0 block text-xs font-bold text-slate-700 sm:text-sm">
+        <div className="grid grid-cols-1 gap-3 overflow-hidden rounded-2xl bg-slate-50 p-3 sm:grid-cols-2 sm:p-4">
+          <label className="block min-w-0 max-w-full overflow-hidden text-xs font-bold text-slate-700 sm:text-sm">
             Ngày nhập kho
             <input
               type="datetime-local"
@@ -192,10 +253,10 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
               value={receivedAt}
               onChange={event => setReceivedAt(event.target.value)}
               data-testid="batch-receive-date"
-              className="mt-1 w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
+              className="mt-1 block w-full max-w-full min-w-0 box-border appearance-none rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </label>
-          <label className="min-w-0 block text-xs font-bold text-slate-700 sm:text-sm">
+          <label className="block min-w-0 max-w-full overflow-hidden text-xs font-bold text-slate-700 sm:text-sm">
             Ghi chú nhập kho (tùy chọn)
             <input
               type="text"
@@ -204,7 +265,7 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
               onChange={event => setReason(event.target.value)}
               placeholder="Ví dụ: Nhập hàng từ công ty đợt 1..."
               data-testid="batch-receive-reason"
-              className="mt-1 w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
+              className="mt-1 block w-full max-w-full min-w-0 box-border rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </label>
         </div>
@@ -216,18 +277,31 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
               <h3 className="min-w-0 truncate text-sm font-black text-slate-800">1. Tìm & chọn mẫu sản phẩm</h3>
               <span className="shrink-0 text-xs text-slate-500">{filteredItems.length} mẫu khả dụng</span>
             </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={event => setSearchQuery(event.target.value)}
-              placeholder="Tìm theo mã SKU hoặc tên sản phẩm..."
-              data-testid="batch-receive-search"
-              className="w-full min-w-0 rounded-xl bg-slate-100 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                placeholder="Tìm theo mã SKU hoặc tên sản phẩm..."
+                data-testid="batch-receive-search"
+                className="min-w-0 flex-1 rounded-xl bg-slate-100 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setShowScanner(true);
+                }}
+                data-testid="batch-receive-scan-btn"
+                className="shrink-0 rounded-xl bg-slate-900 px-3.5 py-2.5 text-xs font-black text-white hover:bg-slate-800 sm:text-sm"
+              >
+                📷 Quét mã
+              </button>
+            </div>
             <div className="max-h-72 space-y-2 overflow-y-auto overflow-x-hidden pr-1">
               {filteredItems.map(item => {
                 const itemId = String(item.id || item._id);
-                const inList = lines.find(l => l.itemId === itemId);
+                const inList = lines.find(l => l.itemId === itemId || l.sku === item.sku);
                 const skuDisplay = (item.skus?.length ? item.skus : [item.sku]).join(', ');
                 return (
                   <div
@@ -244,11 +318,25 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
                     </div>
                     <button
                       type="button"
-                      onClick={() => addItemToList(item)}
+                      onClick={() => addItemToList(item, 1)}
                       data-testid={`batch-add-item-${item.sku}`}
                       className="shrink-0 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-black text-white hover:bg-emerald-800"
                     >
-                      {inList ? `+ Thêm (${inList.quantity})` : '+ Thêm'}
+                      {inList ? (
+                        <>
+                          + Thêm (
+                          <span
+                            data-testid={`batch-added-count-${item.sku}`}
+                            className="font-black text-red-500"
+                            style={{ color: '#ff3b30' }}
+                          >
+                            {inList.quantity}
+                          </span>
+                          )
+                        </>
+                      ) : (
+                        '+ Thêm'
+                      )}
                     </button>
                   </div>
                 );
@@ -373,6 +461,31 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
           </button>
         </div>
       </form>
+
+      {showScanner && (
+        <BarcodeScanner
+          onDetected={handleBarcodeDetected}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
+
+      {scannedPrompt && (
+        <BatchReceiveScannedItemModal
+          item={scannedPrompt.item}
+          scannedCode={scannedPrompt.scannedCode}
+          currentAddedQuantity={
+            Number(
+              lines.find(
+                l =>
+                  l.itemId === String(scannedPrompt.item.id || scannedPrompt.item._id) ||
+                  l.sku === scannedPrompt.item.sku
+              )?.quantity || 0
+            )
+          }
+          onConfirm={handleConfirmScannedQuantity}
+          onCancel={() => setScannedPrompt(null)}
+        />
+      )}
     </div>
   );
 });

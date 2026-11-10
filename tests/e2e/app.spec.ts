@@ -256,23 +256,74 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await expect(page.getByTestId('stock-adjust-delta-input')).toHaveValue('-5');
   await page.getByRole('button', { name: 'Đóng thao tác kho' }).click();
 
-  // Mở modal Nhập hàng vào kho cá nhân: tìm kiếm, thêm vào danh sách, chỉnh số lượng, ngày nhập và bấm Nhập kho
+  // Mở modal Nhập hàng vào kho cá nhân: kiểm tra ngày nhập không tràn container, quét mã hiện modal phụ, bấm +Thêm nhảy số màu đỏ đồng bộ 2 chiều
   await page.getByTestId('open-batch-receive').click();
   await expect(page.getByTestId('batch-receive-modal')).toBeVisible();
-  await page.getByTestId('batch-receive-search').fill('F1');
+
+  const dateInput = page.getByTestId('batch-receive-date');
+  await expect(dateInput).toBeVisible();
+  const dateLabel = dateInput.locator('..');
+  const [dateInputBox, dateLabelBox] = await Promise.all([dateInput.boundingBox(), dateLabel.boundingBox()]);
+  expect(dateInputBox).not.toBeNull();
+  expect(dateLabelBox).not.toBeNull();
+  expect(dateInputBox!.x).toBeGreaterThanOrEqual(dateLabelBox!.x - 1);
+  expect(dateInputBox!.x + dateInputBox!.width).toBeLessThanOrEqual(dateLabelBox!.x + dateLabelBox!.width + 1);
+
+  // Quét mã sản phẩm -> mở modal phụ hiển thị ảnh/placeholder, mã SP, tên SP và ô nhập số lượng
+  await page.getByTestId('batch-receive-scan-btn').click();
+  await expect(page.getByRole('dialog', { name: 'Quét mã vạch sản phẩm' })).toBeVisible();
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('luckyhub:simulate-barcode', { detail: 'F1' }));
+  });
+
+  const scannedModal = page.getByTestId('batch-scanned-item-modal');
+  await expect(scannedModal).toBeVisible();
+  await expect(page.getByTestId('scanned-item-sku')).toContainText('F1');
+  await expect(page.getByTestId('scanned-item-name')).toHaveText('Hỗn hợp dinh dưỡng F1');
+  await page.getByTestId('scanned-item-qty-input').fill('3');
+  await page.getByTestId('scanned-item-confirm-btn').click();
+  await expect(scannedModal).toHaveCount(0);
+
+  // Kiểm tra sau khi quét mã nhập 3: danh sách sản phẩm bên trái nhảy số (3) màu đỏ và danh sách nhập bên phải có SL = 3
+  const addedCountBadge = page.getByTestId('batch-added-count-F1');
+  await expect(addedCountBadge).toHaveText('3');
+  const badgeColor = await addedCountBadge.evaluate(el => window.getComputedStyle(el).color);
+  expect(badgeColor).toBe('rgb(255, 59, 48)');
+  await expect(page.getByTestId('batch-qty-F1')).toHaveValue('3');
+
+  // Bấm nút + Thêm trên danh sách sản phẩm: không mở modal phụ mà cộng trực tiếp lên 4
   await page.getByTestId('batch-add-item-F1').click();
+  await expect(scannedModal).toHaveCount(0);
+  await expect(addedCountBadge).toHaveText('4');
+  await expect(page.getByTestId('batch-qty-F1')).toHaveValue('4');
+
+  // Sửa lại số lượng ở danh sách nhập bên phải thành 5 -> số màu đỏ bên danh sách sản phẩm cũng nhảy thành 5
   await page.getByTestId('batch-qty-F1').fill('5');
-  await expect(page.getByTestId('batch-receive-date')).toBeVisible();
+  await expect(addedCountBadge).toHaveText('5');
+
   await page.getByTestId('submit-batch-receive').click();
   await expect(page.getByTestId('batch-receive-modal')).toHaveCount(0);
 
-  // Kiểm tra tab Bán hàng: bật DEMO -> thêm hàng vào giỏ -> tắt DEMO phải tự xóa sạch giỏ hàng
+  // Kiểm tra tab Bán hàng: bật DEMO -> thêm hàng vào giỏ -> xem hóa đơn DEMO có tiêu đề "HOÁ ĐƠN TẠM TÍNH" căn giữa -> tắt DEMO phải tự xóa sạch giỏ hàng
   await nav.getByRole('button', { name: /Bán hàng/ }).click();
   const demoToggle = page.getByTestId('toggle-sale-demo-mode');
   await demoToggle.click();
   await expect(demoToggle).toHaveText('DEMO: Đang bật');
+  await page.getByRole('button', { name: 'Khách lẻ' }).click();
+  await page.getByPlaceholder('Tên khách lẻ').fill('Khách Demo');
+  await page.getByPlaceholder('Địa chỉ').fill('Hà Nội');
+  await page.getByPlaceholder('Số điện thoại').fill('0912345678');
   await page.getByRole('button', { name: /Hỗn hợp dinh dưỡng F1/ }).click();
   await expect(page.getByRole('heading', { name: /Giỏ hàng/ })).toContainText('(1)');
+  await page.getByRole('button', { name: 'Xem trước / In tạm tính' }).click();
+  const invoiceDialog = page.getByRole('dialog', { name: 'Xem trước hoá đơn' });
+  await expect(invoiceDialog).toBeVisible();
+  const invoiceHeading = invoiceDialog.locator('h1');
+  await expect(invoiceHeading).toHaveText('HOÁ ĐƠN TẠM TÍNH');
+  const headingAlign = await invoiceHeading.evaluate(el => window.getComputedStyle(el).textAlign);
+  expect(headingAlign).toBe('center');
+  await expect(invoiceDialog).not.toContainText('KHÔNG CÓ GIÁ TRỊ THẬT');
+  await invoiceDialog.getByRole('button', { name: 'Đóng' }).click();
   await demoToggle.click();
   await expect(demoToggle).toHaveText('Bật chế độ DEMO');
   await expect(page.getByRole('heading', { name: /Giỏ hàng/ })).toContainText('(0)');

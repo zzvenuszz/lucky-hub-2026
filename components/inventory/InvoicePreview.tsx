@@ -10,9 +10,9 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
   const [pdfUrl, setPdfUrl] = useState('');
   const isProvisional = Boolean(sale.isProvisional);
   const isDemo = Boolean(sale.isDemo);
-  const invoiceHeading = isDemo ? 'HÓA ĐƠN BÁN HÀNG · DEMO' : isProvisional ? 'PHIẾU TẠM TÍNH' : 'HÓA ĐƠN BÁN HÀNG';
+  const invoiceHeading = isDemo ? 'HOÁ ĐƠN TẠM TÍNH' : isProvisional ? 'PHIẾU TẠM TÍNH' : 'HÓA ĐƠN BÁN HÀNG';
   const provisionalNotice = isDemo
-    ? 'DEMO · HÓA ĐƠN TẠM TÍNH · KHÔNG CÓ GIÁ TRỊ THẬT'
+    ? 'HOÁ ĐƠN TẠM TÍNH'
     : 'HÓA ĐƠN TẠM TÍNH · CHỈ DÙNG XEM TRƯỚC, CHƯA THANH TOÁN';
 
   useEffect(() => () => { if (imageUrl) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
@@ -26,7 +26,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     const banner = isProvisional ? `<div class="provisional">${provisionalNotice}</div>` : '';
     win.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(invoiceHeading)} · ${escapeHtml(sale.invoiceNumber)}</title><style>
       *{box-sizing:border-box}body{font:14px Arial,sans-serif;color:#17352b;max-width:760px;margin:0 auto;padding:20px;background:#fff}
-      h1{font-size:24px;margin:0 0 8px;color:#087b58;letter-spacing:.3px}header{border-bottom:3px solid #13815d;padding:18px 0 14px}
+      h1{font-size:24px;margin:0 0 8px;color:#087b58;letter-spacing:.3px;${isDemo ? 'text-align:center;' : ''}}header{border-bottom:3px solid #13815d;padding:18px 0 14px}
       .actions{position:sticky;top:0;display:flex;gap:10px;padding:12px 0;background:#fff;border-bottom:1px solid #cadbd3;z-index:2}
       .actions button{border:0;border-radius:8px;padding:12px 16px;font-weight:bold;background:#087b58;color:#fff}.actions button.secondary{background:#e8efec;color:#18221f}
       .contact{line-height:1.65;color:#476359}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0}
@@ -59,7 +59,9 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     if (!ctx) { alert('Không thể dựng hóa đơn trên thiết bị này.'); return null; }
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#087b58'; ctx.fillRect(0, 0, width, 164);
-    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 32px Arial'; ctx.fillText(invoiceHeading, 42, 58);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 32px Arial';
+    if (isDemo) { ctx.textAlign = 'center'; ctx.fillText(invoiceHeading, width / 2, 58); ctx.textAlign = 'left'; }
+    else { ctx.fillText(invoiceHeading, 42, 58); }
     ctx.font = '19px Arial'; ctx.fillText(`Người bán: ${String(seller?.name || '').slice(0, 80)}`, 42, 94);
     ctx.font = '16px Arial'; ctx.fillStyle = '#dff3e9';
     ctx.fillText(`Địa chỉ: ${String(seller?.address || '').slice(0, 95)}`, 42, 120);
@@ -208,7 +210,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     <div className="max-h-[calc(100dvh-24px)] w-full max-w-3xl overflow-y-auto overflow-x-hidden rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-48px)] sm:p-8">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="min-w-0 flex-1 text-lg font-black text-slate-900 sm:text-xl">{imageUrl ? `Ảnh hóa đơn${isDemo ? ' DEMO' : isProvisional ? ' tạm tính' : ''}` : 'Xem trước hoá đơn'}</h2><button onClick={onClose} className="shrink-0 rounded-xl bg-slate-100 px-4 py-2 font-bold">Đóng</button></div>
       {pdfUrl ? <div className="mx-auto w-full space-y-3"><div className="flex flex-wrap justify-end gap-2"><a href={pdfUrl} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Mở PDF</a><button onClick={() => setPdfUrl('')} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Quay lại hóa đơn</button></div><iframe title={`PDF hóa đơn ${sale.invoiceNumber}`} src={pdfUrl} className="h-[70vh] w-full rounded-xl border border-slate-200" /><p className="text-center text-xs text-slate-500">Nếu PDF chưa hiện trong khung, bấm “Mở PDF” để xem và lưu vào Tệp.</p></div> : !imageUrl ? <><article className="mx-auto max-w-xl overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-sm">
-        <div className="border-b-4 border-emerald-700 px-6 py-5 sm:px-9"><h1 className="text-2xl font-black text-emerald-800">{invoiceHeading}</h1>
+        <div className="border-b-4 border-emerald-700 px-6 py-5 sm:px-9"><h1 className={`text-2xl font-black text-emerald-800 ${isDemo ? 'text-center' : ''}`}>{invoiceHeading}</h1>
           <div className="mt-2 text-sm leading-6 text-slate-600"><p><b>Người bán:</b> {seller?.name}</p><p><b>Địa chỉ người bán:</b> {seller?.address}</p><p><b>SĐT người bán:</b> {seller?.phone}</p></div>
         </div>
         {isProvisional && <div className="mx-5 mt-5 rounded-lg border-2 border-amber-400 bg-amber-50 px-3 py-3 text-center text-xs font-black tracking-wide text-amber-900 sm:mx-8">{provisionalNotice}</div>}
