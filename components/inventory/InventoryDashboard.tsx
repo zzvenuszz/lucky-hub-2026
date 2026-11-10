@@ -88,7 +88,13 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const [nutritionInvoiceAddresses, setNutritionInvoiceAddresses] = useState<Array<{ id: string; name: string; address: string }>>([]);
   const [invoiceAddressSelection, setInvoiceAddressSelection] = useState('personal');
   const [invoiceAddressesReady, setInvoiceAddressesReady] = useState(false);
-  const sellerProfile = { name: String(user.fullName || '').trim(), address: String(user.address || '').trim(), phone: String(user.phoneNumber || '').trim() };
+  const sellerProfile = {
+    name: String(user.fullName || '').trim(),
+    address: String(user.address || '').trim(),
+    phone: String(user.phoneNumber || '').trim(),
+    bankName: canUseInventory ? String(user.bankName || '').trim() : '',
+    bankAccountNumber: canUseInventory ? String(user.bankAccountNumber || '').trim() : '',
+  };
   const selectedNutritionAddress = nutritionInvoiceAddresses.find(group => group.id === invoiceAddressSelection);
   const invoiceSellerAddress = selectedNutritionAddress?.address || (invoiceAddressSelection === 'personal' ? sellerProfile.address : '');
   const hasSellerDetails = Boolean(sellerProfile.name && sellerProfile.phone && invoiceSellerAddress && invoiceAddressesReady);
@@ -719,7 +725,7 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
     {showCategoryModal && canManageCatalog && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="create-category-title"><div className="max-h-[calc(100dvh-24px)] w-full max-w-md overflow-y-auto overflow-x-hidden rounded-3xl bg-white p-5 shadow-2xl sm:p-6"><div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1"><h2 id="create-category-title" className="text-lg font-black sm:text-xl">Tạo danh mục hàng hoá</h2><p className="mt-1 text-sm text-slate-500">Danh mục mẫu sản phẩm dùng chung.</p></div><button type="button" aria-label="Đóng tạo danh mục" onClick={() => setShowCategoryModal(false)} className="shrink-0 rounded-xl bg-slate-100 px-3 py-2">✕</button></div><label className="mt-5 block text-sm font-bold">Tên danh mục<input autoFocus maxLength={80} value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); createCategory(); } }} className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 font-normal" placeholder="Ví dụ: Dinh dưỡng, chăm sóc cá nhân" /></label><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setShowCategoryModal(false)} className="rounded-xl bg-slate-100 px-4 py-3 font-bold">Huỷ</button><button type="button" onClick={createCategory} disabled={!newCategoryName.trim()} className="rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white disabled:opacity-50">Tạo và chọn</button></div></div></div>}
     {showBarcodeScanner && <BarcodeScanner onDetected={handleBarcodeDetected} onClose={() => setShowBarcodeScanner(false)} />}
     {showSaleBarcodeScanner && <BarcodeScanner onDetected={handleSaleBarcodeDetected} onClose={() => setShowSaleBarcodeScanner(false)} />}
-    {invoice && <InvoicePreview sale={invoice} seller={{ name: invoice.sellerName || sellerProfile.name, address: invoice.sellerAddress || sellerProfile.address, phone: invoice.sellerPhone || sellerProfile.phone }} defaultFormat={sellerSettings?.format === 'image' ? 'image' : 'pdf'} onClose={() => setInvoice(null)} />}
+    {invoice && <InvoicePreview sale={invoice} seller={{ name: invoice.sellerName || sellerProfile.name, address: invoice.sellerAddress || sellerProfile.address, phone: invoice.sellerPhone || sellerProfile.phone, bankName: sellerProfile.bankName, bankAccountNumber: sellerProfile.bankAccountNumber }} defaultFormat={sellerSettings?.format === 'image' ? 'image' : 'pdf'} onClose={() => setInvoice(null)} />}
     {tab === 'sale' && canUseInventory && <>
       <style>{`[data-sale-summary-bar]{bottom:calc(86px + env(safe-area-inset-bottom,0px))}@media(min-width:768px){[data-sale-summary-bar]{bottom:0}}`}</style>
       {cart.length > 0 && <div data-sale-summary-bar data-testid="sale-summary-bar" className="fixed inset-x-0 z-[55] border-t border-emerald-700 bg-emerald-400 px-3 py-2.5 text-black shadow-[0_-6px_24px_rgba(15,23,42,0.15)] sm:px-6 sm:py-3">

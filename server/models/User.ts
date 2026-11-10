@@ -8,6 +8,8 @@ const UserSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   phoneNumber: { type: String, default: '' },
   address: { type: String, default: '' },
+  bankName: { type: String, default: '', trim: true },
+  bankAccountNumber: { type: String, default: '', trim: true },
   memberNumber: { type: String, default: '', uppercase: true, trim: true },
   memberLevel: { type: String, enum: ['customer', 'member', 'senior_consultant', 'success_builder', 'supervisor'], default: 'customer' },
   sponsorUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },

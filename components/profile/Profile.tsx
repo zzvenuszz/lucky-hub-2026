@@ -20,6 +20,8 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpd
     weight: user.weight || 0,
     phoneNumber: user.phoneNumber || '',
     address: user.address || '',
+    bankName: user.bankName || '',
+    bankAccountNumber: user.bankAccountNumber || '',
     memberNumber: user.memberNumber || '',
     sponsorMemberNumber: user.sponsorMemberNumber || '',
     healthGoals: user.healthGoals || [],
@@ -112,6 +114,8 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpd
       weight: user.weight || 0,
       phoneNumber: user.phoneNumber || '',
       address: user.address || '',
+      bankName: user.bankName || '',
+      bankAccountNumber: user.bankAccountNumber || '',
       memberNumber: user.memberNumber || '',
       sponsorMemberNumber: user.sponsorMemberNumber || '',
       healthGoals: user.healthGoals || [],
@@ -288,6 +292,12 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpd
           initialData={localData} 
           onUpdate={(d, submit) => handleDataUpdate(d, submit)} 
           canManageMemberLevel={(user as any).permissions?.includes('members:level:manage:any') || false}
+          canSell={
+            Boolean(
+              ((user as any).permissions || (user as any).groupPermissions || []).includes('inventory:sell') ||
+              ((user as any).permissions || (user as any).groupPermissions || []).includes('inventory:manage')
+            )
+          }
           onMemberLevelUpdate={onMemberLevelUpdate}
         />
       </div>

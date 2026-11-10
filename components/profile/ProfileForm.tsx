@@ -1,13 +1,15 @@
 
-import React, { useState, memo, useCallback } from 'react';
+import React, { useState, memo, useCallback, useMemo } from 'react';
 import { User, HealthGoal } from '../../types.ts';
 import LoadingButton from '../system/LoadingButton.tsx';
 import { useToast } from '../system/ToastProvider.tsx';
+import { VIETQR_PROVIDERS } from '../../utils/vietQr.ts';
 
 interface ProfileFormProps {
   user: User;
   initialData: any;
   canManageMemberLevel?: boolean;
+  canSell?: boolean;
   onMemberLevelUpdate?: (memberLevel: string) => Promise<void>;
   /**
    * PHÂN TÍCH: Cần mở rộng kiểu của onUpdate để chấp nhận tham số thứ 2 (shouldSubmit)
@@ -16,7 +18,9 @@ interface ProfileFormProps {
   onUpdate: (data: any, shouldSubmit?: boolean) => void;
 }
 
-const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, canManageMemberLevel = false, onMemberLevelUpdate }) => {
+const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, canManageMemberLevel = false, canSell = false, onMemberLevelUpdate }) => {
+  const bankProviders = useMemo(() => VIETQR_PROVIDERS.filter(p => p.group === 'bank'), []);
+  const walletProviders = useMemo(() => VIETQR_PROVIDERS.filter(p => p.group === 'wallet'), []);
   const [formData, setFormData] = useState(initialData);
   const [memberLevelDraft, setMemberLevelDraft] = useState<string>(user.memberLevel || 'customer');
   const [savingMemberLevel, setSavingMemberLevel] = useState(false);
@@ -114,6 +118,66 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, 
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Địa chỉ</label>
           <input required type="text" value={formData.address || ''} onChange={e => { const d = {...formData, address: e.target.value}; setFormData(d); onUpdate(d, false); }} placeholder="Địa chỉ nhận hàng / liên hệ" className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />
         </div>
+        {canSell && (
+          <>
+            <div className="space-y-1" data-testid="profile-bank-name-field">
+              <label htmlFor="profile-bank-name" className="text-xs font-bold text-slate-500 ml-1 uppercase">
+                Ngân hàng / Ví điện tử thụ hưởng
+              </label>
+              <select
+                id="profile-bank-name"
+                data-testid="profile-bank-name"
+                value={formData.bankName || ''}
+                onChange={e => {
+                  const d = { ...formData, bankName: e.target.value };
+                  setFormData(d);
+                  onUpdate(d, false);
+                }}
+                className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium"
+              >
+                <option value="">-- Chọn ngân hàng hoặc ví điện tử (VietQR, MoMo, VNPay...) --</option>
+                <optgroup label="🏦 Ngân hàng tại Việt Nam (VietQR / Napas247)">
+                  {bankProviders.map(provider => (
+                    <option key={provider.code} value={provider.code}>
+                      {provider.shortName} — {provider.name}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="📱 Ví điện tử tại Việt Nam (MoMo, VNPay, ZaloPay...)">
+                  {walletProviders.map(provider => (
+                    <option key={provider.code} value={provider.code}>
+                      {provider.shortName} — {provider.name}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              <p className="text-[10px] text-slate-400 ml-1">
+                Dùng để tạo mã QR nhận chuyển khoản nhanh trên hoá đơn bán hàng.
+              </p>
+            </div>
+            <div className="space-y-1" data-testid="profile-bank-account-field">
+              <label htmlFor="profile-bank-account" className="text-xs font-bold text-slate-500 ml-1 uppercase">
+                Số tài khoản / Số ví thụ hưởng
+              </label>
+              <input
+                id="profile-bank-account"
+                data-testid="profile-bank-account"
+                type="text"
+                value={formData.bankAccountNumber || ''}
+                onChange={e => {
+                  const d = { ...formData, bankAccountNumber: e.target.value.trim() };
+                  setFormData(d);
+                  onUpdate(d, false);
+                }}
+                placeholder="Nhập số tài khoản ngân hàng hoặc số ví MoMo/VNPay"
+                className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium"
+              />
+              <p className="text-[10px] text-slate-400 ml-1">
+                Cần điền cả ngân hàng/ví và số tài khoản để bật QR trên hoá đơn.
+              </p>
+            </div>
+          </>
+        )}
         <div className="space-y-1">
           <label className="text-xs font-bold text-slate-500 ml-1 uppercase">Mã hội viên Herbalife</label>
           <input type="text" value={formData.memberNumber || ''} onChange={e => { const d = {...formData, memberNumber: e.target.value.toUpperCase()}; setFormData(d); onUpdate(d, false); }} placeholder="VA12345678 hoặc VNY1234567" className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium" />

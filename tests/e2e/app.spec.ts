@@ -30,6 +30,15 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   }, mockUser);
 
   await page.route('**/api/users/me', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockUser) }));
+  await page.route('**/api/users/u_test_1', async route => {
+    if (route.request().method() === 'PUT') {
+      const body = JSON.parse(route.request().postData() || '{}');
+      Object.assign(mockUser, body);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockUser) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockUser) });
+  });
   await page.route('**/api/session/ping', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }));
   await page.route('**/api/users', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([mockUser]) }));
   await page.route('**/api/knowledge', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
@@ -323,6 +332,9 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   const headingAlign = await invoiceHeading.evaluate(el => window.getComputedStyle(el).textAlign);
   expect(headingAlign).toBe('center');
   await expect(invoiceDialog).not.toContainText('KHÔNG CÓ GIÁ TRỊ THẬT');
+  // Khi chưa lưu STK & ngân hàng trong hồ sơ, nút gạt QR phải bị khóa
+  await expect(page.getByTestId('invoice-qr-toggle')).toBeDisabled();
+  await expect(page.getByTestId('invoice-qr-disabled-hint')).toBeVisible();
   await invoiceDialog.getByRole('button', { name: 'Đóng' }).click();
   await demoToggle.click();
   await expect(demoToggle).toHaveText('Bật chế độ DEMO');
@@ -378,6 +390,51 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   expect(avatarRect!.x).toBeLessThan(infoRect!.x);
   expect(avatarRect!.y + avatarRect!.height).toBeLessThanOrEqual(headerRect!.y + headerRect!.height + 2);
 
+  // Kiểm tra 2 trường Ngân hàng / Ví điện tử và Số tài khoản hiển thị cho hội viên có quyền bán hàng
+  const bankSelect = page.getByTestId('profile-bank-name');
+  const bankAccountInput = page.getByTestId('profile-bank-account');
+  await expect(bankSelect).toBeVisible();
+  await expect(bankAccountInput).toBeVisible();
+  await expect(bankSelect.locator('option[value="VCB"]')).toHaveCount(1);
+  await expect(bankSelect.locator('option[value="MOMO"]')).toHaveCount(1);
+  await expect(bankSelect.locator('option[value="VNPAY"]')).toHaveCount(1);
+
+  await bankSelect.selectOption('VCB');
+  await bankAccountInput.fill('0123456789');
+  await page.getByRole('button', { name: 'Cập nhật hồ sơ hội viên' }).click();
+
+  // Quay lại Quản lý bán hàng -> Lịch sử -> Xem hoá đơn để bật nút gạt tạo mã QR chuyển khoản
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Quản lý bán hàng' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Quản lý hàng hoá' }).click();
+  }
+  await page.getByRole('navigation', { name: 'Quản lý bán hàng' }).getByRole('button', { name: /Lịch sử/ }).click();
+  await page.getByRole('button', { name: 'Xem hoá đơn' }).first().click();
+
+  const qrToggle = page.getByTestId('invoice-qr-toggle');
+  await expect(qrToggle).toBeEnabled();
+  await qrToggle.click();
+  await expect(qrToggle).toHaveAttribute('aria-checked', 'true');
+
+  const qrBox = page.getByTestId('invoice-qr-box');
+  const buyerInfo = page.getByTestId('invoice-buyer-info');
+  await expect(qrBox).toBeVisible();
+  await expect(page.getByTestId('invoice-qr-image')).toBeVisible();
+  await expect(page.getByTestId('invoice-qr-caption')).toHaveText('Quét mã để thanh toán nhanh');
+  await expect(qrBox).toContainText('Vietcombank · 0123456789');
+  await expect(qrBox).toContainText('Bùi Huy Hoàn');
+  await expect(qrBox).toContainText(/1[\s.]200[\s.]000/);
+
+  if (!isMobile) {
+    const [buyerBox, qrRect] = await Promise.all([buyerInfo.boundingBox(), qrBox.boundingBox()]);
+    expect(buyerBox).not.toBeNull();
+    expect(qrRect).not.toBeNull();
+    expect(qrRect!.x).toBeGreaterThanOrEqual(buyerBox!.x + buyerBox!.width - 4);
+  }
+  await page.getByRole('dialog', { name: 'Xem trước hoá đơn' }).getByRole('button', { name: 'Đóng' }).click();
+
   // Kiểm tra chức năng Admin xóa toàn bộ dữ liệu tồn kho & hóa đơn của một user
   if (isMobile) {
     await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
@@ -402,6 +459,54 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await expect(confirmBtn).toBeEnabled();
   await confirmBtn.click();
   await expect(page.getByTestId('reset-user-inventory-modal')).toHaveCount(0);
+});
+
+test('ẩn thông tin ngân hàng thụ hưởng trong hồ sơ khi hội viên không còn quyền bán hàng', async ({ page }) => {
+  const userWithoutSellPerm = {
+    id: 'u_no_sell',
+    _id: 'u_no_sell',
+    username: 'member_nosell',
+    fullName: 'Lê Văn C',
+    email: 'nosell@example.com',
+    phoneNumber: '0900000009',
+    address: 'Đà Nẵng',
+    bankName: 'VCB',
+    bankAccountNumber: '999988887777',
+    status: 'ACTIVE',
+    permissions: ['metrics:view:own'],
+    groupPermissions: ['metrics:view:own'],
+  };
+
+  await page.addInitScript((user) => {
+    window.localStorage.setItem('lucky_hub_user', JSON.stringify(user));
+    window.localStorage.setItem('lucky_hub_remember', 'true');
+    window.localStorage.setItem('lucky_hub_login_time', String(Date.now()));
+  }, userWithoutSellPerm);
+
+  await page.route('**/api/users/me', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(userWithoutSellPerm) }));
+  await page.route('**/api/session/ping', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }));
+  await page.route('**/api/users', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([userWithoutSellPerm]) }));
+  await page.route('**/api/knowledge', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/rules', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/chats', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/metrics/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/notifications/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/goals/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ reminders: [] }) }));
+  await page.route('**/api/nutrition-groups/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ group: null, pendingGroup: null }) }));
+
+  await page.goto('/');
+  const isMobile = (page.viewportSize()?.width || 1024) < 768;
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Hồ sơ cá nhân' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Menu tài khoản' }).click();
+    await page.getByRole('menuitem', { name: 'Hồ sơ cá nhân' }).click();
+  }
+
+  await expect(page.getByTestId('profile-header-card')).toBeVisible();
+  await expect(page.getByTestId('profile-bank-name')).toHaveCount(0);
+  await expect(page.getByTestId('profile-bank-account')).toHaveCount(0);
 });
 
 test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {

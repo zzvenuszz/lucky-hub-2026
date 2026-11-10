@@ -70,10 +70,17 @@ router.get('/me', async (req: Request, res: Response) => {
     const user = await User.findById(userId).select('-password');
     if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
 
-    const userObj = user.toObject();
+    const userObj: any = user.toObject();
     const userGroup = user.groupId
       ? await Group.findById(user.groupId).select('name permissions').lean()
       : null;
+    const canSell =
+      req.user!.permissions.includes(RESOURCES.INVENTORY.SELL) ||
+      req.user!.permissions.includes(RESOURCES.INVENTORY.MANAGE);
+    if (!canSell) {
+      delete userObj.bankName;
+      delete userObj.bankAccountNumber;
+    }
     
     // Sử dụng effective permissions từ authMiddleware (đã gộp Group)
     // req.user.permissions đã được tính trong authMiddleware
@@ -202,6 +209,12 @@ router.put('/:id',
       const data = { ...req.body };
       let previousSponsorNumber = '';
       const allowedFields = ['fullName', 'email', 'phoneNumber', 'address', 'birthDate', 'height', 'weight', 'gender', 'healthGoals', 'avatar', 'password'];
+      const actorCanSell =
+        req.user?.permissions?.includes(RESOURCES.INVENTORY.SELL) ||
+        req.user?.permissions?.includes(RESOURCES.INVENTORY.MANAGE);
+      if (actorCanSell || hasUpdatePerm) {
+        allowedFields.push('bankName', 'bankAccountNumber');
+      }
       if (hasUpdatePerm) allowedFields.push('username', 'status', 'memberNumber', 'sponsorMemberNumber');
       for (const key of Object.keys(data)) {
         if (!allowedFields.includes(key)) delete data[key];
@@ -302,6 +315,13 @@ router.put('/:id',
       }
       const { getEffectivePermissions } = await import('../services/permissionService.ts');
       const effectivePermissions = isSelf ? req.user!.permissions : await getEffectivePermissions(String(u._id));
+      const targetCanSell =
+        effectivePermissions.includes(RESOURCES.INVENTORY.SELL) ||
+        effectivePermissions.includes(RESOURCES.INVENTORY.MANAGE);
+      if (!targetCanSell) {
+        delete (result as any).bankName;
+        delete (result as any).bankAccountNumber;
+      }
       const userGroup = u.groupId
         ? await Group.findById(u.groupId).select('name permissions').lean()
         : null;

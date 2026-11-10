@@ -179,6 +179,8 @@ export interface User {
   weight: number;
   phoneNumber: string;
   address?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
   memberNumber?: string;
   memberLevel?: 'customer' | 'member' | 'senior_consultant' | 'success_builder' | 'supervisor';
   sponsorMemberNumber?: string;
