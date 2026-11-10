@@ -31,6 +31,7 @@ const StockActionModal: React.FC<StockActionModalProps> = memo(({
 }) => {
   const [quantity, setQuantity] = useState('1');
   const [quantityDelta, setQuantityDelta] = useState('');
+  const [adjustSign, setAdjustSign] = useState<'plus' | 'minus'>('plus');
   const [unitCost, setUnitCost] = useState(String(defaultUnitCost || 0));
   const [receivedAt, setReceivedAt] = useState(toLocalDateInput());
   const [threshold, setThreshold] = useState(String(currentThreshold ?? 5));
@@ -90,7 +91,72 @@ const StockActionModal: React.FC<StockActionModalProps> = memo(({
         </>
       ) : (
         <>
-          <label className="block text-sm font-bold">Điều chỉnh số lượng (tăng dương, giảm âm)<input required type="number" inputMode="decimal" step="1" value={quantityDelta} onChange={event => setQuantityDelta(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
+          <div className="block text-sm font-bold">
+            <label htmlFor="stock-adjust-delta-input">Điều chỉnh số lượng (tăng dương, giảm âm)</label>
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="adjust-sign-negative"
+                onClick={() => {
+                  setAdjustSign('minus');
+                  setQuantityDelta(curr => {
+                    const num = Math.abs(Number(curr));
+                    return num > 0 ? String(-num) : curr;
+                  });
+                }}
+                className={`shrink-0 rounded-xl px-3.5 py-3 text-xs font-black transition-all ${
+                  adjustSign === 'minus' || quantityDelta.trim().startsWith('-')
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                }`}
+              >
+                − Giảm
+              </button>
+              <button
+                type="button"
+                data-testid="adjust-sign-positive"
+                onClick={() => {
+                  setAdjustSign('plus');
+                  setQuantityDelta(curr => {
+                    const num = Math.abs(Number(curr));
+                    return num > 0 ? String(num) : curr;
+                  });
+                }}
+                className={`shrink-0 rounded-xl px-3.5 py-3 text-xs font-black transition-all ${
+                  adjustSign === 'plus' && !quantityDelta.trim().startsWith('-')
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                }`}
+              >
+                + Tăng
+              </button>
+              <input
+                id="stock-adjust-delta-input"
+                data-testid="stock-adjust-delta-input"
+                required
+                type="number"
+                step="1"
+                placeholder={adjustSign === 'minus' ? 'VD: -5' : 'VD: 5'}
+                value={quantityDelta}
+                onChange={event => {
+                  const raw = event.target.value;
+                  if (!raw) {
+                    setQuantityDelta('');
+                    return;
+                  }
+                  if (raw.startsWith('-')) {
+                    setAdjustSign('minus');
+                    setQuantityDelta(raw);
+                  } else if (adjustSign === 'minus' && Number(raw) > 0) {
+                    setQuantityDelta(String(-Math.abs(Number(raw))));
+                  } else {
+                    setQuantityDelta(raw);
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-xl bg-slate-100 p-3 font-normal"
+              />
+            </div>
+          </div>
           <label className="block text-sm font-bold">Lý do điều chỉnh<input required maxLength={250} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
         </>
       )}

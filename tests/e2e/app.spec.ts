@@ -248,6 +248,14 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await expect(page.getByText('Số lượng ban đầu')).toHaveCount(0);
   await page.getByRole('button', { name: 'Đóng thêm sản phẩm' }).click();
 
+  // Kiểm tra modal Điều chỉnh tồn kho: nút − Giảm giúp nhập số âm dễ dàng trên iOS
+  await page.getByRole('button', { name: 'Điều chỉnh' }).first().click();
+  await expect(page.getByTestId('adjust-sign-negative')).toBeVisible();
+  await page.getByTestId('adjust-sign-negative').click();
+  await page.getByTestId('stock-adjust-delta-input').fill('5');
+  await expect(page.getByTestId('stock-adjust-delta-input')).toHaveValue('-5');
+  await page.getByRole('button', { name: 'Đóng thao tác kho' }).click();
+
   // Mở modal Nhập hàng vào kho cá nhân: tìm kiếm, thêm vào danh sách, chỉnh số lượng, ngày nhập và bấm Nhập kho
   await page.getByTestId('open-batch-receive').click();
   await expect(page.getByTestId('batch-receive-modal')).toBeVisible();
@@ -338,8 +346,8 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   await resetInput.dispatchEvent('paste');
   await expect(page.getByTestId('reset-user-inventory-paste-warning')).toBeVisible();
 
-  // Nhập chính xác chuỗi xác nhận và bấm nút Xác nhận xóa dữ liệu
-  await resetInput.fill('XÁC NHẬN XÓA DỮ LIỆU tester');
+  // Nhập chính xác chuỗi xác nhận (kể cả gõ kiểu XOÁ dấu trên A trên iOS/macOS) và bấm nút Xác nhận xóa dữ liệu
+  await resetInput.fill('XÁC NHẬN XOÁ DỮ LIỆU tester');
   await expect(confirmBtn).toBeEnabled();
   await confirmBtn.click();
   await expect(page.getByTestId('reset-user-inventory-modal')).toHaveCount(0);

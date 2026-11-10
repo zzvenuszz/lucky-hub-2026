@@ -480,9 +480,16 @@ router.delete('/:id/inventory-data',
       const user = await User.findById(userId);
       if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
 
-      const confirmationText = String(req.body?.confirmationText || '').trim();
-      const expectedWithSpace = `XÁC NHẬN XÓA DỮ LIỆU ${user.username}`;
-      const expectedWithoutSpace = `XÁC NHẬN XÓA DỮ LIỆU${user.username}`;
+      const normalizeConfirmPhrase = (val: string) =>
+        String(val || '')
+          .normalize('NFC')
+          .replace(/XOÁ/g, 'XÓA')
+          .replace(/xoá/g, 'xóa')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const confirmationText = normalizeConfirmPhrase(req.body?.confirmationText);
+      const expectedWithSpace = normalizeConfirmPhrase(`XÁC NHẬN XÓA DỮ LIỆU ${user.username}`);
+      const expectedWithoutSpace = normalizeConfirmPhrase(`XÁC NHẬN XÓA DỮ LIỆU${user.username}`);
       if (confirmationText !== expectedWithSpace && confirmationText !== expectedWithoutSpace) {
         return res.status(400).json({
           message: `Chuỗi xác nhận không khớp. Vui lòng nhập chính xác: ${expectedWithSpace}`,

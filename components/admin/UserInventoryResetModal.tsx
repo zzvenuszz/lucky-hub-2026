@@ -18,11 +18,19 @@ const UserInventoryResetModal: React.FC<UserInventoryResetModalProps> = memo(({
   const [pasteBlockedNotice, setPasteBlockedNotice] = useState(false);
 
   const requiredPhraseWithSpace = `XÁC NHẬN XÓA DỮ LIỆU ${user.username}`;
-  const requiredPhraseNoSpace = `XÁC NHẬN XÓA DỮ LIỆU${user.username}`;
-  const normalizedInput = typedText.trim();
+  const normalizeConfirmationText = (value: string) =>
+    String(value || '')
+      .normalize('NFC')
+      .replace(/XOÁ/g, 'XÓA')
+      .replace(/xoá/g, 'xóa')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const normalizedInput = normalizeConfirmationText(typedText);
+  const normalizedTargetWithSpace = normalizeConfirmationText(`XÁC NHẬN XÓA DỮ LIỆU ${user.username}`);
+  const normalizedTargetNoSpace = normalizeConfirmationText(`XÁC NHẬN XÓA DỮ LIỆU${user.username}`);
   const isMatched =
-    normalizedInput === requiredPhraseWithSpace ||
-    normalizedInput === requiredPhraseNoSpace;
+    normalizedInput === normalizedTargetWithSpace ||
+    normalizedInput === normalizedTargetNoSpace;
 
   const handlePreventClipboard = useCallback((event: React.ClipboardEvent | React.DragEvent) => {
     event.preventDefault();

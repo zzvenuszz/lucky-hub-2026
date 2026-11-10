@@ -6,6 +6,62 @@ interface AvatarUploadProps {
   onValidationChange: (valid: boolean | null, reason?: string) => void;
 }
 
+const MAX_RAW_FILE_SIZE = 25 * 1024 * 1024; // 25MB raw photo limit before client compression
+const MAX_AVATAR_DIMENSION = 1024;
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(String(e.target?.result || ''));
+    reader.onerror = () => reject(new Error('Không thể đọc file ảnh.'));
+    reader.readAsDataURL(file);
+  });
+
+const compressAvatarImage = async (file: File): Promise<string> => {
+  const rawDataUrl = await readFileAsDataUrl(file);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let { width, height } = img;
+        if (width > MAX_AVATAR_DIMENSION || height > MAX_AVATAR_DIMENSION) {
+          if (width >= height) {
+            height = Math.round((height * MAX_AVATAR_DIMENSION) / width);
+            width = MAX_AVATAR_DIMENSION;
+          } else {
+            width = Math.round((width * MAX_AVATAR_DIMENSION) / height);
+            height = MAX_AVATAR_DIMENSION;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(rawDataUrl);
+          return;
+        }
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL('image/jpeg', 0.85);
+        console.log('[AvatarUpload] Image normalized for verification:', {
+          originalBytes: file.size,
+          compressedLength: compressed.length,
+          width: canvas.width,
+          height: canvas.height,
+        });
+        resolve(compressed);
+      } catch (err) {
+        console.warn('[AvatarUpload] Canvas compression fallback to raw data URL:', err);
+        resolve(rawDataUrl);
+      }
+    };
+    img.onerror = () => resolve(rawDataUrl);
+    img.src = rawDataUrl;
+  });
+};
+
 const AvatarUpload: React.FC<AvatarUploadProps> = memo(({ onAvatarChange, isValid, onValidationChange }) => {
   const [preview, setPreview] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -13,89 +69,106 @@ const AvatarUpload: React.FC<AvatarUploadProps> = memo(({ onAvatarChange, isVali
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isProcessingRef = useRef(false);
 
-  const handleFileSelect = useCallback((file: File | null) => {
-    if (!file || isProcessingRef.current) return;
+  const reportInvalid = useCallback((reason: string) => {
+    setErrorReason(reason);
+    onValidationChange(false, reason);
+  }, [onValidationChange]);
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      onValidationChange(false, 'Vui lòng chọn file ảnh');
+  const handleFileSelect = useCallback(async (file: File | null) => {
+    if (!file) return;
+    if (isProcessingRef.current) {
+      console.warn('[AvatarUpload] File selection ignored while verification is in progress');
       return;
     }
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      onValidationChange(false, 'Ảnh quá lớn (>5MB). Vui lòng chọn ảnh khác.');
+    const isImageType = file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(file.name);
+    if (!isImageType) {
+      reportInvalid('Vui lòng chọn định dạng file ảnh hợp lệ.');
+      return;
+    }
+
+    if (file.size > MAX_RAW_FILE_SIZE) {
+      reportInvalid('Ảnh quá lớn (>25MB). Vui lòng chọn ảnh nhẹ hơn.');
       return;
     }
 
     isProcessingRef.current = true;
     setIsChecking(true);
-    onValidationChange(null); // Đang xử lý
+    setErrorReason('');
+    onValidationChange(null);
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64 = e.target?.result as string;
+    try {
+      const base64 = await compressAvatarImage(file);
       setPreview(base64);
       onAvatarChange(base64);
 
       console.log('[AvatarUpload] Avatar selected, verifying with AI...');
 
-      try {
-        const response = await fetch('/api/ai/verify-avatar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: base64 })
-        });
+      const response = await fetch('/api/ai/verify-avatar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64 }),
+        signal: AbortSignal.timeout(25000),
+      });
 
-        if (!response.ok) {
-          // Fallback: cho phép ảnh
-          console.warn('[AvatarUpload] Verification API error, accepting avatar');
-          onValidationChange(true);
-          setErrorReason('');
-          return;
-        }
-
-        const result = await response.json();
-        console.log('[AvatarUpload] Verification result:', result);
-
-        if (result.isValid) {
-          onValidationChange(true);
-          setErrorReason('');
-        } else {
-          onValidationChange(false, result.reason || 'Ảnh không hợp lệ. Vui lòng chọn ảnh khác.');
-          setErrorReason(result.reason || 'Ảnh không hợp lệ');
-        }
-      } catch (err: any) {
-        console.error('[AvatarUpload] Verification error:', err.message);
-        // Fallback: cho phép ảnh nếu lỗi mạng
+      if (!response.ok) {
+        console.warn('[AvatarUpload] Verification API error, accepting avatar');
         onValidationChange(true);
         setErrorReason('');
-      } finally {
-        setIsChecking(false);
-        isProcessingRef.current = false;
+        return;
       }
-    };
 
-    reader.onerror = () => {
+      const result = await response.json();
+      console.log('[AvatarUpload] Verification result:', result);
+
+      if (result.isValid) {
+        onValidationChange(true);
+        setErrorReason('');
+      } else {
+        const reason = result.reason || 'Ảnh không hợp lệ. Vui lòng chọn ảnh chụp người thật.';
+        reportInvalid(reason);
+      }
+    } catch (err: any) {
+      console.error('[AvatarUpload] Verification error:', err?.message || err);
+      // Fallback: cho phép ảnh nếu lỗi mạng/timeout từ AI
+      onValidationChange(true);
+      setErrorReason('');
+    } finally {
       setIsChecking(false);
       isProcessingRef.current = false;
-      onValidationChange(false, 'Không thể đọc file ảnh. Vui lòng thử lại.');
-    };
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [onAvatarChange, onValidationChange, reportInvalid]);
 
-    reader.readAsDataURL(file);
-  }, [onAvatarChange, onValidationChange]);
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0] || null;
+    e.target.value = '';
+    void handleFileSelect(selectedFile);
+  }, [handleFileSelect]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    handleFileSelect(file);
+    const file = e.dataTransfer.files[0] || null;
+    void handleFileSelect(file);
   }, [handleFileSelect]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
 
+  const handleOpenPicker = useCallback(() => {
+    if (isChecking) return;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  }, [isChecking]);
+
   const handleRemove = useCallback(() => {
+    isProcessingRef.current = false;
+    setIsChecking(false);
     setPreview(null);
     onAvatarChange(null);
     onValidationChange(null);
@@ -116,21 +189,31 @@ const AvatarUpload: React.FC<AvatarUploadProps> = memo(({ onAvatarChange, isVali
         onDragOver={handleDragOver}
         className="relative"
       >
-        {/* Hidden file input */}
+        {/* Hidden file input (không ép capture="environment" để chọn được cả từ thư viện & camera) */}
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
-          onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+          onChange={handleInputChange}
           className="hidden"
           id="avatar-upload"
+          data-testid="register-avatar-input"
         />
 
         {/* Preview or Upload Area */}
         {preview ? (
-          <div className="relative group">
-            <div className="w-full aspect-square max-w-[200px] mx-auto rounded-2xl overflow-hidden shadow-inner bg-slate-50">
+          <div className="space-y-2">
+            <div
+              onClick={handleOpenPicker}
+              className={`relative w-full aspect-square max-w-[200px] mx-auto rounded-2xl overflow-hidden shadow-inner bg-slate-50 cursor-pointer border-2 transition-all ${
+                isValid === false
+                  ? 'border-rose-400 ring-2 ring-rose-100'
+                  : isValid === true
+                  ? 'border-emerald-400'
+                  : 'border-slate-200'
+              }`}
+              title="Nhấn để chọn ảnh khác"
+            >
               <img
                 src={preview}
                 alt="Avatar preview"
@@ -138,17 +221,24 @@ const AvatarUpload: React.FC<AvatarUploadProps> = memo(({ onAvatarChange, isVali
               />
             </div>
 
-            {/* Overlay actions */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center justify-center gap-2">
               <button
                 type="button"
-                onClick={handleRemove}
-                className="p-2 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-all"
-                title="Xóa ảnh"
+                disabled={isChecking}
+                onClick={handleOpenPicker}
+                data-testid="register-avatar-reselect"
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-black text-[10px] uppercase tracking-wider transition-all disabled:opacity-50"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                🔄 Chọn ảnh khác
+              </button>
+              <button
+                type="button"
+                disabled={isChecking}
+                onClick={handleRemove}
+                data-testid="register-avatar-remove"
+                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-black text-[10px] uppercase tracking-wider transition-all disabled:opacity-50"
+              >
+                ✕ Xóa ảnh
               </button>
             </div>
           </div>
@@ -191,8 +281,8 @@ const AvatarUpload: React.FC<AvatarUploadProps> = memo(({ onAvatarChange, isVali
           )}
 
           {!isChecking && isValid === false && errorReason && (
-            <div className="flex items-center justify-center gap-1 text-rose-500">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <div role="alert" data-testid="register-avatar-error" className="flex items-center justify-center gap-1 text-rose-500 px-2">
+              <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
               <span className="text-[10px] font-black uppercase tracking-wider">{errorReason}</span>
