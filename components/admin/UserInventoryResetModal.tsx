@@ -66,7 +66,7 @@ const UserInventoryResetModal: React.FC<UserInventoryResetModalProps> = memo(({
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 sm:p-4"
       onClick={e => e.stopPropagation()}
       role="dialog"
       aria-modal="true"
@@ -75,7 +75,7 @@ const UserInventoryResetModal: React.FC<UserInventoryResetModalProps> = memo(({
     >
       <form
         onSubmit={handleSubmit}
-        className="bg-white w-full max-w-lg rounded-[2.5rem] p-6 sm:p-8 space-y-5 animate-in zoom-in-95"
+        className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 space-y-5 animate-in zoom-in-95"
       >
         <div className="text-center space-y-2">
           <div className="text-4xl">🚨</div>

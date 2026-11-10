@@ -161,11 +161,11 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
     >
       <form
         onSubmit={handleSubmit}
-        className="max-h-[calc(100dvh-24px)] w-full max-w-4xl space-y-4 overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-48px)] sm:p-6"
+        className="max-h-[calc(100dvh-24px)] w-full max-w-4xl space-y-4 overflow-y-auto overflow-x-hidden rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-48px)] sm:p-6"
       >
-        <header className="sticky top-0 z-10 -mx-4 -mt-4 flex items-start justify-between gap-4 border-b bg-white p-4 sm:-mx-6 sm:-mt-6 sm:p-6">
-          <div>
-            <h2 id="batch-receive-title" className="text-xl font-black text-slate-900">
+        <header className="sticky top-0 z-10 -mx-4 -mt-4 flex items-start justify-between gap-3 border-b bg-white p-4 sm:-mx-6 sm:-mt-6 sm:p-6">
+          <div className="min-w-0 flex-1">
+            <h2 id="batch-receive-title" className="text-lg font-black text-slate-900 sm:text-xl">
               Phiếu nhập hàng vào kho cá nhân
             </h2>
             <p className="mt-1 text-xs text-slate-500 sm:text-sm">
@@ -177,14 +177,14 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
             onClick={onClose}
             disabled={busy}
             aria-label="Đóng phiếu nhập kho"
-            className="rounded-xl bg-slate-100 px-3 py-2 font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50"
+            className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50"
           >
             ✕
           </button>
         </header>
 
         <div className="grid gap-3 rounded-2xl bg-slate-50 p-3 sm:grid-cols-2 sm:p-4">
-          <label className="block text-xs font-bold text-slate-700 sm:text-sm">
+          <label className="min-w-0 block text-xs font-bold text-slate-700 sm:text-sm">
             Ngày nhập kho
             <input
               type="datetime-local"
@@ -192,10 +192,10 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
               value={receivedAt}
               onChange={event => setReceivedAt(event.target.value)}
               data-testid="batch-receive-date"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
+              className="mt-1 w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </label>
-          <label className="block text-xs font-bold text-slate-700 sm:text-sm">
+          <label className="min-w-0 block text-xs font-bold text-slate-700 sm:text-sm">
             Ghi chú nhập kho (tùy chọn)
             <input
               type="text"
@@ -204,17 +204,17 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
               onChange={event => setReason(event.target.value)}
               placeholder="Ví dụ: Nhập hàng từ công ty đợt 1..."
               data-testid="batch-receive-reason"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
+              className="mt-1 w-full max-w-full min-w-0 rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-normal outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </label>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
           {/* Cột trái: Tìm kiếm mẫu sản phẩm để thêm vào danh sách */}
-          <div className="space-y-3 rounded-2xl border border-slate-200 p-3 sm:p-4">
+          <div className="min-w-0 space-y-3 rounded-2xl border border-slate-200 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-black text-slate-800">1. Tìm & chọn mẫu sản phẩm</h3>
-              <span className="text-xs text-slate-500">{filteredItems.length} mẫu khả dụng</span>
+              <h3 className="min-w-0 truncate text-sm font-black text-slate-800">1. Tìm & chọn mẫu sản phẩm</h3>
+              <span className="shrink-0 text-xs text-slate-500">{filteredItems.length} mẫu khả dụng</span>
             </div>
             <input
               type="text"
@@ -222,9 +222,9 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
               onChange={event => setSearchQuery(event.target.value)}
               placeholder="Tìm theo mã SKU hoặc tên sản phẩm..."
               data-testid="batch-receive-search"
-              className="w-full rounded-xl bg-slate-100 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full min-w-0 rounded-xl bg-slate-100 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             />
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            <div className="max-h-72 space-y-2 overflow-y-auto overflow-x-hidden pr-1">
               {filteredItems.map(item => {
                 const itemId = String(item.id || item._id);
                 const inList = lines.find(l => l.itemId === itemId);
@@ -232,13 +232,13 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
                 return (
                   <div
                     key={itemId}
-                    className={`flex items-center justify-between gap-2 rounded-xl border p-2.5 text-sm transition ${
+                    className={`flex min-w-0 items-center justify-between gap-2 rounded-xl border p-2.5 text-sm transition ${
                       inList ? 'border-emerald-300 bg-emerald-50/60' : 'border-slate-200 bg-white hover:border-emerald-200'
                     }`}
                   >
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 overflow-hidden">
                       <div className="truncate font-bold text-slate-900">{item.name}</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="break-words text-xs text-slate-500">
                         SKU: {skuDisplay} · PV: {item.pv} · Tồn hiện tại: <b className="text-slate-700">{item.quantity}</b>
                       </div>
                     </div>
@@ -262,29 +262,29 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
           </div>
 
           {/* Cột phải: Danh sách sản phẩm chờ nhập kho */}
-          <div className="space-y-3 rounded-2xl border border-slate-200 p-3 sm:p-4">
+          <div className="min-w-0 space-y-3 rounded-2xl border border-slate-200 p-3 sm:p-4">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-black text-slate-800">
+              <h3 className="min-w-0 truncate text-sm font-black text-slate-800">
                 2. Danh sách nhập kho ({lines.length})
               </h3>
               {lines.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setLines([])}
-                  className="text-xs font-bold text-rose-600 hover:underline"
+                  className="shrink-0 text-xs font-bold text-rose-600 hover:underline"
                 >
                   Xoá hết
                 </button>
               )}
             </div>
 
-            <div className="max-h-72 space-y-2.5 overflow-y-auto pr-1" data-testid="batch-receive-lines">
+            <div className="max-h-72 space-y-2.5 overflow-y-auto overflow-x-hidden pr-1" data-testid="batch-receive-lines">
               {lines.map(line => (
-                <div key={line.itemId} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div key={line.itemId} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1 overflow-hidden">
                       <div className="truncate text-sm font-black text-slate-900">{line.name}</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="break-words text-xs text-slate-500">
                         SKU: {line.skus.join(', ')} · Tồn hiện tại: {line.currentStock}
                       </div>
                     </div>
@@ -292,13 +292,13 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
                       type="button"
                       onClick={() => removeLine(line.itemId)}
                       aria-label={`Xóa ${line.name} khỏi danh sách nhập`}
-                      className="rounded-lg px-2 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50"
+                      className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50"
                     >
                       ✕
                     </button>
                   </div>
                   <div className="mt-2.5 grid grid-cols-2 gap-2">
-                    <label className="block text-xs font-bold text-slate-600">
+                    <label className="min-w-0 block text-xs font-bold text-slate-600">
                       Số lượng nhập
                       <input
                         type="number" inputMode="numeric"
@@ -308,15 +308,15 @@ const BatchReceiveModal: React.FC<BatchReceiveModalProps> = memo(({ items, busy,
                         value={line.quantity}
                         onChange={event => updateLine(line.itemId, { quantity: event.target.value })}
                         data-testid={`batch-qty-${line.sku}`}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-sm font-bold text-slate-900"
+                        className="mt-1 w-full min-w-0 rounded-lg border border-slate-200 bg-white p-2 text-sm font-bold text-slate-900"
                       />
                     </label>
-                    <label className="block text-xs font-bold text-slate-600">
+                    <label className="min-w-0 block text-xs font-bold text-slate-600">
                       Giá vốn / SP
                       <CurrencyInput
                         value={line.unitCost}
                         onValueChange={value => updateLine(line.itemId, { unitCost: value })}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white p-2 text-sm font-normal text-slate-900"
+                        className="mt-1 w-full min-w-0 rounded-lg border border-slate-200 bg-white p-2 text-sm font-normal text-slate-900"
                       />
                     </label>
                   </div>

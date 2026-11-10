@@ -70,24 +70,24 @@ const StockActionModal: React.FC<StockActionModalProps> = memo(({
   const title = isThreshold ? 'Cài đặt ngưỡng cảnh báo tồn' : isReceive ? 'Nhập hàng vào kho' : 'Điều chỉnh tồn kho';
 
   return <div className="fixed inset-0 z-[115] flex items-center justify-center bg-slate-950/65 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="stock-action-title" onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
-    <form onSubmit={handleSubmit} className="w-full max-w-lg space-y-4 rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
-      <header className="flex items-start justify-between gap-4">
-        <div><h2 id="stock-action-title" className="text-xl font-black">{title}</h2><p className="mt-1 text-sm text-slate-500">{itemName}</p></div>
-        <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng thao tác kho" className="rounded-xl bg-slate-100 px-3 py-2 font-bold">✕</button>
+    <form onSubmit={handleSubmit} className="max-h-[calc(100dvh-24px)] w-full max-w-lg space-y-4 overflow-y-auto overflow-x-hidden rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-48px)] sm:p-6">
+      <header className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1"><h2 id="stock-action-title" className="text-lg font-black sm:text-xl">{title}</h2><p className="mt-1 break-words text-sm text-slate-500">{itemName}</p></div>
+        <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng thao tác kho" className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 font-bold">✕</button>
       </header>
       {isThreshold ? (
-        <label className="block text-sm font-bold">
+        <label className="min-w-0 block text-sm font-bold">
           Cảnh báo tồn kho cá nhân khi số lượng còn từ mức này trở xuống
-          <input required type="number" inputMode="numeric" min="0" step="1" value={threshold} onChange={event => setThreshold(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" data-testid="personal-threshold-input" />
+          <input required type="number" inputMode="numeric" min="0" step="1" value={threshold} onChange={event => setThreshold(event.target.value)} className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 font-normal" data-testid="personal-threshold-input" />
           <span className="mt-1 block text-xs font-normal text-slate-500">Ngưỡng này chỉ áp dụng riêng cho kho cá nhân của bạn.</span>
         </label>
       ) : isReceive ? (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-bold">Số lượng nhập<input required type="number" inputMode="numeric" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
-            <label className="block text-sm font-bold">Ngày nhập<input required type="datetime-local" value={receivedAt} onChange={event => setReceivedAt(event.target.value)} className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
+            <label className="min-w-0 block text-sm font-bold">Số lượng nhập<input required type="number" inputMode="numeric" min="1" step="1" value={quantity} onChange={event => setQuantity(event.target.value)} className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 font-normal" /></label>
+            <label className="min-w-0 block text-sm font-bold">Ngày nhập<input required type="datetime-local" value={receivedAt} onChange={event => setReceivedAt(event.target.value)} className="mt-1 w-full max-w-full min-w-0 rounded-xl bg-slate-100 p-3 font-normal" /></label>
           </div>
-          <label className="block text-sm font-bold">Ghi chú nhập kho<input maxLength={250} value={reason} onChange={event => setReason(event.target.value)} placeholder="Ví dụ: Nhập hàng đợt 1" className="mt-1 w-full rounded-xl bg-slate-100 p-3 font-normal" /></label>
+          <label className="min-w-0 block text-sm font-bold">Ghi chú nhập kho<input maxLength={250} value={reason} onChange={event => setReason(event.target.value)} placeholder="Ví dụ: Nhập hàng đợt 1" className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 font-normal" /></label>
         </>
       ) : (
         <>

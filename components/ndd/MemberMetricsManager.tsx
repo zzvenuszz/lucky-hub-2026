@@ -107,21 +107,21 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
-      <div className="bg-white w-full max-w-4xl md:max-w-7xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
+      <div className="bg-white w-full max-w-4xl md:max-w-7xl rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col max-h-[calc(100dvh-24px)] sm:max-h-[90vh] animate-in zoom-in-95">
         {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-5 flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="text-white font-black text-lg">📊 Quản lý chỉ số</h2>
-            <p className="text-emerald-100 text-xs font-medium mt-0.5">{userName}</p>
+        <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between gap-2 shrink-0">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-white font-black text-base sm:text-lg truncate">📊 Quản lý chỉ số</h2>
+            <p className="text-emerald-100 text-xs font-medium mt-0.5 truncate">{userName}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowAddForm(true)} className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all">+ Thêm chỉ số</button>
-            <button onClick={onClose} className="text-white text-xl hover:scale-110 transition-all ml-2 font-bold">✕</button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setShowAddForm(true)} className="px-3 sm:px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all whitespace-nowrap">+ Thêm chỉ số</button>
+            <button onClick={onClose} className="text-white text-xl hover:scale-110 transition-all ml-1 font-bold">✕</button>
           </div>
         </div>
 
         {/* Body */}
-        <div className="p-4 md:p-6 overflow-y-auto no-scrollbar flex-1">
+        <div className="p-4 md:p-6 overflow-y-auto overflow-x-hidden no-scrollbar flex-1">
           {actionMsg && (
             <div className={`mb-4 px-5 py-3 rounded-2xl shadow-lg font-bold text-sm flex items-center justify-between ${
               actionMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
@@ -231,45 +231,45 @@ const MemberMetricsManager: React.FC<MemberMetricsManagerProps> = memo(({
 
       {/* Edit Modal */}
       {editingMetric && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1300] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 shadow-2xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1300] flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 space-y-5 sm:space-y-6 animate-in zoom-in-95 shadow-2xl">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">✏️ Cập nhật chỉ số - {formatDateVN(editingMetric.date)}</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
-                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.weight} onChange={e => setEditingMetric({...editingMetric, weight: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ (%)</label>
-                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.bodyFat} onChange={e => setEditingMetric({...editingMetric, bodyFat: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ (kg)</label>
-                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.muscleMass} onChange={e => setEditingMetric({...editingMetric, muscleMass: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân đối</label>
-                <input type="number" inputMode="numeric" value={editingMetric.balanceIndex} onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="numeric" value={editingMetric.balanceIndex} onChange={e => setEditingMetric({...editingMetric, balanceIndex: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label>
-                <input type="number" inputMode="numeric" value={editingMetric.visceralFat} onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="numeric" value={editingMetric.visceralFat} onChange={e => setEditingMetric({...editingMetric, visceralFat: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nước (%)</label>
-                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.waterPercent} onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.waterPercent} onChange={e => setEditingMetric({...editingMetric, waterPercent: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Khoáng chất (kg)</label>
-                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.boneMinerals} onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="decimal" step="0.1" value={editingMetric.boneMinerals} onChange={e => setEditingMetric({...editingMetric, boneMinerals: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Năng lượng (kcal)</label>
-                <input type="number" inputMode="numeric" value={editingMetric.energy} onChange={e => setEditingMetric({...editingMetric, energy: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="numeric" value={editingMetric.energy} onChange={e => setEditingMetric({...editingMetric, energy: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
-              <div className="space-y-1 col-span-2">
+              <div className="min-w-0 space-y-1 col-span-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tuổi sinh học</label>
-                <input type="number" inputMode="numeric" value={editingMetric.bioAge} onChange={e => setEditingMetric({...editingMetric, bioAge: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
+                <input type="number" inputMode="numeric" value={editingMetric.bioAge} onChange={e => setEditingMetric({...editingMetric, bioAge: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs focus:ring-2 focus:ring-emerald-500" />
               </div>
             </div>
             <div className="flex gap-3 pt-4">

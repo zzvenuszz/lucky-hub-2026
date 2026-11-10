@@ -31,17 +31,17 @@ const ProductEditModal: React.FC<ProductEditModalProps> = memo(({
     aria-labelledby="edit-product-title"
     onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}
   >
-    <form onSubmit={onSubmit} className="max-h-[calc(100dvh-24px)] w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-48px)] sm:p-6">
-      <header className="sticky top-0 z-10 -mx-4 -mt-4 flex items-start justify-between gap-4 border-b bg-white p-4 sm:-mx-6 sm:-mt-6 sm:p-6">
-        <div>
-          <h2 id="edit-product-title" className="text-xl font-black">Sửa sản phẩm</h2>
-          <p className="mt-1 text-sm font-normal text-slate-500">{productName} · tồn kho được điều chỉnh riêng để giữ nhật ký.</p>
+    <form onSubmit={onSubmit} className="max-h-[calc(100dvh-24px)] w-full max-w-2xl space-y-4 overflow-y-auto overflow-x-hidden rounded-3xl bg-white p-4 shadow-2xl sm:max-h-[calc(100dvh-48px)] sm:p-6">
+      <header className="sticky top-0 z-10 -mx-4 -mt-4 flex items-start justify-between gap-3 border-b bg-white p-4 sm:-mx-6 sm:-mt-6 sm:p-6">
+        <div className="min-w-0 flex-1">
+          <h2 id="edit-product-title" className="text-lg font-black sm:text-xl">Sửa sản phẩm</h2>
+          <p className="mt-1 break-words text-xs font-normal text-slate-500 sm:text-sm">{productName} · tồn kho được điều chỉnh riêng để giữ nhật ký.</p>
         </div>
-        <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng sửa sản phẩm" className="rounded-xl bg-slate-100 px-3 py-2 font-bold disabled:opacity-50">✕</button>
+        <button type="button" onClick={onClose} disabled={busy} aria-label="Đóng sửa sản phẩm" className="shrink-0 rounded-xl bg-slate-100 px-3 py-2 font-bold disabled:opacity-50">✕</button>
       </header>
 
-      <label className="block text-sm font-bold text-slate-700">SKU<input required value={draft.sku} onChange={event => setDraft(old => ({ ...old, sku: event.target.value }))} placeholder="SKU1, SKU2, SKU3" className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /><span className="mt-1 block text-xs font-normal text-slate-500">Phân cách các SKU bằng dấu phẩy. Tất cả dùng chung tồn kho, PV và giá.</span></label>
-      <label className="block text-sm font-bold text-slate-700">Tên hàng hoá<input required value={draft.name} onChange={event => setDraft(old => ({ ...old, name: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+      <label className="min-w-0 block text-sm font-bold text-slate-700">SKU<input required value={draft.sku} onChange={event => setDraft(old => ({ ...old, sku: event.target.value }))} placeholder="SKU1, SKU2, SKU3" className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 text-sm font-normal" /><span className="mt-1 block text-xs font-normal text-slate-500">Phân cách các SKU bằng dấu phẩy. Tất cả dùng chung tồn kho, PV và giá.</span></label>
+      <label className="min-w-0 block text-sm font-bold text-slate-700">Tên hàng hoá<input required value={draft.name} onChange={event => setDraft(old => ({ ...old, name: event.target.value }))} className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       <div>
         <label className="block text-sm font-bold text-slate-700">Danh mục</label>
         <div className="mt-1 flex gap-2">
@@ -53,8 +53,8 @@ const ProductEditModal: React.FC<ProductEditModalProps> = memo(({
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-sm font-bold text-slate-700">Điểm PV<input required type="number" inputMode="decimal" min="0" step="0.01" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
-        <label className="block text-sm font-bold text-slate-700">Cảnh báo tồn khi còn<input required type="number" inputMode="numeric" min="0" value={draft.lowStockThreshold} onChange={event => setDraft(old => ({ ...old, lowStockThreshold: event.target.value }))} className="mt-1 w-full rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="min-w-0 block text-sm font-bold text-slate-700">Điểm PV<input required type="number" inputMode="decimal" min="0" step="0.01" value={draft.pv} onChange={event => setDraft(old => ({ ...old, pv: event.target.value }))} className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
+        <label className="min-w-0 block text-sm font-bold text-slate-700">Cảnh báo tồn khi còn<input required type="number" inputMode="numeric" min="0" value={draft.lowStockThreshold} onChange={event => setDraft(old => ({ ...old, lowStockThreshold: event.target.value }))} className="mt-1 w-full min-w-0 rounded-xl bg-slate-100 p-3 text-sm font-normal" /></label>
       </div>
       <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Số lượng tồn hiện tại được giữ nguyên. Dùng “Nhập hàng” hoặc “Điều chỉnh” để thay đổi tồn và lưu nhật ký.</div>
 

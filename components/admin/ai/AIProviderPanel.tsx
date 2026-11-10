@@ -624,8 +624,8 @@ const AIProviderPanel: React.FC = memo(() => {
 
       {/* Test Result Modal */}
       {testResult && testingProviderId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[calc(100dvh-24px)] sm:max-h-[80vh] overflow-hidden flex flex-col">
             <div className="p-5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
               <h4 className="font-black text-slate-800 flex items-center gap-2">
                 <span className="text-lg">{testResult.success ? '✅' : '❌'}</span> Kết quả Test: {testResult.providerName}

@@ -95,7 +95,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = memo(({ onDetected, onClos
 
   return (
     <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="barcode-scanner-title">
-      <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl">
+      <div className="max-h-[calc(100dvh-24px)] w-full max-w-lg overflow-y-auto overflow-x-hidden rounded-3xl bg-white shadow-2xl">
         <div className="flex items-center justify-between gap-3 p-4 sm:p-5">
           <div>
             <h2 id="barcode-scanner-title" className="text-lg font-black">Quét mã vạch sản phẩm</h2>

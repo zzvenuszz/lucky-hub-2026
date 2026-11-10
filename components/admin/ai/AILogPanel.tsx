@@ -457,8 +457,8 @@ const AILogPanel: React.FC = memo(() => {
 
       {/* Detail Modal */}
       {showDetail && selectedLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowDetail(false)}>
-          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50" onClick={() => setShowDetail(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[calc(100dvh-24px)] sm:max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="p-4 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>

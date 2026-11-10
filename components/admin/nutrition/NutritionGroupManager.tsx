@@ -227,7 +227,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
 
       {editingGroup && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={e => e.stopPropagation()}>
-          <div className="bg-white w-full max-w-lg rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
+          <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa NDD: {editingGroup.name}</h4>
             <div className="space-y-4">
               <div>
@@ -302,7 +302,7 @@ const ViewMembersModal: React.FC<ViewMembersModalProps> = memo(({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-2xl rounded-[2.5rem] overflow-hidden shadow-2xl max-h-[85vh] flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-2xl rounded-[2rem] sm:rounded-[2.5rem] overflow-hidden shadow-2xl max-h-[calc(100dvh-24px)] sm:max-h-[85vh] flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-5 shrink-0">
           <div className="flex items-center justify-between">

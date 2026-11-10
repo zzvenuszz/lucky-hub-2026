@@ -317,8 +317,8 @@ const GroupManager: React.FC<GroupManagerProps> = ({ users, onRefresh }) => {
 
       {/* Edit Group Modal */}
       {editingGroup && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4 overflow-y-auto" onClick={e => e.stopPropagation()}>
-          <div className="bg-white w-full max-w-2xl rounded-[2rem] md:rounded-[2.5rem] p-4 md:p-8 space-y-6 animate-in zoom-in-95 my-8">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-white w-full max-w-2xl max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] md:rounded-[2.5rem] p-4 md:p-8 space-y-6 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">
               {modalMode === 'members' ? 'Quản lý thành viên' : 'Chỉnh sửa nhóm'}: {editingGroup.name}
             </h4>

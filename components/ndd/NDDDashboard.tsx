@@ -343,7 +343,7 @@ const MetricFormSubModal: React.FC<MetricFormSubModalProps> = memo(({ metricForm
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
-      <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-sm max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">📊 Nhập chỉ số cho {metricForm.userName}</h4>
         <div className="space-y-3">
           <div>
@@ -385,7 +385,7 @@ const ChatBoxSubModal: React.FC<ChatBoxSubModalProps> = memo(({ chatBox, chatMes
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
-      <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-sm max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">💬 Nhắn tin cho {chatBox.userName}</h4>
         <textarea value={chatMessage} onChange={e => setChatMessage(e.target.value)} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm h-24 resize-none" placeholder="Nhập nội dung tin nhắn..." />
         <div className="flex gap-3 pt-2">
@@ -429,7 +429,7 @@ const CoOwnerEditorSubModal: React.FC<CoOwnerEditorSubModalProps> = memo(({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
-      <div className="bg-white w-full max-w-lg rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">👥 Quản lý đồng vận hành</h4>
         <p className="text-[10px] text-slate-400 font-medium">Chọn HLV làm đồng vận hành cho NDD này</p>
 
@@ -489,7 +489,7 @@ const PendingMembersSubModal: React.FC<PendingMembersSubModalProps> = memo(({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4">
-      <div className="bg-white w-full max-w-lg rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">⏳ Yêu cầu chờ duyệt</h4>
         <p className="text-[10px] text-slate-400 font-medium">Có {pendingMembers.length} hội viên đang chờ được duyệt vào NDD</p>
 

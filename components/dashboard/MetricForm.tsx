@@ -347,14 +347,14 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95">
-        <div className="p-6 bg-emerald-600 text-white flex justify-between items-center shrink-0">
-          <h2 className="text-xl font-bold">Cập nhật chỉ số cơ thể</h2>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-24px)] sm:max-h-[95vh] animate-in zoom-in-95">
+        <div className="p-4 sm:p-6 bg-emerald-600 text-white flex justify-between items-center shrink-0">
+          <h2 className="text-lg sm:text-xl font-bold">Cập nhật chỉ số cơ thể</h2>
           <button onClick={onClose} className="text-2xl hover:scale-110">&times;</button>
         </div>
 
-        <div className="p-8 overflow-y-auto space-y-6 no-scrollbar relative">
+        <div className="p-4 sm:p-8 overflow-y-auto overflow-x-hidden space-y-6 no-scrollbar relative">
           {statusMsg && (
             <div className={`p-4 rounded-2xl flex items-center justify-between animate-in slide-in-from-top-4 duration-300 shadow-sm ${statusMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
               <div className="flex items-center gap-3">
@@ -545,8 +545,8 @@ const YearPickerSubModal: React.FC<YearPickerSubModalProps> = memo(({
   useModalStack(subModalId, () => setShowYearPicker(false));
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm space-y-6 animate-in zoom-in-95 duration-200"
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[110] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] shadow-2xl w-full max-w-sm max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden space-y-6 animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
         <div className="text-center space-y-2">

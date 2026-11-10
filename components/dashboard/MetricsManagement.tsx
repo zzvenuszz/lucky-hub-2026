@@ -544,42 +544,42 @@ const EditMetricModal: React.FC<EditMetricModalProps> = ({ editingMetric, setEdi
   useModalStack(modalId, () => setEditingMetric(null));
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 space-y-5 sm:space-y-6 animate-in zoom-in-95">
         <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật chỉ số</h4>
         <p className="text-[10px] text-slate-400 font-medium">Ngày: {formatDateVN(localMetric.date)}</p>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân nặng (kg)</label>
-            <input type="number" inputMode="decimal" step="0.1" value={localMetric.weight} onChange={e => setLocalMetric({...localMetric, weight: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="decimal" step="0.1" value={localMetric.weight} onChange={e => setLocalMetric({...localMetric, weight: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ (%)</label>
-            <input type="number" inputMode="decimal" step="0.1" value={localMetric.bodyFat} onChange={e => setLocalMetric({...localMetric, bodyFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="decimal" step="0.1" value={localMetric.bodyFat} onChange={e => setLocalMetric({...localMetric, bodyFat: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cơ (kg)</label>
-            <input type="number" inputMode="decimal" step="0.1" value={localMetric.muscleMass} onChange={e => setLocalMetric({...localMetric, muscleMass: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="decimal" step="0.1" value={localMetric.muscleMass} onChange={e => setLocalMetric({...localMetric, muscleMass: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Cân đối</label>
-            <input type="number" inputMode="numeric" value={localMetric.balanceIndex} onChange={e => setLocalMetric({...localMetric, balanceIndex: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="numeric" value={localMetric.balanceIndex} onChange={e => setLocalMetric({...localMetric, balanceIndex: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Nước (%)</label>
-            <input type="number" inputMode="decimal" step="0.1" value={localMetric.waterPercent} onChange={e => setLocalMetric({...localMetric, waterPercent: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="decimal" step="0.1" value={localMetric.waterPercent} onChange={e => setLocalMetric({...localMetric, waterPercent: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Khoáng (kg)</label>
-            <input type="number" inputMode="decimal" step="0.01" value={localMetric.boneMinerals} onChange={e => setLocalMetric({...localMetric, boneMinerals: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="decimal" step="0.01" value={localMetric.boneMinerals} onChange={e => setLocalMetric({...localMetric, boneMinerals: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mỡ nội tạng</label>
-            <input type="number" inputMode="decimal" step="0.1" value={localMetric.visceralFat} onChange={e => setLocalMetric({...localMetric, visceralFat: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="decimal" step="0.1" value={localMetric.visceralFat} onChange={e => setLocalMetric({...localMetric, visceralFat: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tuổi sinh học</label>
-            <input type="number" inputMode="numeric" value={localMetric.bioAge} onChange={e => setLocalMetric({...localMetric, bioAge: Number(e.target.value)})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+            <input type="number" inputMode="numeric" value={localMetric.bioAge} onChange={e => setLocalMetric({...localMetric, bioAge: Number(e.target.value)})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
           </div>
         </div>
         <div className="flex gap-3 pt-4">

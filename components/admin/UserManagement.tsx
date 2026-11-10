@@ -485,45 +485,45 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
       )}
 
       {editingUser && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
-          <form onSubmit={(e) => { e.preventDefault(); handleUpdateUser(); }} className="bg-white w-full max-w-lg rounded-[2.5rem] p-8 space-y-6 animate-in zoom-in-95 max-h-[85vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 sm:p-4" onClick={e => e.stopPropagation()}>
+          <form onSubmit={(e) => { e.preventDefault(); handleUpdateUser(); }} className="bg-white w-full max-w-lg rounded-[2rem] sm:rounded-[2.5rem] p-5 sm:p-8 space-y-5 sm:space-y-6 animate-in zoom-in-95 max-h-[calc(100dvh-24px)] sm:max-h-[85vh] overflow-y-auto overflow-x-hidden">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Cập nhật Hội viên</h4>
             
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tên đăng nhập</label>
-                <input required value={editingUser.username || ''} onChange={e => setEditingUser({...editingUser, username: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+                <input required value={editingUser.username || ''} onChange={e => setEditingUser({...editingUser, username: e.target.value})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Email</label>
-                <input required type="email" value={editingUser.email || ''} onChange={e => setEditingUser({...editingUser, email: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+                <input required type="email" value={editingUser.email || ''} onChange={e => setEditingUser({...editingUser, email: e.target.value})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
               </div>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Họ tên</label>
-                <input required value={editingUser.fullName || ''} onChange={e => setEditingUser({...editingUser, fullName: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+                <input required value={editingUser.fullName || ''} onChange={e => setEditingUser({...editingUser, fullName: e.target.value})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Số điện thoại</label>
-                <input type="tel" value={editingUser.phoneNumber || ''} onChange={e => setEditingUser({...editingUser, phoneNumber: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+                <input type="tel" value={editingUser.phoneNumber || ''} onChange={e => setEditingUser({...editingUser, phoneNumber: e.target.value})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
               </div>
             </div>
 
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Địa chỉ</label>
-              <input value={editingUser.address || ''} onChange={e => setEditingUser({...editingUser, address: e.target.value})} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
+              <input value={editingUser.address || ''} onChange={e => setEditingUser({...editingUser, address: e.target.value})} className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mã số hội viên</label>
-                <input value={editingUser.memberNumber || ''} onChange={e => { const memberNumber = e.target.value.toUpperCase(); const memberLevel = !memberNumber ? 'customer' : (!editingUser.memberNumber && (editingUser.memberLevel || 'customer') === 'customer' ? 'member' : editingUser.memberLevel); setEditingUser({...editingUser, memberNumber, memberLevel}); }} placeholder="VA12345678 hoặc VNY1234567" className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs uppercase" />
+                <input value={editingUser.memberNumber || ''} onChange={e => { const memberNumber = e.target.value.toUpperCase(); const memberLevel = !memberNumber ? 'customer' : (!editingUser.memberNumber && (editingUser.memberLevel || 'customer') === 'customer' ? 'member' : editingUser.memberLevel); setEditingUser({...editingUser, memberNumber, memberLevel}); }} placeholder="VA12345678 hoặc VNY1234567" className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs uppercase" />
               </div>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Mã người bảo trợ</label>
-                <input value={editingUser.sponsorMemberNumber || ''} onChange={e => setEditingUser({...editingUser, sponsorMemberNumber: e.target.value.toUpperCase()})} placeholder="Mã hội viên người bảo trợ" className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs uppercase" />
+                <input value={editingUser.sponsorMemberNumber || ''} onChange={e => setEditingUser({...editingUser, sponsorMemberNumber: e.target.value.toUpperCase()})} placeholder="Mã hội viên người bảo trợ" className="w-full min-w-0 px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs uppercase" />
               </div>
             </div>
 

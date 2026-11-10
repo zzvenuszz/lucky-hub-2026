@@ -291,7 +291,7 @@ const BranchManager: React.FC = () => {
       {/* Edit Modal */}
       {editingBranch && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={e => e.stopPropagation()}>
-          <div className="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[2rem] p-6 space-y-4 animate-in zoom-in-95">
+          <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa nhánh: {editingBranch.name}</h4>
             <div>
               <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Tên nhánh</label>
