@@ -395,11 +395,25 @@ test('giao diện quản lý bán hàng, mũi tên cuộn tab con, xóa đơn h�
   const bankAccountInput = page.getByTestId('profile-bank-account');
   await expect(bankSelect).toBeVisible();
   await expect(bankAccountInput).toBeVisible();
-  await expect(bankSelect.locator('option[value="VCB"]')).toHaveCount(1);
-  await expect(bankSelect.locator('option[value="MOMO"]')).toHaveCount(1);
-  await expect(bankSelect.locator('option[value="VNPAY"]')).toHaveCount(1);
 
-  await bankSelect.selectOption('VCB');
+  // Mở danh sách xổ xuống: dòng đầu tiên phải là ô nhập text tìm kiếm, có Vietcombank/MoMo/VNPay và không có ShopeePay
+  await bankSelect.click();
+  const bankDropdown = page.getByTestId('profile-bank-dropdown');
+  const bankSearchInput = page.getByTestId('profile-bank-search');
+  await expect(bankDropdown).toBeVisible();
+  await expect(bankSearchInput).toBeVisible();
+  await expect(page.getByTestId('profile-bank-option-VCB')).toBeVisible();
+  await expect(page.getByTestId('profile-bank-option-MOMO')).toBeVisible();
+  await expect(page.getByTestId('profile-bank-option-VNPAY')).toBeVisible();
+  await expect(page.getByTestId('profile-bank-option-SHOPEEPAY')).toHaveCount(0);
+
+  // Gõ tìm kiếm ở dòng đầu tiên và chọn Vietcombank
+  await bankSearchInput.fill('Vietcombank');
+  await expect(page.getByTestId('profile-bank-option-VCB')).toBeVisible();
+  await expect(page.getByTestId('profile-bank-option-MOMO')).toHaveCount(0);
+  await page.getByTestId('profile-bank-option-VCB').click();
+  await expect(bankDropdown).toHaveCount(0);
+
   await bankAccountInput.fill('0123456789');
   await page.getByRole('button', { name: 'Cập nhật hồ sơ hội viên' }).click();
 

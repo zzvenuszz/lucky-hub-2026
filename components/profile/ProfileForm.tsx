@@ -1,9 +1,9 @@
 
-import React, { useState, memo, useCallback, useMemo } from 'react';
+import React, { useState, memo, useCallback } from 'react';
 import { User, HealthGoal } from '../../types.ts';
 import LoadingButton from '../system/LoadingButton.tsx';
 import { useToast } from '../system/ToastProvider.tsx';
-import { VIETQR_PROVIDERS } from '../../utils/vietQr.ts';
+import BankProviderSelect from './BankProviderSelect.tsx';
 
 interface ProfileFormProps {
   user: User;
@@ -19,8 +19,6 @@ interface ProfileFormProps {
 }
 
 const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, canManageMemberLevel = false, canSell = false, onMemberLevelUpdate }) => {
-  const bankProviders = useMemo(() => VIETQR_PROVIDERS.filter(p => p.group === 'bank'), []);
-  const walletProviders = useMemo(() => VIETQR_PROVIDERS.filter(p => p.group === 'wallet'), []);
   const [formData, setFormData] = useState(initialData);
   const [memberLevelDraft, setMemberLevelDraft] = useState<string>(user.memberLevel || 'customer');
   const [savingMemberLevel, setSavingMemberLevel] = useState(false);
@@ -124,33 +122,14 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, initialData, onUpdate, 
               <label htmlFor="profile-bank-name" className="text-xs font-bold text-slate-500 ml-1 uppercase">
                 Ngân hàng / Ví điện tử thụ hưởng
               </label>
-              <select
-                id="profile-bank-name"
-                data-testid="profile-bank-name"
+              <BankProviderSelect
                 value={formData.bankName || ''}
-                onChange={e => {
-                  const d = { ...formData, bankName: e.target.value };
+                onChange={bankCode => {
+                  const d = { ...formData, bankName: bankCode };
                   setFormData(d);
                   onUpdate(d, false);
                 }}
-                className="w-full px-4 py-3 bg-slate-50 rounded-xl border border-transparent focus:border-emerald-500 outline-none text-sm font-medium"
-              >
-                <option value="">-- Chọn ngân hàng hoặc ví điện tử (VietQR, MoMo, VNPay...) --</option>
-                <optgroup label="🏦 Ngân hàng tại Việt Nam (VietQR / Napas247)">
-                  {bankProviders.map(provider => (
-                    <option key={provider.code} value={provider.code}>
-                      {provider.shortName} — {provider.name}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="📱 Ví điện tử tại Việt Nam (MoMo, VNPay, ZaloPay...)">
-                  {walletProviders.map(provider => (
-                    <option key={provider.code} value={provider.code}>
-                      {provider.shortName} — {provider.name}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
+              />
               <p className="text-[10px] text-slate-400 ml-1">
                 Dùng để tạo mã QR nhận chuyển khoản nhanh trên hoá đơn bán hàng.
               </p>

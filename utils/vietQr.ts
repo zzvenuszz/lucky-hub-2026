@@ -65,7 +65,6 @@ export const VIETQR_PROVIDERS: VietQrProviderOption[] = [
   { code: 'ZALOPAY', shortName: 'Ví ZaloPay', name: 'Ví điện tử ZaloPay', bin: '971016', group: 'wallet' },
   { code: 'VIETTELMONEY', shortName: 'Viettel Money', name: 'Hệ sinh thái tài chính số Viettel Money', bin: '971005', group: 'wallet' },
   { code: 'VNPTMONEY', shortName: 'VNPT Money', name: 'Ví điện tử VNPT Money', bin: '971012', group: 'wallet' },
-  { code: 'SHOPEEPAY', shortName: 'Ví ShopeePay', name: 'Ví điện tử ShopeePay', bin: '971020', group: 'wallet' },
 ];
 
 export const findVietQrProvider = (bankKey?: string | null): VietQrProviderOption | null => {
