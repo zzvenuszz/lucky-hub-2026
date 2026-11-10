@@ -179,50 +179,68 @@ router.post('/bulk-extract', async (req: Request, res: Response) => {
     const userId = (req as any).user?.userId || 'anonymous';
     console.log(`[BulkExtract] 🚀 [${requestId}] Step 1: Received bulk-extract request | user=${userId} | base64Len=${imageBase64.length} (~${Math.round(imageBase64.length * 0.75 / 1024)}KB) | selectedYear=${selectedYear || 'auto'}`);
 
-    let prompt = `Bạn là chuyên gia OCR đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe. Hãy xem kỹ ảnh và trích xuất các dòng dữ liệu thành JSON array.
+    let prompt = `Bạn là chuyên gia OCR đọc BẢNG GHI CHÉP TAY chỉ số sức khỏe. Hãy xem kỹ ảnh và trích xuất dữ liệu thành JSON.
 
-NGUYÊN TẮC ĐỌC BẢNG CẨN THẬN & CHÍNH XÁC:
-1. XÁC ĐỊNH ĐÚNG CỘT THEO TIÊU ĐỀ BẢNG (HEADER):
-   - Quan sát kỹ dòng tiêu đề ở đầu bảng để xác định chính xác vị trí từng cột trước khi đọc dữ liệu, vì mỗi mẫu sổ tay có thể sắp xếp thứ tự cột khác nhau:
-     * date: Cột Ngày / Ngày tháng
-     * weight: Cột Cân nặng / Trọng lượng
-     * bodyFat: Cột Mỡ cơ thể / % Mỡ / Tỷ lệ mỡ
-     * waterPercent: Cột % Nước / Tỷ lệ nước
-     * muscleMass: Cột Lượng cơ / Khối lượng cơ / Cơ
-     * balanceIndex: Cột Cân đối / Vóc dáng
-     * boneMinerals: Cột Khoáng chất / Xương / Khối xương
-     * visceralFat: Cột Mỡ nội tạng / MNT
-     * energy: Cột Năng lượng / Kcal / BMR / Chuyển hóa
-     * bioAge: Cột Tuổi sinh học / Tuổi SH / Tuổi cơ thể
-2. GIÓNG HÀNG NGANG & CỘT DỌC CHÍNH XÁC:
-   - Đọc lần lượt từng dòng từ trên xuống dưới. Ở mỗi dòng, gióng thẳng theo đúng cột dọc của từng chỉ số; tuyệt đối không đọc lệch sang cột bên cạnh (ví dụ không nhầm lẫn giữa cột % Mỡ cơ thể với cột Vóc dáng/Cân đối, cột Xương hay cột Mỡ nội tạng).
-3. ĐỌC TRỌN VẸN CHỮ SỐ VIẾT TAY TRONG TỪNG Ô:
-   - Quan sát toàn bộ chiều rộng của mỗi ô (kể cả các chữ số viết sát đường kẻ dọc của bảng) để đọc đầy đủ tất cả các chữ số của phần nguyên và phần thập phân, tuyệt đối không bỏ sót chữ số hàng chục ở đầu hoặc chỉ đọc mỗi chữ số cuối.
-   - Nếu chữ viết tay có dấu phẩy thập phân (ví dụ "36,5") hoặc dấu chấm ("36.5"), hãy chuyển thành số thực chuẩn trong JSON (36.5).
-   - Đối chiếu nét chữ giữa các dòng trên/dưới trong cùng một cột dọc để nhận diện chính xác các chữ số viết tay khó nhìn.
-4. ĐỊNH DẠNG ĐẦU RA:
-   - Chỉ trả về NGAY LẬP TỨC mảng JSON array thuần túy, KHÔNG giải thích dài dòng, mỗi dòng là 1 object theo mẫu:
-     {"date":"DD/MM/YYYY","weight":65.5,"bodyFat":18.5,"muscleMass":48.0,"waterPercent":60.0,"boneMinerals":2.5,"visceralFat":8,"energy":1500,"bioAge":30,"balanceIndex":80}
-   - Tất cả các chỉ số phải là kiểu NUMBER (không dùng string). weight PHẢI > 0.
-   - Ô nào để trống hoặc không có dữ liệu thì bỏ qua trường đó (không dùng null, không tự đoán).
-   - date: Giữ nguyên thứ tự NGÀY/THÁNG (DD/MM) như trong bảng và gắn thêm năm thành DD/MM/YYYY.`;
+QUY TRÌNH BẮT BUỘC ĐỂ ĐỌC ĐÚNG TỪNG CỘT THEO TIÊU ĐỀ ĐẦU BẢNG:
+
+BƯỚC 1 — ĐỌC TIÊU ĐỀ CỘT Ở ĐẦU BẢNG TỪ TRÁI SANG PHẢI ("headerColumns"):
+- Đầu mỗi cột trong bảng đều có ghi tên loại chỉ số rất rõ ràng. Hãy đọc lần lượt từng tiêu đề cột ở đầu bảng từ TRÁI sang PHẢI và ánh xạ sang đúng tên trường (key) tương ứng:
+  * "date": Cột Ngày / Ngày tháng / Thời gian
+  * "weight": Cột Cân nặng / Trọng lượng
+  * "bodyFat": Cột Mỡ cơ thể / % Mỡ / Tỷ lệ mỡ
+  * "waterPercent": Cột % Nước / Tỷ lệ nước / Nước
+  * "muscleMass": Cột Cơ / Lượng cơ / Khối lượng cơ
+  * "balanceIndex": Cột Vóc dáng / Cân đối / Chỉ số cân đối
+  * "energy": Cột Năng lượng / Kcal / BMR / Chuyển hóa cơ bản
+  * "bioAge": Cột Tuổi sinh học / Tuổi SH / Tuổi cơ thể
+  * "boneMinerals": Cột Xương / Khoáng chất / Khối xương / Độ loãng xương
+  * "visceralFat": Cột Mỡ nội tạng / MNT / Nội tạng
+- Ghi danh sách các tên trường này theo ĐÚNG THỨ TỰ CỘT TỪ TRÁI SANG PHẢI xuất hiện trên tiêu đề đầu bảng vào mảng "headerColumns".
+- TUYỆT ĐỐI KHÔNG tự ý giả định thứ tự cột cố định, mà phải nhìn trực tiếp chữ in ở đầu mỗi cột trên tờ giấy để xác định cột nào là Năng lượng ("energy"), cột nào là Tuổi sinh học ("bioAge"), cột nào là Xương ("boneMinerals"), cột nào là Mỡ nội tạng ("visceralFat").
+
+BƯỚC 2 — ĐỌC TỪNG DÒNG THEO ĐÚNG THỨ TỰ CỘT ĐÃ XÁC ĐỊNH ("rows"):
+- Với mỗi dòng dữ liệu từ trên xuống dưới, hãy đọc từng ô từ TRÁI sang PHẢI và gán giá trị của ô thứ k vào đúng tên trường thứ k trong "headerColumns" (cột có tiêu đề gì ở trên đầu thì bắt buộc phải gán vào đúng trường đó).
+- Trong mỗi object của "rows", hãy viết các key theo ĐÚNG THỨ TỰ TỪ TRÁI SANG PHẢI của "headerColumns" để không bao giờ bị lệch cột hoặc đảo lộn chỉ số giữa các cột.
+- Quan sát toàn bộ chiều rộng của mỗi ô (kể cả chữ số viết sát đường kẻ dọc của bảng) để đọc đầy đủ tất cả chữ số phần nguyên và phần thập phân, không bỏ sót chữ số hàng chục ở đầu.
+- Nếu chữ viết tay có dấu phẩy thập phân (ví dụ "36,5") hoặc dấu chấm ("36.5"), hãy chuyển thành số thực chuẩn trong JSON (36.5).
+- Ô nào để trống hoặc không có số liệu thì bỏ qua trường đó (không dùng null, không tự đoán).
+- Tất cả các chỉ số phải là kiểu NUMBER (không dùng string). weight PHẢI > 0.
+- Trường "date": Giữ nguyên thứ tự NGÀY/THÁNG (DD/MM) như trong bảng và gắn thêm năm thành DD/MM/YYYY.`;
     if (selectedYear) {
       prompt += `\n- Nếu ngày trong ảnh không ghi năm, dùng năm ${selectedYear} (ví dụ thấy "10/05" tức ngày 10 tháng 05 -> ghi "10/05/${selectedYear}").`;
     }
+    prompt += `
+
+ĐỊNH DẠNG ĐẦU RA (JSON Object thuần túy, KHÔNG giải thích):
+{
+  "headerColumns": ["date", "<tên_trường_cột_2>", "<tên_trường_cột_3>", "...theo đúng thứ tự tiêu đề cột từ trái sang phải trên bảng"],
+  "rows": [
+    { "date": "DD/MM/YYYY", "<key_theo_đúng_thứ_tự_headerColumns>": <giá_trị_số_của_đúng_cột_đó> }
+  ]
+}`;
 
     const payload = {
       contents: [{ parts: [{ text: prompt }, { inlineData: { data: imageBase64, mimeType: 'image/jpeg' } }] }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              date: { type: Type.STRING }, weight: { type: Type.NUMBER }, bodyFat: { type: Type.NUMBER },
-              muscleMass: { type: Type.NUMBER }, waterPercent: { type: Type.NUMBER }, boneMinerals: { type: Type.NUMBER },
-              visceralFat: { type: Type.NUMBER }, energy: { type: Type.NUMBER }, bioAge: { type: Type.NUMBER },
-              balanceIndex: { type: Type.NUMBER }
+          type: Type.OBJECT,
+          properties: {
+            headerColumns: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            rows: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  date: { type: Type.STRING }, weight: { type: Type.NUMBER }, bodyFat: { type: Type.NUMBER },
+                  muscleMass: { type: Type.NUMBER }, waterPercent: { type: Type.NUMBER }, boneMinerals: { type: Type.NUMBER },
+                  visceralFat: { type: Type.NUMBER }, energy: { type: Type.NUMBER }, bioAge: { type: Type.NUMBER },
+                  balanceIndex: { type: Type.NUMBER }
+                }
+              }
             }
           }
         }
@@ -239,19 +257,24 @@ NGUYÊN TẮC ĐỌC BẢNG CẨN THẬN & CHÍNH XÁC:
     });
     console.log(`[BulkExtract] 📥 [${requestId}] Step 3: AI responded in ${Date.now() - startedAt}ms | provider=${response.providerUsed} | model=${response.resolvedModel || response.modelUsed} | rawLen=${response.text.length} | preview=${response.text.slice(0, 300)}`);
     const sanitized = sanitizeJSON(response.text);
-    let parsed: unknown;
+    let parsed: any;
     try {
       parsed = JSON.parse(sanitized);
     } catch (parseErr: any) {
       console.error(`[BulkExtract] ❌ [${requestId}] Step 4: JSON.parse failed on sanitized text:`, sanitized.slice(0, 500));
       throw new Error(`Không thể đọc JSON từ phản hồi AI: ${parseErr.message}`);
     }
-    if (!Array.isArray(parsed)) {
-      console.error(`[BulkExtract] ❌ [${requestId}] Step 4: Parsed JSON is not an array:`, typeof parsed);
+    const headerColumns = Array.isArray(parsed?.headerColumns) ? parsed.headerColumns : null;
+    if (headerColumns) {
+      console.log(`[BulkExtract] 📋 [${requestId}] Step 4a: Detected table header columns (left-to-right):`, headerColumns.join(' | '));
+    }
+    const rows = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.rows) ? parsed.rows : null);
+    if (!Array.isArray(rows)) {
+      console.error(`[BulkExtract] ❌ [${requestId}] Step 4b: Parsed JSON does not contain a valid rows array:`, typeof parsed);
       throw new Error('AI trả về danh sách chỉ số không đúng định dạng mảng.');
     }
-    console.log(`[BulkExtract] ✅ [${requestId}] Step 5: Completed in ${Date.now() - startedAt}ms with ${parsed.length} rows`);
-    res.json(parsed);
+    console.log(`[BulkExtract] ✅ [${requestId}] Step 5: Completed in ${Date.now() - startedAt}ms with ${rows.length} rows`);
+    res.json(rows);
   } catch (err: any) {
     console.error(`[BulkExtract] ❌ [${requestId}] Failed after ${Date.now() - startedAt}ms:`, err.message);
     res.status(500).json({ message: err.message });
