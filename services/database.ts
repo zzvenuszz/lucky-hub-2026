@@ -212,6 +212,8 @@ export const Database = {
   approveNutritionGroupMember: (groupId: string, userId: string) => request<any>(`${API_BASE}/nutrition-groups/${groupId}/approve/${userId}`, 'POST'),
   rejectNutritionGroupMember: (groupId: string, userId: string) => request<any>(`${API_BASE}/nutrition-groups/${groupId}/reject/${userId}`, 'POST'),
   removeNutritionGroupMember: (groupId: string, userId: string) => request<any>(`${API_BASE}/nutrition-groups/${groupId}/remove-member/${userId}`, 'POST'),
+  upgradeNutritionGroupMember: (nddGroupId: string, userId: string, targetGroupId: string) =>
+    request<any>(`${API_BASE}/nutrition-groups/${nddGroupId}/upgrade-member/${userId}`, 'POST', { targetGroupId }),
 
   // Chat Groups
   getChatGroups: async () => (await request<any[]>(`${API_BASE}/chat-groups`)) ?? [],
@@ -239,7 +241,7 @@ export const Database = {
 
   // Groups Management
   getGroups: async () => (await request<any[]>(`${API_BASE}/admin/groups`)) ?? [],
-  createGroup: (data: { name: string, description?: string, permissions?: string[] }) => 
+  createGroup: (data: { name: string, description?: string, permissions?: string[], isDefault?: boolean, allowMemberUpgrade?: boolean, priority?: number }) => 
     request<any>(`${API_BASE}/admin/groups`, 'POST', data),
   updateGroup: (id: string, data: any) => request<any>(`${API_BASE}/admin/groups/${id}`, 'PUT', data),
   deleteGroup: (id: string) => request(`${API_BASE}/admin/groups/${id}`, 'DELETE'),

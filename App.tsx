@@ -19,7 +19,7 @@ import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
 import { ModalStackProvider } from './components/system/ModalManager.tsx';
 import NDDDashboard from './components/ndd/NDDDashboard.tsx';
-import InventoryDashboard from './components/inventory/InventoryDashboard.tsx';
+import InventoryDashboard, { PreselectedBuyer } from './components/inventory/InventoryDashboard.tsx';
 import { User, AIRule, HealthMetric, Badge, WsEvent } from './types.ts';
 import { Database, BADGES_DB } from './services/database.ts';
 import { cacheManager } from './utils/cacheManager.ts';
@@ -47,8 +47,17 @@ const App: React.FC = () => {
   const rememberMeRef = useRef<boolean>(false);
   const logoutRequestRef = useRef<Promise<void> | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [preselectedSaleBuyer, setPreselectedSaleBuyer] = useState<PreselectedBuyer | null>(null);
   const [saleCartShortcut, setSaleCartShortcut] = useState<{ count: number; onClick: () => void } | null>(null);
   const handleSaleCartShortcutChange = useCallback((shortcut: { count: number; onClick: () => void } | null) => setSaleCartShortcut(shortcut), []);
+  const handleQuickCreateOrderFromNdd = useCallback((buyer: PreselectedBuyer) => {
+    console.log('[App] Quick create order from NDD for buyer:', buyer);
+    setPreselectedSaleBuyer(buyer);
+    setActiveTab('inventory');
+  }, []);
+  const handleConsumePreselectedBuyer = useCallback(() => {
+    setPreselectedSaleBuyer(null);
+  }, []);
   const [isRegistering, setIsRegistering] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [knowledge, setKnowledge] = useState<any[]>([]);
@@ -698,9 +707,9 @@ const App: React.FC = () => {
           } 
         }} />}
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
-        {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} />}
+        {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} onQuickCreateOrder={handleQuickCreateOrderFromNdd} />}
         {activeTab === 'systemndd' && <BranchManager />}
-        {activeTab === 'inventory' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} onSaleCartShortcutChange={handleSaleCartShortcutChange} />}
+        {activeTab === 'inventory' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} initialBuyer={preselectedSaleBuyer} onConsumeInitialBuyer={handleConsumePreselectedBuyer} onSaleCartShortcutChange={handleSaleCartShortcutChange} />}
         {activeTab === 'inventory-reports' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} initialTab="reports" />}
         {activeTab === 'inventory-prices' && (currentUser! as any).permissions?.includes('pricelist:manage') && <InventoryDashboard user={currentUser!} initialPricesOnly />}
         {activeTab === 'member-levels' && ((currentUser! as any).permissions?.includes('members:level:manage') || (currentUser! as any).permissions?.includes('members:level:manage:any')) && <InventoryDashboard user={currentUser!} initialLevelsOnly />}

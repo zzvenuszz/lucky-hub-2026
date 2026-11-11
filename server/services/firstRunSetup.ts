@@ -319,12 +319,12 @@ async function applyPendingSetup(persisted: PersistedSetup): Promise<boolean> {
     if (!pendingAdmin) throw new Error('Cơ sở dữ liệu chưa có user; cần cung cấp thông tin tài khoản quản trị.');
     const adminGroup = await Group.findOneAndUpdate(
       { name: 'Quản trị viên' },
-      { $set: { description: 'Quản trị viên hệ thống', permissions: ALL_PERMISSIONS, isActive: true, isDefault: false } },
+      { $set: { description: 'Quản trị viên hệ thống', permissions: ALL_PERMISSIONS, isActive: true, isDefault: false, priority: 0, allowMemberUpgrade: false } },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
     const defaultGroup = await Group.findOneAndUpdate(
       { name: 'Người dùng' },
-      { $set: { description: 'Người dùng mặc định', permissions: [], isActive: true, isDefault: true } },
+      { $set: { description: 'Người dùng mặc định', permissions: [], isActive: true, isDefault: true, priority: 10, allowMemberUpgrade: false } },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     );
     const admin = await User.create({

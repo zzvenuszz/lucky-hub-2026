@@ -2,15 +2,28 @@ import React, { useState, useEffect, useCallback, memo, useRef, useMemo } from '
 import { User } from '../../types.ts';
 import { Database } from '../../services/database.ts';
 import MemberMetricsManager from './MemberMetricsManager.tsx';
+import MemberUpgradeModal, { MemberUpgradeTarget, UpgradableGroupOption } from './MemberUpgradeModal.tsx';
 import LoadingButton from '../system/LoadingButton.tsx';
 import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 
 interface NDDDashboardProps {
   currentUser: User;
+  onQuickCreateOrder?: (buyer: {
+    id: string;
+    fullName: string;
+    username?: string;
+    memberNumber?: string;
+    memberLevel?: string;
+    address?: string;
+    phoneNumber?: string;
+  }) => void;
 }
 
-const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
+const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCreateOrder }) => {
   const [dashboardData, setDashboardData] = useState<any[]>([]);
+  const [actorPriority, setActorPriority] = useState<number>(10);
+  const [upgradableGroups, setUpgradableGroups] = useState<UpgradableGroupOption[]>([]);
+  const [upgradingMember, setUpgradingMember] = useState<MemberUpgradeTarget | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNdd, setSelectedNdd] = useState<any | null>(null);
   const [selectedMember, setSelectedMember] = useState<any | null>(null);
@@ -50,6 +63,8 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       const newData = data.groups || [];
       setDashboardData(newData);
       dashboardDataRef.current = newData;
+      if (typeof data.actorPriority === 'number') setActorPriority(data.actorPriority);
+      if (Array.isArray(data.upgradableGroups)) setUpgradableGroups(data.upgradableGroups);
       if (data.groups?.[0]?.group?.coOwners) {
         setSelectedCoOwnerIds(data.groups[0].group.coOwners.map((c: any) => c._id || c));
       }
@@ -67,6 +82,8 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       const newData = data.groups || [];
       setDashboardData(newData);
       dashboardDataRef.current = newData;
+      if (typeof data.actorPriority === 'number') setActorPriority(data.actorPriority);
+      if (Array.isArray(data.upgradableGroups)) setUpgradableGroups(data.upgradableGroups);
       if (selectedNdd) {
         const updated = newData.find((item: any) => item.group.id === selectedNdd.group.id);
         if (updated) setSelectedNdd(updated);
@@ -167,6 +184,39 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
       setActionMsg({ type: 'error', text: '❌ Lỗi: ' + err.message });
     }
   };
+
+  const handleConfirmUpgradeMember = useCallback(async (targetGroupId: string) => {
+    if (!upgradingMember || !selectedNdd?.group?.id) return;
+    try {
+      console.log('[NDDDashboard] Upgrading member group:', {
+        nddId: selectedNdd.group.id,
+        userId: upgradingMember.userId,
+        targetGroupId,
+      });
+      const res = await Database.upgradeNutritionGroupMember(
+        selectedNdd.group.id,
+        upgradingMember.userId,
+        targetGroupId
+      );
+      await refreshDashboard();
+      setUpgradingMember(null);
+      setActionMsg({
+        type: 'success',
+        text: `✅ ${res?.message || `Đã nâng cấp nhóm cho ${upgradingMember.userName}`}`,
+      });
+    } catch (err: any) {
+      console.error('[NDDDashboard] Upgrade member error:', err);
+      setActionMsg({ type: 'error', text: '❌ ' + (err.message || 'Không thể nâng cấp hội viên.') });
+    }
+  }, [upgradingMember, selectedNdd, refreshDashboard]);
+
+  const currentUserPerms: string[] = (currentUser as any).permissions || [];
+  const canUpgradeMembers =
+    currentUserPerms.includes('users:upgrade_member') ||
+    currentUserPerms.includes('admin:panel');
+  const canCurrentUserSell =
+    currentUserPerms.includes('inventory:sell') ||
+    currentUserPerms.includes('inventory:manage');
 
   if (isLoading) {
     return (
@@ -290,21 +340,91 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
           ) : memberMetrics.map((item: any, idx: number) => {
             const user = item.user;
             const metric = item.latestMetric;
-            const uid = user._id || user.id;
+            const uid = String(user._id || user.id);
+            const memberPriority = typeof user.groupPriority === 'number' ? user.groupPriority : 10;
+            const isTargetSelf = String(uid) === String(currentUserId);
+            const showUpgradeBtn = canUpgradeMembers && !isTargetSelf && actorPriority < memberPriority;
+
+            const groupOwnerIdStr = String(group.ownerId?._id || group.ownerId || '');
+            const groupCoOwnerIds = (group.coOwners || []).map((c: any) => String(c._id || c));
+            const isMemberOperatingNdd =
+              Boolean(user.hasCoachAccess) ||
+              uid === groupOwnerIdStr ||
+              groupCoOwnerIds.includes(uid);
+            const isMemberUnderSupervisor = (user.memberLevel || 'customer') !== 'supervisor';
+            const isMemberInDefaultGroup =
+              user.isDefaultGroup !== undefined
+                ? Boolean(user.isDefaultGroup)
+                : (!user.groupName || ['người dùng', 'hội viên', 'member'].includes(String(user.groupName).trim().toLowerCase()));
+            const showQuickOrderBtn =
+              canCurrentUserSell &&
+              Boolean(onQuickCreateOrder) &&
+              isMemberInDefaultGroup &&
+              isMemberUnderSupervisor &&
+              !isMemberOperatingNdd;
+
             return (
-              <div key={idx} className="p-4 hover:bg-slate-50 transition-colors">
+              <div key={idx} className="p-4 hover:bg-slate-50 transition-colors" data-testid={`ndd-member-row-${uid}`}>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 overflow-hidden shrink-0">
                     <img src={user.avatar || `https://api.dicebear.com/7.x/adventurer/svg?seed=${user.fullName}`} className="w-full h-full object-cover" alt={user.fullName} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="font-bold text-sm text-slate-800 truncate">{user.fullName}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-slate-800 truncate">{user.fullName}</span>
+                      {user.groupName && (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[9px] font-black uppercase">
+                          {user.groupName}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[10px] text-slate-400">@{user.username}</p>
                   </div>
                 </div>
-                <div className="flex gap-2 mt-2 pt-2 border-t border-slate-50">
-                  <button onClick={() => setMetricsManager({ userId: uid, userName: user.fullName })} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">📊 Quản lý chỉ số</button>
-                  <button onClick={() => setChatBox({ userId: uid, userName: user.fullName })} className="flex-1 py-2 rounded-xl bg-indigo-50 text-indigo-600 font-black text-[9px] uppercase tracking-wider hover:bg-indigo-100 transition-all">💬 Nhắn tin</button>
+                <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-50">
+                  <button onClick={() => setMetricsManager({ userId: uid, userName: user.fullName })} className="flex-1 py-2 px-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">📊 Quản lý chỉ số</button>
+                  <button onClick={() => setChatBox({ userId: uid, userName: user.fullName })} className="flex-1 py-2 px-2 rounded-xl bg-indigo-50 text-indigo-600 font-black text-[9px] uppercase tracking-wider hover:bg-indigo-100 transition-all">💬 Nhắn tin</button>
+                  {showUpgradeBtn && (
+                    <button
+                      type="button"
+                      data-testid={`ndd-upgrade-member-${uid}`}
+                      onClick={() => {
+                        console.log('[NDDDashboard] Open upgrade modal for member:', { uid, fullName: user.fullName, memberPriority, actorPriority });
+                        setUpgradingMember({
+                          userId: uid,
+                          userName: user.fullName,
+                          username: user.username,
+                          currentGroupId: user.groupId || null,
+                          currentGroupName: user.groupName || 'Người dùng',
+                          currentGroupPriority: memberPriority,
+                        });
+                      }}
+                      className="flex-1 py-2 px-2 rounded-xl bg-amber-50 text-amber-700 font-black text-[9px] uppercase tracking-wider hover:bg-amber-100 transition-all"
+                    >
+                      ⬆️ Nâng cấp
+                    </button>
+                  )}
+                  {showQuickOrderBtn && (
+                    <button
+                      type="button"
+                      data-testid={`ndd-quick-order-${uid}`}
+                      onClick={() => {
+                        console.log('[NDDDashboard] Quick order clicked for member:', { uid, fullName: user.fullName, memberLevel: user.memberLevel });
+                        onQuickCreateOrder?.({
+                          id: uid,
+                          fullName: user.fullName,
+                          username: user.username,
+                          memberNumber: user.memberNumber || '',
+                          memberLevel: user.memberLevel || 'customer',
+                          address: user.address || '',
+                          phoneNumber: user.phoneNumber || '',
+                        });
+                      }}
+                      className="flex-1 py-2 px-2 rounded-xl bg-teal-50 text-teal-700 font-black text-[9px] uppercase tracking-wider hover:bg-teal-100 transition-all"
+                    >
+                      🛒 Lên Đơn Hàng
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -312,6 +432,15 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser }) => {
         </div>
       </div>
 
+      {upgradingMember && (
+        <MemberUpgradeModal
+          member={upgradingMember}
+          upgradableGroups={upgradableGroups}
+          actorPriority={actorPriority}
+          onConfirm={handleConfirmUpgradeMember}
+          onCancel={() => setUpgradingMember(null)}
+        />
+      )}
       {metricForm && <MetricFormSubModal metricForm={metricForm} metricWeight={metricWeight} setMetricWeight={setMetricWeight} metricBodyFat={metricBodyFat} setMetricBodyFat={setMetricBodyFat} metricMuscleMass={metricMuscleMass} setMetricMuscleMass={setMetricMuscleMass} onCancel={() => setMetricForm(null)} onSave={handleSendMetric} />}
       {chatBox && <ChatBoxSubModal chatBox={chatBox} chatMessage={chatMessage} setChatMessage={setChatMessage} onCancel={() => setChatBox(null)} onSend={handleSendChat} />}
       {metricsManager && <MemberMetricsManager userId={metricsManager.userId} userName={metricsManager.userName} currentUser={currentUser} onClose={() => setMetricsManager(null)} />}

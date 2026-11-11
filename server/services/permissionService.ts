@@ -42,16 +42,25 @@ export async function getEffectivePermissions(
     const user = await User.findById(userId).select('groupId');
     let group: any = null;
     if (user && user.groupId) {
-      group = await Group.findById(user.groupId).select('permissions isActive');
+      group = await Group.findById(user.groupId).select('name permissions isActive');
     }
     if (!group && user) {
-      group = await Group.findOne({ members: user._id, isActive: true }).select('_id permissions isActive');
+      group = await Group.findOne({ members: user._id, isActive: true }).select('_id name permissions isActive');
       if (group?._id) {
         await User.updateOne({ _id: user._id }, { $set: { groupId: group._id } });
       }
     }
     if (group && group.isActive !== false) {
       groupPermissions = group.permissions || [];
+      const groupNameLower = String(group.name || '').trim().toLowerCase();
+      const isAdminGroup =
+        groupNameLower === 'administrator' ||
+        groupNameLower === 'admin' ||
+        groupNameLower === 'quản trị viên' ||
+        groupPermissions.includes('admin:panel');
+      if (isAdminGroup && !groupPermissions.includes('users:upgrade_member')) {
+        groupPermissions = [...groupPermissions, 'users:upgrade_member'];
+      }
     }
   } catch (err: any) {
     console.error(`[PermissionService] Error fetching group: ${err.message}`);

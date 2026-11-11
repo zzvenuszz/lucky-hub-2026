@@ -13,7 +13,16 @@ import ScrollableSubTabs from './ScrollableSubTabs.tsx';
 import { User } from '../../types.ts';
 import { formatVND } from '../../utils/formatters.ts';
 
-interface Props { user: User; initialPricesOnly?: boolean; initialLevelsOnly?: boolean; initialTab?: Tab; onSaleCartShortcutChange?: (shortcut: { count: number; onClick: () => void } | null) => void; }
+export interface PreselectedBuyer {
+  id: string;
+  fullName: string;
+  username?: string;
+  memberNumber?: string;
+  memberLevel?: string;
+  address?: string;
+  phoneNumber?: string;
+}
+interface Props { user: User; initialPricesOnly?: boolean; initialLevelsOnly?: boolean; initialTab?: Tab; initialBuyer?: PreselectedBuyer | null; onConsumeInitialBuyer?: () => void; onSaleCartShortcutChange?: (shortcut: { count: number; onClick: () => void } | null) => void; }
 type Tab = 'overview' | 'stock' | 'sale' | 'history' | 'prices' | 'reports' | 'levels' | 'settings';
 type PriceField = 'price100' | 'price25' | 'price35' | 'price42' | 'price50';
 const LEVELS = [
@@ -43,7 +52,7 @@ const tabs: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'history', label: 'Lịch sử', icon: '↻' }, { id: 'prices', label: 'Bảng giá', icon: '＄' }, { id: 'reports', label: 'Báo cáo', icon: '▤' }, { id: 'levels', label: 'Tuyến hội viên', icon: '⌘' }, { id: 'settings', label: 'Hoá đơn', icon: '⚙' },
 ];
 
-const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = false, initialLevelsOnly = false, initialTab, onSaleCartShortcutChange }) => {
+const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = false, initialLevelsOnly = false, initialTab, initialBuyer, onConsumeInitialBuyer, onSaleCartShortcutChange }) => {
   const permissions: string[] = (user as any).permissions || [];
   const canInventory = permissions.includes('inventory:manage');
   const canSell = permissions.includes('inventory:sell');
@@ -52,12 +61,13 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const canManageCatalog = canPrices;
   const canManageAllLevels = permissions.includes('members:level:manage:any');
   const canLevels = permissions.includes('members:level:manage') || canManageAllLevels;
-  const [tab, setTab] = useState<Tab>(initialTab ? initialTab : initialLevelsOnly ? 'levels' : initialPricesOnly ? 'prices' : 'overview');
+  const [tab, setTab] = useState<Tab>(initialBuyer ? 'sale' : initialTab ? initialTab : initialLevelsOnly ? 'levels' : initialPricesOnly ? 'prices' : 'overview');
   useEffect(() => {
-    if (initialTab) setTab(initialTab);
+    if (initialBuyer) setTab('sale');
+    else if (initialTab) setTab(initialTab);
     else if (initialLevelsOnly) setTab('levels');
     else if (initialPricesOnly) setTab('prices');
-  }, [initialTab, initialLevelsOnly, initialPricesOnly]);
+  }, [initialBuyer, initialTab, initialLevelsOnly, initialPricesOnly]);
   const [items, setItems] = useState<any[]>([]); const [categories, setCategories] = useState<any[]>([]); const [overview, setOverview] = useState<any>(null); const [movements, setMovements] = useState<any[]>([]); const [priceVersions, setPriceVersions] = useState<any[]>([]); const [salePriceList, setSalePriceList] = useState<any>(null);
   const [priceProducts, setPriceProducts] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]); const [members, setMembers] = useState<any[]>([]); const [downline, setDownline] = useState<any[]>([]); const [preference, setPreference] = useState<any>({ format: 'pdf' });
@@ -67,6 +77,24 @@ const InventoryDashboard: React.FC<Props> = memo(({ user, initialPricesOnly = fa
   const [saleCategoryFilter, setSaleCategoryFilter] = useState('');
   const [buyerAddress, setBuyerAddress] = useState(''); const [buyerPhone, setBuyerPhone] = useState('');
   const [buyerType, setBuyerType] = useState<'member' | 'custom'>('custom'); const [customBuyer, setCustomBuyer] = useState('');
+  useEffect(() => {
+    if (!initialBuyer) return;
+    console.log('[InventoryUI] Preselecting buyer from NDD quick order:', initialBuyer);
+    setTab('sale');
+    setBuyerType('member');
+    setSelectedMember({
+      id: initialBuyer.id,
+      fullName: initialBuyer.fullName,
+      memberNumber: initialBuyer.memberNumber || '',
+      memberLevel: initialBuyer.memberLevel || 'customer',
+      address: initialBuyer.address || '',
+      phoneNumber: initialBuyer.phoneNumber || '',
+    });
+    setBuyerAddress(initialBuyer.address || '');
+    setBuyerPhone(initialBuyer.phoneNumber || '');
+    setMemberQuery('');
+    onConsumeInitialBuyer?.();
+  }, [initialBuyer, onConsumeInitialBuyer]);
   const [draft, setDraft] = useState({ sku: '', name: '', categoryId: '', pv: '0', quantity: '0', lowStockThreshold: '5', imageUrl: '' });
   const [showProductModal, setShowProductModal] = useState(false);
   const [bulkPvEditing, setBulkPvEditing] = useState(false);

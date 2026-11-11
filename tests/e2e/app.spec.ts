@@ -530,6 +530,316 @@ test('ẩn thông tin ngân hàng thụ hưởng trong hồ sơ khi hội viên 
   await expect(page.getByTestId('profile-bank-account')).toHaveCount(0);
 });
 
+test('quản lý nhóm Admin (priority, công tắc nâng cấp, bảo vệ Administrator) và NDD (nâng cấp hội viên, lên đơn hàng)', async ({ page }) => {
+  const adminCoachUser = {
+    id: 'u_coach_admin',
+    _id: 'u_coach_admin',
+    username: 'coach_admin',
+    fullName: 'Bùi Huy Hoàn',
+    memberNumber: 'VA01562408',
+    memberLevel: 'supervisor',
+    phoneNumber: '0900000001',
+    address: 'Hà Nội',
+    status: 'ACTIVE',
+    permissions: [
+      'admin:panel',
+      'groups:manage',
+      'users:view',
+      'users:update',
+      'users:upgrade_member',
+      'coach:access',
+      'ndd:manage',
+      'inventory:manage',
+      'inventory:sell',
+    ],
+  };
+
+  const mockAdminGroup = {
+    _id: 'g_admin',
+    id: 'g_admin',
+    name: 'Administrator',
+    description: 'Quản trị viên hệ thống',
+    permissions: ['admin:panel', 'groups:manage', 'users:upgrade_member'],
+    members: ['u_coach_admin'],
+    isActive: true,
+    isDefault: false,
+    allowMemberUpgrade: false,
+    priority: 0,
+    isProtectedAdmin: true,
+  };
+
+  const mockCoachGroup = {
+    _id: 'g_coach',
+    id: 'g_coach',
+    name: 'Huấn luyện viên',
+    description: 'Nhóm HLV vận hành NDD',
+    permissions: ['coach:access', 'inventory:sell'],
+    members: [],
+    isActive: true,
+    isDefault: false,
+    allowMemberUpgrade: true,
+    priority: 2,
+    isProtectedAdmin: false,
+  };
+
+  const mockMemberGroup = {
+    _id: 'g_member',
+    id: 'g_member',
+    name: 'Người dùng',
+    description: 'Hội viên mặc định',
+    permissions: ['metrics:view:own'],
+    members: ['u_member_1', 'u_sup_1', 'u_coach_2'],
+    isActive: true,
+    isDefault: true,
+    allowMemberUpgrade: false,
+    priority: 5,
+    isProtectedAdmin: false,
+  };
+
+  const groupsState = [mockAdminGroup, mockCoachGroup, mockMemberGroup];
+
+  let member1Group = { id: 'g_member', name: 'Người dùng', priority: 5, isDefault: true };
+
+  await page.addInitScript((user) => {
+    window.localStorage.setItem('lucky_hub_user', JSON.stringify(user));
+    window.localStorage.setItem('lucky_hub_remember', 'true');
+    window.localStorage.setItem('lucky_hub_login_time', String(Date.now()));
+  }, adminCoachUser);
+
+  await page.route('**/api/users/me', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(adminCoachUser) }));
+  await page.route('**/api/session/ping', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }));
+  await page.route('**/api/users', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([adminCoachUser]) }));
+  await page.route('**/api/users/coach-candidates', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([adminCoachUser]) }));
+  await page.route('**/api/knowledge', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/rules', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/chats', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/metrics/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/notifications/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/goals/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ reminders: [] }) }));
+  await page.route('**/api/admin/groups/permissions-list', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([
+      { key: 'admin:panel', description: 'Truy cập bảng quản trị' },
+      { key: 'users:upgrade_member', description: 'Nâng cấp thành viên' },
+      { key: 'coach:access', description: 'Vận hành NDD' },
+    ]),
+  }));
+  await page.route('**/api/admin/groups/**', async route => {
+    const url = route.request().url();
+    if (url.endsWith('/permissions-list')) return route.fallback();
+    const id = url.split('/').pop()!;
+    const target = groupsState.find(g => g.id === id);
+    if (route.request().method() === 'PUT' && target) {
+      const body = JSON.parse(route.request().postData() || '{}');
+      Object.assign(target, body);
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(target) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(target || {}) });
+  });
+  await page.route('**/api/admin/groups', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(groupsState) }));
+
+  await page.route('**/api/nutrition-groups/my-dashboard', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      actorPriority: 0,
+      upgradableGroups: groupsState
+        .filter(g => g.allowMemberUpgrade && !g.isProtectedAdmin)
+        .map(g => ({ id: g.id, name: g.name, description: g.description, priority: g.priority, isDefault: g.isDefault })),
+      groups: [
+        {
+          group: {
+            _id: 'ndd_1',
+            id: 'ndd_1',
+            name: 'NDD Sức Khỏe Vàng',
+            address: '123 Cầu Giấy, Hà Nội',
+            ownerId: 'u_coach_admin',
+            ownerName: 'Bùi Huy Hoàn',
+            coOwners: [],
+            pendingMembers: [],
+          },
+          memberMetrics: [
+            {
+              // Hội viên đủ điều kiện hiện cả nút Nâng cấp và Lên Đơn Hàng (nhóm mặc định, cấp độ dưới supervisor, không có quyền vận hành NDD)
+              user: {
+                _id: 'u_member_1',
+                id: 'u_member_1',
+                fullName: 'Phạm Thị Hội Viên',
+                username: 'hoivien1',
+                memberNumber: 'VA12345678',
+                memberLevel: 'member',
+                address: '45 Nguyễn Trãi, Hà Nội',
+                phoneNumber: '0988777666',
+                groupId: member1Group.id,
+                groupName: member1Group.name,
+                groupPriority: member1Group.priority,
+                isDefaultGroup: member1Group.isDefault,
+                hasCoachAccess: false,
+              },
+              latestMetric: null,
+            },
+            {
+              // Hội viên cấp độ Giám sát viên (supervisor) -> KHÔNG hiện nút Lên Đơn Hàng
+              user: {
+                _id: 'u_sup_1',
+                id: 'u_sup_1',
+                fullName: 'Trần Giám Sát',
+                username: 'giamsat1',
+                memberNumber: 'VA87654321',
+                memberLevel: 'supervisor',
+                address: 'Đà Nẵng',
+                phoneNumber: '0911222333',
+                groupId: 'g_member',
+                groupName: 'Người dùng',
+                groupPriority: 5,
+                isDefaultGroup: true,
+                hasCoachAccess: false,
+              },
+              latestMetric: null,
+            },
+            {
+              // Thành viên có quyền vận hành NDD (hasCoachAccess = true) -> KHÔNG hiện nút Lên Đơn Hàng
+              user: {
+                _id: 'u_coach_2',
+                id: 'u_coach_2',
+                fullName: 'Lê Huấn Luyện',
+                username: 'hlv2',
+                memberNumber: 'VA11223344',
+                memberLevel: 'member',
+                address: 'TP.HCM',
+                phoneNumber: '0933444555',
+                groupId: 'g_coach',
+                groupName: 'Huấn luyện viên',
+                groupPriority: 2,
+                isDefaultGroup: false,
+                hasCoachAccess: true,
+              },
+              latestMetric: null,
+            },
+          ],
+        },
+      ],
+    }),
+  }));
+
+  await page.route('**/api/nutrition-groups/ndd_1/upgrade-member/u_member_1', async route => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    const target = groupsState.find(g => g.id === body.targetGroupId);
+    if (target) {
+      member1Group = { id: target.id, name: target.name, priority: target.priority, isDefault: target.isDefault };
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        message: `Đã nâng cấp Phạm Thị Hội Viên sang nhóm "${member1Group.name}".`,
+        groupId: member1Group.id,
+        groupName: member1Group.name,
+        groupPriority: member1Group.priority,
+      }),
+    });
+  });
+
+  await page.route('**/api/nutrition-groups', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/inventory/items', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/inventory/categories', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/inventory/overview', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ itemCount: 0, totalUnits: 0, costValue: 0, estimated: {}, lowStock: [], monthly: [], recentSales: [] }) }));
+  await page.route('**/api/inventory/movements', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }));
+  await page.route('**/api/inventory/print-preference', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ format: 'pdf' }) }));
+  await page.route('**/api/inventory/price-list**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ active: null, versions: [] }) }));
+  await page.route('**/api/inventory/sales**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sales: [], total: 0 }) }));
+
+  await page.goto('/');
+  const isMobile = (page.viewportSize()?.width || 1024) < 768;
+
+  // 1. Kiểm tra giao diện Quản trị -> Nhóm & phân quyền
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Quản trị' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Quản trị' }).click();
+  }
+  await page.getByRole('button', { name: /🔐/ }).click();
+
+  // Nhóm Administrator phải có Priority = 0 bị khóa (disabled), công tắc nâng cấp bị khóa, và khi bấm Sửa không được đổi tên
+  await expect(page.getByTestId('group-protected-badge-g_admin')).toBeVisible();
+  await expect(page.getByTestId('group-priority-input-g_admin')).toHaveValue('0');
+  await expect(page.getByTestId('group-priority-input-g_admin')).toBeDisabled();
+  await expect(page.getByTestId('group-upgrade-toggle-g_admin')).toBeDisabled();
+
+  await page.getByTestId('group-edit-btn-g_admin').click();
+  await expect(page.getByTestId('admin-group-protection-notice')).toBeVisible();
+  await expect(page.getByTestId('edit-group-name-input')).toBeDisabled();
+  await expect(page.getByTestId('edit-group-priority-input')).toBeDisabled();
+  await page.getByRole('button', { name: 'Hủy' }).click();
+
+  // Nhóm thường (Người dùng) có thể gạt công tắc on/off và sửa priority
+  const memberUpgradeToggle = page.getByTestId('group-upgrade-toggle-g_member');
+  await expect(memberUpgradeToggle).toBeEnabled();
+  await expect(memberUpgradeToggle).toHaveAttribute('aria-checked', 'false');
+  await memberUpgradeToggle.click();
+  await expect(memberUpgradeToggle).toHaveAttribute('aria-checked', 'true');
+  // Tắt lại để test nâng cấp chỉ hiện nhóm Huấn luyện viên
+  await memberUpgradeToggle.click();
+  await expect(memberUpgradeToggle).toHaveAttribute('aria-checked', 'false');
+
+  // 2. Mở Quản lý NDD -> kiểm tra nút Nâng cấp và nút Lên Đơn Hàng
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Quản lý NDD' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Quản lý NDD' }).click();
+  }
+
+  await page.getByText('NDD Sức Khỏe Vàng').click();
+  await expect(page.getByTestId('ndd-member-row-u_member_1')).toBeVisible();
+
+  // Hội viên u_member_1 (nhóm mặc định, cấp độ dưới supervisor, không có quyền vận hành NDD) hiển thị cả nút Nâng cấp và Lên Đơn Hàng
+  await expect(page.getByTestId('ndd-upgrade-member-u_member_1')).toBeVisible();
+  await expect(page.getByTestId('ndd-quick-order-u_member_1')).toBeVisible();
+
+  // Hội viên u_sup_1 (cấp độ supervisor) KHÔNG hiển thị nút Lên Đơn Hàng
+  await expect(page.getByTestId('ndd-quick-order-u_sup_1')).toHaveCount(0);
+
+  // Thành viên u_coach_2 (có quyền vận hành NDD) KHÔNG hiển thị nút Lên Đơn Hàng
+  await expect(page.getByTestId('ndd-quick-order-u_coach_2')).toHaveCount(0);
+
+  // Bấm nút Nâng cấp trên u_member_1 -> mở modal chọn nhóm Huấn luyện viên (Priority 2)
+  await page.getByTestId('ndd-upgrade-member-u_member_1').click();
+  const upgradeModal = page.getByTestId('ndd-member-upgrade-modal');
+  await expect(upgradeModal).toBeVisible();
+  await expect(page.getByTestId('upgrade-group-option-g_coach')).toBeVisible();
+  await page.getByTestId('upgrade-group-option-g_coach').click();
+  await upgradeModal.getByRole('button', { name: 'Xác nhận nâng cấp' }).click();
+  await expect(upgradeModal).toHaveCount(0);
+  await expect(page.getByTestId('ndd-member-row-u_member_1')).toContainText('Huấn luyện viên');
+  // Khi đã lên nhóm Huấn luyện viên (không còn là nhóm mặc định), nút Lên Đơn Hàng sẽ tự ẩn
+  await expect(page.getByTestId('ndd-quick-order-u_member_1')).toHaveCount(0);
+
+  // Đặt lại trạng thái nhóm hội viên cho u_member_1 và mở lại Quản lý NDD để test nút Lên Đơn Hàng chuyển nhanh sang Bán hàng và tự chọn người mua
+  member1Group = { id: 'g_member', name: 'Người dùng', priority: 5, isDefault: true };
+  if (isMobile) {
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Tổng quan' }).click();
+    await page.getByRole('navigation', { name: 'Điều hướng nhanh' }).getByRole('button', { name: 'Khác' }).click();
+    await page.getByRole('menuitem', { name: 'Quản lý NDD' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Tổng quan' }).click();
+    await page.getByRole('button', { name: 'Quản lý NDD' }).click();
+  }
+  await page.getByText('NDD Sức Khỏe Vàng').click();
+  await expect(page.getByTestId('ndd-quick-order-u_member_1')).toBeVisible();
+  await page.getByTestId('ndd-quick-order-u_member_1').click();
+
+  // Phải chuyển sang giao diện Bán hàng và tự động điền Phạm Thị Hội Viên · VA12345678 cùng địa chỉ & SĐT
+  await expect(page.getByTestId('inventory-dashboard')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tạo đơn hàng' })).toBeVisible();
+  await expect(page.getByPlaceholder('Tìm theo mã hoặc tên hội viên')).toHaveValue('Phạm Thị Hội Viên · VA12345678');
+  await expect(page.getByPlaceholder('Địa chỉ')).toHaveValue('45 Nguyễn Trãi, Hà Nội');
+  await expect(page.getByPlaceholder('Số điện thoại')).toHaveValue('0988777666');
+});
+
 test.describe('luồng quản lý kho cần tài khoản E2E riêng', () => {
   test.skip(!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD, 'Cấu hình E2E_EMAIL/E2E_PASSWORD của tài khoản có inventory:manage để chạy luồng đã đăng nhập.');
 

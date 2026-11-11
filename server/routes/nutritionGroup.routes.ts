@@ -7,6 +7,25 @@ import { authMiddleware, optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { Group } from '../models/Group.ts';
+import { AuditLog } from '../models/AuditLog.ts';
+import { clearAllPermissionCache } from '../services/permissionService.ts';
+
+const isAdminProtectedGroup = (group: { name?: string; permissions?: string[] } | null | undefined): boolean => {
+  if (!group) return false;
+  const nameLower = String(group.name || '').trim().toLowerCase();
+  return (
+    nameLower === 'administrator' ||
+    nameLower === 'admin' ||
+    nameLower === 'quản trị viên' ||
+    Boolean((group.permissions || []).includes(RESOURCES.ADMIN.PANEL))
+  );
+};
+
+const getEffectiveGroupPriority = (group: any): number => {
+  if (!group) return Number.MAX_SAFE_INTEGER;
+  if (isAdminProtectedGroup(group)) return 0;
+  return typeof group.priority === 'number' && Number.isFinite(group.priority) ? group.priority : 10;
+};
 
 const router = Router();
 
@@ -84,7 +103,7 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
     const allGroups = await NutritionGroup.find({ isActive: true })
       .populate('ownerId', 'fullName username groupId groupName')
       .populate('coOwners', 'fullName username groupId groupName')
-      .populate('members', 'fullName username email phoneNumber groupId groupName avatar')
+      .populate('members', 'fullName username email phoneNumber address memberNumber memberLevel groupId groupName avatar')
       .populate('pendingMembers.userId', 'fullName username groupId groupName avatar')
       .sort({ createdAt: -1 });
 
@@ -142,13 +161,74 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       console.log(`[NutritionGroup]    Check the DEBUG output above for the actual ownerId format in DB.`);
     }
 
+    // Nạp danh sách các nhóm phân quyền (Group) để tính priority & quyền của từng thành viên
+    const systemGroups = await Group.find({ isActive: { $ne: false } }).lean() as any[];
+    const groupById = new Map<string, any>();
+    const groupByMemberId = new Map<string, any>();
+    for (const sysGroup of systemGroups) {
+      const gidStr = String(sysGroup._id);
+      groupById.set(gidStr, sysGroup);
+      for (const mId of (sysGroup.members || [])) {
+        if (mId) groupByMemberId.set(String(mId), sysGroup);
+      }
+    }
+
+    const resolveUserSystemGroup = (uid: string, rawGroupId?: any) => {
+      if (rawGroupId && groupById.has(String(rawGroupId))) {
+        return groupById.get(String(rawGroupId));
+      }
+      return groupByMemberId.get(String(uid)) || null;
+    };
+
+    const actorUser = await User.findById(userId).select('groupId').lean() as any;
+    const actorSystemGroup = resolveUserSystemGroup(userId, actorUser?.groupId);
+    const actorIsAdmin = Boolean(req.user?.permissions?.includes(RESOURCES.ADMIN.PANEL)) || isAdminProtectedGroup(actorSystemGroup);
+    const actorPriority = actorIsAdmin ? 0 : getEffectiveGroupPriority(actorSystemGroup);
+
+    const upgradableGroups = systemGroups
+      .filter(g => Boolean(g.allowMemberUpgrade) && !isAdminProtectedGroup(g))
+      .map(g => ({
+        id: String(g._id),
+        name: g.name,
+        description: g.description || '',
+        priority: getEffectiveGroupPriority(g),
+        isDefault: Boolean(g.isDefault),
+      }))
+      .filter(g => g.priority > actorPriority || actorPriority === 0)
+      .sort((a, b) => a.priority - b.priority);
+
     // Lấy chỉ số mới nhất cho member của từng group
     const result = await Promise.all(groups.map(async (group) => {
       const memberMetrics: any[] = [];
       for (const member of group.members) {
-        const latestMetric = await Metric.findOne({ userId: (member as any)._id }).sort({ date: -1 }).lean();
+        const mObj = (member as any).toObject ? (member as any).toObject() : (member as any);
+        const mIdStr = String(mObj._id || mObj.id);
+        const latestMetric = await Metric.findOne({ userId: mObj._id }).sort({ date: -1 }).lean();
+        const mSysGroup = resolveUserSystemGroup(mIdStr, mObj.groupId);
+        const mPerms: string[] = mSysGroup?.permissions || [];
+        const mPriority = getEffectiveGroupPriority(mSysGroup);
+        const mGroupNameLower = String(mSysGroup?.name || mObj.groupName || '').trim().toLowerCase();
+        const isMemberGroup =
+          !mSysGroup ||
+          Boolean(mSysGroup?.isDefault) ||
+          mGroupNameLower === 'người dùng' ||
+          mGroupNameLower === 'hội viên' ||
+          mGroupNameLower === 'member';
+        const hasCoachPerm = mPerms.includes(RESOURCES.COACH.ACCESS) || mPerms.includes(RESOURCES.NDD.MANAGE);
         memberMetrics.push({
-          user: member,
+          user: {
+            ...mObj,
+            id: mIdStr,
+            groupId: mSysGroup ? String(mSysGroup._id) : (mObj.groupId ? String(mObj.groupId) : null),
+            groupName: mSysGroup?.name || mObj.groupName || '',
+            groupPriority: mPriority,
+            isDefaultGroup: isMemberGroup,
+            hasCoachAccess: hasCoachPerm,
+            memberLevel: mObj.memberLevel || 'customer',
+            memberNumber: mObj.memberNumber || '',
+            address: mObj.address || '',
+            phoneNumber: mObj.phoneNumber || '',
+          },
           latestMetric: latestMetric || null,
         });
       }
@@ -158,11 +238,11 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       };
     }));
 
-    console.log(`[NutritionGroup] ✅ my-dashboard: ${result.length} groups processed`);
+    console.log(`[NutritionGroup] ✅ my-dashboard: ${result.length} groups processed (actorPriority=${actorPriority}, upgradableGroups=${upgradableGroups.length})`);
     if (result.length === 0) {
-      return res.json({ groups: [], message: 'Bạn chưa thuộc NDD nào' });
+      return res.json({ groups: [], actorPriority, upgradableGroups, message: 'Bạn chưa thuộc NDD nào' });
     }
-    res.json({ groups: result, message: null });
+    res.json({ groups: result, actorPriority, upgradableGroups, message: null });
   } catch (err: any) {
     console.error(`[NutritionGroup] ❌ my-dashboard error:`, err);
     res.status(500).json({ message: err.message });
@@ -551,6 +631,130 @@ router.post('/:id/remove-member/:userId', async (req: Request, res: Response) =>
     console.log(`[NutritionGroup] 🗑️ Removed member ${req.params.userId} from "${group.name}"`);
     res.json({ success: true });
   } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/nutrition-groups/:id/upgrade-member/:userId - Nâng cấp nhóm (Group) cho hội viên trong NDD
+router.post('/:id/upgrade-member/:userId', async (req: Request, res: Response) => {
+  try {
+    const actorPerms: string[] = req.user?.permissions || [];
+    const canUpgrade =
+      actorPerms.includes(RESOURCES.USERS.UPGRADE_MEMBER) ||
+      actorPerms.includes(RESOURCES.ADMIN.PANEL);
+    if (!canUpgrade) {
+      return res.status(403).json({ message: 'Bạn không có quyền nâng cấp thành viên.' });
+    }
+
+    const { targetGroupId } = req.body;
+    if (!targetGroupId) {
+      return res.status(400).json({ message: 'Vui lòng chọn nhóm đích để nâng cấp.' });
+    }
+
+    const nddGroup = await NutritionGroup.findById(req.params.id);
+    if (!nddGroup) {
+      return res.status(404).json({ message: 'Không tìm thấy Nhóm Dinh Dưỡng.' });
+    }
+
+    const targetUserId = req.params.userId;
+    const isMemberOfNdd = (nddGroup.members || []).some((m: any) => String(m) === String(targetUserId));
+    if (!isMemberOfNdd) {
+      return res.status(400).json({ message: 'Hội viên này không thuộc Nhóm Dinh Dưỡng hiện tại.' });
+    }
+
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Không tìm thấy hội viên.' });
+    }
+
+    const targetGroup = await Group.findById(targetGroupId);
+    if (!targetGroup || targetGroup.isActive === false) {
+      return res.status(404).json({ message: 'Nhóm đích không tồn tại hoặc đang tạm dừng.' });
+    }
+
+    if (!targetGroup.allowMemberUpgrade) {
+      return res.status(400).json({ message: `Nhóm "${targetGroup.name}" hiện không cho phép nâng cấp thành viên vào.` });
+    }
+
+    if (isAdminProtectedGroup(targetGroup)) {
+      return res.status(403).json({ message: 'Không thể nâng cấp hội viên vào nhóm Administrator.' });
+    }
+
+    const actorUser = await User.findById(req.user!.userId).select('groupId').lean() as any;
+    let actorGroup: any = null;
+    if (actorUser?.groupId) {
+      actorGroup = await Group.findById(actorUser.groupId).lean();
+    }
+    if (!actorGroup) {
+      actorGroup = await Group.findOne({ members: req.user!.userId, isActive: { $ne: false } }).lean();
+    }
+    const actorIsAdmin = actorPerms.includes(RESOURCES.ADMIN.PANEL) || isAdminProtectedGroup(actorGroup);
+    const actorPriority = actorIsAdmin ? 0 : getEffectiveGroupPriority(actorGroup);
+
+    let currentMemberGroup: any = null;
+    if (targetUser.groupId) {
+      currentMemberGroup = await Group.findById(targetUser.groupId).lean();
+    }
+    if (!currentMemberGroup) {
+      currentMemberGroup = await Group.findOne({ members: targetUser._id, isActive: { $ne: false } }).lean();
+    }
+    const currentMemberPriority = getEffectiveGroupPriority(currentMemberGroup);
+    const targetGroupPriority = getEffectiveGroupPriority(targetGroup);
+
+    // Thành viên ở nhóm có priority thấp hơn (số nhỏ hơn) mới có thể nâng cấp thành viên ở nhóm có priority cao hơn
+    if (actorPriority >= currentMemberPriority) {
+      return res.status(403).json({
+        message: `Bạn thuộc nhóm có Priority ${actorPriority}, chỉ có thể nâng cấp thành viên ở nhóm có Priority lớn hơn ${actorPriority} (hiện tại: ${currentMemberPriority}).`,
+      });
+    }
+
+    if (targetGroupPriority <= actorPriority && !actorIsAdmin) {
+      return res.status(403).json({
+        message: `Bạn chỉ có thể nâng cấp thành viên vào nhóm có Priority lớn hơn ${actorPriority}.`,
+      });
+    }
+
+    const oldGroupName = currentMemberGroup?.name || 'Chưa phân nhóm';
+
+    // Xóa hội viên khỏi tất cả các Group cũ và thêm vào Group mới
+    await Group.updateMany(
+      { _id: { $ne: targetGroup._id }, members: targetUser._id },
+      { $pull: { members: targetUser._id } }
+    );
+    await Group.updateOne(
+      { _id: targetGroup._id },
+      { $addToSet: { members: targetUser._id } }
+    );
+
+    targetUser.groupId = targetGroup._id;
+    await targetUser.save();
+
+    clearAllPermissionCache();
+
+    try {
+      await new AuditLog({
+        actorId: req.user!.userId,
+        actorName: req.user!.fullName,
+        targetId: String(targetUser._id),
+        targetName: targetUser.fullName,
+        type: 'GROUP_UPGRADE',
+        details: `Nâng cấp nhóm thành viên tại NDD "${nddGroup.name}": ${oldGroupName} → ${targetGroup.name} (Priority ${targetGroupPriority})`,
+        timestamp: new Date().toISOString(),
+      }).save();
+    } catch (logErr) {
+      console.error('[NutritionGroup] Audit log error on upgrade-member:', logErr);
+    }
+
+    console.log(`[NutritionGroup] ⬆️ Upgraded member @${targetUser.username} (${targetUser._id}): "${oldGroupName}" -> "${targetGroup.name}" by ${req.user?.fullName}`);
+    res.json({
+      success: true,
+      message: `Đã nâng cấp ${targetUser.fullName} sang nhóm "${targetGroup.name}".`,
+      groupId: String(targetGroup._id),
+      groupName: targetGroup.name,
+      groupPriority: targetGroupPriority,
+    });
+  } catch (err: any) {
+    console.error('[NutritionGroup] Upgrade member error:', err);
     res.status(500).json({ message: err.message });
   }
 });

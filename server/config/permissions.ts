@@ -16,6 +16,7 @@ export const RESOURCES = {
     CREATE: 'users:create',
     UPDATE: 'users:update',
     DELETE: 'users:delete',
+    UPGRADE_MEMBER: 'users:upgrade_member',
   },
   AI: {
     MANAGE: 'ai:manage',
@@ -91,6 +92,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.USERS.CREATE]: 'Tạo người dùng mới',
   [RESOURCES.USERS.UPDATE]: 'Cập nhật thông tin người dùng',
   [RESOURCES.USERS.DELETE]: 'Xóa người dùng',
+  [RESOURCES.USERS.UPGRADE_MEMBER]: 'Nâng cấp thành viên',
   [RESOURCES.AI.MANAGE]: 'Quản lý AI (keys, knowledge, rules)',
   [RESOURCES.AI.VIEW]: 'Xem thông tin AI',
   [RESOURCES.GROUPS.MANAGE]: 'Quản lý nhóm & phân quyền',

@@ -8,6 +8,8 @@ const GroupSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   isActive: { type: Boolean, default: true },
   isDefault: { type: Boolean, default: false },
+  allowMemberUpgrade: { type: Boolean, default: false },
+  priority: { type: Number, default: 10 },
 }, { timestamps: true });
 
 // Đảm bảo chỉ có 1 group mặc định
