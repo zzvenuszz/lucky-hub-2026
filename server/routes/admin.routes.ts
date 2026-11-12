@@ -101,6 +101,28 @@ async function logEmailEncryptionConfiguration(settings: any, requestId: string)
   }
 }
 
+async function exposeEmailProviderKeysForAdmin(providers: any[], requestId: string): Promise<any[]> {
+  const { decrypt } = await getEncryption();
+  return (providers || []).map((provider: any) => {
+    const storedKey = typeof provider.apiKey === 'string' ? provider.apiKey : '';
+    if (!storedKey) return { ...provider, apiKey: '', apiKeyConfigured: false, apiKeyLoadError: false };
+
+    try {
+      const apiKey = storedKey.split(':').length === 3 ? decrypt(storedKey) : storedKey;
+      return { ...provider, apiKey, apiKeyConfigured: !!apiKey, apiKeyLoadError: false };
+    } catch (error: any) {
+      console.error(`[Admin][SystemSettings] Could not load email API key into admin settings form:`, {
+        requestId,
+        providerId: provider._id?.toString?.() || 'unknown',
+        provider: provider.provider,
+        errorName: error?.name || 'Error',
+        errorMessage: error?.message || 'Unknown decryption error',
+      });
+      return { ...provider, apiKey: '', apiKeyConfigured: true, apiKeyLoadError: true };
+    }
+  });
+}
+
 function maskStorageProvider(provider: any) {
   const config = { ...(provider.config || {}) };
   for (const field of STORAGE_SECRET_FIELDS) {
@@ -186,6 +208,7 @@ router.post('/system-branding/logo', async (req: Request, res: Response) => {
 // GET /api/admin/system-settings - Get all settings
 router.get('/system-settings', async (req: Request, res: Response) => {
   try {
+    const requestId = `SystemSettings:${Date.now()}`;
     let settings = await SystemSettings.findOne({}).lean();
 
     if (!settings) {
@@ -196,13 +219,10 @@ router.get('/system-settings', async (req: Request, res: Response) => {
       });
     }
 
-    const maskedSettings = {
+    const adminSettings = {
       email: {
         ...settings.email,
-        providers: settings.email.providers.map((p: any) => ({
-          ...p,
-          apiKey: p.apiKey ? `${p.apiKey.substring(0, 6)}••••${p.apiKey.substring(p.apiKey.length - 4)}` : '',
-        })),
+        providers: await exposeEmailProviderKeysForAdmin(settings.email.providers, requestId),
       },
       storage: {
         ...settings.storage,
@@ -214,7 +234,12 @@ router.get('/system-settings', async (req: Request, res: Response) => {
       },
     };
 
-    res.json(maskedSettings);
+    console.log(`[Admin][${requestId}] System settings loaded for admin UI:`, {
+      emailProviderCount: adminSettings.email.providers.length,
+      emailKeysLoaded: adminSettings.email.providers.filter((provider: any) => provider.apiKeyConfigured && !provider.apiKeyLoadError).length,
+      emailKeysFailedToLoad: adminSettings.email.providers.filter((provider: any) => provider.apiKeyLoadError).length,
+    });
+    res.json(adminSettings);
   } catch (err: any) {
     console.error('[Admin] Get system settings failed:', err);
     res.status(500).json({ message: err.message || 'Lấy cài đặt thất bại' });
@@ -294,13 +319,10 @@ router.post('/system-settings', async (req: Request, res: Response) => {
       settings = await SystemSettings.create({ ...updateData, createdBy: user });
     }
 
-    const masked = {
+    const adminSettings = {
       email: {
         ...settings.email,
-        providers: settings.email.providers.map((p: any) => ({
-          ...p,
-          apiKey: p.apiKey ? `${p.apiKey.substring(0, 6)}••••${p.apiKey.substring(p.apiKey.length - 4)}` : '',
-        })),
+        providers: await exposeEmailProviderKeysForAdmin(settings.email.providers, `SystemSettingsSave:${Date.now()}`),
       },
       storage: {
         ...settings.storage,
@@ -312,7 +334,7 @@ router.post('/system-settings', async (req: Request, res: Response) => {
       },
     };
 
-    res.json({ success: true, settings: masked, message: 'Đã lưu cài đặt!' });
+    res.json({ success: true, settings: adminSettings, message: 'Đã lưu cài đặt!' });
   } catch (err: any) {
     console.error('[Admin] Save system settings failed:', err);
     res.status(500).json({ message: err.message || 'Lưu cài đặt thất bại' });

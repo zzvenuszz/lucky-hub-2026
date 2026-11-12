@@ -11,6 +11,8 @@ interface EmailProvider {
   _id: string;
   provider: string;
   apiKey: string;
+  apiKeyConfigured?: boolean;
+  apiKeyLoadError?: boolean;
   isActive: boolean;
   priority: number;
   label: string;
@@ -90,6 +92,8 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
   const [showAddEmailProvider, setShowAddEmailProvider] = useState(false);
   const [showAddStorageProvider, setShowAddStorageProvider] = useState(false);
   const [editingEmailProvider, setEditingEmailProvider] = useState<EmailProvider | null>(null);
+  const [visibleEmailProviderKeys, setVisibleEmailProviderKeys] = useState<Record<string, boolean>>({});
+  const [showEmailFormApiKey, setShowEmailFormApiKey] = useState(false);
 
   const [emailForm, setEmailForm] = useState({
     provider: 'brevo',
@@ -347,9 +351,10 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
 
   const editEmailProvider = (provider: EmailProvider) => {
     setEditingEmailProvider(provider);
+    setShowEmailFormApiKey(false);
     setEmailForm({
       provider: provider.provider,
-      apiKey: '',
+      apiKey: provider.apiKey || '',
       label: provider.label,
       isActive: provider.isActive,
       priority: provider.priority,
@@ -799,17 +804,28 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-200">
                         <div>
                           <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">API Key</label>
-                          <input
-                            type="password"
-                            placeholder={provider.apiKey ? 'Giữ nguyên key hiện tại' : 'Nhập API Key mới'}
-                            className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
-                            onChange={(e) => {
-                              const updatedProviders = settings?.email.providers.map(p =>
-                                p._id === provider._id ? { ...p, apiKey: e.target.value } : p
-                              ) || [];
-                              setSettings(prev => prev ? { ...prev, email: { ...prev.email, providers: updatedProviders } } : null);
-                            }}
-                          />
+                          <div className="flex gap-2">
+                            <input
+                              type={visibleEmailProviderKeys[provider._id] ? 'text' : 'password'}
+                              value={provider.apiKey || ''}
+                              placeholder={provider.apiKeyLoadError ? 'Không thể tải key; kiểm tra AI_ENCRYPTION_KEY' : 'Nhập API Key mới'}
+                              className="min-w-0 flex-1 px-4 py-3 rounded-xl text-sm bg-white border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                              onChange={(e) => {
+                                const updatedProviders = settings?.email.providers.map(p =>
+                                  p._id === provider._id ? { ...p, apiKey: e.target.value } : p
+                                ) || [];
+                                setSettings(prev => prev ? { ...prev, email: { ...prev.email, providers: updatedProviders } } : null);
+                              }}
+                            />
+                            <button
+                              type="button"
+                              aria-label={visibleEmailProviderKeys[provider._id] ? 'Ẩn API key' : 'Hiện API key'}
+                              onClick={() => setVisibleEmailProviderKeys(prev => ({ ...prev, [provider._id]: !prev[provider._id] }))}
+                              className="min-w-14 px-3 rounded-xl border border-slate-200 text-xs font-bold text-emerald-700 hover:bg-emerald-50"
+                            >
+                              {visibleEmailProviderKeys[provider._id] ? 'Ẩn' : 'Hiện'}
+                            </button>
+                          </div>
                           <p className="text-xs text-slate-400 mt-1"> Để trống để giữ nguyên key hiện tại</p>
                         </div>
                         <div>
@@ -862,7 +878,13 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
               </div>
 
               <button
-                onClick={() => { setShowAddEmailProvider(true); setEditingEmailProvider(null); clearMessages(); }}
+                onClick={() => {
+                  setShowAddEmailProvider(true);
+                  setEditingEmailProvider(null);
+                  setShowEmailFormApiKey(false);
+                  setEmailForm({ provider: 'brevo', apiKey: '', label: '', isActive: true, priority: 1 });
+                  clearMessages();
+                }}
                 className="px-4 py-2 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-200"
               >
                 Thêm Email Provider
@@ -898,13 +920,25 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
                     </div>
                     <div>
                       <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">API Key</label>
-                      <input
-                        type="password"
-                        value={emailForm.apiKey}
-                        onChange={(e) => handleEmailProviderChange('apiKey', e.target.value)}
-                        placeholder={editingEmailProvider ? 'Để trống để giữ nguyên key hiện tại' : 'Nhập API Key'}
-                        className="w-full px-4 py-3 rounded-xl text-sm bg-white border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type={showEmailFormApiKey ? 'text' : 'password'}
+                          value={emailForm.apiKey}
+                          onChange={(e) => handleEmailProviderChange('apiKey', e.target.value)}
+                          placeholder={editingEmailProvider?.apiKeyLoadError
+                            ? 'Không thể tải key; kiểm tra AI_ENCRYPTION_KEY'
+                            : editingEmailProvider ? 'API key hiện tại được nạp ở đây' : 'Nhập API Key'}
+                          className="min-w-0 flex-1 px-4 py-3 rounded-xl text-sm bg-white border border-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                        />
+                        <button
+                          type="button"
+                          aria-label={showEmailFormApiKey ? 'Ẩn API key' : 'Hiện API key'}
+                          onClick={() => setShowEmailFormApiKey(visible => !visible)}
+                          className="min-w-14 px-3 rounded-xl border border-slate-200 text-xs font-bold text-emerald-700 hover:bg-emerald-50"
+                        >
+                          {showEmailFormApiKey ? 'Ẩn' : 'Hiện'}
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">Priority</label>
