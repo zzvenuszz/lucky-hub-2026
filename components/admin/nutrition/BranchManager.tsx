@@ -2,7 +2,8 @@ import { useBodyScrollLock, useModalStack } from '../../system/ModalManager.tsx'
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Database } from '../../../services/database.ts';
 
-const BranchManager: React.FC = () => {
+interface BranchManagerProps { canAdmin: boolean; }
+const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
   const [branches, setBranches] = useState<any[]>([]);
   const [nutritionGroups, setNutritionGroups] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
@@ -140,14 +141,14 @@ const BranchManager: React.FC = () => {
             </div>
             <h2 className="text-2xl font-black tracking-tight text-slate-800">Quản lý Nhánh NDD</h2>
           </div>
-          <button onClick={() => setIsCreating(true)} className="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700">
+          {canAdmin && <button onClick={() => setIsCreating(true)} className="rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700">
             + Tạo nhánh mới
-          </button>
+          </button>}
         </div>
       </div>
 
       {/* Create Form */}
-      {isCreating && (
+      {isCreating && canAdmin && (
         <div className="bg-white p-6 rounded-[2rem] border border-indigo-200 shadow-sm space-y-4">
           <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Thông tin nhánh mới</h3>
           <input
@@ -251,7 +252,7 @@ const BranchManager: React.FC = () => {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex gap-2 pt-2 border-t border-indigo-100">
+                    {canAdmin && <div className="flex gap-2 pt-2 border-t border-indigo-100">
                       <button
                         onClick={(e) => { 
                           e.stopPropagation(); 
@@ -274,7 +275,7 @@ const BranchManager: React.FC = () => {
                       >
                         🗑️ Xóa
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 </div>
               )}
@@ -289,7 +290,7 @@ const BranchManager: React.FC = () => {
       </div>
 
       {/* Edit Modal */}
-      {editingBranch && (
+      {editingBranch && canAdmin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={e => e.stopPropagation()}>
           <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa nhánh: {editingBranch.name}</h4>

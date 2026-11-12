@@ -6,6 +6,8 @@ import AvatarEditor from './AvatarEditor.tsx';
 import ProfileForm from './ProfileForm.tsx';
 import { Database } from '../../services/database.ts';
 
+const FREE_NDD_OPTION = '__free_ndd__';
+
 interface ProfileProps {
   user: User;
   onUpdate: (data: Partial<User>) => void;
@@ -104,6 +106,29 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpd
       setNddLoading(false);
     }
   }, [pendingGroup, fetchNDD]);
+
+  const handleNddSelection = useCallback(async () => {
+    if (selectedNDDId === FREE_NDD_OPTION) {
+      if (nutritionGroup && !confirm(`Rời khỏi NDD “${nutritionGroup.name}” và chuyển thành hội viên tự do? Bạn có thể chọn NDD khác để sinh hoạt sau.`)) return;
+      setNddLoading(true);
+      setNddMessage(null);
+      console.log('[Profile] Free member option selected:', { userId: String(user.id || (user as any)._id || '') });
+      try {
+        const result = await Database.leaveNutritionGroup();
+        setNddMessage({ type: 'success', text: result?.message || 'Bạn đã trở thành hội viên tự do.' });
+        setSelectedNDDId('');
+        setShowNDDSelector(false);
+        await fetchNDD();
+      } catch (err: any) {
+        console.error('[Profile] Could not switch to free member:', err);
+        setNddMessage({ type: 'error', text: err.message || 'Không thể chuyển thành hội viên tự do.' });
+      } finally {
+        setNddLoading(false);
+      }
+      return;
+    }
+    await handleRequestJoin();
+  }, [selectedNDDId, nutritionGroup, pendingGroup, user, fetchNDD, handleRequestJoin]);
 
   // Đồng bộ localData khi user prop thay đổi (ví dụ sau khi cập nhật thành công từ server)
   React.useEffect(() => {
@@ -254,6 +279,7 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpd
                 disabled={nddLoading}
               >
                 <option value="">-- Chọn NDD --</option>
+                <option value={FREE_NDD_OPTION}>Hội viên tự do (không thuộc NDD nào)</option>
                 {nutritionGroups.map(g => {
                   const gid = (g as any).id || (g as any)._id;
                   const isCurrent = nutritionGroup?.id === gid;
@@ -272,11 +298,11 @@ const Profile: React.FC<ProfileProps> = memo(({ user, onUpdate, onMemberLevelUpd
                   Hủy
                 </button>
                 <button
-                  onClick={handleRequestJoin}
-                  disabled={!selectedNDDId || nddLoading}
+                  onClick={handleNddSelection}
+                  disabled={!selectedNDDId || nddLoading || (selectedNDDId !== FREE_NDD_OPTION && selectedNDDId === nutritionGroup?.id)}
                   className="flex-1 py-3 bg-emerald-600 text-white rounded-2xl text-xs font-bold hover:bg-emerald-700 transition-all disabled:opacity-50"
                 >
-                  {nddLoading ? 'Đang gửi...' : 'Gửi yêu cầu'}
+                  {nddLoading ? 'Đang xử lý...' : selectedNDDId === FREE_NDD_OPTION ? 'Trở thành hội viên tự do' : 'Gửi yêu cầu'}
                 </button>
               </div>
             </div>

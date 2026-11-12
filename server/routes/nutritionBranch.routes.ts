@@ -12,7 +12,7 @@ const router = Router();
 router.use(authMiddleware);
 
 // GET /api/nutrition-branches - Danh sách tất cả nhánh (admin)
-router.get('/', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, res: Response) => {
+router.get('/', requirePermission([RESOURCES.NDD.SYSTEM, RESOURCES.NDD.BRANCH_ADMIN]), async (req: Request, res: Response) => {
   try {
     const branches = await NutritionBranch.find()
       .populate('nutritionGroupIds', 'name ownerName members')
@@ -55,7 +55,7 @@ router.get('/my-branches', async (req: Request, res: Response) => {
 });
 
 // POST /api/nutrition-branches - Tạo nhánh mới (admin)
-router.post('/', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, res: Response) => {
+router.post('/', requirePermission(RESOURCES.NDD.BRANCH_ADMIN), async (req: Request, res: Response) => {
   try {
     const { name, nutritionGroupIds } = req.body;
     if (!name || !name.trim()) {
@@ -69,9 +69,9 @@ router.post('/', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, r
     const ndds = await NutritionGroup.find({ _id: { $in: nutritionGroupIds } });
     const memberIds = new Set<string>();
     ndds.forEach(ndd => {
-      ndd.members.forEach((m: any) => memberIds.add(m._id ? m._id.toString() : m.toString()));
-      if (ndd.ownerId) memberIds.add(ndd.ownerId.toString());
-      (ndd.coOwners || []).forEach((c: any) => memberIds.add(c._id ? c._id.toString() : c.toString()));
+      (ndd.members || []).forEach((m: any) => { if (m) memberIds.add(String(m._id || m)); });
+      if (ndd.ownerId) memberIds.add(String((ndd.ownerId as any)?._id || ndd.ownerId));
+      (ndd.coOwners || []).forEach((c: any) => { if (c) memberIds.add(String(c._id || c)); });
     });
 
     const branch = new NutritionBranch({
@@ -91,7 +91,7 @@ router.post('/', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, r
 });
 
 // PUT /api/nutrition-branches/:id - Sửa nhánh
-router.put('/:id', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, res: Response) => {
+router.put('/:id', requirePermission(RESOURCES.NDD.BRANCH_ADMIN), async (req: Request, res: Response) => {
   try {
     const { name, nutritionGroupIds, isActive } = req.body;
     const branch = await NutritionBranch.findById(req.params.id);
@@ -107,9 +107,9 @@ router.put('/:id', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request,
       const ndds = await NutritionGroup.find({ _id: { $in: nutritionGroupIds } });
       const memberIds = new Set<string>();
       ndds.forEach(ndd => {
-        ndd.members.forEach((m: any) => memberIds.add(m._id ? m._id.toString() : m.toString()));
-        if (ndd.ownerId) memberIds.add(ndd.ownerId.toString());
-        (ndd.coOwners || []).forEach((c: any) => memberIds.add(c._id ? c._id.toString() : c.toString()));
+        (ndd.members || []).forEach((m: any) => { if (m) memberIds.add(String(m._id || m)); });
+        if (ndd.ownerId) memberIds.add(String((ndd.ownerId as any)?._id || ndd.ownerId));
+        (ndd.coOwners || []).forEach((c: any) => { if (c) memberIds.add(String(c._id || c)); });
       });
       branch.memberIds = Array.from(memberIds).map(id => new mongoose.Types.ObjectId(id));
     }
@@ -124,7 +124,7 @@ router.put('/:id', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request,
 });
 
 // DELETE /api/nutrition-branches/:id - Xóa nhánh
-router.delete('/:id', requirePermission(RESOURCES.NDD.SYSTEM), async (req: Request, res: Response) => {
+router.delete('/:id', requirePermission(RESOURCES.NDD.BRANCH_ADMIN), async (req: Request, res: Response) => {
   try {
     const branch = await NutritionBranch.findByIdAndDelete(req.params.id);
     if (!branch) return res.status(404).json({ message: 'Không tìm thấy nhánh' });

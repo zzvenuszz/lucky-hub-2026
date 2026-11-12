@@ -50,6 +50,8 @@ export const RESOURCES = {
   NDD: {
     MANAGE: 'ndd:manage',
     SYSTEM: 'ndd:system',
+    ADMIN: 'ndd:admin',
+    BRANCH_ADMIN: 'ndd:branch:admin',
   },
   INVENTORY: {
     MANAGE: 'inventory:manage',
@@ -108,8 +110,10 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.CHATS.VIEW]: 'Xem chat',
   [RESOURCES.CHATS.SEND]: 'Gửi tin nhắn chat',
   [RESOURCES.COACH.ACCESS]: 'Vận hành NDD',
-  [RESOURCES.NDD.MANAGE]: 'Quản lý NDD',
-  [RESOURCES.NDD.SYSTEM]: 'Q.Lý Nhánh NDD',
+  [RESOURCES.NDD.MANAGE]: 'Xem và vận hành NDD',
+  [RESOURCES.NDD.SYSTEM]: 'Xem Nhánh NDD',
+  [RESOURCES.NDD.ADMIN]: 'Quản trị NDD (thêm, sửa, xóa)',
+  [RESOURCES.NDD.BRANCH_ADMIN]: 'Quản trị Nhánh NDD (thêm, sửa, xóa)',
   [RESOURCES.INVENTORY.MANAGE]: 'Quản lý kho hàng và bán hàng riêng',
   [RESOURCES.INVENTORY.SELL]: 'Bán hàng từ kho cá nhân',
   [RESOURCES.PRICELIST.MANAGE]: 'Quản lý bảng giá chung',

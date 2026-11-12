@@ -203,6 +203,7 @@ export const Database = {
   // Nutrition Groups (NDD)
   getNutritionGroups: async () => (await request<any[]>(`${API_BASE}/nutrition-groups`)) ?? [],
   getMyNutritionGroup: async () => (await request<{ group: any, pendingGroup: any }>(`${API_BASE}/nutrition-groups/mine`)) ?? { group: null, pendingGroup: null },
+  leaveNutritionGroup: () => request<any>(`${API_BASE}/nutrition-groups/leave`, 'POST', {}),
   getAllNutritionGroups: async () => (await request<any[]>(`${API_BASE}/nutrition-groups/all`)) ?? [],
   getCoachCandidates: async () => (await request<any[]>(`${API_BASE}/users/coach-candidates`)) ?? [],
   createNutritionGroup: (data: { name: string, ownerId?: string, ownerName?: string, address?: string }) => request<any>(`${API_BASE}/nutrition-groups`, 'POST', data),

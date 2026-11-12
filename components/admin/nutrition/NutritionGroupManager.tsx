@@ -18,9 +18,10 @@ interface NutritionGroup {
 interface NutritionGroupManagerProps {
   users: any[];
   onRefresh: () => void;
+  canAdmin: boolean;
 }
 
-const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, onRefresh }) => {
+const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, onRefresh, canAdmin }) => {
   const [groups, setGroups] = useState<NutritionGroup[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [editingGroup, setEditingGroup] = useState<NutritionGroup | null>(null);
@@ -29,6 +30,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
   const [newGroup, setNewGroup] = useState({ name: '', ownerId: '', address: '' });
 
   const [coachIds, setCoachIds] = useState<string[]>([]);
+  const [coachUsers, setCoachUsers] = useState<any[]>([]);
 
   const editModalId = useMemo(() => `nutrition-edit_${Math.random().toString(36).slice(2, 9)}`, []);
   useBodyScrollLock(!!editingGroup);
@@ -45,20 +47,10 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
 
   const loadCoachIds = useCallback(async () => {
     try {
-      const allGroups = await Database.getGroups();
-      const coachGroups = allGroups.filter((g: any) => (g.permissions || []).includes('coach:access'));
-      const memberIds: string[] = [];
-      const seen = new Set<string>();
-      for (const g of coachGroups) {
-        for (const m of (g.members || [])) {
-          const id = String(m._id || m);
-          if (!seen.has(id)) {
-            seen.add(id);
-            memberIds.push(id);
-          }
-        }
-      }
-      console.log(`[NutritionGroupManager] Found ${memberIds.length} users with coach:access from ${coachGroups.length} groups`);
+      const candidates = await Database.getCoachCandidates();
+      const memberIds = (candidates || []).map((candidate: any) => String(candidate.id || candidate._id)).filter(Boolean);
+      console.log(`[NutritionGroupManager] Found ${memberIds.length} users with coach:access`);
+      setCoachUsers(candidates || []);
       setCoachIds(memberIds);
     } catch (err) {
       console.error('[NutritionGroupManager] Load coach ids error:', err);
@@ -73,7 +65,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
       return;
     }
     try {
-      const owner = users.find(u => String(u.id || u._id) === newGroup.ownerId);
+      const owner = coachUsers.find(u => String(u.id || u._id) === newGroup.ownerId);
       await Database.createNutritionGroup({
         name: newGroup.name.trim(),
         ownerId: newGroup.ownerId || undefined,
@@ -168,17 +160,17 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
 
       <div className="flex justify-between items-center">
         <h2 className="font-black text-slate-800 text-sm uppercase tracking-widest">🏥 Quản lý Nhóm Dinh Dưỡng (NDD)</h2>
-        <button onClick={() => setIsCreating(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl shadow-lg font-bold text-xs hover:bg-emerald-700 transition-all">+ Tạo NDD mới</button>
+        {canAdmin && <button onClick={() => setIsCreating(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl shadow-lg font-bold text-xs hover:bg-emerald-700 transition-all">+ Tạo NDD mới</button>}
       </div>
 
-      {isCreating && (
+      {isCreating && canAdmin && (
         <div className="bg-white p-6 rounded-[2rem] border border-emerald-200 shadow-sm space-y-4">
           <h3 className="font-black text-slate-800 text-xs uppercase tracking-widest">Thông tin NDD mới</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input placeholder="Tên NDD *" value={newGroup.name} onChange={e => setNewGroup({...newGroup, name: e.target.value})} className="px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs" />
             <select value={newGroup.ownerId} onChange={e => setNewGroup({...newGroup, ownerId: e.target.value})} className="px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs">
               <option value="">-- Chọn chủ vận hành --</option>
-              {users.filter(u => coachIds.includes(String(u.id || u._id))).map(u => {
+              {coachUsers.filter(u => coachIds.includes(String(u.id || u._id))).map(u => {
                 const uid = String(u.id || u._id);
                 return <option key={uid} value={uid}>{u.fullName} (@{u.username})</option>;
               })}
@@ -217,8 +209,8 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
                   <button onClick={() => setViewPending(viewPending?.id === gid ? null : group)} className="flex-1 py-2 rounded-xl bg-amber-50 text-amber-600 font-black text-[9px] uppercase tracking-wider hover:bg-amber-100 transition-all">
                     👥 {pendingCount > 0 ? `${pendingCount} Chờ duyệt` : 'Hội viên'}
                   </button>
-                  <button onClick={() => setEditingGroup({...group, ownerId: String(group.ownerId || '')})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
-                  <button onClick={() => handleDelete(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>
+                  {canAdmin && <button onClick={() => setEditingGroup({...group, ownerId: String(group.ownerId || '')})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>}
+                  {canAdmin && <button onClick={() => handleDelete(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>}
                 </div>
               </div>
             </div>
@@ -229,7 +221,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
         )}
       </div>
 
-      {editingGroup && (
+      {editingGroup && canAdmin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-[1200] flex items-center justify-center p-3 md:p-4" onClick={e => e.stopPropagation()}>
           <div className="bg-white w-full max-w-lg max-h-[calc(100dvh-24px)] overflow-y-auto overflow-x-hidden rounded-[2rem] p-5 sm:p-6 space-y-4 animate-in zoom-in-95">
             <h4 className="font-black text-slate-800 uppercase tracking-widest text-sm">Chỉnh sửa NDD: {editingGroup.name}</h4>
@@ -241,11 +233,11 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Chủ vận hành</label>
                 <select value={String(editingGroup.ownerId || '')} onChange={e => {
-                  const owner = users.find(u => String(u.id || u._id) === e.target.value);
+                  const owner = coachUsers.find(u => String(u.id || u._id) === e.target.value);
                   setEditingGroup({...editingGroup, ownerId: e.target.value, ownerName: owner?.fullName || ''});
                 }} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs mt-1">
                   <option value="">{editingGroup.ownerName ? `Chủ cũ (${editingGroup.ownerName}) không còn tài khoản — chọn chủ mới` : 'Chọn chủ vận hành'}</option>
-                  {users.filter(u => coachIds.includes(String(u.id || u._id))).map(u => {
+                  {coachUsers.filter(u => coachIds.includes(String(u.id || u._id))).map(u => {
                     const uid = String(u.id || u._id);
                     return <option key={uid} value={uid}>{u.fullName}</option>;
                   })}
@@ -269,7 +261,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
       )}
 
       {/* View Members / Pending Modal */}
-      {viewPending && <ViewMembersModal group={viewPending} users={users} onApprove={handleApprove} onReject={handleReject} onRemoveMember={handleRemoveMember} onClose={() => setViewPending(null)} />}
+      {viewPending && <ViewMembersModal group={viewPending} users={users} canAdmin={canAdmin} onApprove={handleApprove} onReject={handleReject} onRemoveMember={handleRemoveMember} onClose={() => setViewPending(null)} />}
     </div>
   );
 };
@@ -278,6 +270,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
 interface ViewMembersModalProps {
   group: NutritionGroup;
   users: any[];
+  canAdmin: boolean;
   onApprove: (groupId: string, userId: string, userName: string) => void;
   onReject: (groupId: string, userId: string) => void;
   onRemoveMember: (groupId: string, userId: string, userName: string) => void;
@@ -287,6 +280,7 @@ interface ViewMembersModalProps {
 const ViewMembersModal: React.FC<ViewMembersModalProps> = memo(({
   group,
   users,
+  canAdmin,
   onApprove,
   onReject,
   onRemoveMember,
@@ -301,8 +295,13 @@ const ViewMembersModal: React.FC<ViewMembersModalProps> = memo(({
 
   // Map member IDs to user objects
   const memberUsers = useMemo(() => {
-    const memberIds = (group.members || []).map((m: any) => m._id || m);
-    return users.filter((u: any) => memberIds.includes(String(u.id || u._id)));
+    return (group.members || []).flatMap((member: any) => {
+      if (!member) return [];
+      if (typeof member === 'object' && (member._id || member.id)) return [{ ...member, id: String(member.id || member._id) }];
+      const memberId = String(member);
+      const user = users.find((candidate: any) => String(candidate.id || candidate._id) === memberId);
+      return user ? [{ ...user, id: memberId }] : [];
+    });
   }, [group.members, users]);
 
   return (
@@ -338,10 +337,10 @@ const ViewMembersModal: React.FC<ViewMembersModalProps> = memo(({
                         <span className="font-bold text-sm text-slate-800 truncate block">{fullName}</span>
                         <p className="text-[10px] text-slate-400">@{username}</p>
                       </div>
-                      <div className="flex gap-2 shrink-0">
+                      {canAdmin && <div className="flex gap-2 shrink-0">
                         <button onClick={() => onApprove(gid, uid, fullName)} className="px-3 py-2 bg-emerald-500 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-emerald-600 transition-all">Duyệt</button>
                         <button onClick={() => onReject(gid, uid)} className="px-3 py-2 bg-rose-400 text-white rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-rose-500 transition-all">Từ chối</button>
-                      </div>
+                      </div>}
                     </div>
                   );
                 })}
@@ -365,7 +364,7 @@ const ViewMembersModal: React.FC<ViewMembersModalProps> = memo(({
                         <span className="font-bold text-sm text-slate-800 truncate block">{u.fullName}</span>
                         <p className="text-[10px] text-slate-400">@{u.username} · {u.email || ''}</p>
                       </div>
-                      <button onClick={() => onRemoveMember(gid, uid, u.fullName)} className="px-3 py-2 bg-rose-50 text-rose-600 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-rose-100 transition-all shrink-0">🗑️ Xóa</button>
+                      {canAdmin && <button onClick={() => onRemoveMember(gid, uid, u.fullName)} className="px-3 py-2 bg-rose-50 text-rose-600 rounded-xl text-[9px] font-black uppercase tracking-wider hover:bg-rose-100 transition-all shrink-0">🗑️ Xóa</button>}
                     </div>
                   );
                 })}

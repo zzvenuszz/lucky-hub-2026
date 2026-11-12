@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { NutritionGroup } from '../models/NutritionGroup.ts';
+import { NutritionBranch } from '../models/NutritionBranch.ts';
 import { Metric } from '../models/Metric.ts';
 import { User } from '../models/User.ts';
 import { authMiddleware, optionalAuth } from '../middleware/authMiddleware.ts';
@@ -28,6 +29,23 @@ const getEffectiveGroupPriority = (group: any): number => {
 };
 
 const router = Router();
+const safeId = (value: any) => String(value?._id || value || '');
+const refreshBranchMemberIds = async (branchIds: any[]) => {
+  for (const branchId of branchIds) {
+    const branch = await NutritionBranch.findById(branchId);
+    if (!branch) continue;
+    const groups = await NutritionGroup.find({ _id: { $in: branch.nutritionGroupIds } }).select('members ownerId coOwners').lean() as any[];
+    const memberIds = new Set<string>();
+    for (const group of groups) {
+      for (const member of group.members || []) if (member) memberIds.add(safeId(member));
+      if (group.ownerId) memberIds.add(safeId(group.ownerId));
+      for (const coOwner of group.coOwners || []) if (coOwner) memberIds.add(safeId(coOwner));
+    }
+    branch.memberIds = [...memberIds].filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
+    await branch.save();
+    console.log('[NutritionBranch] Member roster refreshed after NDD membership change:', { branchId: String(branch._id), memberCount: branch.memberIds.length });
+  }
+};
 
 // GET /api/nutrition-groups/public - Danh sách NDD active (không cần auth - cho Register)
 router.get('/public', async (req: Request, res: Response) => {
@@ -68,7 +86,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // GET /api/nutrition-groups/all - Tất cả NDD
-router.get('/all', async (req: Request, res: Response) => {
+router.get('/all', requirePermission([RESOURCES.NDD.MANAGE, RESOURCES.NDD.SYSTEM, RESOURCES.NDD.ADMIN, RESOURCES.NDD.BRANCH_ADMIN, RESOURCES.GROUPS.MANAGE, RESOURCES.USERS.DELETE]), async (req: Request, res: Response) => {
   try {
     const groups = await NutritionGroup.find()
       .populate('ownerId', 'fullName username groupId groupName')
@@ -136,10 +154,10 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
       const ownerIdStr = (g.ownerId as any)?._id?.toString() || g.ownerId?.toString();
       
       // coOwners là array các ObjectId hoặc object sau populate
-      const coOwnersStr = (g.coOwners || []).map((c: any) => c._id?.toString() || c.toString());
+      const coOwnersStr = (g.coOwners || []).filter(Boolean).map((c: any) => safeId(c));
       
       // members là array các ObjectId hoặc object sau populate
-      const membersStr = (g.members || []).map((m: any) => m._id?.toString() || m.toString());
+      const membersStr = (g.members || []).filter(Boolean).map((m: any) => safeId(m));
 
       const isOwner = ownerIdStr === userId;
       const isCoOwner = coOwnersStr.includes(userId);
@@ -278,7 +296,7 @@ router.get('/:id/members', async (req: Request, res: Response) => {
 });
 
 // POST /api/nutrition-groups - Tạo NDD (admin, chỉ chọn COACH làm owner)
-router.post('/', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request, res: Response) => {
+router.post('/', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, res: Response) => {
   try {
     const { name, ownerId, ownerName, address } = req.body;
     if (!name || name.trim() === '') {
@@ -358,7 +376,7 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
     // Kiểm tra quyền: chủ vận hành hoặc admin
     const currentOwnerId = group.ownerId ? String(group.ownerId) : '';
     const isOwner = currentOwnerId === req.user!.userId;
-    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
+    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE) || req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
     if (!isOwner && !isAdmin) {
       return res.status(403).json({ message: 'Chỉ chủ vận hành hoặc admin mới có quyền này' });
     }
@@ -371,7 +389,7 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
           return res.status(400).json({ message: 'Đồng vận hành phải có vai trò HLV (huấn luyện viên)' });
         }
         // Kiểm tra người được thêm phải đang là member của NDD
-        const isMemberOfGroup = group.members.some((m: any) => m.toString() === id);
+        const isMemberOfGroup = (group.members || []).some((m: any) => m && safeId(m) === String(id));
         if (!isMemberOfGroup) {
           return res.status(400).json({ message: 'Người được chọn làm đồng vận hành phải đang sinh hoạt trong NDD này' });
         }
@@ -394,27 +412,13 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
 });
 
 // PUT /api/nutrition-groups/:id - Sửa NDD (owner, co-owner hoặc admin)
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, res: Response) => {
   try {
     const group = await NutritionGroup.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
-    // Kiểm tra quyền: chủ, đồng chủ hoặc admin
-    const currentOwnerId = group.ownerId ? String(group.ownerId) : '';
-    const isOwner = currentOwnerId === req.user!.userId;
-    const isCoOwner = group.coOwners?.some((c: any) => c.toString() === req.user!.userId);
-    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
-    
-    if (!isOwner && !isCoOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Bạn không có quyền sửa NDD này' });
-    }
-
+    const isAdmin = req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
     const { name, ownerId, ownerName, address, isActive } = req.body;
-    
-    // Chỉ admin hoặc owner mới được đổi chủ vận hành
-    if (ownerId !== undefined && !isAdmin && !isOwner) {
-      return res.status(403).json({ message: 'Chỉ admin hoặc chủ vận hành mới được đổi chủ' });
-    }
 
     // Kiểm tra owner mới phải có role COACH
     if (ownerId) {
@@ -440,7 +444,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     if (ownerName !== undefined) updateData.ownerName = ownerName;
     if (address !== undefined) updateData.address = address;
-    if (isActive !== undefined && (isAdmin || isOwner)) updateData.isActive = isActive;
+    if (isActive !== undefined && isAdmin) updateData.isActive = isActive;
 
     const updated = await NutritionGroup.findByIdAndUpdate(req.params.id, updateData, { new: true });
     console.log(`[NutritionGroup] ✅ Updated "${updated?.name}"`);
@@ -451,12 +455,18 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE /api/nutrition-groups/:id - Xóa NDD (admin)
-router.delete('/:id', requirePermission(RESOURCES.GROUPS.MANAGE), async (req: Request, res: Response) => {
+router.delete('/:id', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, res: Response) => {
   try {
-    const group = await NutritionGroup.findByIdAndDelete(req.params.id);
+    const group = await NutritionGroup.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
+    const affectedBranches = await NutritionBranch.find({ nutritionGroupIds: group._id }).distinct('_id');
+    await User.updateMany({ nutritionGroupId: group._id }, { $set: { nutritionGroupId: null } });
+    await User.updateMany({ pendingNutritionGroupId: group._id }, { $set: { pendingNutritionGroupId: null } });
+    await NutritionBranch.updateMany({ nutritionGroupIds: group._id }, { $pull: { nutritionGroupIds: group._id } });
+    await NutritionGroup.deleteOne({ _id: group._id });
+    await refreshBranchMemberIds(affectedBranches);
     console.log(`[NutritionGroup] ✅ Deleted "${group.name}"`);
-    res.json({ success: true });
+    res.json({ success: true, message: 'Đã xóa NDD và chuyển hội viên thành hội viên tự do.' });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }
@@ -476,9 +486,7 @@ router.post('/:id/join-request', async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Bạn đã là thành viên của NDD này' });
     }
 
-    const pendingExists = targetGroup.pendingMembers.some(
-      (p: any) => p.userId.toString() === req.user!.userId
-    );
+    const pendingExists = (targetGroup.pendingMembers || []).some((p: any) => p?.userId && safeId(p.userId) === req.user!.userId);
     if (pendingExists) {
       return res.status(400).json({ message: 'Bạn đã gửi yêu cầu trước đó. Vui lòng chờ phê duyệt.' });
     }
@@ -501,15 +509,54 @@ router.post('/:id/join-request', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/nutrition-groups/leave - Rời NDD để trở thành hội viên tự do
+router.post('/leave', async (req: Request, res: Response) => {
+  try {
+    const user = await User.findById(req.user!.userId);
+    if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
+    const userId = String(user._id);
+    const currentGroupId = user.nutritionGroupId ? String(user.nutritionGroupId) : '';
+    console.log('[NutritionGroup] Free member transition started:', { userId, currentGroupId, pendingGroupId: String(user.pendingNutritionGroupId || '') });
+
+    if (user.nutritionGroupId) {
+      const currentGroup = await NutritionGroup.findById(user.nutritionGroupId);
+      if (currentGroup && safeId(currentGroup.ownerId) === userId) {
+        return res.status(400).json({ message: 'Chủ vận hành cần chuyển giao quyền vận hành trước khi rời NDD.' });
+      }
+      if (currentGroup) {
+        const affectedBranches = await NutritionBranch.find({ nutritionGroupIds: currentGroup._id }).distinct('_id');
+        currentGroup.members = (currentGroup.members || []).filter((member: any) => member && safeId(member) !== userId);
+        currentGroup.coOwners = (currentGroup.coOwners || []).filter((coOwner: any) => coOwner && safeId(coOwner) !== userId);
+        await currentGroup.save();
+        await refreshBranchMemberIds(affectedBranches);
+      }
+    }
+
+    if (user.pendingNutritionGroupId) {
+      const pendingGroup = await NutritionGroup.findById(user.pendingNutritionGroupId);
+      if (pendingGroup) {
+        (pendingGroup as any).pendingMembers = (pendingGroup.pendingMembers || []).filter((pending: any) => !pending?.userId || safeId(pending.userId) !== userId);
+        await pendingGroup.save();
+      }
+    }
+    user.nutritionGroupId = null;
+    user.pendingNutritionGroupId = null;
+    await user.save();
+    console.log('[NutritionGroup] User is now a free member:', { userId, removedFromGroupId: currentGroupId });
+    return res.json({ success: true, message: 'Bạn đã trở thành hội viên tự do và có thể chọn NDD khác để sinh hoạt.' });
+  } catch (err: any) {
+    console.error('[NutritionGroup] Free member transition failed:', err);
+    return res.status(500).json({ message: err.message || 'Không thể chuyển thành hội viên tự do.' });
+  }
+});
+
 // POST /api/nutrition-groups/:id/cancel-request - Hủy yêu cầu
 router.post('/:id/cancel-request', async (req: Request, res: Response) => {
   try {
     const targetGroup = await NutritionGroup.findById(req.params.id);
     if (!targetGroup) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
-    (targetGroup as any).pendingMembers = (targetGroup.pendingMembers || []).filter(
-      (p: any) => p.userId.toString() !== req.user!.userId
-    );
+    (targetGroup as any).pendingMembers = (targetGroup.pendingMembers || []).filter((p: any) => !p?.userId || safeId(p.userId) !== req.user!.userId);
     await targetGroup.save();
 
     const user = await User.findById(req.user!.userId);
@@ -529,16 +576,14 @@ router.post('/:id/approve/:userId', async (req: Request, res: Response) => {
     const group = await NutritionGroup.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
-    const isOwner = group.ownerId.toString() === req.user!.userId;
-    const isCoOwner = group.coOwners?.some((c: any) => c.toString() === req.user!.userId);
-    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
+    const isOwner = safeId(group.ownerId) === req.user!.userId;
+    const isCoOwner = group.coOwners?.some((c: any) => c && safeId(c) === req.user!.userId);
+    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE) || req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
     if (!isOwner && !isCoOwner && !isAdmin) {
       return res.status(403).json({ message: 'Bạn không có quyền duyệt yêu cầu này' });
     }
 
-    const pendingItem = group.pendingMembers.find(
-      (p: any) => p.userId.toString() === req.params.userId
-    );
+    const pendingItem = (group.pendingMembers || []).find((p: any) => p?.userId && safeId(p.userId) === req.params.userId);
     if (!pendingItem) return res.status(404).json({ message: 'Không tìm thấy yêu cầu' });
 
     const user = await User.findById(req.params.userId);
@@ -547,15 +592,15 @@ router.post('/:id/approve/:userId', async (req: Request, res: Response) => {
     if (user.nutritionGroupId) {
       const oldGroup = await NutritionGroup.findById(user.nutritionGroupId);
       if (oldGroup) {
-        oldGroup.members = oldGroup.members.filter((m: any) => m.toString() !== req.params.userId);
+        oldGroup.members = (oldGroup.members || []).filter((m: any) => m && safeId(m) !== req.params.userId);
         await oldGroup.save();
       }
     }
 
-    if (!group.members.includes(user._id)) {
+    if (!(group.members || []).some((member: any) => member && safeId(member) === String(user._id))) {
       group.members.push(user._id);
     }
-    (group as any).pendingMembers = (group.pendingMembers || []).filter((p: any) => p.userId.toString() !== req.params.userId);
+    (group as any).pendingMembers = (group.pendingMembers || []).filter((p: any) => !p?.userId || safeId(p.userId) !== req.params.userId);
     await group.save();
 
     user.nutritionGroupId = group._id;
@@ -575,14 +620,14 @@ router.post('/:id/reject/:userId', async (req: Request, res: Response) => {
     const group = await NutritionGroup.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
-    const isOwner = group.ownerId.toString() === req.user!.userId;
-    const isCoOwner = group.coOwners?.some((c: any) => c.toString() === req.user!.userId);
-    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
+    const isOwner = safeId(group.ownerId) === req.user!.userId;
+    const isCoOwner = group.coOwners?.some((c: any) => c && safeId(c) === req.user!.userId);
+    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE) || req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
     if (!isOwner && !isCoOwner && !isAdmin) {
       return res.status(403).json({ message: 'Bạn không có quyền từ chối yêu cầu này' });
     }
 
-    (group as any).pendingMembers = (group.pendingMembers || []).filter((p: any) => p.userId.toString() !== req.params.userId);
+    (group as any).pendingMembers = (group.pendingMembers || []).filter((p: any) => !p?.userId || safeId(p.userId) !== req.params.userId);
     await group.save();
 
     const user = await User.findById(req.params.userId);
@@ -597,36 +642,36 @@ router.post('/:id/reject/:userId', async (req: Request, res: Response) => {
 });
 
 // POST /api/nutrition-groups/:id/remove-member/:userId - Xóa hội viên
-router.post('/:id/remove-member/:userId', async (req: Request, res: Response) => {
+router.post('/:id/remove-member/:userId', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, res: Response) => {
   try {
     const group = await NutritionGroup.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
-    const isOwner = group.ownerId.toString() === req.user!.userId;
-    const isCoOwner = group.coOwners?.some((c: any) => c.toString() === req.user!.userId);
-    const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
-    if (!isOwner && !isCoOwner && !isAdmin) {
-      return res.status(403).json({ message: 'Bạn không có quyền xóa hội viên' });
-    }
+    const isAdmin = req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
 
     // Chặn xóa chủ vận hành (chỉ admin mới được)
-    const targetIsOwner = group.ownerId.toString() === req.params.userId;
+    const targetIsOwner = group.ownerId ? String(group.ownerId) === req.params.userId : false;
     if (targetIsOwner && !isAdmin) {
       return res.status(403).json({ message: 'Không thể xóa chủ vận hành khỏi NDD. Chỉ Admin mới có quyền này.' });
     }
 
     // Chặn xóa đồng vận hành nếu không phải admin (chỉ admin mới được)
-    const targetIsCoOwner = group.coOwners?.some((c: any) => c.toString() === req.params.userId);
+    const targetIsCoOwner = group.coOwners?.some((c: any) => c && String(c) === req.params.userId);
     if (targetIsCoOwner && !isAdmin) {
       return res.status(403).json({ message: 'Không thể xóa đồng vận hành khỏi NDD. Chỉ Admin mới có quyền này.' });
     }
 
-    group.members = group.members.filter((m: any) => m.toString() !== req.params.userId);
+    const affectedBranches = await NutritionBranch.find({ nutritionGroupIds: group._id }).distinct('_id');
+    group.members = (group.members || []).filter((m: any) => m && String(m) !== req.params.userId);
+    group.coOwners = (group.coOwners || []).filter((c: any) => c && String(c) !== req.params.userId);
+    (group as any).pendingMembers = (group.pendingMembers || []).filter((pending: any) => pending?.userId && String(pending.userId) !== req.params.userId);
     await group.save();
+    await refreshBranchMemberIds(affectedBranches);
 
     const user = await User.findById(req.params.userId);
     if (user) {
       user.nutritionGroupId = null;
+      if (String(user.pendingNutritionGroupId || '') === req.params.id) user.pendingNutritionGroupId = null;
       await user.save();
     }
 

@@ -70,7 +70,11 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
       items.push({ id: 'ndd', label: 'NDD', icon: '🍀', activeIcon: '🍀' });
     }
 
-    if (permissions.includes('ndd:system')) {
+    if (permissions.includes('ndd:admin')) {
+      items.push({ id: 'ndd-admin', label: 'Quản trị NDD', icon: '🏥', activeIcon: '🏥' });
+    }
+
+    if (permissions.includes('ndd:system') || permissions.includes('ndd:branch:admin')) {
       items.push({ id: 'systemndd', label: 'Nhánh NDD', icon: '🌐', activeIcon: '🌐' });
     }
 

@@ -31,6 +31,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
   const [activeTab, setActiveTab] = useState<'users' | 'ai' | 'audit' | 'groups' | 'ndd' | 'systemndd' | 'ai-providers' | 'ai-tasks' | 'ai-logs' | 'system-settings'>('users');
   const [nutritionGroups, setNutritionGroups] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const permissions = (currentUser as any).permissions || [];
+  const canViewNdd = permissions.includes('ndd:manage') || permissions.includes('ndd:admin');
+  const canAdminNdd = permissions.includes('ndd:admin');
+  const canViewBranches = permissions.includes('ndd:system') || permissions.includes('ndd:branch:admin');
+  const canAdminBranches = permissions.includes('ndd:branch:admin');
 
   // Tải nhật ký hệ thống khi chuyển sang tab Audit
   useEffect(() => {
@@ -54,21 +59,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
       {/* Header Điều hướng Tab - Responsive */}
       <div className="sticky top-[60px] z-30 border-b border-slate-200 bg-slate-50/95 p-3 backdrop-blur-md md:top-[72px] md:p-4">
         <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white/80 p-1.5 shadow-sm">
-          <button 
+          <button
             onClick={() => setActiveTab('users')} 
             className={`flex-none w-auto rounded-xl px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.15em] transition-all md:px-3 ${activeTab === 'users' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
           >
             <span className="block text-base">👥</span>
             <span className="hidden md:inline">Hội viên</span>
           </button>
-          <button 
+          <button
             onClick={() => setActiveTab('groups')} 
             className={`flex-none w-auto rounded-xl px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.15em] transition-all md:px-3 ${activeTab === 'groups' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
           >
             <span className="block text-base">🔐</span>
             <span className="hidden md:inline">Nhóm</span>
           </button>
-          <button 
+          {canViewNdd && <button
             onClick={() => {
               setActiveTab('ndd');
               Database.getAllNutritionGroups().then(setNutritionGroups).catch(() => {});
@@ -77,14 +82,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
           >
             <span className="block text-base">🏥</span>
             <span className="hidden md:inline">NDD</span>
-          </button>
-          <button 
+          </button>}
+          {canViewBranches && <button
             onClick={() => setActiveTab('systemndd')} 
             className={`flex-none w-auto rounded-xl px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.15em] transition-all md:px-3 ${activeTab === 'systemndd' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
           >
             <span className="block text-base">🌐</span>
             <span className="hidden md:inline">Nhánh NDD</span>
-          </button>
+          </button>}
           <button
             onClick={() => setActiveTab('ai')}
             className={`flex-none w-auto rounded-xl px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.15em] transition-all md:px-3 ${activeTab === 'ai' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
@@ -148,12 +153,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
           <AuditLogs logs={auditLogs} />
         )}
 
-        {activeTab === 'ndd' && (
-          <NutritionGroupManager users={users} onRefresh={onRefresh} />
+        {activeTab === 'ndd' && canViewNdd && (
+          <NutritionGroupManager users={users} onRefresh={onRefresh} canAdmin={canAdminNdd} />
         )}
 
-        {activeTab === 'systemndd' && (
-          <BranchManager />
+        {activeTab === 'systemndd' && canViewBranches && (
+          <BranchManager canAdmin={canAdminBranches} />
         )}
 
         {activeTab === 'ai-providers' && (
