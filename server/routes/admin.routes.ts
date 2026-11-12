@@ -7,6 +7,7 @@ import { RESOURCES } from '../config/permissions.ts';
 import { validateBody } from '../../services/validationService.ts';
 import { emailService } from '../../services/emailService.ts';
 import { uploadBrandLogo, uploadImageToStorageProvider } from '../services/storage/imageStorageService.ts';
+import { DEFAULT_METRIC_SCALES, normalizeMetricScales } from '../../utils/metricScaleConfig.ts';
 // Using dynamic import for encryption to avoid tsx resolution issues
 const getEncryption = async () => {
   const { encrypt, decrypt } = await import('../utils/encryption.ts');
@@ -216,6 +217,7 @@ router.get('/system-settings', async (req: Request, res: Response) => {
         email: { providers: [], senderEmail: '', senderName: '', appBaseUrl: '' },
         storage: { providers: [] },
         ai: { encryptionKey: '', geminiProxyUrl: '' },
+        metricScales: DEFAULT_METRIC_SCALES,
       });
     }
 
@@ -232,6 +234,7 @@ router.get('/system-settings', async (req: Request, res: Response) => {
         ...settings.ai,
         encryptionKey: settings.ai.encryptionKey ? '••••••••••••••••••••••••••••••••••••' : '',
       },
+      metricScales: normalizeMetricScales(settings.metricScales),
     };
 
     console.log(`[Admin][${requestId}] System settings loaded for admin UI:`, {
@@ -249,7 +252,7 @@ router.get('/system-settings', async (req: Request, res: Response) => {
 // POST /api/admin/system-settings - Create or update settings
 router.post('/system-settings', async (req: Request, res: Response) => {
   try {
-    const { email, storage, ai } = req.body;
+    const { email, storage, ai, metricScales } = req.body;
     const user = (req as any).user?.fullName || 'admin';
 
     let settings: any = await SystemSettings.findOne({});
@@ -313,6 +316,17 @@ router.post('/system-settings', async (req: Request, res: Response) => {
       }
     }
 
+    if (metricScales !== undefined) {
+      if (!Array.isArray(metricScales)) {
+        return res.status(400).json({ message: 'Cấu hình mã cân không hợp lệ.' });
+      }
+      updateData.metricScales = normalizeMetricScales(metricScales);
+      console.log('[Admin][MetricScaleSettings] Saving scale models:', {
+        count: updateData.metricScales.length,
+        codes: updateData.metricScales.map((scale: any) => scale.code),
+      });
+    }
+
     if (settings) {
       settings = await SystemSettings.findOneAndUpdate({}, updateData, { new: true }).lean();
     } else {
@@ -332,6 +346,7 @@ router.post('/system-settings', async (req: Request, res: Response) => {
         ...settings.ai,
         encryptionKey: settings.ai.encryptionKey ? '••••••••••••••••••••••••••••••••••••' : '',
       },
+      metricScales: normalizeMetricScales(settings.metricScales || DEFAULT_METRIC_SCALES),
     };
 
     res.json({ success: true, settings: adminSettings, message: 'Đã lưu cài đặt!' });

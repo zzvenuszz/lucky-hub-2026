@@ -131,6 +131,7 @@ export const Database = {
   resetUserInventoryData: (id: string, confirmationText: string) => request<any>(`${API_BASE}/users/${id}/inventory-data`, 'DELETE', { confirmationText }),
   
   // Metrics
+  getMetricScaleConfig: async () => await request<{ metricScales: Array<{ code: string; name: string; order: string[] }>; defaultScaleCode: string }>(`${API_BASE}/metrics/scale-config`) ?? { metricScales: [], defaultScaleCode: 'OTHER' },
   getMetrics: async (userId?: string) => (userId ? await request<HealthMetric[]>(`${API_BASE}/metrics/${userId}`) : await request<HealthMetric[]>(`${API_BASE}/all-metrics`)) ?? [],
   saveMetric: (data: any) => request<HealthMetric>(`${API_BASE}/metrics`, 'POST', data),
   updateMetric: (id: string, data: any) => request<HealthMetric>(`${API_BASE}/metrics/${id}`, 'PUT', data),
@@ -208,6 +209,7 @@ export const Database = {
   getCoachCandidates: async () => (await request<any[]>(`${API_BASE}/users/coach-candidates`)) ?? [],
   createNutritionGroup: (data: { name: string, ownerId?: string, ownerName?: string, address?: string }) => request<any>(`${API_BASE}/nutrition-groups`, 'POST', data),
   updateNutritionGroup: (id: string, data: any) => request<any>(`${API_BASE}/nutrition-groups/${id}`, 'PUT', data),
+  updateNutritionGroupScale: (id: string, scaleCode: string) => request<any>(`${API_BASE}/nutrition-groups/${id}/scale`, 'PUT', { scaleCode }),
   deleteNutritionGroup: (id: string) => request(`${API_BASE}/nutrition-groups/${id}`, 'DELETE'),
   joinNutritionGroup: (id: string) => request<any>(`${API_BASE}/nutrition-groups/${id}/join-request`, 'POST'),
   cancelNutritionGroupRequest: (id: string) => request<any>(`${API_BASE}/nutrition-groups/${id}/cancel-request`, 'POST'),

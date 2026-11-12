@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { DEFAULT_METRIC_SCALES } from '../../utils/metricScaleConfig.ts';
 
 // Email Service Settings
 const EmailProviderSchema = new mongoose.Schema({
@@ -52,6 +53,12 @@ const BrandingSettingsSchema = new mongoose.Schema({
   copyrightLine2: { type: String, default: '' },
 });
 
+const MetricScaleSchema = new mongoose.Schema({
+  code: { type: String, required: true, trim: true },
+  name: { type: String, required: true, trim: true },
+  order: { type: [String], default: [] },
+}, { _id: false });
+
 // Main System Settings
 const SystemSettingsSchema = new mongoose.Schema({
   singleton: { type: String, default: 'system', enum: ['system'], immutable: true },
@@ -60,6 +67,7 @@ const SystemSettingsSchema = new mongoose.Schema({
   storage: StorageSettingsSchema,
   ai: AISettingsSchema,
   branding: { type: BrandingSettingsSchema, default: () => ({}) },
+  metricScales: { type: [MetricScaleSchema], default: () => DEFAULT_METRIC_SCALES },
   updatedBy: { type: String, default: 'system' },
 }, { timestamps: true });
 

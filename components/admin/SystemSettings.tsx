@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { Database } from '../../services/database.ts';
 import SystemBrandingSettings from './SystemBrandingSettings.tsx';
+import MetricScaleSettings from './MetricScaleSettings.tsx';
+import { DEFAULT_METRIC_SCALES, MetricScaleModel } from '../../utils/metricScaleConfig.ts';
 
 interface SystemSettingsProps {
   currentUser: any;
@@ -72,10 +74,11 @@ interface SystemSettingsData {
     _id: string;
     updatedAt: string;
   };
+  metricScales: MetricScaleModel[];
 }
 
 const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ currentUser, onRefresh }: SystemSettingsProps) {
-  const [activeSection, setActiveSection] = useState<'email' | 'storage' | 'ai-keys' | 'magic-mirror' | 'branding'>('email');
+  const [activeSection, setActiveSection] = useState<'email' | 'storage' | 'ai-keys' | 'metric-scales' | 'magic-mirror' | 'branding'>('email');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -277,11 +280,17 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
     clearMessages();
   };
 
-  const saveSettings = async (section: 'email' | 'storage' | 'ai') => {
+  const saveSettings = async (section: 'email' | 'storage' | 'ai' | 'metricScales') => {
     setIsLoading(true);
     setError(null);
     setSuccess(null);
     try {
+      if (section === 'metricScales') {
+        console.log('[SystemSettings] Saving scale order settings:', {
+          count: settings?.metricScales?.length || 0,
+          codes: settings?.metricScales?.map(scale => scale.code) || [],
+        });
+      }
       const response = await fetch('/api/admin/system-settings', {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -727,6 +736,7 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
         <div className="flex w-full flex-nowrap gap-1 md:w-auto md:flex-wrap md:gap-2">
           {[
             { id: 'email', label: 'Email', icon: '📧' },
+            { id: 'metric-scales', label: 'Mã cân', icon: '⚖️' },
             { id: 'storage', label: 'Lưu trữ ảnh', icon: '🖼️' },
             { id: 'ai-keys', label: 'AI Keys', icon: '🔑' },
             { id: 'magic-mirror', label: 'CẤU HÌNH MAGIC MIRROR', icon: '🪞' },
@@ -760,6 +770,15 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
       )}
 
       {activeSection === 'branding' && <SystemBrandingSettings />}
+
+      {activeSection === 'metric-scales' && (
+        <MetricScaleSettings
+          scales={settings?.metricScales?.length ? settings.metricScales : DEFAULT_METRIC_SCALES}
+          isSaving={isLoading}
+          onChange={metricScales => setSettings(prev => prev ? { ...prev, metricScales } : prev)}
+          onSave={() => saveSettings('metricScales')}
+        />
+      )}
 
       {/* Email Settings */}
       {activeSection === 'email' && (

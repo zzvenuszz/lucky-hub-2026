@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from '
 import { HealthMetric } from '../../types.ts';
 import { extractMetricsFromImage } from '../../services/aiCoachService.ts';
 import { formatDateVN } from '../../utils/formatters.ts';
+import { Database } from '../../services/database.ts';
+import { DEFAULT_METRIC_SCALES, METRIC_FIELD_LABELS, METRIC_FIELD_ORDER, MetricFieldKey, MetricScaleModel, normalizeMetricScales, OTHER_METRIC_SCALE_CODE, OTHER_METRIC_SCALE_LABEL } from '../../utils/metricScaleConfig.ts';
 import LoadingButton from '../system/LoadingButton.tsx';
 import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 
@@ -81,6 +83,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     date: getTodayISO(),
     weight: '', bodyFat: '', boneMinerals: '', waterPercent: '', muscleMass: '', energy: '', bioAge: '', visceralFat: '', balanceIndex: ''
   });
+  const [metricScaleModels, setMetricScaleModels] = useState<MetricScaleModel[]>(DEFAULT_METRIC_SCALES);
+  const [selectedScaleCode, setSelectedScaleCode] = useState(OTHER_METRIC_SCALE_CODE);
   
   const [loadingAI, setLoadingAI] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
@@ -96,6 +100,23 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [editingData, setEditingData] = useState<any>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    Database.getMetricScaleConfig()
+      .then(config => {
+        if (!isMounted) return;
+        const normalized = normalizeMetricScales(config.metricScales);
+        setMetricScaleModels(normalized);
+        const defaultCode = config.defaultScaleCode || OTHER_METRIC_SCALE_CODE;
+        setSelectedScaleCode(normalized.some(scale => scale.code === defaultCode) ? defaultCode : OTHER_METRIC_SCALE_CODE);
+        console.log('[MetricForm] Loaded scale models and group default:', { count: normalized.length, codes: normalized.map(scale => scale.code), defaultScaleCode: defaultCode });
+      })
+      .catch(error => {
+        console.error('[MetricForm] Failed to load scale models; using defaults:', error);
+      });
+    return () => { isMounted = false; };
+  }, []);
   
   const handleRemoveBulkItem = useCallback((idx: number) => {
     setBulkPreview(prev => {
@@ -310,20 +331,26 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
     }
   };
 
+  const selectedScale = selectedScaleCode === OTHER_METRIC_SCALE_CODE
+    ? null
+    : metricScaleModels.find(scale => scale.code === selectedScaleCode) || null;
+
   const metricFields = useMemo(() => {
     const lm = latestMetrics || {};
-    return [
-      { key: 'weight', label: 'Cân nặng (kg)', placeholder: lm.weight ? `${lm.weight}` : '65.5' },
-      { key: 'bodyFat', label: 'Mỡ cơ thể (%)', placeholder: lm.bodyFat ? `${lm.bodyFat}` : '20.0' },
-      { key: 'muscleMass', label: 'Lượng cơ (kg)', placeholder: lm.muscleMass ? `${lm.muscleMass}` : '45.0' },
-      { key: 'balanceIndex', label: 'Cân đối', placeholder: lm.balanceIndex ? `${lm.balanceIndex}` : '80' },
-      { key: 'visceralFat', label: 'Mỡ nội tạng', placeholder: lm.visceralFat ? `${lm.visceralFat}` : '5' },
-      { key: 'boneMinerals', label: 'Khoáng chất (kg)', placeholder: lm.boneMinerals ? `${lm.boneMinerals}` : '2.5' },
-      { key: 'waterPercent', label: 'Nước (%)', placeholder: lm.waterPercent ? `${lm.waterPercent}` : '55.0' },
-      { key: 'energy', label: 'Năng Lượng (kcal)', placeholder: lm.energy ? `${lm.energy}` : '1500' },
-      { key: 'bioAge', label: 'Tuổi sinh học', placeholder: lm.bioAge ? `${lm.bioAge}` : '25' },
-    ];
-  }, [latestMetrics]);
+    const placeholders: Record<MetricFieldKey, string> = {
+      weight: lm.weight ? `${lm.weight}` : '65.5',
+      bodyFat: lm.bodyFat ? `${lm.bodyFat}` : '20.0',
+      muscleMass: lm.muscleMass ? `${lm.muscleMass}` : '45.0',
+      balanceIndex: lm.balanceIndex ? `${lm.balanceIndex}` : '80',
+      visceralFat: lm.visceralFat ? `${lm.visceralFat}` : '5',
+      boneMinerals: lm.boneMinerals ? `${lm.boneMinerals}` : '2.5',
+      waterPercent: lm.waterPercent ? `${lm.waterPercent}` : '55.0',
+      energy: lm.energy ? `${lm.energy}` : '1500',
+      bioAge: lm.bioAge ? `${lm.bioAge}` : '25',
+    };
+    const order = selectedScale?.order || [...METRIC_FIELD_ORDER];
+    return order.map(key => ({ key, label: METRIC_FIELD_LABELS[key], placeholder: placeholders[key] }));
+  }, [latestMetrics, selectedScale]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -495,6 +522,23 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
                     />
                   </div>
+                </div>
+
+                <div className="md:col-span-2 lg:col-span-3 space-y-1">
+                  <label htmlFor="manual-metric-scale" className="text-[10px] font-black text-slate-400 uppercase ml-1">Loại cân đang sử dụng</label>
+                  <select
+                    id="manual-metric-scale"
+                    data-testid="manual-metric-scale"
+                    value={selectedScaleCode}
+                    onChange={event => {
+                      setSelectedScaleCode(event.target.value);
+                      console.log('[MetricForm] Scale model selected:', { code: event.target.value });
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value={OTHER_METRIC_SCALE_CODE}>{OTHER_METRIC_SCALE_LABEL}</option>
+                    {metricScaleModels.map(scale => <option key={scale.code} value={scale.code}>{scale.code} · {scale.name}</option>)}
+                  </select>
                 </div>
 
                 {metricFields.map(field => (

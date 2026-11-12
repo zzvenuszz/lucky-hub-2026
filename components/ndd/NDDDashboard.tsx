@@ -5,6 +5,7 @@ import MemberMetricsManager from './MemberMetricsManager.tsx';
 import MemberUpgradeModal, { MemberUpgradeTarget, UpgradableGroupOption } from './MemberUpgradeModal.tsx';
 import LoadingButton from '../system/LoadingButton.tsx';
 import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
+import { DEFAULT_METRIC_SCALES, MetricScaleModel, normalizeMetricScales, OTHER_METRIC_SCALE_CODE, OTHER_METRIC_SCALE_LABEL } from '../../utils/metricScaleConfig.ts';
 
 interface NDDDashboardProps {
   currentUser: User;
@@ -41,6 +42,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
   const [metricMuscleMass, setMetricMuscleMass] = useState('');
   const [approvingUserId, setApprovingUserId] = useState<string | null>(null);
   const [rejectingUserId, setRejectingUserId] = useState<string | null>(null);
+  const [metricScaleModels, setMetricScaleModels] = useState<MetricScaleModel[]>(DEFAULT_METRIC_SCALES);
+  const [selectedGroupScaleCode, setSelectedGroupScaleCode] = useState(OTHER_METRIC_SCALE_CODE);
+  const [savingGroupScale, setSavingGroupScale] = useState(false);
   const dashboardDataRef = useRef<any[]>([]);
 
   const fetchCoachCandidates = useCallback(async () => {
@@ -93,7 +97,15 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
     }
   }, [selectedNdd]);
 
-  useEffect(() => { fetchDashboard(); fetchCoachCandidates(); }, [fetchDashboard, fetchCoachCandidates]);
+  useEffect(() => {
+    fetchDashboard();
+    fetchCoachCandidates();
+    Database.getMetricScaleConfig().then(config => {
+      const normalized = normalizeMetricScales(config.metricScales);
+      setMetricScaleModels(normalized);
+      console.log('[NDDDashboard] Loaded available scale models:', { count: normalized.length, codes: normalized.map(scale => scale.code) });
+    }).catch(error => console.error('[NDDDashboard] Failed to load scale models:', error));
+  }, [fetchDashboard, fetchCoachCandidates]);
 
   const handleUpdateCoOwners = async () => {
     if (!selectedNdd?.group?.id) return;
@@ -113,6 +125,22 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
       }
     } catch (err: any) {
       setActionMsg({ type: 'error', text: '❌ Lỗi: ' + err.message });
+    }
+  };
+
+  const handleSaveGroupScale = async () => {
+    if (!selectedNdd?.group?.id) return;
+    setSavingGroupScale(true);
+    try {
+      console.log('[NDDDashboard] Updating group scale:', { groupId: selectedNdd.group.id, scaleCode: selectedGroupScaleCode });
+      await Database.updateNutritionGroupScale(selectedNdd.group.id, selectedGroupScaleCode);
+      await refreshDashboard();
+      setActionMsg({ type: 'success', text: '✅ Đã cập nhật loại cân của nhóm' });
+    } catch (error: any) {
+      console.error('[NDDDashboard] Failed to update group scale:', error);
+      setActionMsg({ type: 'error', text: '❌ ' + (error.message || 'Không thể cập nhật loại cân') });
+    } finally {
+      setSavingGroupScale(false);
     }
   };
 
@@ -267,7 +295,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
             const group = item.group;
             const memberMetrics = item.memberMetrics || [];
             return (
-              <div key={idx} onClick={() => { setSelectedNdd(item); setShowCoOwnerEditor(false); setShowPending(false); }} className="group cursor-pointer overflow-hidden rounded-[30px] border border-emerald-200 bg-white shadow-[0_18px_45px_rgba(16,185,129,0.08)] transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_22px_50px_rgba(16,185,129,0.12)]">
+              <div key={idx} onClick={() => { setSelectedNdd(item); setSelectedGroupScaleCode(item.group.scaleCode || OTHER_METRIC_SCALE_CODE); setShowCoOwnerEditor(false); setShowPending(false); }} className="group cursor-pointer overflow-hidden rounded-[30px] border border-emerald-200 bg-white shadow-[0_18px_45px_rgba(16,185,129,0.08)] transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_22px_50px_rgba(16,185,129,0.12)]">
                 <div className="bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-4">
                   <h3 className="text-lg font-black text-white">{group.name}</h3>
                   <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100">{group.address || 'Chưa có địa chỉ'}</p>
@@ -288,6 +316,8 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
   const memberMetrics = selectedNdd.memberMetrics || [];
   const currentUserId = (currentUser as any).id || (currentUser as any)._id;
   const isOwner = group.ownerId?._id === currentUserId || group.ownerId === currentUserId;
+  const isCoOwner = (group.coOwners || []).some((coOwner: any) => String(coOwner?._id || coOwner) === String(currentUserId));
+  const canManageGroupScale = isOwner || isCoOwner || (currentUser as any).permissions?.includes('ndd:admin');
   const pendingMembers = group.pendingMembers || [];
 
   return (
@@ -321,6 +351,22 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
               <p className="font-bold text-slate-800 text-sm mt-1">{memberMetrics.length} người</p>
             </div>
           </div>
+
+          {canManageGroupScale && <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="min-w-0 flex-1 text-xs font-bold text-violet-900">
+                Loại cân nhóm đang sử dụng
+                <select value={metricScaleModels.some(scale => scale.code === selectedGroupScaleCode) || selectedGroupScaleCode === OTHER_METRIC_SCALE_CODE ? selectedGroupScaleCode : OTHER_METRIC_SCALE_CODE} onChange={event => setSelectedGroupScaleCode(event.target.value)} className="mt-1 w-full rounded-xl border border-violet-200 bg-white px-3 py-3 text-sm font-bold text-slate-800">
+                  <option value={OTHER_METRIC_SCALE_CODE}>{OTHER_METRIC_SCALE_LABEL}</option>
+                  {metricScaleModels.map(scale => <option key={scale.code} value={scale.code}>{scale.code} · {scale.name}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={handleSaveGroupScale} disabled={savingGroupScale || selectedGroupScaleCode === (group.scaleCode || OTHER_METRIC_SCALE_CODE)} className="rounded-xl bg-violet-700 px-5 py-3 text-xs font-black text-white disabled:opacity-50">
+                {savingGroupScale ? 'Đang lưu…' : 'Lưu loại cân'}
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-violet-800">Loại cân này sẽ được chọn mặc định khi hội viên thuộc nhóm nhập chỉ số thủ công.</p>
+          </div>}
 
           <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-100">
             {isOwner && (<button onClick={() => setShowCoOwnerEditor(!showCoOwnerEditor)} className="px-5 py-2.5 bg-blue-500 text-white rounded-xl text-xs font-bold hover:bg-blue-600 transition-all">👥 Quản lý đồng vận hành</button>)}

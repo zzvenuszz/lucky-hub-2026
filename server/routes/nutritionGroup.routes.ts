@@ -10,6 +10,8 @@ import { RESOURCES } from '../config/permissions.ts';
 import { Group } from '../models/Group.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { clearAllPermissionCache } from '../services/permissionService.ts';
+import { SystemSettings } from '../models/SystemSettings.ts';
+import { DEFAULT_METRIC_SCALES, normalizeMetricScales, OTHER_METRIC_SCALE_CODE } from '../../utils/metricScaleConfig.ts';
 
 const isAdminProtectedGroup = (group: { name?: string; permissions?: string[] } | null | undefined): boolean => {
   if (!group) return false;
@@ -65,6 +67,34 @@ router.get('/public', async (req: Request, res: Response) => {
 
 // All routes below require auth
 router.use(authMiddleware);
+
+// PUT /api/nutrition-groups/:id/scale - Chọn mã cân mặc định của NDD
+router.put('/:id/scale', async (req: Request, res: Response) => {
+  try {
+    const group = await NutritionGroup.findById(req.params.id);
+    if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
+    const userId = req.user!.userId;
+    const isOwner = safeId(group.ownerId) === userId;
+    const isCoOwner = (group.coOwners || []).some((id: any) => safeId(id) === userId);
+    const isNddAdmin = req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
+    if (!isOwner && !isCoOwner && !isNddAdmin) return res.status(403).json({ message: 'Bạn không có quyền đổi loại cân của NDD này.' });
+
+    const scaleCode = typeof req.body?.scaleCode === 'string' ? req.body.scaleCode.trim() : '';
+    const settings = await SystemSettings.findOne({}).select('metricScales').lean();
+    const configuredScales = normalizeMetricScales(settings?.metricScales || DEFAULT_METRIC_SCALES);
+    if (scaleCode !== OTHER_METRIC_SCALE_CODE && !configuredScales.some(scale => scale.code === scaleCode)) {
+      return res.status(400).json({ message: 'Mã cân không nằm trong danh sách cấu hình.' });
+    }
+
+    group.scaleCode = scaleCode;
+    await group.save();
+    console.log('[NutritionGroup][Scale] Updated group scale:', { groupId: String(group._id), scaleCode, actorId: userId });
+    res.json({ success: true, groupId: String(group._id), scaleCode });
+  } catch (error: any) {
+    console.error('[NutritionGroup][Scale] Failed to update group scale:', error);
+    res.status(500).json({ message: error.message || 'Không thể cập nhật loại cân của NDD.' });
+  }
+});
 
 // GET /api/nutrition-groups - Danh sách NDD đang hoạt động (public)
 router.get('/', async (req: Request, res: Response) => {

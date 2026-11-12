@@ -9,11 +9,31 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { requirePermission, can } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { validateBody } from '../../services/validationService.ts';
+import { SystemSettings } from '../models/SystemSettings.ts';
+import { DEFAULT_METRIC_SCALES, normalizeMetricScales } from '../../utils/metricScaleConfig.ts';
+import { NutritionGroup } from '../models/NutritionGroup.ts';
 
 const router = Router();
 
 // Tất cả metric routes cần auth
 router.use(authMiddleware);
+
+router.get('/scale-config', async (req: Request, res: Response) => {
+  try {
+    const settings = await SystemSettings.findOne({}).select('metricScales').lean();
+    const metricScales = normalizeMetricScales(settings?.metricScales || DEFAULT_METRIC_SCALES);
+    const user = await User.findById(req.user!.userId).select('nutritionGroupId').lean() as any;
+    const nutritionGroup = user?.nutritionGroupId
+      ? await NutritionGroup.findById(user.nutritionGroupId).select('scaleCode').lean() as any
+      : user?._id ? await NutritionGroup.findOne({ members: user._id }).select('scaleCode').lean() as any : null;
+    const defaultScaleCode = nutritionGroup?.scaleCode || 'OTHER';
+    console.log('[Metrics][ScaleConfig] Loaded scale models and member default:', { count: metricScales.length, groupId: user?.nutritionGroupId ? String(user.nutritionGroupId) : null, defaultScaleCode });
+    res.json({ metricScales, defaultScaleCode });
+  } catch (error: any) {
+    console.error('[Metrics][ScaleConfig] Failed to load scale models:', error);
+    res.status(500).json({ message: error.message || 'Không thể tải cấu hình mã cân.' });
+  }
+});
 
 /**
  * GET /api/metrics/:userId - Lấy metrics của user
