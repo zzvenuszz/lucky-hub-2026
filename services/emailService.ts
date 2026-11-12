@@ -129,12 +129,6 @@ class EmailService {
     }
   }
 
-  private maskKeyForLog(key: string): string {
-    if (!key) return '(empty)';
-    if (key.length <= 10) return `${key.slice(0, 2)}***`;
-    return `${key.slice(0, 6)}...${key.slice(-4)} (len=${key.length})`;
-  }
-
   /**
    * Gửi email qua Brevo API (primary)
    */
@@ -152,7 +146,7 @@ class EmailService {
         sender: { name: this.senderName, email: this.senderEmail },
         to: options.to,
         subject: options.subject,
-        apiKeyPreview: this.maskKeyForLog(activeKey),
+        apiKeyConfigured: !!activeKey,
       });
 
       const response = await fetch(API_BREVO, {
@@ -219,7 +213,7 @@ class EmailService {
         from: { email: this.senderEmail, name: this.senderName },
         to: options.to,
         subject: options.subject,
-        apiKeyPreview: this.maskKeyForLog(activeKey),
+        apiKeyConfigured: !!activeKey,
       });
 
       const msg = {
@@ -274,7 +268,7 @@ class EmailService {
       console.log(`[EMAIL-DIAGNOSTIC] ${entry}`);
     };
 
-    recordStep(`Bắt đầu gửi email tới "${options.to}" | Tiêu đề: "${options.subject}"`);
+    recordStep(`Bắt đầu gửi email | recipientProvided=${!!options.to} | subjectLength=${options.subject.length}`);
     await this.refreshStoredSettings();
     recordStep(`Cấu hình người gửi: "${this.senderName} <${this.senderEmail}>" | Preferred provider: ${options.preferredProvider || 'auto (Brevo -> SendGrid)'}`);
 
@@ -287,7 +281,7 @@ class EmailService {
     const attempts: Record<string, any> = {};
 
     if (options.preferredProvider === 'sendgrid') {
-      recordStep(`Đang thử gửi qua SendGrid (key=${this.maskKeyForLog(cleanOverrideKey || this.sgApiKey)})...`);
+      recordStep(`Đang thử gửi qua SendGrid (apiKeyConfigured=${!!(cleanOverrideKey || this.sgApiKey)})...`);
       const sgResult = await this.sendViaSendGrid(options, cleanOverrideKey || undefined);
       attempts.sendgrid = sgResult;
       if (sgResult.success) {
@@ -303,14 +297,14 @@ class EmailService {
       }
       recordStep(`❌ Brevo (fallback) cũng thất bại: ${brevoResult.error}`);
     } else {
-      recordStep(`Đang thử gửi qua Brevo (key=${this.maskKeyForLog(cleanOverrideKey || this.brevoApiKey)})...`);
+      recordStep(`Đang thử gửi qua Brevo (apiKeyConfigured=${!!(cleanOverrideKey || this.brevoApiKey)})...`);
       const brevoResult = await this.sendViaBrevo(options, cleanOverrideKey || undefined);
       attempts.brevo = brevoResult;
       if (brevoResult.success) {
         recordStep(`✅ Gửi thành công qua Brevo!`);
         return { success: true, providerUsed: 'brevo', steps, details: { attempts, durationMs: Date.now() - startedAt } };
       }
-      recordStep(`❌ Brevo thất bại: ${brevoResult.error}. Chuyển sang fallback SendGrid (key=${this.maskKeyForLog(this.sgApiKey)})...`);
+      recordStep(`❌ Brevo thất bại: ${brevoResult.error}. Chuyển sang fallback SendGrid (apiKeyConfigured=${!!this.sgApiKey})...`);
       const sgResult = await this.sendViaSendGrid(options);
       attempts.sendgrid = sgResult;
       if (sgResult.success) {

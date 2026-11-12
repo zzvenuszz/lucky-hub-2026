@@ -503,13 +503,16 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
     const activeProvider = settings?.email.providers.find(p => p.isActive);
     const providerId = activeProvider?._id;
     const toEmail = recipientEmail || (currentUser as any).email;
+    const requestStartedAt = Date.now();
     console.log('[SystemSettings][EmailTest] 🚀 Step 1: Bắt đầu gửi email test:', {
-      to: toEmail,
+      recipientProvided: !!toEmail,
+      recipientDomain: typeof toEmail === 'string' && toEmail.includes('@') ? toEmail.split('@').pop() : 'invalid',
       providerId,
       providerName: activeProvider?.provider,
       providerLabel: activeProvider?.label,
+      startedAt: new Date(requestStartedAt).toISOString(),
     });
-    window.debugLog?.(`[EmailTest] Bắt đầu gửi email test tới ${toEmail} (Provider: ${activeProvider?.provider || 'default'})`, 'info');
+    window.debugLog?.(`[EmailTest] Bắt đầu gửi email test (Provider: ${activeProvider?.provider || 'default'})`, 'info');
     try {
       const response = await fetch('/api/admin/test-email', {
         method: 'POST',
@@ -521,8 +524,23 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
           providerId,
         })
       });
-      const data = await response.json().catch(() => ({}));
-      console.log(`[SystemSettings][EmailTest] 📥 Step 2: Server phản hồi HTTP ${response.status}:`, data);
+      const responseText = await response.text();
+      let data: any = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        data = { rawResponse: responseText };
+        console.error('[SystemSettings][EmailTest] ❌ Không đọc được JSON response:', parseError);
+      }
+      console.log('[SystemSettings][EmailTest] 📥 Step 2: HTTP response nhận được:', {
+        requestId: data.requestId || 'not-returned',
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        durationMs: Date.now() - requestStartedAt,
+        contentType: response.headers.get('content-type'),
+        payload: data,
+      });
       if (Array.isArray(data.steps)) {
         data.steps.forEach((step: string, idx: number) => {
           console.log(`[SystemSettings][EmailTest]   ↳ Bước ${idx + 1}: ${step}`);
@@ -530,19 +548,36 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
       }
       if (data.details) {
         console.log('[SystemSettings][EmailTest] 📋 Chi tiết kết quả provider:', data.details);
+        console.log('[SystemSettings][EmailTest] 📋 Kết quả từng provider:', data.details.attempts || {});
       }
       if (response.ok && data.success) {
-        console.log('[SystemSettings][EmailTest] ✅ Hoàn tất gửi email test thành công!');
-        window.debugLog?.(`[EmailTest] ✅ Gửi thành công tới ${toEmail} qua ${data.providerUsed || activeProvider?.provider}`, 'success');
+        console.log('[SystemSettings][EmailTest] ✅ Step 3: Gửi email test thành công:', {
+          requestId: data.requestId,
+          providerUsed: data.providerUsed,
+          message: data.message,
+          durationMs: Date.now() - requestStartedAt,
+        });
+        window.debugLog?.(`[EmailTest] ✅ Gửi thành công qua ${data.providerUsed || activeProvider?.provider}`, 'success');
         setSuccess(data.message || 'Đã gửi email test thành công!');
       } else {
         const errMsg = data.message || `Gửi email thất bại (HTTP ${response.status})`;
-        console.error('[SystemSettings][EmailTest] ❌ Gửi email test thất bại:', errMsg, data);
+        console.error('[SystemSettings][EmailTest] ❌ Step 3: Gửi email test thất bại:', {
+          requestId: data.requestId,
+          status: response.status,
+          message: errMsg,
+          durationMs: Date.now() - requestStartedAt,
+          response: data,
+        });
         window.debugLog?.(`[EmailTest] ❌ Thất bại: ${errMsg}`, 'error');
         setError(errMsg);
       }
     } catch (err: any) {
-      console.error('[SystemSettings][EmailTest] ❌ Lỗi kết nối khi gửi email test:', err);
+      console.error('[SystemSettings][EmailTest] ❌ Lỗi kết nối khi gửi email test:', {
+        durationMs: Date.now() - requestStartedAt,
+        errorName: err?.name,
+        message: err?.message,
+        error: err,
+      });
       window.debugLog?.(`[EmailTest] ❌ Lỗi kết nối: ${err.message}`, 'error');
       setError(err.message || 'Gửi email thất bại');
     } finally {
@@ -563,13 +598,16 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
     setSuccess(null);
     const targetProvider = settings?.email.providers.find(p => p._id === providerId);
     const toEmail = (currentUser as any).email;
+    const requestStartedAt = Date.now();
     console.log('[SystemSettings][CustomEmailTest] 🚀 Step 1: Bắt đầu gửi email test theo provider:', {
-      to: toEmail,
+      recipientProvided: !!toEmail,
+      recipientDomain: typeof toEmail === 'string' && toEmail.includes('@') ? toEmail.split('@').pop() : 'invalid',
       providerId,
       providerName: targetProvider?.provider,
       providerLabel: targetProvider?.label,
+      startedAt: new Date(requestStartedAt).toISOString(),
     });
-    window.debugLog?.(`[EmailTest] Bắt đầu test provider ${targetProvider?.provider || providerId} tới ${toEmail}`, 'info');
+    window.debugLog?.(`[EmailTest] Bắt đầu test provider ${targetProvider?.provider || providerId}`, 'info');
     try {
       const response = await fetch('/api/admin/test-email/custom', {
         method: 'POST',
@@ -581,8 +619,23 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
           providerId,
         })
       });
-      const data = await response.json().catch(() => ({}));
-      console.log(`[SystemSettings][CustomEmailTest] 📥 Step 2: Server phản hồi HTTP ${response.status}:`, data);
+      const responseText = await response.text();
+      let data: any = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        data = { rawResponse: responseText };
+        console.error('[SystemSettings][CustomEmailTest] ❌ Không đọc được JSON response:', parseError);
+      }
+      console.log('[SystemSettings][CustomEmailTest] 📥 Step 2: HTTP response nhận được:', {
+        requestId: data.requestId || 'not-returned',
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        durationMs: Date.now() - requestStartedAt,
+        contentType: response.headers.get('content-type'),
+        payload: data,
+      });
       if (Array.isArray(data.steps)) {
         data.steps.forEach((step: string, idx: number) => {
           console.log(`[SystemSettings][CustomEmailTest]   ↳ Bước ${idx + 1}: ${step}`);
@@ -590,19 +643,36 @@ const SystemSettings: React.FC<SystemSettingsProps> = function SystemSettings({ 
       }
       if (data.details) {
         console.log('[SystemSettings][CustomEmailTest] 📋 Chi tiết kết quả provider:', data.details);
+        console.log('[SystemSettings][CustomEmailTest] 📋 Kết quả từng provider:', data.details.attempts || {});
       }
       if (response.ok && data.success) {
-        console.log('[SystemSettings][CustomEmailTest] ✅ Hoàn tất gửi email tùy chỉnh thành công!');
+        console.log('[SystemSettings][CustomEmailTest] ✅ Step 3: Gửi email tùy chỉnh thành công:', {
+          requestId: data.requestId,
+          providerUsed: data.providerUsed,
+          message: data.message,
+          durationMs: Date.now() - requestStartedAt,
+        });
         window.debugLog?.(`[EmailTest] ✅ Test provider ${data.providerUsed || targetProvider?.provider} thành công!`, 'success');
         setSuccess(data.message || 'Đã gửi email tùy chỉnh thành công!');
       } else {
         const errMsg = data.message || `Gửi email thất bại (HTTP ${response.status})`;
-        console.error('[SystemSettings][CustomEmailTest] ❌ Gửi email tùy chỉnh thất bại:', errMsg, data);
+        console.error('[SystemSettings][CustomEmailTest] ❌ Step 3: Gửi email tùy chỉnh thất bại:', {
+          requestId: data.requestId,
+          status: response.status,
+          message: errMsg,
+          durationMs: Date.now() - requestStartedAt,
+          response: data,
+        });
         window.debugLog?.(`[EmailTest] ❌ Thất bại: ${errMsg}`, 'error');
         setError(errMsg);
       }
     } catch (err: any) {
-      console.error('[SystemSettings][CustomEmailTest] ❌ Lỗi kết nối khi gửi email tùy chỉnh:', err);
+      console.error('[SystemSettings][CustomEmailTest] ❌ Lỗi kết nối khi gửi email tùy chỉnh:', {
+        durationMs: Date.now() - requestStartedAt,
+        errorName: err?.name,
+        message: err?.message,
+        error: err,
+      });
       window.debugLog?.(`[EmailTest] ❌ Lỗi kết nối: ${err.message}`, 'error');
       setError(err.message || 'Gửi email thất bại');
     } finally {
