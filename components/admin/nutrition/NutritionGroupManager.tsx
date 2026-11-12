@@ -92,6 +92,10 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
   const handleUpdate = async () => {
     if (!editingGroup) return;
     const gid = editingGroup.id || editingGroup._id;
+    if (!String(editingGroup.ownerId || '').trim()) {
+      setActionMsg({ type: 'error', text: '❌ Hãy chọn chủ vận hành mới cho NDD này' });
+      return;
+    }
     try {
       await Database.updateNutritionGroup(gid, {
         name: editingGroup.name,
@@ -213,7 +217,7 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
                   <button onClick={() => setViewPending(viewPending?.id === gid ? null : group)} className="flex-1 py-2 rounded-xl bg-amber-50 text-amber-600 font-black text-[9px] uppercase tracking-wider hover:bg-amber-100 transition-all">
                     👥 {pendingCount > 0 ? `${pendingCount} Chờ duyệt` : 'Hội viên'}
                   </button>
-                  <button onClick={() => setEditingGroup({...group})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
+                  <button onClick={() => setEditingGroup({...group, ownerId: String(group.ownerId || '')})} className="flex-1 py-2 rounded-xl bg-emerald-50 text-emerald-600 font-black text-[9px] uppercase tracking-wider hover:bg-emerald-100 transition-all">✏️ Sửa</button>
                   <button onClick={() => handleDelete(group)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all">🗑️ Xóa</button>
                 </div>
               </div>
@@ -236,13 +240,14 @@ const NutritionGroupManager: React.FC<NutritionGroupManagerProps> = ({ users, on
               </div>
               <div>
                 <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Chủ vận hành</label>
-                <select value={editingGroup.ownerId} onChange={e => {
+                <select value={String(editingGroup.ownerId || '')} onChange={e => {
                   const owner = users.find(u => String(u.id || u._id) === e.target.value);
                   setEditingGroup({...editingGroup, ownerId: e.target.value, ownerName: owner?.fullName || ''});
                 }} className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs mt-1">
+                  <option value="">{editingGroup.ownerName ? `Chủ cũ (${editingGroup.ownerName}) không còn tài khoản — chọn chủ mới` : 'Chọn chủ vận hành'}</option>
                   {users.filter(u => coachIds.includes(String(u.id || u._id))).map(u => {
                     const uid = String(u.id || u._id);
-                    return <option key={uid} value={uid} selected={uid === editingGroup.ownerId}>{u.fullName}</option>;
+                    return <option key={uid} value={uid}>{u.fullName}</option>;
                   })}
                 </select>
               </div>

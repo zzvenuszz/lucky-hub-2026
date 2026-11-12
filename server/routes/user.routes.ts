@@ -12,6 +12,7 @@ import { PasswordResetToken } from '../models/PasswordResetToken.ts';
 import { LoginAttempt } from '../models/LoginAttempt.ts';
 import { AuditLog } from '../models/AuditLog.ts';
 import { Group } from '../models/Group.ts';
+import { NutritionGroup } from '../models/NutritionGroup.ts';
 import { InventoryItem, InventoryLot, InventoryMovement, Sale } from '../models/Inventory.ts';
 import { AuditLogType } from '../../types.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
@@ -19,6 +20,7 @@ import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { cryptoUtils } from '../../src/utils/cryptoUtils.ts';
 import { uploadToImgBB } from '../utils/imageUtils.ts';
+import { getEffectivePermissions, clearPermissionCache } from '../services/permissionService.ts';
 
 // Import models để đảm bảo chúng được register với Mongoose trước khi dùng mongoose.model()
 import '../models/NutritionGroup.ts';
@@ -350,27 +352,79 @@ router.delete('/:id',
       const user = await User.findById(userId);
       if (!user) return res.status(404).json({ message: 'Không tìm thấy người dùng' });
 
-      // Kiểm tra user có quyền admin (từ group) trước khi xóa
+      // Kiểm tra admin cuối cùng trước khi thay đổi hoặc giải tán NDD.
       try {
-        const GroupModel = mongoose.model('Group');
-        const userGroup = user.groupId ? await GroupModel.findById(user.groupId) : null;
-        const isAdmin = userGroup?.permissions?.includes(RESOURCES.ADMIN.PANEL);
-        if (isAdmin) {
-          const adminGroups = await GroupModel.find({ permissions: RESOURCES.ADMIN.PANEL });
+        const userGroup = user.groupId ? await Group.findById(user.groupId) : null;
+        if (userGroup?.permissions?.includes(RESOURCES.ADMIN.PANEL)) {
+          const adminGroups = await Group.find({ permissions: RESOURCES.ADMIN.PANEL });
           let adminCount = 0;
-          for (const g of adminGroups) {
-            const groupAdminCount = await User.collection.countDocuments({
-              groupId: { $in: [g._id, String(g._id)] }
-            });
+          for (const group of adminGroups) {
+            const groupAdminCount = await User.collection.countDocuments({ groupId: { $in: [group._id, String(group._id)] } });
             adminCount += groupAdminCount;
-            console.log(`[UserRoutes] Admin delete check: group=${g.name}, users=${groupAdminCount}`);
+            console.log(`[UserRoutes] Admin delete check: group=${group.name}, users=${groupAdminCount}`);
           }
-          if (adminCount <= 1) {
-            return res.status(400).json({ message: 'Không thể xóa quản trị viên cuối cùng' });
+          if (adminCount <= 1) return res.status(400).json({ message: 'Không thể xóa quản trị viên cuối cùng' });
+        }
+      } catch (error: any) {
+        console.error('[UserRoutes] Failed to check admin count:', error.message);
+      }
+
+      const operatedGroups = await NutritionGroup.find({ ownerId: user._id }).select('_id name members').lean() as any[];
+      const groupActions = req.body?.nutritionGroupActions;
+      if (operatedGroups.length > 0) {
+        if (!Array.isArray(groupActions)) {
+          return res.status(409).json({
+            message: 'Người dùng đang là chủ vận hành NDD. Hãy chọn người thay thế hoặc giải tán từng nhóm trước khi xóa.',
+            nutritionGroups: operatedGroups.map(group => ({ id: String(group._id), name: group.name, memberCount: group.members?.length || 0 })),
+          });
+        }
+        const actionByGroupId = new Map(groupActions.map((action: any) => [String(action?.groupId || ''), action]));
+        if (actionByGroupId.size !== operatedGroups.length || operatedGroups.some(group => !actionByGroupId.has(String(group._id)))) {
+          return res.status(400).json({ message: 'Cần chọn cách xử lý cho tất cả nhóm dinh dưỡng do người này vận hành.' });
+        }
+        const validatedActions: Array<{ group: any; action: any; replacement: any }> = [];
+        for (const group of operatedGroups) {
+          const action = actionByGroupId.get(String(group._id)) as any;
+          if (action?.action === 'dissolve') {
+            validatedActions.push({ group, action, replacement: null });
+            continue;
+          }
+          if (action?.action !== 'replace' || !mongoose.Types.ObjectId.isValid(String(action.replacementOwnerId || ''))) {
+            return res.status(400).json({ message: `Chọn người vận hành thay thế hoặc giải tán nhóm “${group.name}”.` });
+          }
+          if (String(action.replacementOwnerId) === String(user._id)) {
+            return res.status(400).json({ message: 'Người vận hành thay thế phải khác tài khoản đang xóa.' });
+          }
+          const replacement = await User.findOne({ _id: action.replacementOwnerId, status: 'ACTIVE' }).select('_id fullName');
+          if (!replacement) return res.status(400).json({ message: `Người vận hành thay thế của nhóm “${group.name}” không còn hoạt động.` });
+          const permissions = await getEffectivePermissions(String(replacement._id));
+          if (!permissions.includes(RESOURCES.COACH.ACCESS)) {
+            return res.status(400).json({ message: `${replacement.fullName} chưa có quyền HLV để vận hành nhóm “${group.name}”.` });
+          }
+          validatedActions.push({ group, action, replacement });
+        }
+
+        console.log('[UserRoutes] Applying nutrition group actions before user deletion:', { userId, groupCount: validatedActions.length });
+        for (const { group, action, replacement } of validatedActions) {
+          if (action.action === 'replace') {
+            const freshGroup = await NutritionGroup.findById(group._id);
+            if (!freshGroup) continue;
+            freshGroup.ownerId = replacement._id;
+            freshGroup.ownerName = replacement.fullName;
+            if (!(freshGroup.members || []).some((member: any) => member && String(member) === String(replacement._id))) {
+              freshGroup.members.push(replacement._id);
+            }
+            await freshGroup.save();
+            await User.updateOne({ _id: replacement._id }, { $set: { nutritionGroupId: freshGroup._id, pendingNutritionGroupId: null } });
+            clearPermissionCache(String(replacement._id));
+            console.log('[UserRoutes] Nutrition group operator replaced:', { groupId: String(group._id), replacementUserId: String(replacement._id) });
+          } else {
+            await User.updateMany({ nutritionGroupId: group._id }, { $set: { nutritionGroupId: null } });
+            await User.updateMany({ pendingNutritionGroupId: group._id }, { $set: { pendingNutritionGroupId: null } });
+            await NutritionGroup.deleteOne({ _id: group._id });
+            console.log('[UserRoutes] Nutrition group dissolved before operator deletion:', { groupId: String(group._id), memberCount: group.members?.length || 0 });
           }
         }
-      } catch (e: any) {
-        console.error('[UserRoutes] Failed to check admin count:', e.message);
       }
 
       // Xóa tất cả dữ liệu liên quan

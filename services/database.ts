@@ -204,6 +204,7 @@ export const Database = {
   getNutritionGroups: async () => (await request<any[]>(`${API_BASE}/nutrition-groups`)) ?? [],
   getMyNutritionGroup: async () => (await request<{ group: any, pendingGroup: any }>(`${API_BASE}/nutrition-groups/mine`)) ?? { group: null, pendingGroup: null },
   getAllNutritionGroups: async () => (await request<any[]>(`${API_BASE}/nutrition-groups/all`)) ?? [],
+  getCoachCandidates: async () => (await request<any[]>(`${API_BASE}/users/coach-candidates`)) ?? [],
   createNutritionGroup: (data: { name: string, ownerId?: string, ownerName?: string, address?: string }) => request<any>(`${API_BASE}/nutrition-groups`, 'POST', data),
   updateNutritionGroup: (id: string, data: any) => request<any>(`${API_BASE}/nutrition-groups/${id}`, 'PUT', data),
   deleteNutritionGroup: (id: string) => request(`${API_BASE}/nutrition-groups/${id}`, 'DELETE'),

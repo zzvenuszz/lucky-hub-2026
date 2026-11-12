@@ -356,7 +356,8 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
     // Kiểm tra quyền: chủ vận hành hoặc admin
-    const isOwner = group.ownerId.toString() === req.user!.userId;
+    const currentOwnerId = group.ownerId ? String(group.ownerId) : '';
+    const isOwner = currentOwnerId === req.user!.userId;
     const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
     if (!isOwner && !isAdmin) {
       return res.status(403).json({ message: 'Chỉ chủ vận hành hoặc admin mới có quyền này' });
@@ -399,7 +400,8 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
     // Kiểm tra quyền: chủ, đồng chủ hoặc admin
-    const isOwner = group.ownerId.toString() === req.user!.userId;
+    const currentOwnerId = group.ownerId ? String(group.ownerId) : '';
+    const isOwner = currentOwnerId === req.user!.userId;
     const isCoOwner = group.coOwners?.some((c: any) => c.toString() === req.user!.userId);
     const isAdmin = req.user!.permissions.includes(RESOURCES.GROUPS.MANAGE);
     
@@ -427,7 +429,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (ownerId !== undefined) {
       updateData.ownerId = ownerId;
       // Tự động thêm owner mới vào members nếu chưa có
-      const memberExists = group.members.some((m: any) => m.toString() === ownerId);
+      const memberExists = (group.members || []).some((m: any) => m && String(m) === String(ownerId));
       if (!memberExists) {
         updateData.$push = { members: ownerId };
         console.log(`[NutritionGroup] Auto-added new owner ${ownerId} to members`);

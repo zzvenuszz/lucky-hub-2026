@@ -27,6 +27,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [deletingNutritionGroups, setDeletingNutritionGroups] = useState<any[]>([]);
+  const [nutritionCoachCandidates, setNutritionCoachCandidates] = useState<any[]>([]);
+  const [nutritionDeleteActions, setNutritionDeleteActions] = useState<Record<string, { action: '' | 'replace' | 'dissolve'; replacementOwnerId: string }>>({});
+  const [deleteGroupsLoading, setDeleteGroupsLoading] = useState(false);
   const [resettingInventoryUser, setResettingInventoryUser] = useState<User | null>(null);
   const [resettingBusy, setResettingBusy] = useState(false);
   const editModalId = useMemo(() => `user-edit_${Math.random().toString(36).slice(2, 9)}`, []);
@@ -34,7 +38,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
   const resetInventoryModalId = useMemo(() => `user-reset-inv_${Math.random().toString(36).slice(2, 9)}`, []);
   useBodyScrollLock(!!editingUser || !!deletingUser || !!resettingInventoryUser);
   useModalStack(editModalId, () => setEditingUser(null));
-  useModalStack(deleteModalId, () => setDeletingUser(null));
+  useModalStack(deleteModalId, () => { setDeletingUser(null); setDeletingNutritionGroups([]); setNutritionDeleteActions({}); });
   useModalStack(resetInventoryModalId, () => setResettingInventoryUser(null));
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -183,6 +187,32 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
     }
   };
 
+  const openDeleteUser = useCallback(async (user: User) => {
+    const uid = getUserId(user);
+    setDeletingUser(user);
+    setDeletingNutritionGroups([]);
+    setNutritionDeleteActions({});
+    setDeleteGroupsLoading(true);
+    console.log('[UserManagement] Checking nutrition groups before user deletion:', { userId: uid });
+    try {
+      const [allNutritionGroups, candidates] = await Promise.all([
+        Database.getAllNutritionGroups(),
+        Database.getCoachCandidates(),
+      ]);
+      const operatedGroups = (allNutritionGroups || []).filter((group: any) => String(group.ownerId?._id || group.ownerId || '') === uid);
+      setDeletingNutritionGroups(operatedGroups);
+      setNutritionCoachCandidates((candidates || []).filter((candidate: any) => String(candidate.id || candidate._id) !== uid));
+      setNutritionDeleteActions(Object.fromEntries(operatedGroups.map((group: any) => [String(group.id || group._id), { action: '', replacementOwnerId: '' }])));
+      console.log('[UserManagement] Nutrition groups checked before user deletion:', { userId: uid, groupCount: operatedGroups.length, coachCandidateCount: candidates?.length || 0 });
+    } catch (err: any) {
+      console.error('[UserManagement] Nutrition group pre-delete check failed:', { userId: uid, error: err });
+      setDeletingUser(null);
+      addToast({ type: 'error', title: 'Không thể kiểm tra NDD', message: err.message || 'Hãy thử lại trước khi xóa người dùng.' });
+    } finally {
+      setDeleteGroupsLoading(false);
+    }
+  }, [getUserId, addToast]);
+
   // Xóa người dùng
   const handleDeleteUser = async () => {
     if (!deletingUser) return;
@@ -192,6 +222,13 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
       const res = await fetch(`/api/users/${uid}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nutritionGroupActions: deletingNutritionGroups.map((group: any) => {
+            const groupId = String(group.id || group._id);
+            const action = nutritionDeleteActions[groupId];
+            return { groupId, action: action?.action, replacementOwnerId: action?.replacementOwnerId || undefined };
+          }),
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -203,6 +240,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
       setActionMessage({ type: 'error', text: 'Lỗi kết nối: ' + err.message });
     } finally {
       setDeletingUser(null);
+      setDeletingNutritionGroups([]);
+      setNutritionDeleteActions({});
       onRefresh();
     }
   };
@@ -328,7 +367,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
                   🧹 Kho/HĐ
                 </button>
                 <button 
-                  onClick={() => setDeletingUser(u)}
+                  onClick={() => openDeleteUser(u)}
                   className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 font-black text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all"
                 >
                   🗑️ Xóa
@@ -422,7 +461,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
                       Xóa kho &amp; HĐ
                     </button>
                     <button 
-                      onClick={() => setDeletingUser(u)} 
+                      onClick={() => openDeleteUser(u)}
                       className="text-rose-600 font-black text-[9px] hover:underline"
                     >
                       Xóa
@@ -456,6 +495,23 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
                 Tất cả dữ liệu liên quan (chỉ số, bài viết, mục tiêu, chat) sẽ bị xóa vĩnh viễn!
               </span>
             </p>
+            {deleteGroupsLoading ? <div className="rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-500">Đang kiểm tra các nhóm dinh dưỡng do người này vận hành…</div> : deletingNutritionGroups.length > 0 && <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
+              <div><h5 className="text-sm font-black text-amber-950">Người này đang vận hành {deletingNutritionGroups.length} nhóm dinh dưỡng</h5><p className="mt-1 text-xs leading-relaxed text-amber-900">Với từng nhóm, hãy chỉ định người vận hành thay thế hoặc giải tán nhóm. Khi giải tán, hội viên sẽ thành hội viên tự do và có thể chọn NDD khác để sinh hoạt.</p></div>
+              {deletingNutritionGroups.map((group: any) => {
+                const groupId = String(group.id || group._id);
+                const action = nutritionDeleteActions[groupId] || { action: '', replacementOwnerId: '' };
+                return <div key={groupId} className="space-y-2 rounded-xl bg-white p-3">
+                  <p className="text-xs font-black text-slate-800">{group.name} · {group.members?.length || 0} hội viên</p>
+                  <select aria-label={`Xử lý nhóm ${group.name}`} value={action.action} onChange={event => setNutritionDeleteActions(current => ({ ...current, [groupId]: { action: event.target.value as '' | 'replace' | 'dissolve', replacementOwnerId: '' } }))} className="w-full rounded-lg bg-slate-100 p-2.5 text-xs font-bold">
+                    <option value="">Chọn cách xử lý nhóm</option><option value="replace">Chọn chủ vận hành thay thế</option><option value="dissolve">Giải tán nhóm, giải phóng hội viên</option>
+                  </select>
+                  {action.action === 'replace' && <select aria-label={`Chủ vận hành thay thế cho ${group.name}`} value={action.replacementOwnerId} onChange={event => setNutritionDeleteActions(current => ({ ...current, [groupId]: { ...current[groupId], replacementOwnerId: event.target.value } }))} className="w-full rounded-lg bg-slate-100 p-2.5 text-xs font-bold">
+                    <option value="">Chọn người có quyền HLV</option>{nutritionCoachCandidates.map((candidate: any) => { const candidateId = String(candidate.id || candidate._id); return <option key={candidateId} value={candidateId}>{candidate.fullName} (@{candidate.username})</option>; })}
+                  </select>}
+                  {action.action === 'replace' && nutritionCoachCandidates.length === 0 && <p className="text-xs font-semibold text-rose-700">Không có người dùng khác có quyền HLV; hãy cấp quyền HLV hoặc chọn giải tán nhóm.</p>}
+                </div>;
+              })}
+            </div>}
             <div className="flex gap-3 pt-4">
               <button 
                 type="button" 
@@ -466,7 +522,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ users, onRefresh, canMa
               </button>
               <button 
                 onClick={handleDeleteUser} 
-                className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all"
+                disabled={deleteGroupsLoading || deletingNutritionGroups.some((group: any) => { const action = nutritionDeleteActions[String(group.id || group._id)]; return !action?.action || (action.action === 'replace' && (!action.replacementOwnerId || !nutritionCoachCandidates.some((candidate: any) => String(candidate.id || candidate._id) === action.replacementOwnerId))); })}
+                className="flex-1 py-4 rounded-2xl bg-rose-600 text-white font-black uppercase text-[11px] shadow-lg shadow-rose-200 hover:bg-rose-700 transition-all disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Xác nhận xóa
               </button>
