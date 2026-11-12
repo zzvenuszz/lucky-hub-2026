@@ -89,23 +89,23 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
       ? `<div class="qr-card"><img src="${qrDataUrl}" alt="Mã QR thanh toán" class="qr-img"/><div class="qr-note">Quét mã để thanh toán nhanh</div><div class="qr-meta"><b>${escapeHtml(bankDisplayName)}</b> · ${escapeHtml(sellerBankAccount)}<br/>Thụ hưởng: <b>${escapeHtml(seller?.name || '')}</b><br/>Số tiền: <b>${escapeHtml(money(sale.total))}</b></div></div>`
       : '';
     win.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(invoiceHeading)} · ${escapeHtml(sale.invoiceNumber)}</title><style>
-      *{box-sizing:border-box}body{font:14px Arial,sans-serif;color:#17352b;max-width:760px;margin:0 auto;padding:20px;background:#fff}
-      h1{font-size:24px;margin:0 0 8px;color:#087b58;letter-spacing:.3px;${isDemo ? 'text-align:center;' : ''}}header{border-bottom:3px solid #13815d;padding:18px 0 14px}
+      *{box-sizing:border-box}body{font:16px Arial,sans-serif;color:#17352b;max-width:760px;margin:0 auto;padding:20px;background:#fff}
+      h1{font-size:28px;margin:0 0 8px;color:#087b58;letter-spacing:.3px;${isDemo ? 'text-align:center;' : ''}}header{border-bottom:3px solid #13815d;padding:18px 0 14px}
       .actions{position:sticky;top:0;display:flex;gap:10px;padding:12px 0;background:#fff;border-bottom:1px solid #cadbd3;z-index:2}
       .actions button{border:0;border-radius:8px;padding:12px 16px;font-weight:bold;background:#087b58;color:#fff}.actions button.secondary{background:#e8efec;color:#18221f}
-      .contact{line-height:1.65;color:#476359}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0}
-      .meta>div,.buyer{padding:10px 12px;background:#f2f8f5;border:1px solid #d6e7df;border-radius:7px}.buyer{margin:12px 0;line-height:1.7;display:flex;align-items:center;justify-content:space-between;gap:16px}
+      .contact{line-height:1.7;color:#476359}.meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
+      .meta>div,.buyer{padding:12px 14px;background:#f2f8f5;border:1px solid #d6e7df;border-radius:7px}.buyer{margin:14px 0;line-height:1.7;display:flex;align-items:center;justify-content:space-between;gap:16px}
       .buyer-info{flex:1;min-width:0}
       .qr-card{shrink:0;text-align:center;background:#fff;border:1px solid #b9d4c8;border-radius:10px;padding:8px 10px;min-width:170px}
       .qr-img{width:116px;height:116px;display:block;margin:0 auto}
-      .qr-note{margin-top:4px;font-size:11px;font-weight:bold;color:#075d43}
-      .qr-meta{margin-top:3px;font-size:11px;line-height:1.35;color:#476359}
-      table{width:100%;border-collapse:collapse;border:1px solid #b9d4c8;margin-top:14px}th,td{padding:10px 8px;border:1px solid #c8ddd3;text-align:left}
+      .qr-note{margin-top:4px;font-size:13px;font-weight:bold;color:#075d43}
+      .qr-meta{margin-top:4px;font-size:13px;line-height:1.45;color:#476359}
+      table{width:100%;border-collapse:collapse;border:1px solid #b9d4c8;margin-top:16px;font-size:16px}th,td{padding:12px 10px;border:1px solid #c8ddd3;text-align:left}
       th{background:#087b58;color:#fff;border-color:#087b58}tbody tr.alternate{background:#f3f8f5}td small{color:#667d74}.amount{text-align:right;font-weight:700}
-      .total{border:2px solid #13815d;border-radius:8px;background:#f0f8f4;text-align:right;font-size:18px;font-weight:bold;margin-top:16px;padding:12px 14px;color:#075d43}
-      .note{padding:12px;background:#f2f8f5;border-left:4px solid #13815d;margin-top:14px;line-height:1.6}
-      .provisional{margin:14px 0;padding:12px 14px;text-align:center;background:#fff4d6;border:2px solid #e6a821;border-radius:8px;color:#8a4d00;font-weight:800;letter-spacing:.4px}
-      @media(max-width:600px){body{padding:12px}.meta{grid-template-columns:1fr}.buyer{flex-direction:column;align-items:stretch}table{font-size:12px}th,td{padding:8px 4px}}
+      .total{border:2px solid #13815d;border-radius:8px;background:#f0f8f4;text-align:right;font-size:22px;font-weight:bold;margin-top:18px;padding:14px 16px;color:#075d43}
+      .note{padding:14px;background:#f2f8f5;border-left:4px solid #13815d;margin-top:16px;line-height:1.7}
+      .provisional{margin:16px 0;padding:14px 16px;text-align:center;background:#fff4d6;border:2px solid #e6a821;border-radius:8px;color:#8a4d00;font-size:15px;font-weight:800;letter-spacing:.4px}
+      @media(max-width:600px){body{padding:12px;font-size:15px}h1{font-size:24px}.meta{grid-template-columns:1fr}.buyer{flex-direction:column;align-items:stretch}table{font-size:14px}th,td{padding:9px 5px}}
       @media print{body{padding:0}.actions{display:none!important}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}thead{display:table-header-group}tr{break-inside:avoid}}
     </style></head><body><div class="actions"><button onclick="window.print()">In / Lưu PDF</button><button class="secondary" onclick="window.close();setTimeout(()=>history.back(),100)">Quay lại ứng dụng</button></div><header><h1>${escapeHtml(invoiceHeading)}</h1><div class="contact"><div><b>Người bán:</b> ${escapeHtml(seller?.name || '')}</div><div><b>Địa chỉ người bán:</b> ${escapeHtml(seller?.address || '')}</div><div><b>SĐT người bán:</b> ${escapeHtml(seller?.phone || '')}</div></div></header>${banner}<div class="meta"><div><b>Mã hoá đơn:</b> ${escapeHtml(sale.invoiceNumber)}</div><div><b>Ngày bán:</b> ${new Date(sale.soldAt).toLocaleString('vi-VN')}</div><div><b>Người mua:</b> ${escapeHtml(sale.buyerName)}${sale.buyerMemberNumber ? ` · ${escapeHtml(sale.buyerMemberNumber)}` : ''}</div><div><b>Trạng thái:</b> ${escapeHtml(isProvisional ? 'Tạm tính · chưa thanh toán' : sale.status)}</div></div><div class="buyer"><div class="buyer-info"><b>Thông tin khách hàng</b><div>Người mua: <b>${escapeHtml(sale.buyerName)}${sale.buyerMemberNumber ? ` · ${escapeHtml(sale.buyerMemberNumber)}` : ''}</b></div>${sale.buyerAddress ? `<div>Địa chỉ: ${escapeHtml(sale.buyerAddress)}</div>` : ''}${sale.buyerPhone ? `<div>Số điện thoại: ${escapeHtml(sale.buyerPhone)}</div>` : ''}</div>${qrHtml}</div><table><thead><tr><th>Mặt hàng</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Tổng: ${money(sale.total)}<br>PV: ${sale.totalPv}</div>${sale.note ? `<div class="note"><b>Ghi chú:</b> ${escapeHtml(sale.note)}</div>` : ''}</body></html>`);
     win.document.close();
@@ -124,7 +124,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     const metaHeight = activeQr ? Math.max(baseMetaHeight, 290) : baseMetaHeight;
     const noteHeight = hasNote ? 100 : 0;
     canvas.width = width;
-    canvas.height = topHeight + metaHeight + 90 + rows.length * 66 + noteHeight + 80;
+    canvas.height = topHeight + metaHeight + 100 + rows.length * 78 + noteHeight + 90;
     const ctx = canvas.getContext('2d');
     if (!ctx) { alert('Không thể dựng hóa đơn trên thiết bị này.'); return null; }
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -132,23 +132,23 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
     ctx.fillStyle = '#ffffff'; ctx.font = 'bold 32px Arial';
     if (isDemo) { ctx.textAlign = 'center'; ctx.fillText(invoiceHeading, width / 2, 58); ctx.textAlign = 'left'; }
     else { ctx.fillText(invoiceHeading, 42, 58); }
-    ctx.font = '19px Arial'; ctx.fillText(`Người bán: ${String(seller?.name || '').slice(0, 80)}`, 42, 94);
-    ctx.font = '16px Arial'; ctx.fillStyle = '#dff3e9';
-    ctx.fillText(`Địa chỉ: ${String(seller?.address || '').slice(0, 95)}`, 42, 120);
-    ctx.fillText(`Điện thoại: ${String(seller?.phone || '').slice(0, 95)}`, 42, 148);
+    ctx.font = '22px Arial'; ctx.fillText(`Người bán: ${String(seller?.name || '').slice(0, 80)}`, 42, 98);
+    ctx.font = '19px Arial'; ctx.fillStyle = '#dff3e9';
+    ctx.fillText(`Địa chỉ: ${String(seller?.address || '').slice(0, 80)}`, 42, 120);
+    ctx.fillText(`Điện thoại: ${String(seller?.phone || '').slice(0, 80)}`, 42, 148);
     let y = 182;
     if (isProvisional) {
       ctx.fillStyle = '#fff4d6'; ctx.fillRect(32, y, 936, 54);
       ctx.strokeStyle = '#e6a821'; ctx.lineWidth = 2; ctx.strokeRect(32, y, 936, 54);
-      ctx.fillStyle = '#8a4d00'; ctx.font = 'bold 17px Arial'; ctx.textAlign = 'center'; ctx.fillText(provisionalNotice, width / 2, y + 34); ctx.textAlign = 'left';
+      ctx.fillStyle = '#8a4d00'; ctx.font = 'bold 19px Arial'; ctx.textAlign = 'center'; ctx.fillText(provisionalNotice, width / 2, y + 35); ctx.textAlign = 'left';
       y += 72;
     }
     const metaTop = y;
     const metaBottom = metaTop + metaHeight - 16;
     ctx.fillStyle = '#f2f8f5'; ctx.fillRect(32, metaTop, 936, metaHeight - 16);
     ctx.strokeStyle = '#c8ddd3'; ctx.lineWidth = 1.5; ctx.strokeRect(32, metaTop, 936, metaHeight - 16);
-    ctx.fillStyle = '#17352b'; ctx.font = '17px Arial';
-    const maxTextLen = activeQr ? 54 : 85;
+    ctx.fillStyle = '#17352b'; ctx.font = '20px Arial';
+    const maxTextLen = activeQr ? 48 : 72;
     const metadata = [
       `Mã hóa đơn: ${sale.invoiceNumber}`,
       `Ngày: ${new Date(sale.soldAt).toLocaleString('vi-VN')}`,
@@ -157,7 +157,7 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
       ...(hasBuyerAddress ? [`Địa chỉ khách hàng: ${String(sale.buyerAddress).slice(0, maxTextLen)}`] : []),
       ...(hasBuyerPhone ? [`SĐT khách hàng: ${String(sale.buyerPhone).slice(0, maxTextLen)}`] : []),
     ];
-    metadata.forEach((value, index) => ctx.fillText(value, 52, metaTop + 34 + index * 34));
+    metadata.forEach((value, index) => ctx.fillText(value, 52, metaTop + 36 + index * 36));
     if (activeQr && qrPayload) {
       const qrCardX = 700;
       const qrCardY = metaTop + 12;
@@ -175,43 +175,43 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
       ctx.textAlign = 'center';
       const centerX = qrCardX + qrCardW / 2;
       ctx.fillStyle = '#075d43';
-      ctx.font = 'bold 13px Arial';
+      ctx.font = 'bold 15px Arial';
       ctx.fillText('Quét mã để thanh toán nhanh', centerX, qrY + qrSize + 18);
       ctx.fillStyle = '#17352b';
-      ctx.font = 'bold 12px Arial';
+      ctx.font = 'bold 14px Arial';
       ctx.fillText(`${bankDisplayName} · ${sellerBankAccount}`.slice(0, 34), centerX, qrY + qrSize + 36);
       ctx.fillStyle = '#476359';
-      ctx.font = '12px Arial';
+      ctx.font = '14px Arial';
       ctx.fillText(`Thụ hưởng: ${String(seller?.name || '').slice(0, 24)}`, centerX, qrY + qrSize + 53);
       ctx.fillStyle = '#087b58';
-      ctx.font = 'bold 13px Arial';
+      ctx.font = 'bold 15px Arial';
       ctx.fillText(`Số tiền: ${money(sale.total)}`, centerX, qrY + qrSize + 71);
       ctx.textAlign = 'left';
     }
     y = metaBottom + 28;
-    ctx.fillStyle = '#087b58'; ctx.fillRect(32, y, 936, 42);
-    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px Arial';
-    ctx.fillText('MẶT HÀNG', 48, y + 27); ctx.fillText('SL', 630, y + 27); ctx.fillText('ĐƠN GIÁ', 704, y + 27); ctx.textAlign = 'right'; ctx.fillText('THÀNH TIỀN', 952, y + 27); ctx.textAlign = 'left';
-    y += 42;
+    ctx.fillStyle = '#087b58'; ctx.fillRect(32, y, 936, 48);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 18px Arial';
+    ctx.fillText('MẶT HÀNG', 48, y + 31); ctx.fillText('SL', 630, y + 31); ctx.fillText('ĐƠN GIÁ', 704, y + 31); ctx.textAlign = 'right'; ctx.fillText('THÀNH TIỀN', 952, y + 31); ctx.textAlign = 'left';
+    y += 48;
     rows.forEach((line: any, index: number) => {
       const rowTop = y;
-      ctx.fillStyle = index % 2 ? '#f3f8f5' : '#ffffff'; ctx.fillRect(32, rowTop, 936, 62);
-      ctx.strokeStyle = '#c8ddd3'; ctx.lineWidth = 1; ctx.strokeRect(32, rowTop, 936, 62);
-      ctx.fillStyle = '#17352b'; ctx.font = 'bold 15px Arial'; ctx.fillText(String(line.name).slice(0, 52), 48, rowTop + 24);
-      ctx.fillStyle = '#667d74'; ctx.font = '12px Arial'; ctx.fillText(`${String(line.sku || '').slice(0, 28)} · ${String(line.priceLevel || '')}`, 48, rowTop + 45);
-      ctx.fillStyle = '#17352b'; ctx.font = '15px Arial'; ctx.fillText(String(line.quantity), 630, rowTop + 36); ctx.fillText(money(line.unitPrice), 704, rowTop + 36);
-      ctx.textAlign = 'right'; ctx.font = 'bold 15px Arial'; ctx.fillText(money(line.quantity * line.unitPrice), 952, rowTop + 36); ctx.textAlign = 'left';
-      y += 62;
+      ctx.fillStyle = index % 2 ? '#f3f8f5' : '#ffffff'; ctx.fillRect(32, rowTop, 936, 72);
+      ctx.strokeStyle = '#c8ddd3'; ctx.lineWidth = 1; ctx.strokeRect(32, rowTop, 936, 72);
+      ctx.fillStyle = '#17352b'; ctx.font = 'bold 19px Arial'; ctx.fillText(String(line.name).slice(0, 52), 48, rowTop + 29);
+      ctx.fillStyle = '#667d74'; ctx.font = '15px Arial'; ctx.fillText(`${String(line.sku || '').slice(0, 28)} · ${String(line.priceLevel || '')}`, 48, rowTop + 56);
+      ctx.fillStyle = '#17352b'; ctx.font = '18px Arial'; ctx.fillText(String(line.quantity), 630, rowTop + 43); ctx.fillText(money(line.unitPrice), 704, rowTop + 43);
+      ctx.textAlign = 'right'; ctx.font = 'bold 18px Arial'; ctx.fillText(money(line.quantity * line.unitPrice), 952, rowTop + 43); ctx.textAlign = 'left';
+      y += 72;
     });
     y += 18;
-    ctx.fillStyle = '#f0f8f4'; ctx.fillRect(600, y, 368, 74); ctx.strokeStyle = '#13815d'; ctx.lineWidth = 2; ctx.strokeRect(600, y, 368, 74);
-    ctx.fillStyle = '#075d43'; ctx.textAlign = 'right'; ctx.font = 'bold 21px Arial'; ctx.fillText(`Tổng: ${money(sale.total)}`, 948, y + 31); ctx.font = '16px Arial'; ctx.fillText(`Tổng PV: ${sale.totalPv}`, 948, y + 58); ctx.textAlign = 'left';
-    y += 94;
+    ctx.fillStyle = '#f0f8f4'; ctx.fillRect(600, y, 368, 82); ctx.strokeStyle = '#13815d'; ctx.lineWidth = 2; ctx.strokeRect(600, y, 368, 82);
+    ctx.fillStyle = '#075d43'; ctx.textAlign = 'right'; ctx.font = 'bold 24px Arial'; ctx.fillText(`Tổng: ${money(sale.total)}`, 948, y + 35); ctx.font = '19px Arial'; ctx.fillText(`Tổng PV: ${sale.totalPv}`, 948, y + 67); ctx.textAlign = 'left';
+    y += 102;
     if (hasNote) {
-      ctx.fillStyle = '#f2f8f5'; ctx.fillRect(32, y, 936, 72); ctx.fillStyle = '#17352b'; ctx.font = '15px Arial';
-      ctx.fillText('Ghi chú:', 48, y + 26);
+      ctx.fillStyle = '#f2f8f5'; ctx.fillRect(32, y, 936, 80); ctx.fillStyle = '#17352b'; ctx.font = '18px Arial';
+      ctx.fillText('Ghi chú:', 48, y + 30);
       const note = String(sale.note);
-      ctx.fillText(note.slice(0, 110), 48, y + 51);
+      ctx.fillText(note.slice(0, 110), 48, y + 60);
     }
     return canvas;
   }, [sale, seller, invoiceHeading, isProvisional, isDemo, provisionalNotice, activeQr, qrPayload, bankDisplayName, sellerBankAccount]);
@@ -354,10 +354,10 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
       )}
       {pdfUrl ? <div className="mx-auto w-full space-y-3"><div className="flex flex-wrap justify-end gap-2"><a href={pdfUrl} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Mở PDF</a><button onClick={() => setPdfUrl('')} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Quay lại hóa đơn</button></div><iframe title={`PDF hóa đơn ${sale.invoiceNumber}`} src={pdfUrl} className="h-[70vh] w-full rounded-xl border border-slate-200" /><p className="text-center text-xs text-slate-500">Nếu PDF chưa hiện trong khung, bấm “Mở PDF” để xem và lưu vào Tệp.</p></div> : !imageUrl ? <><article className="mx-auto max-w-xl overflow-hidden rounded-xl border border-emerald-200 bg-white shadow-sm">
         <div className="border-b-4 border-emerald-700 px-6 py-5 sm:px-9"><h1 className={`text-2xl font-black text-emerald-800 ${isDemo ? 'text-center' : ''}`}>{invoiceHeading}</h1>
-          <div className="mt-2 text-sm leading-6 text-slate-600"><p><b>Người bán:</b> {seller?.name}</p><p><b>Địa chỉ người bán:</b> {seller?.address}</p><p><b>SĐT người bán:</b> {seller?.phone}</p></div>
+          <div className="mt-2 text-base leading-7 text-slate-600"><p><b>Người bán:</b> {seller?.name}</p><p><b>Địa chỉ người bán:</b> {seller?.address}</p><p><b>SĐT người bán:</b> {seller?.phone}</p></div>
         </div>
-        {isProvisional && <div className="mx-5 mt-5 rounded-lg border-2 border-amber-400 bg-amber-50 px-3 py-3 text-center text-xs font-black tracking-wide text-amber-900 sm:mx-8">{provisionalNotice}</div>}
-        <div className="mx-5 my-5 rounded-lg border border-emerald-100 bg-emerald-50/60 p-4 text-sm sm:mx-8">
+        {isProvisional && <div className="mx-5 mt-5 rounded-lg border-2 border-amber-400 bg-amber-50 px-3 py-3 text-center text-sm font-black tracking-wide text-amber-900 sm:mx-8">{provisionalNotice}</div>}
+        <div className="mx-5 my-5 rounded-lg border border-emerald-100 bg-emerald-50/60 p-4 text-base sm:mx-8">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div className="min-w-0 flex-1 space-y-1.5" data-testid="invoice-buyer-info">
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -382,11 +382,11 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
                 />
                 <p
                   data-testid="invoice-qr-caption"
-                  className="mt-1.5 text-[11px] font-black text-emerald-800"
+                  className="mt-1.5 text-sm font-black text-emerald-800"
                 >
                   Quét mã để thanh toán nhanh
                 </p>
-                <div className="mt-1 space-y-0.5 text-[10px] leading-tight text-slate-600">
+                <div className="mt-1 space-y-1 text-xs leading-snug text-slate-600">
                   <div className="font-bold text-slate-800">
                     {bankDisplayName} · {sellerBankAccount}
                   </div>
@@ -401,10 +401,10 @@ const InvoicePreview: React.FC<InvoicePreviewProps> = memo(({ sale, seller, defa
             )}
           </div>
         </div>
-        <div className="mx-5 overflow-hidden rounded-lg border border-emerald-200 sm:mx-8"><div className="grid grid-cols-[1fr_auto] gap-3 bg-emerald-700 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white"><span>Mặt hàng</span><span>Thành tiền</span></div><div className="divide-y divide-emerald-100">{sale.lines?.map((line: any, index: number) => <div key={`${line.itemId}-${index}`} className={`flex justify-between gap-3 px-3 py-3 text-sm ${index % 2 ? 'bg-emerald-50/50' : 'bg-white'}`}><div>{line.name}<div className="text-xs text-slate-500">{line.sku} · {line.quantity} × {money(line.unitPrice)} · {line.priceLevel}</div></div><b className="whitespace-nowrap">{money(line.quantity * line.unitPrice)}</b></div>)}</div></div>
-        <div className="mx-5 my-5 rounded-lg border-2 border-emerald-700 bg-emerald-50 px-4 py-3 text-right sm:mx-8"><p className="text-lg font-black text-emerald-900">Tổng: {money(sale.total)}</p><p className="text-sm text-emerald-800">Tổng PV: {sale.totalPv}</p></div>{sale.note && <p className="mx-5 mb-5 rounded-lg border-l-4 border-emerald-600 bg-slate-50 p-3 text-sm sm:mx-8"><b>Ghi chú:</b> {sale.note}</p>}
-        {sale.buyerChanges?.length > 0 && <div className="mx-5 mb-4 rounded-xl bg-indigo-50 p-3 text-xs text-indigo-900 sm:mx-8"><b>Lịch sử cập nhật người mua</b>{sale.buyerChanges.map((change: any, index: number) => <p key={index} className="mt-1">{change.fromName} → {change.toName} · {new Date(change.createdAt).toLocaleString('vi-VN')}</p>)}</div>}
-        {sale.returnEvents?.length > 0 && <div className="mx-5 mb-5 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 sm:mx-8"><b>Lịch sử hoàn hàng</b>{sale.returnEvents.map((event: any, index: number) => <p key={index} className="mt-1">{event.reason} · {money(event.refundAmount)} · {new Date(event.createdAt).toLocaleString('vi-VN')}</p>)}</div>}
+        <div className="mx-5 overflow-hidden rounded-lg border border-emerald-200 sm:mx-8"><div className="grid grid-cols-[1fr_auto] gap-3 bg-emerald-700 px-3 py-2.5 text-sm font-bold uppercase tracking-wide text-white"><span>Mặt hàng</span><span>Thành tiền</span></div><div className="divide-y divide-emerald-100">{sale.lines?.map((line: any, index: number) => <div key={`${line.itemId}-${index}`} className={`flex justify-between gap-3 px-3 py-3.5 text-base ${index % 2 ? 'bg-emerald-50/50' : 'bg-white'}`}><div>{line.name}<div className="text-sm text-slate-600">{line.sku} · {line.quantity} × {money(line.unitPrice)} · {line.priceLevel}</div></div><b className="whitespace-nowrap">{money(line.quantity * line.unitPrice)}</b></div>)}</div></div>
+        <div className="mx-5 my-5 rounded-lg border-2 border-emerald-700 bg-emerald-50 px-4 py-3 text-right sm:mx-8"><p className="text-xl font-black text-emerald-900">Tổng: {money(sale.total)}</p><p className="text-base text-emerald-800">Tổng PV: {sale.totalPv}</p></div>{sale.note && <p className="mx-5 mb-5 rounded-lg border-l-4 border-emerald-600 bg-slate-50 p-3 text-base sm:mx-8"><b>Ghi chú:</b> {sale.note}</p>}
+        {sale.buyerChanges?.length > 0 && <div className="mx-5 mb-4 rounded-xl bg-indigo-50 p-3 text-sm text-indigo-900 sm:mx-8"><b>Lịch sử cập nhật người mua</b>{sale.buyerChanges.map((change: any, index: number) => <p key={index} className="mt-1">{change.fromName} → {change.toName} · {new Date(change.createdAt).toLocaleString('vi-VN')}</p>)}</div>}
+        {sale.returnEvents?.length > 0 && <div className="mx-5 mb-5 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 sm:mx-8"><b>Lịch sử hoàn hàng</b>{sale.returnEvents.map((event: any, index: number) => <p key={index} className="mt-1">{event.reason} · {money(event.refundAmount)} · {new Date(event.createdAt).toLocaleString('vi-VN')}</p>)}</div>}
       </article><div className="mt-5 flex flex-wrap justify-end gap-2"><button onClick={defaultFormat === 'image' ? downloadImage : exportPdf} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Xuất theo mặc định: {defaultFormat === 'image' ? 'Ảnh PNG' : 'PDF'}</button><button onClick={downloadImage} className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white">Tải ảnh PNG</button><button onClick={exportPdf} className="rounded-xl bg-slate-700 px-4 py-3 text-sm font-bold text-white">Xuất file PDF</button><button onClick={printPdf} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">In hóa đơn</button></div></> : <div className="mx-auto max-w-xl"><div className="mb-3 flex flex-wrap justify-end gap-2"><button onClick={saveImage} className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white">Lưu ảnh</button><button onClick={shareImage} className="rounded-xl bg-slate-800 px-4 py-3 text-sm font-bold text-white">Chia sẻ</button><button onClick={() => setImageUrl('')} className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-bold">Quay lại hóa đơn</button></div><img src={imageUrl} alt={`Ảnh hóa đơn ${sale.invoiceNumber}`} className="h-auto w-full rounded-xl border border-slate-200" /><p className="mt-2 text-center text-xs text-slate-500">Ảnh hóa đơn {sale.invoiceNumber}. Trên điện thoại, có thể nhấn giữ ảnh để lưu.</p></div>}
     </div>
   </div>;
