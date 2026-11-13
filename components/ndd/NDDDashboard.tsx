@@ -6,9 +6,13 @@ import MemberUpgradeModal, { MemberUpgradeTarget, UpgradableGroupOption } from '
 import LoadingButton from '../system/LoadingButton.tsx';
 import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 import { DEFAULT_METRIC_SCALES, MetricScaleModel, normalizeMetricScales, OTHER_METRIC_SCALE_CODE, OTHER_METRIC_SCALE_LABEL } from '../../utils/metricScaleConfig.ts';
+import NutritionGroupManager from '../admin/nutrition/NutritionGroupManager.tsx';
+import BranchManager from '../admin/nutrition/BranchManager.tsx';
 
 interface NDDDashboardProps {
   currentUser: User;
+  users: User[];
+  onRefresh: () => void;
   onQuickCreateOrder?: (buyer: {
     id: string;
     fullName: string;
@@ -20,7 +24,7 @@ interface NDDDashboardProps {
   }) => void;
 }
 
-const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCreateOrder }) => {
+const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, onRefresh, onQuickCreateOrder }) => {
   const [dashboardData, setDashboardData] = useState<any[]>([]);
   const [actorPriority, setActorPriority] = useState<number>(10);
   const [upgradableGroups, setUpgradableGroups] = useState<UpgradableGroupOption[]>([]);
@@ -45,7 +49,17 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
   const [metricScaleModels, setMetricScaleModels] = useState<MetricScaleModel[]>(DEFAULT_METRIC_SCALES);
   const [selectedGroupScaleCode, setSelectedGroupScaleCode] = useState(OTHER_METRIC_SCALE_CODE);
   const [savingGroupScale, setSavingGroupScale] = useState(false);
+  const [nutritionBranches, setNutritionBranches] = useState<any[]>([]);
+  const [expandedBranchIds, setExpandedBranchIds] = useState<string[]>([]);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [adminSection, setAdminSection] = useState<'groups' | 'branches'>('groups');
+  const [isLoadingBranches, setIsLoadingBranches] = useState(true);
   const dashboardDataRef = useRef<any[]>([]);
+  const currentUserPerms: string[] = (currentUser as any).permissions || [];
+  const canAdminNdd = currentUserPerms.includes('ndd:admin');
+  const canAdminBranches = currentUserPerms.includes('ndd:branch:admin');
+  const canViewBranches = currentUserPerms.includes('ndd:system') || canAdminBranches;
+  const canEditNddWorkspace = canAdminNdd || canAdminBranches;
 
   const fetchCoachCandidates = useCallback(async () => {
     try {
@@ -79,6 +93,24 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
     }
   }, []);
 
+  const fetchBranches = useCallback(async () => {
+    setIsLoadingBranches(true);
+    try {
+      const data = canAdminBranches
+        ? await Database.getAllNutritionBranches()
+        : canViewBranches
+          ? await Database.getMyNutritionBranches()
+          : await Database.getMyNutritionBranches();
+      setNutritionBranches(data || []);
+      console.log('[NDDDashboard] Loaded workspace branches:', { count: data?.length || 0, allBranches: canAdminBranches });
+    } catch (error) {
+      console.error('[NDDDashboard] Failed to load workspace branches:', error);
+      setNutritionBranches([]);
+    } finally {
+      setIsLoadingBranches(false);
+    }
+  }, [canAdminBranches, canViewBranches]);
+
   const refreshDashboard = useCallback(async () => {
     try {
       const resp = await fetch('/api/nutrition-groups/my-dashboard');
@@ -99,13 +131,19 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
 
   useEffect(() => {
     fetchDashboard();
+    fetchBranches();
     fetchCoachCandidates();
     Database.getMetricScaleConfig().then(config => {
       const normalized = normalizeMetricScales(config.metricScales);
       setMetricScaleModels(normalized);
       console.log('[NDDDashboard] Loaded available scale models:', { count: normalized.length, codes: normalized.map(scale => scale.code) });
     }).catch(error => console.error('[NDDDashboard] Failed to load scale models:', error));
-  }, [fetchDashboard, fetchCoachCandidates]);
+  }, [fetchDashboard, fetchBranches, fetchCoachCandidates]);
+
+  const refreshNddWorkspace = useCallback(async () => {
+    await Promise.all([fetchDashboard(), fetchBranches()]);
+    onRefresh();
+  }, [fetchDashboard, fetchBranches, onRefresh]);
 
   const handleUpdateCoOwners = async () => {
     if (!selectedNdd?.group?.id) return;
@@ -238,7 +276,6 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
     }
   }, [upgradingMember, selectedNdd, refreshDashboard]);
 
-  const currentUserPerms: string[] = (currentUser as any).permissions || [];
   const canUpgradeMembers =
     currentUserPerms.includes('users:upgrade_member') ||
     currentUserPerms.includes('admin:panel');
@@ -255,19 +292,57 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
     );
   }
 
-  if (dashboardData.length === 0) {
+  if (isAdminMode) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-5 pb-20">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-600">Không gian quản lý chung</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-800">Chỉnh sửa Nhánh và NDD</h2>
+          </div>
+          <button type="button" onClick={() => { setIsAdminMode(false); refreshNddWorkspace(); }} className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white">← Trở lại cây NDD</button>
+        </div>
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2">
+          {canAdminNdd && <button type="button" onClick={() => setAdminSection('groups')} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${adminSection === 'groups' ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-600'}`}>Quản lý NDD</button>}
+          {canAdminBranches && <button type="button" onClick={() => setAdminSection('branches')} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${adminSection === 'branches' ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-600'}`}>Quản lý Nhánh</button>}
+        </div>
+        {adminSection === 'groups' && canAdminNdd && <NutritionGroupManager users={users} onRefresh={refreshNddWorkspace} canAdmin />}
+        {adminSection === 'branches' && canAdminBranches && <BranchManager canAdmin />}
+      </div>
+    );
+  }
+
+  if (dashboardData.length === 0 && nutritionBranches.length === 0 && !isLoadingBranches && !canEditNddWorkspace) {
     return (
       <div className="max-w-4xl mx-auto py-20 text-center">
         <div className="text-6xl mb-4">🏥</div>
-        <p className="text-lg font-bold text-slate-600">Bạn chưa có NDD để quản lý</p>
-        <p className="text-xs text-slate-400 mt-2">Vui lòng liên hệ Admin để được phân quyền</p>
+        <p className="text-lg font-bold text-slate-600">Bạn chưa vận hành NDD nào</p>
+        <p className="text-xs text-slate-400 mt-2">Những NDD bạn chỉ tham gia sẽ không hiển thị trong khu vực quản lý.</p>
       </div>
     );
   }
 
   if (!selectedNdd) {
+    const getItemId = (value: any) => String(value?._id || value?.id || value || '');
+    const groupById = new Map(dashboardData.map((item: any) => [getItemId(item.group), item]));
+    const branchGroupIds = new Set<string>();
+    const getBranchGroups = (branch: any) => (branch.nutritionGroupIds || [])
+      .map((groupRef: any) => {
+        const groupId = getItemId(groupRef);
+        branchGroupIds.add(groupId);
+        return groupById.get(groupId) || (groupRef && typeof groupRef === 'object' ? { group: groupRef, memberMetrics: [], canOpen: false } : null);
+      })
+      .filter(Boolean);
+    const standaloneGroups = dashboardData.filter((item: any) => !branchGroupIds.has(getItemId(item.group)));
+    const openGroup = (item: any) => {
+      setSelectedNdd(item);
+      setSelectedGroupScaleCode(item.group.scaleCode || OTHER_METRIC_SCALE_CODE);
+      setShowCoOwnerEditor(false);
+      setShowPending(false);
+    };
+
     return (
-      <div className="mx-auto max-w-5xl space-y-6 pb-20">
+      <div className="mx-auto max-w-5xl space-y-5 pb-20">
         {actionMsg && (
           <div className={`px-6 py-4 rounded-2xl shadow-lg font-bold text-sm flex items-center justify-between ${actionMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
             <span>{actionMsg.text}</span>
@@ -276,38 +351,40 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, onQuickCr
         )}
 
         <div className="rounded-[28px] border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 p-5 shadow-[0_20px_50px_rgba(16,185,129,0.08)] sm:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">
-                <span>🍀</span>
-                <span>Nutrition groups</span>
-              </div>
-              <h2 className="text-2xl font-black tracking-tight text-slate-800">Danh sách NDD</h2>
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700"><span>🍀</span><span>Quản lý vận hành</span></div>
+              <h2 className="text-2xl font-black tracking-tight text-slate-800">Nhánh và Nhóm dinh dưỡng</h2>
+              <p className="mt-1 text-xs text-slate-500">Hiển thị NDD bạn đang vận hành và các nhánh liên quan.</p>
             </div>
-            <div className="rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-sm font-bold text-slate-600 shadow-sm">
-              {dashboardData.length} nhóm đang hoạt động
+            <div className="flex items-center gap-2">
+              <span className="rounded-2xl border border-white/80 bg-white/80 px-3 py-2 text-sm font-bold text-slate-600 shadow-sm">{dashboardData.length} NDD</span>
+              {canEditNddWorkspace && <button type="button" onClick={() => { setAdminSection(canAdminNdd ? 'groups' : 'branches'); setIsAdminMode(true); }} className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm">Chỉnh sửa</button>}
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {dashboardData.map((item: any, idx: number) => {
-            const group = item.group;
-            const memberMetrics = item.memberMetrics || [];
-            return (
-              <div key={idx} onClick={() => { setSelectedNdd(item); setSelectedGroupScaleCode(item.group.scaleCode || OTHER_METRIC_SCALE_CODE); setShowCoOwnerEditor(false); setShowPending(false); }} className="group cursor-pointer overflow-hidden rounded-[30px] border border-emerald-200 bg-white shadow-[0_18px_45px_rgba(16,185,129,0.08)] transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_22px_50px_rgba(16,185,129,0.12)]">
-                <div className="bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-4">
-                  <h3 className="text-lg font-black text-white">{group.name}</h3>
-                  <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100">{group.address || 'Chưa có địa chỉ'}</p>
-                </div>
-                <div className="flex items-center justify-between p-4 text-xs">
-                  <span className="font-semibold text-slate-600">👥 <strong className="text-slate-800">{memberMetrics.length}</strong> hội viên</span>
-                  <span className="font-black text-emerald-600 transition group-hover:translate-x-1">Xem chi tiết →</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm" aria-label="Cây Nhánh và NDD">
+          <div className="border-b border-slate-100 px-5 py-4"><h3 className="text-sm font-black uppercase tracking-wider text-slate-700">Cây Nhánh → NDD</h3></div>
+          {isLoadingBranches && <div className="px-5 py-4 text-sm text-slate-500">Đang tải nhánh…</div>}
+          <div className="divide-y divide-slate-100">
+            {nutritionBranches.map((branch: any) => {
+              const branchId = getItemId(branch);
+              const children = getBranchGroups(branch);
+              const expanded = expandedBranchIds.includes(branchId);
+              return <div key={branchId}>
+                <button type="button" aria-expanded={expanded} onClick={() => setExpandedBranchIds(ids => expanded ? ids.filter(id => id !== branchId) : [...ids, branchId])} className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-indigo-50/60">
+                  <span className="text-xl">{expanded ? '📂' : '📁'}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-800">{branch.name}</span><span className="text-xs text-slate-500">{children.length} NDD</span></span><span className="text-slate-400">{expanded ? '⌄' : '›'}</span>
+                </button>
+                {expanded && <div className="space-y-2 bg-slate-50 px-4 py-3 pl-10 sm:pl-14">
+                  {children.length === 0 ? <p className="py-2 text-xs italic text-slate-400">Nhánh này chưa có NDD bạn được phép xem.</p> : children.map((item: any) => item.canOpen === false ? <div key={getItemId(item.group)} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"><span>🏥</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800">{item.group.name}</span><span className="block truncate text-xs text-slate-500">Chủ vận hành: {item.group.ownerName || 'Chưa có'}</span></span></div> : <button key={getItemId(item.group)} type="button" onClick={() => openGroup(item)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-emerald-300 hover:bg-emerald-50"><span>🏥</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800">{item.group.name}</span><span className="block truncate text-xs text-slate-500">Chủ vận hành: {item.group.ownerName || 'Chưa có'}</span></span><span className="text-xs font-bold text-emerald-700">Mở →</span></button>)}
+                </div>}
+              </div>;
+            })}
+            {standaloneGroups.map((item: any) => <button key={getItemId(item.group)} type="button" onClick={() => openGroup(item)} className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-emerald-50"><span className="text-xl">🏥</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800">{item.group.name}</span><span className="text-xs text-slate-500">NDD chưa thuộc nhánh · {item.memberMetrics?.length || 0} hội viên</span></span><span className="text-xs font-bold text-emerald-700">Mở →</span></button>)}
+            {!isLoadingBranches && nutritionBranches.length === 0 && standaloneGroups.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">Chưa có nhánh hoặc NDD nào bạn đang vận hành.</p>}
+          </div>
+        </section>
       </div>
     );
   }

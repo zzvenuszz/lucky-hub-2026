@@ -4,7 +4,6 @@ import Dashboard from './components/dashboard/Dashboard.tsx';
 import ChatSystem from './components/chat/index.tsx';
 import ChatProvider from './components/chat/ChatProvider.tsx';
 import AdminPanel from './components/admin/AdminPanel.tsx';
-import NutritionGroupManager from './components/admin/nutrition/NutritionGroupManager.tsx';
 import MetricForm from './components/dashboard/MetricForm.tsx';
 import Profile from './components/profile/Profile.tsx';
 import MetricsManagement from './components/dashboard/MetricsManagement.tsx';
@@ -15,7 +14,6 @@ import Login from './components/auth/Login.tsx';
 import Register from './components/auth/Register.tsx';
 import AuthContainer from './components/auth/AuthContainer.tsx';
 import SystemLog from './components/system/SystemLog.tsx';
-import BranchManager from './components/admin/nutrition/BranchManager.tsx';
 import ErrorBoundary from './components/system/ErrorBoundary.tsx';
 import ToastProvider from './components/system/ToastProvider.tsx';
 import { ModalStackProvider } from './components/system/ModalManager.tsx';
@@ -708,9 +706,7 @@ const App: React.FC = () => {
           } 
         }} />}
         {activeTab === 'admin' && isAdmin && <AdminPanel currentUser={currentUser!} users={users} knowledge={knowledge} rules={rules} onRefresh={fetchData} />}
-        {activeTab === 'ndd' && <NDDDashboard currentUser={currentUser!} onQuickCreateOrder={handleQuickCreateOrderFromNdd} />}
-        {activeTab === 'ndd-admin' && ((currentUser! as any).permissions || []).includes('ndd:admin') && <NutritionGroupManager users={users} onRefresh={fetchData} canAdmin />}
-        {activeTab === 'systemndd' && (((currentUser! as any).permissions || []).includes('ndd:system') || ((currentUser! as any).permissions || []).includes('ndd:branch:admin')) && <BranchManager canAdmin={((currentUser! as any).permissions || []).includes('ndd:branch:admin')} />}
+        {['ndd', 'ndd-admin', 'systemndd'].includes(activeTab) && <NDDDashboard currentUser={currentUser!} users={users} onRefresh={fetchData} onQuickCreateOrder={handleQuickCreateOrderFromNdd} />}
         {activeTab === 'inventory' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} initialBuyer={preselectedSaleBuyer} onConsumeInitialBuyer={handleConsumePreselectedBuyer} onSaleCartShortcutChange={handleSaleCartShortcutChange} />}
         {activeTab === 'inventory-reports' && ((currentUser! as any).permissions?.includes('inventory:manage') || (currentUser! as any).permissions?.includes('inventory:sell')) && <InventoryDashboard user={currentUser!} initialTab="reports" />}
         {activeTab === 'inventory-prices' && (currentUser! as any).permissions?.includes('pricelist:manage') && <InventoryDashboard user={currentUser!} initialPricesOnly />}

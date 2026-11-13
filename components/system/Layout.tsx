@@ -30,8 +30,9 @@ const tabMeta: Record<string, { label: string; icon: string; group: string }> = 
   community: { label: 'Cộng đồng', icon: '📰', group: 'Chính' },
   metrics: { label: 'Chỉ số', icon: '📈', group: 'Chính' },
   profile: { label: 'Hồ sơ', icon: '👤', group: 'Cá nhân' },
-  ndd: { label: 'NDD', icon: '🍀', group: 'Công việc' },
-  systemndd: { label: 'Nhánh NDD', icon: '🌐', group: 'Công việc' },
+  ndd: { label: 'Nhánh & Quản lý NDD', icon: '🌐', group: 'Vận hành' },
+  'ndd-admin': { label: 'Nhánh & Quản lý NDD', icon: '🌐', group: 'Vận hành' },
+  systemndd: { label: 'Nhánh & Quản lý NDD', icon: '🌐', group: 'Vận hành' },
   admin: { label: 'Admin', icon: '🛡️', group: 'Quản trị' },
 };
 
@@ -66,16 +67,8 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
       { id: 'metrics', label: 'Chỉ số', icon: '📊', activeIcon: '📈' },
     ];
 
-    if (permissions.includes('coach:access') || permissions.includes('ndd:manage')) {
-      items.push({ id: 'ndd', label: 'NDD', icon: '🍀', activeIcon: '🍀' });
-    }
-
-    if (permissions.includes('ndd:admin')) {
-      items.push({ id: 'ndd-admin', label: 'Quản trị NDD', icon: '🏥', activeIcon: '🏥' });
-    }
-
-    if (permissions.includes('ndd:system') || permissions.includes('ndd:branch:admin')) {
-      items.push({ id: 'systemndd', label: 'Nhánh NDD', icon: '🌐', activeIcon: '🌐' });
+    if (permissions.includes('coach:access') || permissions.includes('ndd:manage') || permissions.includes('ndd:admin') || permissions.includes('ndd:system') || permissions.includes('ndd:branch:admin')) {
+      items.push({ id: 'ndd', label: 'Nhánh & NDD', icon: '🌐', activeIcon: '🌐' });
     }
 
     return items;

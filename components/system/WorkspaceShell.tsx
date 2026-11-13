@@ -71,9 +71,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
     ...(canManageNdd || canAdminNdd || canManageBranches ? [{
       label: 'Vận hành',
       items: [
-        ...(canManageNdd ? [{ id: 'ndd', label: 'Quản lý NDD', icon: 'coach' as IconName }] : []),
-        ...(canAdminNdd ? [{ id: 'ndd-admin', label: 'Quản trị NDD', icon: 'coach' as IconName }] : []),
-        ...(canManageBranches ? [{ id: 'systemndd', label: 'Chi nhánh NDD', icon: 'branch' as IconName }] : []),
+        { id: 'ndd', label: 'Nhánh & Quản lý NDD', icon: 'coach' as IconName },
       ],
     }] : []),
     ...(canManageInventory || canSellInventory || canManagePriceList || canManageMemberLevels ? [{ label: 'Bán hàng', items: [
@@ -142,9 +140,7 @@ const WorkspaceShell: React.FC<WorkspaceShellProps> = memo(({ user, onLogout, ch
     ...(canManageInventory || canSellInventory ? [{ id: 'inventory-reports', label: 'Báo cáo bán hàng', icon: 'report' as IconName }] : []),
     ...(canManagePriceList ? [{ id: 'inventory-prices', label: 'Quản lý bảng giá', icon: 'inventory' as IconName }] : []),
     ...(canManageMemberLevels && !canManageInventory ? [{ id: 'member-levels', label: permissions.includes('members:level:manage:any') ? 'Quản lý cấp độ hội viên' : 'Cấp độ tuyến dưới', icon: 'inventory' as IconName }] : []),
-    ...(canManageNdd ? [{ id: 'ndd', label: 'Quản lý NDD', icon: 'coach' as IconName }] : []),
-    ...(canAdminNdd ? [{ id: 'ndd-admin', label: 'Quản trị NDD', icon: 'coach' as IconName }] : []),
-    ...(canManageBranches ? [{ id: 'systemndd', label: 'Chi nhánh NDD', icon: 'branch' as IconName }] : []),
+    ...((canManageNdd || canAdminNdd || canManageBranches) ? [{ id: 'ndd', label: 'Nhánh & Quản lý NDD', icon: 'coach' as IconName }] : []),
     ...(isAdmin ? [{ id: 'admin', label: 'Quản trị', icon: 'admin' as IconName }] : []),
   ];
 

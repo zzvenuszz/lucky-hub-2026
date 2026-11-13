@@ -148,7 +148,8 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
     // 🛠️ FIX: Sử dụng string comparison thay vì ObjectId
     // Vì ownerId/coOwners/members có thể được lưu dưới dạng string (không phải ObjectId)
     // khi admin tạo NDD từ front-end gửi userId dạng string
-    const allGroups = await NutritionGroup.find({ isActive: true })
+    const canViewAllGroups = req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
+    const allGroups = await NutritionGroup.find(canViewAllGroups ? {} : { isActive: true })
       .populate('ownerId', 'fullName username groupId groupName')
       .populate('coOwners', 'fullName username groupId groupName')
       .populate('members', 'fullName username email phoneNumber address memberNumber memberLevel groupId groupName avatar')
@@ -199,7 +200,7 @@ router.get('/my-dashboard', async (req: Request, res: Response) => {
         console.log(`[NutritionGroup] ❌ NO MATCH: "${g.name}" ownerId="${ownerIdStr}" userId="${userId}"`);
       }
 
-      return isOwner || isCoOwner || isMember;
+      return canViewAllGroups || isOwner || isCoOwner;
     });
 
     console.log(`[NutritionGroup] 📊 Found ${groups.length} groups for userId="${userId}"`);

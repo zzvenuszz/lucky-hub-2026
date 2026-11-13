@@ -8,8 +8,6 @@ import UserManagement from './UserManagement.tsx';
 import AITraining from './AITraining.tsx';
 import AuditLogs from './AuditLogs.tsx';
 import GroupManager from './groups/GroupManager.tsx';
-import NutritionGroupManager from './nutrition/NutritionGroupManager.tsx';
-import BranchManager from './nutrition/BranchManager.tsx';
 
 // Import new AI admin components
 import AIProviderPanel from './ai/AIProviderPanel.tsx';
@@ -28,14 +26,8 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, rules, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'ai' | 'audit' | 'groups' | 'ndd' | 'systemndd' | 'ai-providers' | 'ai-tasks' | 'ai-logs' | 'system-settings'>('users');
-  const [nutritionGroups, setNutritionGroups] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'users' | 'ai' | 'audit' | 'groups' | 'ai-providers' | 'ai-tasks' | 'ai-logs' | 'system-settings'>('users');
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const permissions = (currentUser as any).permissions || [];
-  const canViewNdd = permissions.includes('ndd:manage') || permissions.includes('ndd:admin');
-  const canAdminNdd = permissions.includes('ndd:admin');
-  const canViewBranches = permissions.includes('ndd:system') || permissions.includes('ndd:branch:admin');
-  const canAdminBranches = permissions.includes('ndd:branch:admin');
 
   // Tải nhật ký hệ thống khi chuyển sang tab Audit
   useEffect(() => {
@@ -73,23 +65,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
             <span className="block text-base">🔐</span>
             <span className="hidden md:inline">Nhóm</span>
           </button>
-          {canViewNdd && <button
-            onClick={() => {
-              setActiveTab('ndd');
-              Database.getAllNutritionGroups().then(setNutritionGroups).catch(() => {});
-            }} 
-            className={`flex-none w-auto rounded-xl px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.15em] transition-all md:px-3 ${activeTab === 'ndd' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-          >
-            <span className="block text-base">🏥</span>
-            <span className="hidden md:inline">NDD</span>
-          </button>}
-          {canViewBranches && <button
-            onClick={() => setActiveTab('systemndd')} 
-            className={`flex-none w-auto rounded-xl px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.15em] transition-all md:px-3 ${activeTab === 'systemndd' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
-          >
-            <span className="block text-base">🌐</span>
-            <span className="hidden md:inline">Nhánh NDD</span>
-          </button>}
           <button
             onClick={() => setActiveTab('ai')}
             className={`flex-none w-auto rounded-xl px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.15em] transition-all md:px-3 ${activeTab === 'ai' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
@@ -151,14 +126,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ currentUser, users, knowledge, 
 
         {activeTab === 'audit' && (
           <AuditLogs logs={auditLogs} />
-        )}
-
-        {activeTab === 'ndd' && canViewNdd && (
-          <NutritionGroupManager users={users} onRefresh={onRefresh} canAdmin={canAdminNdd} />
-        )}
-
-        {activeTab === 'systemndd' && canViewBranches && (
-          <BranchManager canAdmin={canAdminBranches} />
         )}
 
         {activeTab === 'ai-providers' && (
