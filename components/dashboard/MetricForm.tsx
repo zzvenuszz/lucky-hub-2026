@@ -90,6 +90,8 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
   const [bulkMode, setBulkMode] = useState(false);
   const bulkModeRef = useRef(false);
   const [bulkPreview, setBulkPreview] = useState<any[]>([]);
+  // Refs for each numeric input to enable custom Next button on iOS
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [statusMsg, setStatusMsg] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
   
   const [showYearPicker, setShowYearPicker] = useState(false);
@@ -541,7 +543,33 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                   </select>
                 </div>
 
-                {metricFields.map(field => (
+                {metricFields.map((field, idx) => (
+                  <div key={field.key} className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{field.label}</label>
+                    <input
+                      required
+                      type="number" inputMode="decimal"
+                      step="0.1"
+                      placeholder={field.placeholder}
+                      value={(formData as any)[field.key]}
+                      onChange={e => setFormData({ ...formData, [field.key]: e.target.value })}
+                      // iOS hint to show Next button on numeric keypad
+                      enterKeyHint="next"
+                      // Store ref for custom focus handling
+                      ref={el => (inputRefs.current[idx] = el)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const nextIdx = idx + 1;
+                          if (nextIdx < inputRefs.current.length) {
+                            inputRefs.current[nextIdx]?.focus();
+                          }
+                        }
+                      }}
+                      className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm"
+                    />
+                  </div>
+                ))}
                   <div key={field.key} className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{field.label}</label>
                     <input 
