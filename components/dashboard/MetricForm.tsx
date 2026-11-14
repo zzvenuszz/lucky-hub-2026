@@ -570,19 +570,6 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                     />
                   </div>
                 ))}
-                  <div key={field.key} className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase ml-1">{field.label}</label>
-                    <input 
-                      required 
-                      type="number" inputMode="decimal"
-                      step="0.1" 
-                      placeholder={field.placeholder}
-                      value={(formData as any)[field.key]} 
-                      onChange={e => setFormData({...formData, [field.key]: e.target.value})} 
-                      className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-sm" 
-                    />
-                  </div>
-                ))}
                </div>
                <LoadingButton type="submit" variant="primary" size="lg" loadingText="Đang lưu..." className="!w-full">
                  Lưu kết quả ngay
