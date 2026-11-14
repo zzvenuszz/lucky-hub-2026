@@ -207,6 +207,7 @@ export const Database = {
   leaveNutritionGroup: () => request<any>(`${API_BASE}/nutrition-groups/leave`, 'POST', {}),
   getAllNutritionGroups: async () => (await request<any[]>(`${API_BASE}/nutrition-groups/all`)) ?? [],
   getCoachCandidates: async () => (await request<any[]>(`${API_BASE}/users/coach-candidates`)) ?? [],
+  getBranchTabCandidates: async () => (await request<any[]>(`${API_BASE}/users/branch-tab-candidates`)) ?? [],
   createNutritionGroup: (data: { name: string, ownerId?: string, ownerName?: string, address?: string }) => request<any>(`${API_BASE}/nutrition-groups`, 'POST', data),
   updateNutritionGroup: (id: string, data: any) => request<any>(`${API_BASE}/nutrition-groups/${id}`, 'PUT', data),
   updateNutritionGroupScale: (id: string, scaleCode: string) => request<any>(`${API_BASE}/nutrition-groups/${id}/scale`, 'PUT', { scaleCode }),
@@ -257,10 +258,12 @@ export const Database = {
   // Nutrition Branches
   getAllNutritionBranches: async () => (await request<any[]>(`${API_BASE}/nutrition-branches`)) ?? [],
   getMyNutritionBranches: async () => (await request<any[]>(`${API_BASE}/nutrition-branches/my-branches`)) ?? [],
-  createNutritionBranch: (data: { name: string; nutritionGroupIds: string[] }) =>
+  createNutritionBranch: (data: { name: string; tabHeadId: string; nutritionGroupIds?: string[] }) =>
     request<any>(`${API_BASE}/nutrition-branches`, 'POST', data),
   updateNutritionBranch: (id: string, data: any) => request<any>(`${API_BASE}/nutrition-branches/${id}`, 'PUT', data),
   deleteNutritionBranch: (id: string) => request(`${API_BASE}/nutrition-branches/${id}`, 'DELETE'),
+  createNutritionGroupInBranch: (branchId: string, data: { name: string; ownerId: string; ownerName: string; address?: string }) =>
+    request<any>(`${API_BASE}/nutrition-branches/${branchId}/nutrition-groups`, 'POST', data),
   sendNutritionBranchMessage: (branchId: string, content: string) =>
     request<any>(`${API_BASE}/nutrition-branches/${branchId}/message`, 'POST', { content }),
   getNutritionBranchMessages: async (branchId: string) =>

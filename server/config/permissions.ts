@@ -52,6 +52,7 @@ export const RESOURCES = {
     SYSTEM: 'ndd:system',
     ADMIN: 'ndd:admin',
     BRANCH_ADMIN: 'ndd:branch:admin',
+    BRANCH_TAB: 'ndd:branch:tab',
   },
   INVENTORY: {
     MANAGE: 'inventory:manage',
@@ -114,6 +115,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   [RESOURCES.NDD.SYSTEM]: 'Xem Nhánh NDD',
   [RESOURCES.NDD.ADMIN]: 'Quản trị NDD (thêm, sửa, xóa)',
   [RESOURCES.NDD.BRANCH_ADMIN]: 'Quản trị Nhánh NDD (thêm, sửa, xóa)',
+  [RESOURCES.NDD.BRANCH_TAB]: 'Quyền TAB',
   [RESOURCES.INVENTORY.MANAGE]: 'Quản lý kho hàng và bán hàng riêng',
   [RESOURCES.INVENTORY.SELL]: 'Bán hàng từ kho cá nhân',
   [RESOURCES.PRICELIST.MANAGE]: 'Quản lý bảng giá chung',

@@ -443,12 +443,18 @@ router.post('/:id/co-owners', async (req: Request, res: Response) => {
 });
 
 // PUT /api/nutrition-groups/:id - Sửa NDD (owner, co-owner hoặc admin)
-router.put('/:id', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   try {
     const group = await NutritionGroup.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
 
     const isAdmin = req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
+    const groupBranches = await NutritionBranch.find({ nutritionGroupIds: group._id }).select('_id tabHeadId');
+    const actorPermissions = await (await import('../services/permissionService.ts')).getEffectivePermissions(req.user!.userId);
+    const isBranchTabHead = groupBranches.length > 0
+      && groupBranches.every(branch => safeId(branch.tabHeadId) === req.user!.userId)
+      && actorPermissions.includes(RESOURCES.NDD.BRANCH_TAB);
+    if (!isAdmin && !isBranchTabHead) return res.status(403).json({ message: 'Bạn không có quyền chỉnh sửa NDD này.' });
     const { name, ownerId, ownerName, address, isActive } = req.body;
 
     // Kiểm tra owner mới phải có role COACH
@@ -475,7 +481,7 @@ router.put('/:id', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, 
     }
     if (ownerName !== undefined) updateData.ownerName = ownerName;
     if (address !== undefined) updateData.address = address;
-    if (isActive !== undefined && isAdmin) updateData.isActive = isActive;
+    if (isActive !== undefined && (isAdmin || isBranchTabHead)) updateData.isActive = isActive;
 
     const updated = await NutritionGroup.findByIdAndUpdate(req.params.id, updateData, { new: true });
     console.log(`[NutritionGroup] ✅ Updated "${updated?.name}"`);
@@ -486,11 +492,16 @@ router.put('/:id', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, 
 });
 
 // DELETE /api/nutrition-groups/:id - Xóa NDD (admin)
-router.delete('/:id', requirePermission(RESOURCES.NDD.ADMIN), async (req: Request, res: Response) => {
+router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const group = await NutritionGroup.findById(req.params.id);
     if (!group) return res.status(404).json({ message: 'Không tìm thấy NDD' });
-    const affectedBranches = await NutritionBranch.find({ nutritionGroupIds: group._id }).distinct('_id');
+    const isAdmin = req.user!.permissions.includes(RESOURCES.NDD.ADMIN);
+    const groupBranches = await NutritionBranch.find({ nutritionGroupIds: group._id }).select('_id tabHeadId');
+    const actorPermissions = isAdmin ? [] : await (await import('../services/permissionService.ts')).getEffectivePermissions(req.user!.userId);
+    const managesEveryBranch = actorPermissions.includes(RESOURCES.NDD.BRANCH_TAB) && groupBranches.length > 0 && groupBranches.every(branch => safeId(branch.tabHeadId) === req.user!.userId);
+    if (!isAdmin && !managesEveryBranch) return res.status(403).json({ message: 'Bạn không có quyền xóa NDD này.' });
+    const affectedBranches = groupBranches.map(branch => branch._id);
     await User.updateMany({ nutritionGroupId: group._id }, { $set: { nutritionGroupId: null } });
     await User.updateMany({ pendingNutritionGroupId: group._id }, { $set: { pendingNutritionGroupId: null } });
     await NutritionBranch.updateMany({ nutritionGroupIds: group._id }, { $pull: { nutritionGroupIds: group._id } });

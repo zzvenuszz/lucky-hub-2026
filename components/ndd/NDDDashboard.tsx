@@ -8,6 +8,7 @@ import { useBodyScrollLock, useModalStack } from '../system/ModalManager.tsx';
 import { DEFAULT_METRIC_SCALES, MetricScaleModel, normalizeMetricScales, OTHER_METRIC_SCALE_CODE, OTHER_METRIC_SCALE_LABEL } from '../../utils/metricScaleConfig.ts';
 import NutritionGroupManager from '../admin/nutrition/NutritionGroupManager.tsx';
 import BranchManager from '../admin/nutrition/BranchManager.tsx';
+import BranchNutritionGroupEditor from './BranchNutritionGroupEditor.tsx';
 
 interface NDDDashboardProps {
   currentUser: User;
@@ -49,6 +50,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, on
   const [metricScaleModels, setMetricScaleModels] = useState<MetricScaleModel[]>(DEFAULT_METRIC_SCALES);
   const [selectedGroupScaleCode, setSelectedGroupScaleCode] = useState(OTHER_METRIC_SCALE_CODE);
   const [savingGroupScale, setSavingGroupScale] = useState(false);
+  const [branchTabCandidates, setBranchTabCandidates] = useState<any[]>([]);
+  const [branchGroupEditor, setBranchGroupEditor] = useState<{ branchId: string; mode: 'create' | 'edit'; group?: any } | null>(null);
+  const [savingBranchGroup, setSavingBranchGroup] = useState(false);
   const [nutritionBranches, setNutritionBranches] = useState<any[]>([]);
   const [expandedBranchIds, setExpandedBranchIds] = useState<string[]>([]);
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -58,7 +62,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, on
   const currentUserPerms: string[] = (currentUser as any).permissions || [];
   const canAdminNdd = currentUserPerms.includes('ndd:admin');
   const canAdminBranches = currentUserPerms.includes('ndd:branch:admin');
-  const canViewBranches = currentUserPerms.includes('ndd:system') || canAdminBranches;
+  const canViewBranches = currentUserPerms.includes('ndd:system') || canAdminBranches || canAdminNdd;
   const canEditNddWorkspace = canAdminNdd || canAdminBranches;
 
   const fetchCoachCandidates = useCallback(async () => {
@@ -96,7 +100,7 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, on
   const fetchBranches = useCallback(async () => {
     setIsLoadingBranches(true);
     try {
-      const data = canAdminBranches
+      const data = canAdminBranches || canAdminNdd
         ? await Database.getAllNutritionBranches()
         : canViewBranches
           ? await Database.getMyNutritionBranches()
@@ -138,12 +142,56 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, on
       setMetricScaleModels(normalized);
       console.log('[NDDDashboard] Loaded available scale models:', { count: normalized.length, codes: normalized.map(scale => scale.code) });
     }).catch(error => console.error('[NDDDashboard] Failed to load scale models:', error));
+    Database.getBranchTabCandidates().then(candidates => {
+      setBranchTabCandidates(candidates || []);
+      console.log('[NDDDashboard] Loaded branch TAB candidates:', { count: candidates?.length || 0 });
+    }).catch(error => console.error('[NDDDashboard] Failed to load branch TAB candidates:', error));
   }, [fetchDashboard, fetchBranches, fetchCoachCandidates]);
 
   const refreshNddWorkspace = useCallback(async () => {
     await Promise.all([fetchDashboard(), fetchBranches()]);
     onRefresh();
   }, [fetchDashboard, fetchBranches, onRefresh]);
+
+  const handleSaveBranchGroup = async (data: { name: string; ownerId: string; ownerName: string; address: string; isActive: boolean }) => {
+    if (!branchGroupEditor) return;
+    setSavingBranchGroup(true);
+    try {
+      if (branchGroupEditor.mode === 'create') {
+        await Database.createNutritionGroupInBranch(branchGroupEditor.branchId, data);
+        console.log('[NDDDashboard] NDD created in branch:', { branchId: branchGroupEditor.branchId, name: data.name, ownerId: data.ownerId });
+      } else {
+        const groupId = String(branchGroupEditor.group?.id || branchGroupEditor.group?._id || '');
+        await Database.updateNutritionGroup(groupId, data);
+        console.log('[NDDDashboard] Branch NDD updated:', { branchId: branchGroupEditor.branchId, groupId, name: data.name });
+      }
+      setBranchGroupEditor(null);
+      setActionMsg({ type: 'success', text: branchGroupEditor.mode === 'create' ? '✅ Đã tạo NDD trong nhánh' : '✅ Đã cập nhật NDD' });
+      await refreshNddWorkspace();
+    } catch (error: any) {
+      console.error('[NDDDashboard] Branch NDD save failed:', error);
+      setActionMsg({ type: 'error', text: '❌ ' + (error.message || 'Không thể lưu NDD') });
+    } finally {
+      setSavingBranchGroup(false);
+    }
+  };
+
+  const handleDeleteBranchGroup = async (group: any) => {
+    const groupId = String(group?.id || group?._id || '');
+    if (!groupId || !window.confirm(`Xóa NDD “${group.name}”? Hội viên trong nhóm sẽ trở thành hội viên tự do.`)) return;
+    setSavingBranchGroup(true);
+    try {
+      await Database.deleteNutritionGroup(groupId);
+      setBranchGroupEditor(null);
+      setActionMsg({ type: 'success', text: `🗑️ Đã xóa NDD “${group.name}”` });
+      await refreshNddWorkspace();
+    } catch (error: any) {
+      console.error('[NDDDashboard] Branch NDD deletion failed:', { groupId, error });
+      setActionMsg({ type: 'error', text: '❌ ' + (error.message || 'Không thể xóa NDD') });
+    } finally {
+      setSavingBranchGroup(false);
+    }
+  };
 
   const handleUpdateCoOwners = async () => {
     if (!selectedNdd?.group?.id) return;
@@ -333,7 +381,9 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, on
         return groupById.get(groupId) || (groupRef && typeof groupRef === 'object' ? { group: groupRef, memberMetrics: [], canOpen: false } : null);
       })
       .filter(Boolean);
+    const branchRows = nutritionBranches.map((branch: any) => ({ branch, children: getBranchGroups(branch) }));
     const standaloneGroups = dashboardData.filter((item: any) => !branchGroupIds.has(getItemId(item.group)));
+    const currentUserId = String((currentUser as any).id || (currentUser as any)._id || '');
     const openGroup = (item: any) => {
       setSelectedNdd(item);
       setSelectedGroupScaleCode(item.group.scaleCode || OTHER_METRIC_SCALE_CODE);
@@ -368,16 +418,23 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, on
           <div className="border-b border-slate-100 px-5 py-4"><h3 className="text-sm font-black uppercase tracking-wider text-slate-700">Cây Nhánh → NDD</h3></div>
           {isLoadingBranches && <div className="px-5 py-4 text-sm text-slate-500">Đang tải nhánh…</div>}
           <div className="divide-y divide-slate-100">
-            {nutritionBranches.map((branch: any) => {
+            {branchRows.map(({ branch, children }: any) => {
               const branchId = getItemId(branch);
-              const children = getBranchGroups(branch);
               const expanded = expandedBranchIds.includes(branchId);
+              const branchTabHeadId = getItemId(branch.tabHeadId);
+              const canManageBranchGroups = canAdminNdd || (branchTabHeadId === currentUserId && currentUserPerms.includes('ndd:branch:tab'));
               return <div key={branchId}>
-                <button type="button" aria-expanded={expanded} onClick={() => setExpandedBranchIds(ids => expanded ? ids.filter(id => id !== branchId) : [...ids, branchId])} className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-indigo-50/60">
-                  <span className="text-xl">{expanded ? '📂' : '📁'}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-800">{branch.name}</span><span className="text-xs text-slate-500">{children.length} NDD</span></span><span className="text-slate-400">{expanded ? '⌄' : '›'}</span>
-                </button>
+                <div className="flex items-center gap-2 px-3 sm:px-5">
+                  <button type="button" aria-expanded={expanded} onClick={() => setExpandedBranchIds(ids => expanded ? ids.filter(id => id !== branchId) : [...ids, branchId])} className="flex min-w-0 flex-1 items-center gap-3 py-4 text-left hover:text-indigo-700">
+                    <span className="text-xl">{expanded ? '📂' : '📁'}</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-800">{branch.name}</span><span className="text-xs text-slate-500">{children.length} NDD{branch.tabHeadId?.fullName ? ` · TAB: ${branch.tabHeadId.fullName}` : ''}</span></span><span className="text-slate-400">{expanded ? '⌄' : '›'}</span>
+                  </button>
+                  {canManageBranchGroups && <button type="button" onClick={() => setBranchGroupEditor({ branchId, mode: 'create' })} className="shrink-0 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white">+NDD</button>}
+                </div>
                 {expanded && <div className="space-y-2 bg-slate-50 px-4 py-3 pl-10 sm:pl-14">
-                  {children.length === 0 ? <p className="py-2 text-xs italic text-slate-400">Nhánh này chưa có NDD bạn được phép xem.</p> : children.map((item: any) => item.canOpen === false ? <div key={getItemId(item.group)} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"><span>🏥</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800">{item.group.name}</span><span className="block truncate text-xs text-slate-500">Chủ vận hành: {item.group.ownerName || 'Chưa có'}</span></span></div> : <button key={getItemId(item.group)} type="button" onClick={() => openGroup(item)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left hover:border-emerald-300 hover:bg-emerald-50"><span>🏥</span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800">{item.group.name}</span><span className="block truncate text-xs text-slate-500">Chủ vận hành: {item.group.ownerName || 'Chưa có'}</span></span><span className="text-xs font-bold text-emerald-700">Mở →</span></button>)}
+                  {children.length === 0 ? <p className="py-2 text-xs italic text-slate-400">Nhánh chưa có NDD.</p> : children.map((item: any) => <div key={getItemId(item.group)} className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white p-2">
+                    {item.canOpen === false ? <div className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1"><span>🏥</span><span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-800">{item.group.name}</span><span className="block truncate text-xs text-slate-500">Chủ vận hành: {item.group.ownerName || 'Chưa có'}</span></span></div> : <button type="button" onClick={() => openGroup(item)} className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1 text-left"><span>🏥</span><span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-800">{item.group.name}</span><span className="block truncate text-xs text-slate-500">Chủ vận hành: {item.group.ownerName || 'Chưa có'}</span></span></button>}
+                    {canManageBranchGroups && <button type="button" onClick={() => setBranchGroupEditor({ branchId, mode: 'edit', group: item.group })} className="shrink-0 rounded-lg bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">Edit</button>}
+                  </div>)}
                 </div>}
               </div>;
             })}
@@ -385,6 +442,15 @@ const NDDDashboard: React.FC<NDDDashboardProps> = memo(({ currentUser, users, on
             {!isLoadingBranches && nutritionBranches.length === 0 && standaloneGroups.length === 0 && <p className="px-5 py-8 text-center text-sm text-slate-400">Chưa có nhánh hoặc NDD nào bạn đang vận hành.</p>}
           </div>
         </section>
+        {branchGroupEditor && <BranchNutritionGroupEditor
+          mode={branchGroupEditor.mode}
+          group={branchGroupEditor.group}
+          coachCandidates={coachCandidates}
+          isSaving={savingBranchGroup}
+          onSave={handleSaveBranchGroup}
+          onDelete={branchGroupEditor.mode === 'edit' ? handleDeleteBranchGroup : undefined}
+          onClose={() => { if (!savingBranchGroup) setBranchGroupEditor(null); }}
+        />}
       </div>
     );
   }

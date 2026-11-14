@@ -6,6 +6,7 @@ interface BranchManagerProps { canAdmin: boolean; }
 const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
   const [branches, setBranches] = useState<any[]>([]);
   const [nutritionGroups, setNutritionGroups] = useState<any[]>([]);
+  const [tabCandidates, setTabCandidates] = useState<any[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [editingBranch, setEditingBranch] = useState<any | null>(null);
   const editModalId = React.useMemo(() => `branch-edit_${Math.random().toString(36).slice(2, 9)}`, []);
@@ -13,7 +14,7 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
   useModalStack(editModalId, () => setEditingBranch(null));
   const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [newBranch, setNewBranch] = useState({ name: '', nutritionGroupIds: [] as string[] });
+  const [newBranch, setNewBranch] = useState({ name: '', tabHeadId: '' });
   const [expandedBranch, setExpandedBranch] = useState<string | null>(null);
   const [editingNdds, setEditingNdds] = useState<string[]>([]);
   const [editNddError, setEditNddError] = useState<string | null>(null);
@@ -29,6 +30,11 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
       .catch(err => {
         console.error('[BranchManager] Error loading NDD groups:', err);
       });
+
+    Database.getBranchTabCandidates().then(candidates => {
+      setTabCandidates(candidates || []);
+      console.log('[BranchManager] Loaded TAB candidates:', { count: candidates?.length || 0 });
+    }).catch(error => console.error('[BranchManager] Failed to load TAB candidates:', error));
 
     try {
       const branchData = await Database.getAllNutritionBranches();
@@ -48,16 +54,16 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
       setActionMsg({ type: 'error', text: '❌ Tên nhánh là bắt buộc' });
       return;
     }
-    if (newBranch.nutritionGroupIds.length < 2) {
-      setActionMsg({ type: 'error', text: '❌ Cần chọn ít nhất 2 NDD' });
+    if (!newBranch.tabHeadId) {
+      setActionMsg({ type: 'error', text: '❌ Hãy chọn TAB đầu nhánh có Quyền TAB.' });
       return;
     }
     try {
       await Database.createNutritionBranch({
         name: newBranch.name.trim(),
-        nutritionGroupIds: newBranch.nutritionGroupIds,
+        tabHeadId: newBranch.tabHeadId,
       });
-      setNewBranch({ name: '', nutritionGroupIds: [] });
+      setNewBranch({ name: '', tabHeadId: '' });
       setIsCreating(false);
       setActionMsg({ type: 'success', text: '✅ Đã tạo nhánh mới' });
       loadData();
@@ -68,8 +74,8 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
 
   const handleUpdate = async () => {
     if (!editingBranch) return;
-    if (editingNdds.length < 2) {
-      setEditNddError('Cần chọn ít nhất 2 NDD');
+    if (!String(editingBranch.tabHeadId?._id || editingBranch.tabHeadId || '').trim()) {
+      setActionMsg({ type: 'error', text: '❌ Hãy chọn TAB đầu nhánh có Quyền TAB.' });
       return;
     }
     const bid = editingBranch.id || editingBranch._id;
@@ -77,6 +83,7 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
       await Database.updateNutritionBranch(bid, {
         name: editingBranch.name,
         nutritionGroupIds: editingNdds,
+        tabHeadId: editingBranch.tabHeadId?._id || editingBranch.tabHeadId || '',
         isActive: editingBranch.isActive,
       });
       setEditingBranch(null);
@@ -158,42 +165,13 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
             className="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-xs"
           />
 
-          <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase mb-2">
-              Chọn NDD tham gia <span className="text-rose-500">(tối thiểu 2)</span>
-            </p>
-            <div className="space-y-1 max-h-40 overflow-y-auto">
-              {nutritionGroups.filter(g => g.isActive !== false).map(ng => {
-                const ngId = ng.id || ng._id;
-                const isSelected = newBranch.nutritionGroupIds.includes(ngId);
-                return (
-                  <label key={ngId} className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer text-xs">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {
-                        const updated = isSelected
-                          ? newBranch.nutritionGroupIds.filter(id => id !== ngId)
-                          : [...newBranch.nutritionGroupIds, ngId];
-                        setNewBranch({...newBranch, nutritionGroupIds: updated});
-                      }}
-                      className="rounded"
-                    />
-                    <span className="font-bold text-slate-700">{ng.name}</span>
-                    <span className="text-[9px] text-slate-400">({ng.members?.length || 0} hội viên)</span>
-                  </label>
-                );
-              })}
-              {nutritionGroups.length === 0 && (
-                <p className="text-[10px] text-slate-400 italic">Chưa có NDD nào. Hãy tạo NDD trước.</p>
-              )}
-            </div>
-            {newBranch.nutritionGroupIds.length > 0 && (
-              <p className="text-[9px] text-emerald-600 font-bold mt-2">
-                ✅ Đã chọn {newBranch.nutritionGroupIds.length} NDD
-              </p>
-            )}
-          </div>
+          <label className="block text-[10px] font-black text-slate-500 uppercase">TAB đầu nhánh · Quyền TAB
+            <select value={newBranch.tabHeadId} onChange={event => setNewBranch({ ...newBranch, tabHeadId: event.target.value })} className="mt-1 w-full rounded-xl bg-slate-50 px-4 py-3 text-xs font-bold normal-case">
+              <option value="">-- Chọn TAB đầu nhánh --</option>
+              {tabCandidates.map(candidate => <option key={candidate.id || candidate._id} value={candidate.id || candidate._id}>{candidate.fullName} (@{candidate.username})</option>)}
+            </select>
+            {tabCandidates.length === 0 && <span className="mt-1 block font-medium normal-case text-rose-600">Chưa có người dùng được gán Quyền TAB.</span>}
+          </label>
 
           <div className="flex gap-3">
             <button onClick={() => setIsCreating(false)} className="px-6 py-3 rounded-2xl bg-slate-100 text-slate-400 font-black uppercase text-[10px]">Hủy</button>
@@ -219,7 +197,8 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-lg shrink-0">🌐</div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-sm text-slate-800 truncate">{branch.name}</h3>
+                  <h3 className="font-bold text-sm text-slate-800 truncate">{branch.name}</h3>
+                  <p className="text-[10px] text-slate-500">TAB: {branch.tabHeadId?.fullName || 'Chưa chọn'}</p>
                     <p className="text-[10px] text-slate-400">
                       {nddCount} NDD • {memberCount} thành viên
                     </p>
@@ -256,7 +235,7 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
                       <button
                         onClick={(e) => { 
                           e.stopPropagation(); 
-                          setEditingBranch({...branch});
+                          setEditingBranch({...branch, tabHeadId: branch.tabHeadId?._id || branch.tabHeadId || ''});
                           // Khởi tạo editingNdds với danh sách ID NDD hiện tại
                           const currentIds = (branch.nutritionGroupIds || []).map((item: any) => {
                             if (typeof item === 'object' && item !== null) return item._id || item.id;
@@ -303,9 +282,16 @@ const BranchManager: React.FC<BranchManagerProps> = ({ canAdmin }) => {
               />
             </div>
 
+            <label className="block text-[10px] font-black text-slate-500 uppercase">TAB đầu nhánh · Quyền TAB
+              <select value={String(editingBranch.tabHeadId || '')} onChange={event => setEditingBranch({ ...editingBranch, tabHeadId: event.target.value })} className="mt-1 w-full rounded-xl bg-slate-50 px-4 py-3 text-xs font-bold normal-case">
+                <option value="">-- Chưa chọn --</option>
+                {tabCandidates.map(candidate => <option key={candidate.id || candidate._id} value={candidate.id || candidate._id}>{candidate.fullName} (@{candidate.username})</option>)}
+              </select>
+            </label>
+
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase mb-2">
-                Chọn NDD tham gia <span className="text-rose-500">(tối thiểu 2)</span>
+                Chọn NDD trong nhánh (có thể để trống)
               </p>
               {editNddError && (
                 <p className="text-[9px] text-rose-600 font-bold mb-1">{editNddError}</p>

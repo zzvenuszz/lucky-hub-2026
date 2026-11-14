@@ -67,7 +67,7 @@ const Layout: React.FC<LayoutProps> = memo(({ user, onLogout, children, activeTa
       { id: 'metrics', label: 'Chỉ số', icon: '📊', activeIcon: '📈' },
     ];
 
-    if (permissions.includes('coach:access') || permissions.includes('ndd:manage') || permissions.includes('ndd:admin') || permissions.includes('ndd:system') || permissions.includes('ndd:branch:admin')) {
+    if (permissions.includes('coach:access') || permissions.includes('ndd:manage') || permissions.includes('ndd:admin') || permissions.includes('ndd:system') || permissions.includes('ndd:branch:admin') || permissions.includes('ndd:branch:tab')) {
       items.push({ id: 'ndd', label: 'Nhánh & NDD', icon: '🌐', activeIcon: '🌐' });
     }
 

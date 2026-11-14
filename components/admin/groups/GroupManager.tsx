@@ -43,6 +43,7 @@ const PERMISSION_CATEGORIES: Record<string, { label: string; icon: string; color
   users: { label: 'Người dùng', icon: '👥', color: 'text-amber-600' },
   ai: { label: 'AI', icon: '🤖', color: 'text-purple-600' },
   groups: { label: 'Nhóm', icon: '🔐', color: 'text-rose-600' },
+  ndd: { label: 'Nhánh & NDD', icon: '🏥', color: 'text-emerald-600' },
   system: { label: 'Hệ thống', icon: '⚙️', color: 'text-slate-600' },
   admin: { label: 'Quản trị', icon: '🛡️', color: 'text-red-600' },
 };

@@ -139,6 +139,23 @@ router.get('/coach-candidates', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/users/branch-tab-candidates - Người dùng được phép làm TAB đầu nhánh
+router.get('/branch-tab-candidates', async (_req: Request, res: Response) => {
+  try {
+    const allUsers = await User.find({ status: 'ACTIVE' }).select('_id fullName username avatar email phoneNumber groupId');
+    const candidates: any[] = [];
+    for (const user of allUsers) {
+      const permissions = await getEffectivePermissions(String(user._id));
+      if (permissions.includes(RESOURCES.NDD.BRANCH_TAB)) candidates.push({ ...user.toObject(), id: user._id });
+    }
+    console.log('[UserRoutes] Branch TAB candidates loaded:', { count: candidates.length });
+    res.json(candidates);
+  } catch (error: any) {
+    console.error('[UserRoutes] Branch TAB candidates load error:', error);
+    res.status(500).json({ message: error.message || 'Không thể tải danh sách người có Quyền TAB.' });
+  }
+});
+
 router.get('/sponsor-tree/:id', async (req: Request, res: Response) => {
   try {
     if (!req.user!.permissions.includes(RESOURCES.SPONSOR_TREE.VIEW)) {
