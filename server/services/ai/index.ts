@@ -71,20 +71,23 @@ export {
 // Router
 export {
   callAI,
+  callAIEmbeddings,
   callAIWithRetry,
   getAvailableModelsForTask,
   checkAllProvidersHealth,
   resetKeyCooldown,
 } from './oaiRouter.ts';
-export type { AITaskType, AICallResult, CallAIOptions } from './oaiRouter.ts';
+export type { AITaskType, AICallResult, AIEmbeddingResult, CallAIOptions } from './oaiRouter.ts';
 
 // Gateway
 export {
   callGateway,
+  callEmbeddingGateway,
   listModels,
   convertGeminiPayload,
   type GatewayConfig,
   type GatewayMessage,
   type GatewayResult,
+  type GatewayEmbeddingResult,
   type GatewayError
 } from './providerGateway.ts';

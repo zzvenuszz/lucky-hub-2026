@@ -10,6 +10,7 @@ import { AIModel } from '../../models/AIModel.ts';
 import { AITaskConfig } from '../../models/AITaskConfig.ts';
 import {
   callGateway,
+  callEmbeddingGateway,
   listModels,
   convertGeminiPayload,
   GatewayConfig,
@@ -40,6 +41,13 @@ export interface AICallResult {
   modelUsed?: string;
   keyLabel?: string;
   fallbackAttempt?: number;
+}
+
+export interface AIEmbeddingResult {
+  embeddings: number[][];
+  usage?: any;
+  providerUsed?: string;
+  modelUsed?: string;
 }
 
 /** Call options */
@@ -331,6 +339,63 @@ export async function callAI(
 
     throw new Error(`AI Router Error (${taskType}): ${err?.message || 'Unknown error'}`);
   }
+}
+
+/** Uses the separately configured `embedding` task; never falls back to a chat completion. */
+export async function callAIEmbeddings(
+  requestId: string,
+  inputs: string[],
+  userId = 'system',
+  purpose: 'query' | 'document' = 'document'
+): Promise<AIEmbeddingResult> {
+  const taskConfig = await AITaskConfig.findOne({ taskType: 'embedding' }).lean();
+  if (!taskConfig) throw new Error('Chưa cấu hình tác vụ AI Embedding.');
+  const modelOptions = await buildModelOptions(taskConfig, 'embedding', false);
+  if (!modelOptions.length) throw new Error('Chưa có provider/model hoạt động cho tác vụ Embedding.');
+
+  const providerOrder = selectProviderOrder(taskConfig, modelOptions);
+  let lastError: any;
+  let attempt = 0;
+  for (const providerConfig of providerOrder) {
+    const options = selectModelOrder(providerConfig, modelOptions.filter(option => option.provider._id.toString() === providerConfig.providerId));
+    for (const option of options) {
+      attempt += 1;
+      const startedAt = Date.now();
+      const config = buildGatewayConfig(option, { timeoutMs: 45000, retries: 1 });
+      try {
+        const result = await callEmbeddingGateway(config, inputs, requestId, purpose);
+        const promptTokens = result.usage?.prompt_tokens || result.usage?.promptTokenCount || 0;
+        const totalTokens = result.usage?.total_tokens || promptTokens;
+        logAIRequest({
+          requestId, taskType: 'embedding', userId,
+          providerId: option.provider._id.toString(), providerName: option.provider.name,
+          modelId: option.model.modelId, apiKeyLabel: option.apiKey.label,
+          durationMs: Date.now() - startedAt, status: attempt > 1 ? 'fallback' : 'success',
+          fallbackAttempt: attempt > 1 ? attempt : undefined,
+          usage: {
+            promptTokens,
+            completionTokens: 0,
+            totalTokens,
+            costUsd: option.model.pricing?.input > 0 ? totalTokens * option.model.pricing.input / 1_000_000 : undefined,
+          },
+        });
+        return { embeddings: result.embeddings, usage: result.usage, providerUsed: option.provider.name, modelUsed: option.model.modelId };
+      } catch (error: any) {
+        lastError = error;
+        logAIRequest({
+          requestId, taskType: 'embedding', userId,
+          providerId: option.provider._id.toString(), providerName: option.provider.name,
+          modelId: option.model.modelId, apiKeyLabel: option.apiKey.label,
+          durationMs: Date.now() - startedAt, status: error?.errorCode === 'TIMEOUT' ? 'timeout' : 'error',
+          errorCode: error?.errorCode || 'EMBEDDING_ERROR', errorMessage: error?.message,
+          httpStatus: error?.status,
+        });
+        if (error?.errorCode === 'RATE_LIMIT') await markKeyCooldown(option.provider, option.apiKey.index);
+      }
+    }
+    if (!taskConfig.globalFallbackEnabled) break;
+  }
+  throw lastError || new Error('Không thể tạo vector Embedding.');
 }
 
 /**

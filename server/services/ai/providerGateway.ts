@@ -43,6 +43,12 @@ export interface GatewayResult {
   durationMs: number;
 }
 
+export interface GatewayEmbeddingResult {
+  embeddings: number[][];
+  usage?: { prompt_tokens?: number; total_tokens?: number; promptTokenCount?: number };
+  durationMs: number;
+}
+
 /** Gateway error with retry info */
 export class GatewayError extends Error {
   status: number;
@@ -321,6 +327,51 @@ export async function callGateway(
   }
 
   throw lastError || new GatewayError('Max retries exceeded', 0, false, 'MAX_RETRIES');
+}
+
+/** Generate vectors through the configured OpenAI-compatible /embeddings endpoint. */
+export async function callEmbeddingGateway(
+  config: GatewayConfig,
+  inputs: string[],
+  requestId: string,
+  purpose: 'query' | 'document' = 'document'
+): Promise<GatewayEmbeddingResult> {
+  const isGoogleNative = config.authType === 'google' && !/\/openai\/?$/i.test(config.baseUrl);
+  const endpoint = isGoogleNative
+    ? `${config.baseUrl.replace(/\/$/, '')}/models/${config.model}:batchEmbedContents`
+    : `${config.baseUrl.replace(/\/$/, '')}/embeddings`;
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: buildAuthHeaders(config),
+      body: JSON.stringify(isGoogleNative
+        ? { requests: inputs.map(text => ({ model: `models/${config.model}`, content: { parts: [{ text }] }, taskType: purpose === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT' })) }
+        : { model: config.model, input: inputs }),
+      signal: controller.signal,
+    });
+    const raw = await response.text();
+    if (!response.ok) {
+      throw new GatewayError(`Embedding endpoint HTTP ${response.status}: ${raw.slice(0, 300)}`, response.status, isRetryableError(response.status), response.status === 429 ? 'RATE_LIMIT' : 'EMBEDDING_ERROR');
+    }
+    let parsed: any;
+    try { parsed = JSON.parse(raw); } catch { throw new GatewayError('Invalid embedding response', 0, false, 'INVALID_RESPONSE'); }
+    const embeddings = Array.isArray(parsed.data)
+      ? parsed.data.sort((a: any, b: any) => (a.index || 0) - (b.index || 0)).map((item: any) => item.embedding)
+      : Array.isArray(parsed.embeddings) ? parsed.embeddings.map((item: any) => item.values || item.embedding) : [];
+    if (embeddings.length !== inputs.length || embeddings.some((vector: any) => !Array.isArray(vector) || !vector.length)) {
+      throw new GatewayError('Embedding response did not contain one vector per input', 0, false, 'INVALID_EMBEDDING_RESPONSE');
+    }
+    console.log(`[Gateway][Embedding] ✅ [${requestId}] ${inputs.length} vectors from ${endpoint} in ${Date.now() - startedAt}ms`);
+    return { embeddings, usage: parsed.usage || parsed.usageMetadata, durationMs: Date.now() - startedAt };
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new GatewayError('Embedding request timed out', 408, true, 'TIMEOUT');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**

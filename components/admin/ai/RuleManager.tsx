@@ -10,11 +10,14 @@ interface RuleManagerProps {
 
 const RuleManager: React.FC<RuleManagerProps> = ({ rules, onRefresh }) => {
   const [newRule, setNewRule] = useState('');
+  const [category, setCategory] = useState('general');
 
   const handleAdd = async () => {
-    if(!newRule) return;
-    await Database.addRule({content: newRule});
+    if(!newRule.trim()) return;
+    console.log('[RuleManager] Rule save started:', { category, chars: newRule.length });
+    await Database.addRule({content: newRule, category});
     setNewRule('');
+    console.log('[RuleManager] Rule saved:', { category });
     onRefresh();
   };
 
@@ -31,6 +34,14 @@ const RuleManager: React.FC<RuleManagerProps> = ({ rules, onRefresh }) => {
           <span className="text-lg">⚖️</span> Thêm Quy tắc (Rules)
         </h4>
         <div className="space-y-3">
+          <select value={category} onChange={e => setCategory(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-blue-500">
+            <option value="general">Quy tắc chung</option>
+            <option value="nutrition">Dinh dưỡng</option>
+            <option value="meal_plan">Thực đơn</option>
+            <option value="exercise">Tập luyện</option>
+            <option value="health_advice">Sức khỏe</option>
+            <option value="disease">Bệnh lý</option>
+          </select>
           <textarea placeholder="Quy tắc huấn luyện..." value={newRule} onChange={e => setNewRule(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm h-[13.5rem] bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-blue-500 resize-none" />
         </div>
         <button onClick={handleAdd} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] shadow-lg active:scale-95 transition-all">Lưu quy tắc</button>
@@ -42,7 +53,7 @@ const RuleManager: React.FC<RuleManagerProps> = ({ rules, onRefresh }) => {
           {rules.map((r, i) => (
             <div key={r.id || (r as any)._id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-start group hover:border-blue-200 transition-all">
               <div className="space-y-1">
-                <div className="font-black text-blue-600 text-[9px] uppercase tracking-widest">Quy tắc #{i+1}</div>
+                <div className="font-black text-blue-600 text-[9px] uppercase tracking-widest">Quy tắc #{i+1} · {r.category || 'Chung'}</div>
                 <div className="text-[11px] text-slate-600 leading-relaxed font-medium">{r.content}</div>
               </div>
               <button onClick={() => handleDelete(r.id || (r as any)._id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">🗑️</button>
@@ -55,3 +66,4 @@ const RuleManager: React.FC<RuleManagerProps> = ({ rules, onRefresh }) => {
 };
 
 export default memo(RuleManager);
+RuleManager.displayName = 'RuleManager';

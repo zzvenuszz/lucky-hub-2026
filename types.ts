@@ -269,11 +269,17 @@ export interface AIKnowledge {
   id: string;
   keyword: string;
   content: string;
+  category?: string;
+  tags?: string[];
+  source?: string;
+  pageNumber?: number | null;
+  documentId?: string;
 }
 
 export interface AIRule {
   id: string;
   content: string;
+  category?: string;
 }
 
 // WebSocket message envelope
