@@ -166,7 +166,9 @@ export const Database = {
   
   // Knowledge & Rules
   getKnowledge: async () => (await request<AIKnowledge[]>(`${API_BASE}/knowledge`)) ?? [],
+  scanKnowledgeConflicts: () => request<{ success: boolean; scanned: number; candidates: number; conflicts: Array<{ first: AIKnowledge; second: AIKnowledge; reason: string; score: number }>; similar: Array<{ first: AIKnowledge; second: AIKnowledge; reason: string; score: number }> }>(`${API_BASE}/knowledge/scan-conflicts`, 'POST', {}, 180000),
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data, 60000),
+  updateKnowledge: (id: string, data: Partial<AIKnowledge>) => request<AIKnowledge>(`${API_BASE}/knowledge/${encodeURIComponent(id)}`, 'PUT', data, 60000),
   importKnowledgeDocument: (data: { fileName: string; mimeType: string; base64: string; category: string }) => request<{ success: boolean; inserted: number; source: string; pages: number; embedded: number; alreadyImported: boolean; reindexed: number }>(`${API_BASE}/knowledge/import-document`, 'POST', data, 180000),
   deleteKnowledgeDocument: (documentId: string) => request(`${API_BASE}/knowledge/document/${encodeURIComponent(documentId)}`, 'DELETE'),
   deleteKnowledge: (id: string) => request(`${API_BASE}/knowledge/${id}`, 'DELETE'),

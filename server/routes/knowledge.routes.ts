@@ -7,6 +7,7 @@ import { validateBody } from '../../services/validationService.ts';
 import { importKnowledgeDocument } from '../services/knowledgeDocumentService.ts';
 import { callAIEmbeddings } from '../services/ai/oaiRouter.ts';
 import { invalidateKnowledgeRetrievalCache } from '../services/knowledgeRetrievalService.ts';
+import { scanKnowledgeConflicts } from '../services/knowledgeConflictService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -15,6 +16,18 @@ router.use(authMiddleware);
 router.get('/', async (req: Request, res: Response) => {
   const data = await Knowledge.find();
   res.json(data.map(i => ({ ...i.toObject(), id: i._id })));
+});
+
+// POST /api/knowledge/scan-conflicts
+router.post('/scan-conflicts', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  try {
+    const userId = String((req as any).user?.userId || 'admin');
+    const result = await scanKnowledgeConflicts(userId);
+    res.json({ success: true, ...result });
+  } catch (error: any) {
+    console.error('[KnowledgeConflict] Scan failed:', error?.message || error);
+    res.status(500).json({ message: error?.message || 'Không thể rà soát xung đột kiến thức.' });
+  }
 });
 
 // POST /api/knowledge
@@ -64,6 +77,52 @@ router.delete('/document/:documentId', requirePermission(RESOURCES.AI.MANAGE), a
   invalidateKnowledgeRetrievalCache();
   console.log('[Knowledge] Source document deleted:', { documentId: req.params.documentId, deletedCount: result.deletedCount || 0 });
   res.json({ success: true, deletedCount: result.deletedCount || 0 });
+});
+
+// PUT /api/knowledge/:id
+router.put('/:id', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  const { keyword, content, category, tags } = req.body || {};
+  if (typeof keyword !== 'string' || !keyword.trim() || keyword.trim().length > 200) {
+    return res.status(400).json({ message: 'Tên kiến thức không hợp lệ.' });
+  }
+  if (typeof content !== 'string' || !content.trim() || content.trim().length > 5000) {
+    return res.status(400).json({ message: 'Nội dung kiến thức không hợp lệ.' });
+  }
+  const allowedCategories = ['nutrition', 'meal_plan', 'exercise', 'health_advice', 'disease', 'general'];
+  if (category && !allowedCategories.includes(category)) return res.status(400).json({ message: 'Danh mục kiến thức không hợp lệ.' });
+  const cleanTags = Array.isArray(tags)
+    ? Array.from(new Set(tags.filter((tag: unknown) => typeof tag === 'string').map((tag: string) => tag.trim().replace(/^#+/, '').slice(0, 40)).filter(Boolean))).slice(0, 20)
+    : [];
+
+  try {
+    const entry = await Knowledge.findById(req.params.id).select('+embedding');
+    if (!entry) return res.status(404).json({ message: 'Không tìm thấy kiến thức.' });
+    const contentChanged = entry.content !== content.trim();
+    entry.keyword = keyword.trim();
+    entry.content = content.trim();
+    entry.category = category || 'general';
+    entry.tags = cleanTags;
+    if (contentChanged) {
+      try {
+        const result = await callAIEmbeddings(`knowledge-update-${Date.now().toString(36)}`, [entry.content], (req as any).user?.userId || 'admin');
+        entry.embedding = result.embeddings[0];
+        entry.embeddingModel = `${result.providerUsed || ''}:${result.modelUsed || ''}`;
+      } catch (error: any) {
+        entry.embedding = undefined;
+        entry.embeddingModel = '';
+        console.warn('[Knowledge] Updated content saved without embedding:', error?.message || error);
+      }
+    }
+    await entry.save();
+    invalidateKnowledgeRetrievalCache();
+    const savedEntry: any = entry.toObject();
+    delete savedEntry.embedding;
+    console.log('[Knowledge] Entry updated:', { id: entry._id.toString(), contentChanged, tagCount: cleanTags.length });
+    res.json({ ...savedEntry, id: entry._id });
+  } catch (error: any) {
+    console.error('[Knowledge] Entry update failed:', error?.message || error);
+    res.status(500).json({ message: 'Không thể cập nhật kiến thức.' });
+  }
 });
 
 // DELETE /api/knowledge/:id

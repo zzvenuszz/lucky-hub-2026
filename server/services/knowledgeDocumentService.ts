@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { Knowledge } from '../models/Knowledge.ts';
 import { callAI } from './ai/oaiRouter.ts';
 import { callAIEmbeddings } from './ai/oaiRouter.ts';
+import { generateKnowledgeMetadata } from './knowledgeMetadataService.ts';
 
 const MODULE = 'KnowledgeDocument';
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -162,6 +163,7 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   const records = pages.flatMap(page => chunkPageText(page.text, page.pageNumber));
   if (!records.length) throw new Error('Không trích xuất được văn bản. Tệp có thể chỉ chứa ảnh mờ hoặc không có nội dung đọc được.');
   if (records.length > 1000) throw new Error('Tài liệu tạo ra quá nhiều đoạn kiến thức (tối đa 1.000).');
+  const metadata = await generateKnowledgeMetadata(records, input.category, input.userId, requestId);
 
   const embeddings: number[][] = [];
   const embeddingModels: string[] = [];
@@ -179,10 +181,10 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   }
 
   const docs = records.map((record, index) => ({
-    keyword: `${safeName} · trang ${record.pageNumber} · đoạn ${record.chunkIndex + 1}`,
+    keyword: metadata[index]?.keyword || `Kiến thức trang ${record.pageNumber} · đoạn ${record.chunkIndex + 1}`,
     content: record.content,
     category: input.category,
-    tags: [input.category, safeName.replace(/\.[^.]+$/, '').toLowerCase()].slice(0, 5),
+    tags: metadata[index]?.tags || [input.category],
     relatedKeywords: [],
     source: safeName,
     pageNumber: record.pageNumber,
