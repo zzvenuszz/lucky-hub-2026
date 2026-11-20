@@ -119,11 +119,15 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
       });
       if (result?.alreadyImported) {
         const reindexMessage = result.reindexed ? ` Đã lập chỉ mục ngữ nghĩa cho ${result.reindexed} đoạn còn thiếu.` : '';
-        setStatus({ text: `Tài liệu ${result.source} đã được nhập trước đó; không tạo bản trùng.${reindexMessage}`, error: false });
+        const resynthesisMessage = result.needsResynthesis ? ' Bản hiện tại được nhập bằng cách trích chữ cũ; hãy xóa tài liệu này rồi nhập lại để tạo kiến thức tổng hợp.' : '';
+        setStatus({ text: `Tài liệu ${result.source} đã được nhập trước đó; không tạo bản trùng.${resynthesisMessage}${reindexMessage}`, error: false });
         return;
       }
       const embeddedMessage = result?.embedded ? ` ${result.embedded} đoạn đã lập chỉ mục ngữ nghĩa.` : ' Đang dùng tìm kiếm từ khóa; bật tác vụ Embedding trong Quản trị AI để dùng tìm kiếm ngữ nghĩa.';
-      setStatus({ text: `Đã nhập ${result?.inserted || 0} đoạn từ ${result?.source || file.name}.${embeddedMessage}`, error: false });
+      const synthesizedMessage = typeof result?.synthesized === 'number'
+        ? ` AI đã tổng hợp ${result.synthesized}/${result.inserted} đoạn thành kiến thức có ngữ cảnh.`
+        : '';
+      setStatus({ text: `Đã nhập ${result?.inserted || 0} đoạn từ ${result?.source || file.name}.${synthesizedMessage}${embeddedMessage}`, error: false });
       setScanResults(null);
       console.log('[KnowledgeManager] Document upload completed:', result);
       onRefresh();
