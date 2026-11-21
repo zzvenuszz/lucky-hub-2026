@@ -622,9 +622,15 @@ router.put('/logs/debug-mode', async (req: Request, res: Response) => {
 // DELETE /api/admin/ai/logs - Clean old logs
 router.delete('/logs', async (req: Request, res: Response) => {
   try {
-    const olderThanDays = parseInt(req.query.olderThanDays as string) || 30;
+    const rawDays = req.query.olderThanDays ?? req.body?.olderThanDays;
+    const olderThanDays = rawDays === undefined ? 30 : Number(rawDays);
+    if (!Number.isInteger(olderThanDays) || olderThanDays < 0) {
+      return res.status(400).json({ message: 'olderThanDays phải là số nguyên không âm; 0 có nghĩa là xóa toàn bộ logs.' });
+    }
     const result = await cleanLogs(olderThanDays);
-    logAdmin(req, 'dọn dẹp logs', `xóa ${result.deletedCount} logs cũ hơn ${olderThanDays} ngày`);
+    logAdmin(req, 'dọn dẹp logs', olderThanDays === 0
+      ? `xóa toàn bộ ${result.deletedCount} AI logs`
+      : `xóa ${result.deletedCount} logs cũ hơn ${olderThanDays} ngày`);
     res.json(result);
   } catch (err: any) {
     res.status(500).json({ message: err.message });

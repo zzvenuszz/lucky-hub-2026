@@ -7,7 +7,7 @@ export interface KnowledgeMetadata {
   synthesized: boolean;
 }
 
-const SYNTHESIS_BATCH_SIZE = 8;
+const SYNTHESIS_BATCH_SIZE = 4;
 const STOP_WORDS = new Set(['những', 'được', 'trong', 'không', 'của', 'với', 'cho', 'khi', 'một', 'các', 'này', 'theo', 'đến', 'nên', 'thì', 'là', 'và', 'hoặc', 'tại', 'from', 'with', 'that', 'this', 'have', 'will', 'your', 'into']);
 
 function fallbackMetadata(content: string, category: string): KnowledgeMetadata {
@@ -53,7 +53,7 @@ Với MỖI đoạn, hãy:
 
 Trả JSON thuần dạng {"items":[{"index":0,"keyword":"...","tags":["..."],"sourceFacts":["..."],"healthApplication":"...","uncertainty":""}]}. Không thêm văn bản ngoài JSON.
 ${JSON.stringify(promptData)}` }] }],
-      }, { userId, maxTokens: 3600, timeoutMs: 60000, retries: 1, temperature: 0.1 });
+      }, { userId, maxTokens: 2600, timeoutMs: 60000, retries: 1, temperature: 0.1, reasoningEffort: 'none' });
       const parsed = parseJson(response.text || '');
       if (!Array.isArray(parsed.items)) continue;
       parsed.items.forEach((item: any) => {

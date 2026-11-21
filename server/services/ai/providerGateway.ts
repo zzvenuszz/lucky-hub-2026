@@ -336,9 +336,12 @@ export async function callEmbeddingGateway(
   requestId: string,
   purpose: 'query' | 'document' = 'document'
 ): Promise<GatewayEmbeddingResult> {
-  const isGoogleNative = config.authType === 'google' && !/\/openai\/?$/i.test(config.baseUrl);
+  // Google chat may use its OpenAI-compatible /openai base URL, but embeddings must use the native v1beta endpoint.
+  const isGoogleNative = config.authType === 'google';
+  const googleBaseUrl = config.baseUrl.replace(/\/openai\/?$/i, '').replace(/\/$/, '');
+  const googleModelName = config.model.replace(/^models\//i, '').replace(/^\/+|\/+$/g, '');
   const endpoint = isGoogleNative
-    ? `${config.baseUrl.replace(/\/$/, '')}/models/${config.model}:batchEmbedContents`
+    ? `${googleBaseUrl}/models/${googleModelName}:batchEmbedContents`
     : `${config.baseUrl.replace(/\/$/, '')}/embeddings`;
   const startedAt = Date.now();
   const controller = new AbortController();
@@ -348,12 +351,13 @@ export async function callEmbeddingGateway(
       method: 'POST',
       headers: buildAuthHeaders(config),
       body: JSON.stringify(isGoogleNative
-        ? { requests: inputs.map(text => ({ model: `models/${config.model}`, content: { parts: [{ text }] }, taskType: purpose === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT' })) }
+        ? { requests: inputs.map(text => ({ model: `models/${googleModelName}`, content: { parts: [{ text }] }, taskType: purpose === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT' })) }
         : { model: config.model, input: inputs }),
       signal: controller.signal,
     });
     const raw = await response.text();
     if (!response.ok) {
+      console.error(`[Gateway][Embedding] HTTP ${response.status}:`, { requestId, endpoint, model: config.model, googleModelName: isGoogleNative ? googleModelName : undefined, inputs: inputs.length, response: raw.slice(0, 500) });
       throw new GatewayError(`Embedding endpoint HTTP ${response.status}: ${raw.slice(0, 300)}`, response.status, isRetryableError(response.status), response.status === 429 ? 'RATE_LIMIT' : 'EMBEDDING_ERROR');
     }
     let parsed: any;

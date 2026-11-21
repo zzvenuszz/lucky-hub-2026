@@ -110,6 +110,7 @@ const AILogPanel: React.FC = memo(() => {
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedLog, setSelectedLog] = useState<AILog | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [copyingLogId, setCopyingLogId] = useState('');
 
   // Filters
   const [filters, setFilters] = useState({
@@ -187,17 +188,54 @@ const AILogPanel: React.FC = memo(() => {
   };
 
   const handleCleanLogs = async () => {
-    const days = prompt('Xóa logs cũ hơn bao nhiêu ngày?', '30');
-    if (!days) return;
+    const rawDays = prompt('Xóa logs cũ hơn bao nhiêu ngày? Nhập 0 để xóa toàn bộ logs.', '30');
+    if (rawDays === null) return;
+    const days = Number(rawDays.trim());
+    if (!rawDays.trim() || !Number.isInteger(days) || days < 0) {
+      setError('Số ngày phải là số nguyên không âm. Nhập 0 để xóa toàn bộ logs.');
+      return;
+    }
+    if (days === 0 && !confirm('Xóa toàn bộ AI logs? Hành động này không thể hoàn tác.')) return;
 
     try {
-      const result = await Database.cleanAILogs(parseInt(days));
-      setSuccess(`Đã xóa ${result.deletedCount} logs`);
-      fetchLogs();
+      console.log('[AILogPanel] Log cleanup started:', { olderThanDays: days, deleteAll: days === 0 });
+      const result = await Database.cleanAILogs(days);
+      console.log('[AILogPanel] Log cleanup completed:', { olderThanDays: days, deletedCount: result.deletedCount });
+      setSuccess(days === 0 ? `Đã xóa toàn bộ logs (${result.deletedCount} mục)` : `Đã xóa ${result.deletedCount} logs cũ hơn ${days} ngày`);
+      setFilters(prev => ({ ...prev, page: 1 }));
+      fetchStats();
     } catch (err: any) {
+      console.error('[AILogPanel] Log cleanup failed:', err);
       setError(err.message || 'Failed to clean logs');
     }
   };
+
+  const handleCopyLog = useCallback(async (log: AILog) => {
+    setCopyingLogId(log._id);
+    try {
+      const content = JSON.stringify(log, null, 2);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = content;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!copied) throw new Error('Trình duyệt không thể sao chép log.');
+      }
+      console.log('[AILogPanel] Log copied:', { requestId: log.requestId, logId: log._id });
+      setSuccess(`Đã copy nội dung log ${log.requestId}.`);
+    } catch (err: any) {
+      console.error('[AILogPanel] Copy log failed:', { requestId: log.requestId, error: err });
+      setError(err?.message || 'Không thể copy log.');
+    } finally {
+      setCopyingLogId('');
+    }
+  }, []);
 
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`;
@@ -416,12 +454,17 @@ const AILogPanel: React.FC = memo(() => {
                         <div className="text-xs text-amber-600">{formatCost(log.usage.costUsd)}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={e => { e.stopPropagation(); setSelectedLog(log); setShowDetail(true); }}
-                          className="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200"
-                        >
-                          🔍 Xem
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={e => { e.stopPropagation(); setSelectedLog(log); setShowDetail(true); }}
+                            className="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-200"
+                          >
+                            🔍 Xem
+                          </button>
+                          <button type="button" disabled={copyingLogId === log._id} onClick={e => { e.stopPropagation(); handleCopyLog(log); }} className="px-2 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-100 disabled:opacity-50" aria-label={`Copy log ${log.requestId}`}>
+                            {copyingLogId === log._id ? '…' : '📋 Copy'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -467,7 +510,7 @@ const AILogPanel: React.FC = memo(() => {
                   {new Date(selectedLog.timestamp).toLocaleString()} • {TASK_LABELS[selectedLog.taskType] || selectedLog.taskType}
                 </p>
               </div>
-              <button onClick={() => setShowDetail(false)} className="p-2 text-slate-400 hover:text-slate-600">✕</button>
+              <div className="flex items-center gap-2"><button type="button" disabled={copyingLogId === selectedLog._id} onClick={() => handleCopyLog(selectedLog)} className="rounded-lg bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50">📋 Copy log</button><button onClick={() => setShowDetail(false)} className="p-2 text-slate-400 hover:text-slate-600">✕</button></div>
             </div>
 
             {/* Content */}

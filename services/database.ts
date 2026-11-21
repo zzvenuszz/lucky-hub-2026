@@ -309,5 +309,5 @@ export const Database = {
   getAILogStats: async (hours: number) => (await request<any>(`${API_BASE}/admin/ai/logs/stats?hours=${hours}`)) ?? {},
   getAIDebugMode: async () => (await request<{ debugMode: boolean }>(`${API_BASE}/admin/ai/logs/debug-mode`)) ?? { debugMode: false },
   setAIDebugMode: (enabled: boolean) => request<{ success: boolean, debugMode: boolean }>(`${API_BASE}/admin/ai/logs/debug-mode`, 'PUT', { enabled }),
-  cleanAILogs: async (olderThanDays: number) => (await request<{ deletedCount: number }>(`${API_BASE}/admin/ai/logs`, 'DELETE', { olderThanDays })) ?? { deletedCount: 0 },
+  cleanAILogs: async (olderThanDays: number) => (await request<{ deletedCount: number }>(`${API_BASE}/admin/ai/logs?olderThanDays=${encodeURIComponent(olderThanDays)}`, 'DELETE')) ?? { deletedCount: 0 },
 };

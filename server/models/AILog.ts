@@ -237,6 +237,10 @@ AILogSchema.statics.getStats = async function(hours = 24) {
 
 // Static method to clean old logs
 AILogSchema.statics.cleanOldLogs = async function(olderThanDays = 30) {
+  if (olderThanDays === 0) {
+    const result = await this.deleteMany({});
+    return result.deletedCount;
+  }
   const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
   const result = await this.deleteMany({ timestamp: { $lt: cutoff } });
   return result.deletedCount;
