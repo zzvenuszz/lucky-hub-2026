@@ -74,7 +74,8 @@ router.post('/import-document', requirePermission(RESOURCES.AI.MANAGE), async (r
     const message = rawMessage.includes('The string did not match the expected pattern')
       ? 'Bộ đọc không xử lý được cấu trúc hoặc font trong PDF này. Hãy thử lưu lại thành PDF chuẩn hoặc chuyển trang bị lỗi thành ảnh. '
       : rawMessage;
-    res.status(400).json({ requestId, message });
+    const statusCode = /timeout|hết thời gian/i.test(rawMessage) ? 504 : 400;
+    res.status(statusCode).json({ requestId, message });
   }
 });
 
