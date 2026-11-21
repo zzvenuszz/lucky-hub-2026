@@ -211,7 +211,7 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   if (!records.length) throw new Error('Không trích xuất được văn bản. Tệp có thể chỉ chứa ảnh mờ hoặc không có nội dung đọc được.');
   if (records.length > 1000) throw new Error('Tài liệu tạo ra quá nhiều đoạn kiến thức (tối đa 1.000).');
   console.log(`[${MODULE}] Document segmentation completed:`, { requestId, pages: pages.length, chunks: records.length });
-  const metadata = await generateKnowledgeMetadata(records, input.category, input.userId, requestId);
+  const metadata = await generateKnowledgeMetadata(records, input.userId, requestId);
   console.log(`[${MODULE}] Knowledge synthesis completed:`, { requestId, chunks: records.length, synthesized: metadata.filter(item => item.synthesized).length });
 
   const knowledgeContents = records.map((record, index) => metadata[index]?.content || record.content);

@@ -8,19 +8,99 @@ export interface KnowledgeMetadata {
 }
 
 const SYNTHESIS_BATCH_SIZE = 4;
-const STOP_WORDS = new Set(['những', 'được', 'trong', 'không', 'của', 'với', 'cho', 'khi', 'một', 'các', 'này', 'theo', 'đến', 'nên', 'thì', 'là', 'và', 'hoặc', 'tại', 'from', 'with', 'that', 'this', 'have', 'will', 'your', 'into']);
+const STOP_WORDS = new Set(['nhung', 'duoc', 'trong', 'khong', 'cua', 'voi', 'cho', 'khi', 'mot', 'cac', 'nay', 'theo', 'den', 'nen', 'thi', 'la', 'va', 'hoac', 'tai', 'from', 'with', 'that', 'this', 'have', 'will', 'your', 'into']);
+const GENERIC_TAG_WORDS = new Set(['general', 'content', 'visual', 'short', 'blue', 'green', 'red', 'black', 'white', 'yellow', 'image', 'photo', 'picture', 'color', 'colors', 'document', 'file', 'knowledge', 'text', 'information', 'topic', 'summary', 'chung', 'noi', 'dung', 'hinh', 'anh', 'mau', 'sac', 'ngan', 'tai', 'lieu', 'kien', 'thuc', 'van', 'ban']);
+const GENERIC_TAGS = new Set(['general', 'content', 'visual', 'short', 'blue', 'green', 'red', 'black', 'white', 'yellow', 'image', 'photo', 'picture', 'color', 'colors', 'document', 'file', 'knowledge', 'text', 'information', 'topic', 'summary', 'noi dung', 'hinh anh', 'mau sac', 'tai lieu', 'kien thuc', 'van ban']);
 
-function fallbackMetadata(content: string, category: string): KnowledgeMetadata {
-  const firstLine = content.split(/\n/).map(line => line.trim().replace(/^#+\s*/, '')).find(line => line.length >= 8) || '';
+const normalizeForMatch = (value: string): string => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+
+function isGenericTag(tag: string): boolean {
+  const normalized = normalizeForMatch(tag).trim();
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return GENERIC_TAGS.has(normalized) || (!!words.length && words.every(word => GENERIC_TAG_WORDS.has(word)));
+}
+
+function getSourceText(content: string): string {
+  const sourceMarker = 'Văn bản nguồn để đối chiếu:';
+  const factsMarker = 'Dữ kiện đọc từ tài liệu:';
+  const sourceStart = content.lastIndexOf(sourceMarker);
+  if (sourceStart >= 0) return content.slice(sourceStart + sourceMarker.length).trim();
+  const factsStart = content.indexOf(factsMarker);
+  if (factsStart >= 0) {
+    const facts = content.slice(factsStart + factsMarker.length);
+    return facts.split(/\n\n(?:Ứng dụng tham khảo|Tổng hợp và ứng dụng|Điểm cần xác nhận)/i)[0].trim();
+  }
+  return content;
+}
+
+function buildPhraseMap(text: string): Map<string, string> {
+  const tokens = text.toLocaleLowerCase('vi').match(/[\p{L}\p{N}]+/gu) || [];
+  const phrases = new Map<string, string>();
+  for (let size = 1; size <= 4; size += 1) {
+    for (let index = 0; index + size <= tokens.length; index += 1) {
+      const words = tokens.slice(index, index + size);
+      const key = normalizeForMatch(words.join(' '));
+      if (!phrases.has(key)) phrases.set(key, words.join(' '));
+    }
+  }
+  return phrases;
+}
+
+function normalizeGeneratedTags(rawTags: unknown[], content: string, keyword: string, includeKeywordPhrase = false): string[] {
+  const sourceText = getSourceText(content);
+  const phraseMap = buildPhraseMap(`${keyword}\n${sourceText}`);
+  const titleKey = normalizeForMatch(keyword.trim());
+  const titleTag = phraseMap.get(titleKey) || keyword.trim().toLocaleLowerCase('vi');
+  const titleWords = titleKey.split(/\s+/).filter(Boolean);
+  const normalized = rawTags
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map(tag => {
+      const clean = tag.trim().replace(/^#+/, '').replace(/\s+/g, ' ').slice(0, 40);
+      return phraseMap.get(normalizeForMatch(clean)) || clean;
+    })
+    .filter(tag => {
+      if (isGenericTag(tag)) return false;
+      const words = normalizeForMatch(tag).split(/\s+/).filter(Boolean);
+      // Keep meaningful single terms (e.g. kcal), but avoid orphaned title words like "giảm" from "giảm cân".
+      return words.length > 1 || !titleWords.includes(words[0]);
+    });
+  if (includeKeywordPhrase && titleWords.length > 1 && !isGenericTag(titleTag)) normalized.unshift(titleTag);
+  const seen = new Set<string>();
+  return normalized.filter(tag => {
+    const key = normalizeForMatch(tag);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 8);
+}
+
+function fallbackTags(content: string, keyword: string): string[] {
+  const sourceText = getSourceText(content);
+  const tokens = sourceText.toLocaleLowerCase('vi').match(/[\p{L}\p{N}]+/gu) || [];
+  const counts = new Map<string, { label: string; count: number }>();
+  for (let size = 2; size <= 4; size += 1) {
+    for (let index = 0; index + size <= tokens.length; index += 1) {
+      const words = tokens.slice(index, index + size);
+      const normalizedWords = words.map(normalizeForMatch);
+      if (normalizedWords.some(word => STOP_WORDS.has(word)) || STOP_WORDS.has(normalizedWords[0]) || STOP_WORDS.has(normalizedWords[normalizedWords.length - 1])) continue;
+      const key = normalizedWords.join(' ');
+      const item = counts.get(key) || { label: words.join(' '), count: 0 };
+      item.count += 1;
+      counts.set(key, item);
+    }
+  }
+  const phraseTags = Array.from(counts.values()).sort((a, b) => b.count - a.count || a.label.length - b.label.length).map(item => item.label);
+  return normalizeGeneratedTags(phraseTags, content, keyword, true);
+}
+
+function fallbackMetadata(content: string): KnowledgeMetadata {
+  const sourceText = getSourceText(content);
+  const firstLine = sourceText.split(/\n/).map(line => line.trim().replace(/^#+\s*/, '')).find(line => line.length >= 8) || '';
   const firstSentence = content.match(/^.{12,180}?(?:[.!?\n]|$)/)?.[0]?.trim() || content.trim();
   const keyword = (firstLine.length <= 100 ? firstLine : firstSentence).slice(0, 100).replace(/[.!?]+$/, '') || 'Kiến thức mới';
-  const words = content.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9]{4,}/g) || [];
-  const counts = new Map<string, number>();
-  words.forEach(word => { if (!STOP_WORDS.has(word)) counts.set(word, (counts.get(word) || 0) + 1); });
-  const tags = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([word]) => word);
   return {
     keyword,
-    tags: Array.from(new Set([category, ...tags])).slice(0, 8),
+    tags: fallbackTags(content, keyword),
     content: `Dữ kiện đọc từ tài liệu:\n${content}\n\nTổng hợp và ứng dụng chăm sóc sức khỏe: Chưa thể tổng hợp bằng AI trong lần nhập này. Hãy đối chiếu dữ kiện gốc trước khi dùng để tư vấn.`,
     synthesized: false,
   };
@@ -34,8 +114,8 @@ function parseJson(text: string): any {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
-export async function generateKnowledgeMetadata(records: Array<{ content: string }>, category: string, userId: string, requestId: string): Promise<KnowledgeMetadata[]> {
-  const generated = records.map(record => fallbackMetadata(record.content, category));
+export async function generateKnowledgeMetadata(records: Array<{ content: string }>, userId: string, requestId: string): Promise<KnowledgeMetadata[]> {
+  const generated = records.map(record => fallbackMetadata(record.content));
   for (let offset = 0; offset < records.length; offset += SYNTHESIS_BATCH_SIZE) {
     const batch = records.slice(offset, offset + SYNTHESIS_BATCH_SIZE);
     try {
@@ -45,7 +125,8 @@ export async function generateKnowledgeMetadata(records: Array<{ content: string
 
 Với MỖI đoạn, hãy:
 - Đặt keyword là tên chủ đề dựa trên nội dung, không dùng tên tệp.
-- Tạo 3-7 tag cụ thể.
+- Tự quyết định tag phù hợp với độ rộng nội dung: trả về từ 0 đến 8 tag, không cần lấp đủ số lượng. Chỉ chọn khái niệm nội dung thực sự hữu ích để tìm kiếm; ưu tiên cụm từ có nghĩa 2-4 từ. Viết tiếng Việt có đầy đủ dấu theo tài liệu (ví dụ "giảm cân", không viết "giam" hoặc chỉ "giảm"). Không bỏ dấu tiếng Việt; giữ thuật ngữ nguyên dạng khi tài liệu dùng tiếng Anh.
+- Không tạo tag chung hoặc mô tả hình thức như "general", "content", "visual", "short", tên màu (blue/green/red), "ảnh", "văn bản", "tài liệu". Chỉ dùng màu sắc/hình thức nếu đó là chủ đề kiến thức chính trong tài liệu.
 - Viết sourceFacts thành câu hoàn chỉnh, giữ rõ đối tượng + khẩu phần/đơn vị + con số + ý nghĩa. Ví dụ nguồn ghi “chén cơm 200 calo” thì viết “Một chén cơm cung cấp 200 kcal theo tài liệu.” Không để số liệu rời khỏi tên món.
 - Viết healthApplication giải thích dữ kiện có thể hỗ trợ chăm sóc sức khỏe ra sao (ví dụ theo dõi năng lượng khẩu phần, trao đổi lựa chọn món ăn hoặc đặt câu hỏi làm rõ khẩu phần). Đây là diễn giải tham khảo, không phải chẩn đoán hay phác đồ điều trị.
 - Chỉ tính tổng khi các con số rõ ràng thuộc cùng một bữa/nhóm; ghi phép cộng và nói đó là tổng tính từ dữ liệu nguồn. Không tự ước lượng calo, chất dinh dưỡng, lợi ích điều trị hoặc khuyến nghị cá nhân không có căn cứ trong đoạn.
@@ -60,7 +141,7 @@ ${JSON.stringify(promptData)}` }] }],
         const localIndex = Number(item.index);
         if (!Number.isInteger(localIndex) || localIndex < 0 || localIndex >= batch.length) return;
         const keyword = typeof item.keyword === 'string' ? item.keyword.trim().slice(0, 100) : '';
-        const tags = Array.isArray(item.tags) ? item.tags.filter((tag: unknown) => typeof tag === 'string').map((tag: string) => tag.trim().replace(/^#+/, '').slice(0, 40)).filter(Boolean) : [];
+        const tags = normalizeGeneratedTags(Array.isArray(item.tags) ? item.tags : [], batch[localIndex].content, keyword || generated[offset + localIndex].keyword);
         const sourceFacts = Array.isArray(item.sourceFacts) ? item.sourceFacts.filter((fact: unknown) => typeof fact === 'string').map((fact: string) => fact.trim()).filter(Boolean).slice(0, 12) : [];
         const healthApplication = typeof item.healthApplication === 'string' ? item.healthApplication.trim() : '';
         const uncertainty = typeof item.uncertainty === 'string' ? item.uncertainty.trim() : '';
@@ -68,7 +149,7 @@ ${JSON.stringify(promptData)}` }] }],
         const globalIndex = offset + localIndex;
         generated[globalIndex] = {
           keyword: keyword || generated[globalIndex].keyword,
-          tags: Array.from(new Set([category, ...tags])).slice(0, 12),
+          tags,
           content: [
             `Dữ kiện đọc từ tài liệu:\n${sourceFacts.map((fact: string) => `• ${fact}`).join('\n')}`,
             `Ứng dụng tham khảo trong chăm sóc sức khỏe:\n${healthApplication}`,
