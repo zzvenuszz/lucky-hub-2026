@@ -4,6 +4,7 @@ import { optionalAuth } from '../middleware/authMiddleware.ts';
 import { requirePermission } from '../middleware/requirePermission.ts';
 import { RESOURCES } from '../config/permissions.ts';
 import { callAI, callAIWithRetry, AITaskType } from '../services/ai/index.ts';
+import { normalizeChatResponse } from '../services/ai/chatResponseFormatter.ts';
 import { Type } from "@google/genai";
 
 const router = Router();
@@ -370,13 +371,21 @@ router.post('/coach', async (req: Request, res: Response) => {
     const parts: any[] = [{ text: latestUserMessage }];
     if (imageBase64) parts.push({ inlineData: { data: imageBase64, mimeType: 'image/jpeg' } });
 
-    finalPayload = { contents: [...(history || []), { role: 'user', parts }], config: { systemInstruction: finalSystemInstruction } };
+    const normalizedHistory = Array.isArray(history) ? history.map((message: any) => {
+      if (!['model', 'assistant'].includes(message?.role)) return message;
+      if (Array.isArray(message.parts)) {
+        return { ...message, parts: message.parts.map((part: any) => typeof part?.text === 'string' ? { ...part, text: normalizeChatResponse(part.text) } : part) };
+      }
+      if (typeof message.content === 'string') return { ...message, content: normalizeChatResponse(message.content) };
+      return message;
+    }) : [];
+    finalPayload = { contents: [...normalizedHistory, { role: 'user', parts }], config: { systemInstruction: finalSystemInstruction } };
 
     // Xác định task type dựa vào có ảnh hay không
     const taskType: AITaskType = imageBase64 ? 'vision' : 'coach';
 
     const response = await callAI(requestId, taskType, finalPayload, { userId, modelName: 'auto' });
-    res.json({ text: response.text });
+    res.json({ text: normalizeChatResponse(response.text) });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
   }

@@ -93,9 +93,8 @@ export async function searchRelevantKnowledge(
   const rawTerms = sourceWords.filter(word => !STOP_WORDS.has(normalize(word)) && normalize(word).length > 1).slice(0, 12);
   const escaped = Array.from(new Set([...rawTerms, ...words])).map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const regex = new RegExp(escaped.join('|'), 'i');
-  const categoryFilter = categories.length && !categories.includes('general')
-    ? { category: { $in: [...new Set([...categories, 'general'])] } }
-    : categories.includes('general') ? { category: 'general' } : {};
+  // Category prediction is only a hint; don't exclude matching Knowledge when the classifier misses its category.
+  const categoryFilter = {};
   const lexicalQuery = {
     ...categoryFilter,
     $or: [
@@ -146,9 +145,7 @@ export async function searchRelevantKnowledge(
   const candidates = new Map<string, RetrievedKnowledge>();
   [...lexicalDocs, ...textIndexDocs].forEach((entry: any) => candidates.set(String(entry._id || `${entry.keyword}:${entry.pageNumber}`), entry));
   if (queryVector) {
-    const eligibleVectors = categories.length
-      ? vectorEntries.filter(entry => categories.includes(entry.category) || entry.category === 'general')
-      : vectorEntries;
+    const eligibleVectors = vectorEntries;
     eligibleVectors.filter(entry => entry.embeddingModel === queryEmbeddingModel)
       .forEach(entry => candidates.set(String(entry._id || `${entry.keyword}:${entry.pageNumber}`), entry));
   }
@@ -157,7 +154,8 @@ export async function searchRelevantKnowledge(
     const entryLexicalScore = lexicalScore(entry, words);
     const hasSemanticScore = !!(queryVector && entry.embedding);
     const semanticScore = hasSemanticScore ? Math.max(0, cosineSimilarity(queryVector as number[], entry.embedding as number[])) : 0;
-    const score = hasSemanticScore ? (semanticScore * 0.65 + entryLexicalScore * 0.35) : entryLexicalScore;
+    const categoryBoost = categories.includes(entry.category) ? 0.06 : 0;
+    const score = (hasSemanticScore ? (semanticScore * 0.65 + entryLexicalScore * 0.35) : entryLexicalScore) + categoryBoost;
     return { ...entry, score, hasSemanticScore, embedding: undefined };
   }).filter(entry => entry.score >= (entry.hasSemanticScore ? 0.24 : 0.08))
     .sort((a, b) => b.score - a.score)
