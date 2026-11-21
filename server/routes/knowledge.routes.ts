@@ -54,20 +54,27 @@ router.post('/', requirePermission(RESOURCES.AI.MANAGE), validateBody(
 
 // POST /api/knowledge/import-document (new document ingestion endpoint)
 router.post('/import-document', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  const requestId = Math.random().toString(36).slice(2, 10).toUpperCase();
   try {
     const { fileName, mimeType, base64, category } = req.body || {};
+    console.log('[Knowledge] Document import request received:', { requestId, fileName: String(fileName || ''), mimeType, payloadChars: String(base64 || '').length });
     const result = await importKnowledgeDocument({
       fileName: String(fileName || ''),
       mimeType: String(mimeType || ''),
       base64: String(base64 || ''),
       category: String(category || 'general'),
       userId: String((req as any).user?.userId || 'admin'),
+      requestId,
     });
     invalidateKnowledgeRetrievalCache();
-    res.json({ success: true, ...result });
+    res.json({ success: true, requestId, ...result });
   } catch (error: any) {
-    console.error('[Knowledge] Document import failed:', error?.message || error);
-    res.status(400).json({ message: error?.message || 'Không thể nhập tài liệu.' });
+    console.error('[Knowledge] Document import failed:', { requestId, name: error?.name, message: error?.message, stack: error?.stack, cause: error?.cause?.message });
+    const rawMessage = String(error?.message || 'Không thể nhập tài liệu.');
+    const message = rawMessage.includes('The string did not match the expected pattern')
+      ? 'Bộ đọc không xử lý được cấu trúc hoặc font trong PDF này. Hãy thử lưu lại thành PDF chuẩn hoặc chuyển trang bị lỗi thành ảnh. '
+      : rawMessage;
+    res.status(400).json({ requestId, message });
   }
 });
 

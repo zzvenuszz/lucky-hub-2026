@@ -30,7 +30,7 @@ interface KnowledgeScanPair {
 const readFileAsDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Không đọc được tệp.'));
-  reader.onerror = () => reject(new Error('Không đọc được tệp.'));
+  reader.onerror = () => reject(reader.error || new Error('Không đọc được tệp.'));
   reader.readAsDataURL(file);
 });
 
@@ -108,9 +108,12 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
     }
     setUploading(true);
     setStatus({ text: 'Đang đọc, phân đoạn và lập chỉ mục tài liệu…', error: false });
+    window.debugLog?.('[KnowledgeDocument] Bắt đầu nhập tài liệu.', 'system');
     console.log('[KnowledgeManager] Document upload started:', { fileName: file.name, mimeType, bytes: file.size, category: uploadCategory });
     try {
       const dataUrl = await readFileAsDataUrl(file);
+      window.debugLog?.(`[KnowledgeDocument] Đọc tệp thành công (${file.name}, ${file.size} bytes).`, 'system');
+      window.debugLog?.('[KnowledgeDocument] Đang gửi tài liệu đến máy chủ để trích xuất và tổng hợp.', 'system');
       const result = await Database.importKnowledgeDocument({
         fileName: file.name,
         mimeType,
@@ -128,11 +131,13 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
         ? ` AI đã tổng hợp ${result.synthesized}/${result.inserted} đoạn thành kiến thức có ngữ cảnh.`
         : '';
       setStatus({ text: `Đã nhập ${result?.inserted || 0} đoạn từ ${result?.source || file.name}.${synthesizedMessage}${embeddedMessage}`, error: false });
+      window.debugLog?.(`[KnowledgeDocument] Nhập xong: ${result?.inserted || 0} đoạn, tổng hợp AI ${result?.synthesized || 0} đoạn${result?.requestId ? `, mã ${result.requestId}` : ''}.`, 'system');
       setScanResults(null);
       console.log('[KnowledgeManager] Document upload completed:', result);
       onRefresh();
     } catch (error: any) {
       console.error('[KnowledgeManager] Document upload failed:', error);
+      window.debugLog?.(`[KnowledgeDocument] Nhập thất bại: ${error?.message || error}`, 'error');
       setStatus({ text: error?.message || 'Không thể nhập tài liệu.', error: true });
     } finally {
       setUploading(false);

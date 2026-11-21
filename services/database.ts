@@ -43,7 +43,8 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
       const duration = Date.now() - startTime;
-      const msg = errorData.message || `Lỗi API ${res.status}`;
+      const requestIdSuffix = errorData.requestId ? ` (Mã xử lý: ${errorData.requestId})` : '';
+      const msg = `${errorData.message || `Lỗi API ${res.status}`}${requestIdSuffix}`;
       
       // Xử lý session hết hạn
       if (res.status === 401 && ['session_invalidated', 'session_expired', 'no_token', 'invalid_token', 'user_not_found'].includes(errorData.reason)) {
@@ -169,7 +170,7 @@ export const Database = {
   scanKnowledgeConflicts: () => request<{ success: boolean; scanned: number; candidates: number; conflicts: Array<{ first: AIKnowledge; second: AIKnowledge; reason: string; score: number }>; similar: Array<{ first: AIKnowledge; second: AIKnowledge; reason: string; score: number }> }>(`${API_BASE}/knowledge/scan-conflicts`, 'POST', {}, 180000),
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data, 60000),
   updateKnowledge: (id: string, data: Partial<AIKnowledge>) => request<AIKnowledge>(`${API_BASE}/knowledge/${encodeURIComponent(id)}`, 'PUT', data, 60000),
-  importKnowledgeDocument: (data: { fileName: string; mimeType: string; base64: string; category: string }) => request<{ success: boolean; inserted: number; synthesized?: number; needsResynthesis?: boolean; source: string; pages: number; embedded: number; alreadyImported: boolean; reindexed: number }>(`${API_BASE}/knowledge/import-document`, 'POST', data, 300000),
+  importKnowledgeDocument: (data: { fileName: string; mimeType: string; base64: string; category: string }) => request<{ success: boolean; requestId: string; inserted: number; synthesized?: number; needsResynthesis?: boolean; source: string; pages: number; embedded: number; alreadyImported: boolean; reindexed: number }>(`${API_BASE}/knowledge/import-document`, 'POST', data, 300000),
   deleteKnowledgeDocument: (documentId: string) => request(`${API_BASE}/knowledge/document/${encodeURIComponent(documentId)}`, 'DELETE'),
   deleteKnowledge: (id: string) => request(`${API_BASE}/knowledge/${id}`, 'DELETE'),
   getRules: async () => (await request<AIRule[]>(`${API_BASE}/rules`)) ?? [],
