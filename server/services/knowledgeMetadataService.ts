@@ -134,9 +134,11 @@ Với MỖI đoạn, hãy:
 
 Trả JSON thuần dạng {"items":[{"index":0,"keyword":"...","tags":["..."],"sourceFacts":["..."],"healthApplication":"...","uncertainty":""}]}. Không thêm văn bản ngoài JSON.
 ${JSON.stringify(promptData)}` }] }],
-      }, { userId, maxTokens: 2600, timeoutMs: 60000, retries: 1, temperature: 0.1, reasoningEffort: 'none' });
+      }, { userId, maxTokens: 5200, timeoutMs: 60000, retries: 1, temperature: 0.1, reasoningEffort: 'none' });
+      if (response.finishReason === 'length') throw new Error('AI đã chạm giới hạn token; dùng nội dung nguồn dự phòng cho đoạn này.');
       const parsed = parseJson(response.text || '');
-      if (!Array.isArray(parsed.items)) continue;
+      if (!Array.isArray(parsed.items)) throw new Error('AI không trả danh sách items hợp lệ; dùng nội dung nguồn dự phòng cho đoạn này.');
+      let accepted = false;
       parsed.items.forEach((item: any) => {
         const localIndex = Number(item.index);
         if (!Number.isInteger(localIndex) || localIndex < 0 || localIndex >= batch.length) return;
@@ -158,7 +160,9 @@ ${JSON.stringify(promptData)}` }] }],
           ].filter(Boolean).join('\n\n').slice(0, 4800),
           synthesized: true,
         };
+        accepted = true;
       });
+      if (!accepted) throw new Error('AI không trả dữ kiện bắt buộc cho đoạn; dùng nội dung nguồn dự phòng.');
     } catch (error: any) {
       console.warn('[KnowledgeMetadata] AI synthesis unavailable; source text fallback used:', { requestId, batch: offset / SYNTHESIS_BATCH_SIZE + 1, error: error?.message || error });
     }

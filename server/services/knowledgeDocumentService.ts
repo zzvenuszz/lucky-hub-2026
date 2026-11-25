@@ -180,7 +180,7 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   const documentId = createHash('sha256').update(buffer).digest('hex');
   const existingChunks = await Knowledge.find({ documentId }).select('+embedding content').lean().exec();
   if (existingChunks.length) {
-    console.log(`[${MODULE}] Duplicate source skipped:`, { requestId, source: safeName, documentId });
+    console.log(`[${MODULE}] Duplicate source skipped; existing knowledge retained:`, { requestId, source: safeName, documentId, existingChunks: existingChunks.length });
     const chunksToIndex = existingChunks.filter((chunk: any) => !Array.isArray(chunk.embedding) || !chunk.embedding.length);
     let reindexed = 0;
     try {
@@ -215,20 +215,6 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   console.log(`[${MODULE}] Knowledge synthesis completed:`, { requestId, chunks: records.length, synthesized: metadata.filter(item => item.synthesized).length });
 
   const knowledgeContents = records.map((record, index) => metadata[index]?.content || record.content);
-  const embeddings: number[][] = [];
-  const embeddingModels: string[] = [];
-  let embeddingError = '';
-  try {
-    for (let offset = 0; offset < records.length; offset += 24) {
-      const result = await callAIEmbeddings(`${requestId}-E${offset / 24 + 1}`, knowledgeContents.slice(offset, offset + 24), input.userId);
-      embeddings.push(...result.embeddings);
-      embeddingModels.push(...result.embeddings.map(() => `${result.providerUsed || ''}:${result.modelUsed || ''}`));
-    }
-  } catch (error: any) {
-    embeddingError = error?.message || 'Embedding chưa được cấu hình';
-    console.warn(`[${MODULE}] Embeddings unavailable; saving lexical knowledge only:`, { requestId, error: embeddingError });
-  }
-
   const docs = records.map((record, index) => ({
     keyword: metadata[index]?.keyword || `Kiến thức trang ${record.pageNumber} · đoạn ${record.chunkIndex + 1}`,
     content: knowledgeContents[index],
@@ -239,10 +225,37 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
     pageNumber: record.pageNumber,
     chunkIndex: record.chunkIndex,
     documentId,
-    ...(embeddings[index] ? { embedding: embeddings[index], embeddingModel: embeddingModels[index] } : {}),
   }));
-  const saved = await Knowledge.insertMany(docs, { ordered: true });
+  console.log(`[${MODULE}] Database insert started:`, { requestId, source: safeName, records: records.length, documents: docs.length, synthesized: metadata.filter(item => item.synthesized).length });
+  let saved;
+  try {
+    saved = await Knowledge.insertMany(docs, { ordered: true });
+  } catch (error: any) {
+    console.error(`[${MODULE}] Database insert failed:`, { requestId, source: safeName, records: records.length, message: error?.message || error, code: error?.code });
+    throw error;
+  }
+  console.log(`[${MODULE}] Knowledge saved before embedding:`, { requestId, source: safeName, chunks: saved.length });
+
+  const embeddings: number[][] = [];
+  const embeddingModels: string[] = [];
+  let embeddingError = '';
+  let embedded = 0;
+  try {
+    for (let offset = 0; offset < records.length; offset += 24) {
+      const result = await callAIEmbeddings(`${requestId}-E${offset / 24 + 1}`, knowledgeContents.slice(offset, offset + 24), input.userId);
+      embeddings.push(...result.embeddings);
+      embeddingModels.push(...result.embeddings.map(() => `${result.providerUsed || ''}:${result.modelUsed || ''}`));
+    }
+    await Promise.all(saved.slice(0, embeddings.length).map((entry: any, index: number) => Knowledge.updateOne(
+      { _id: entry._id },
+      { $set: { embedding: embeddings[index], embeddingModel: embeddingModels[index] || '' } },
+    )));
+    embedded = Math.min(saved.length, embeddings.length);
+  } catch (error: any) {
+    embeddingError = error?.message || 'Embedding chưa được cấu hình';
+    console.warn(`[${MODULE}] Knowledge retained without complete embeddings:`, { requestId, source: safeName, saved: saved.length, embedded, error: embeddingError });
+  }
   const synthesized = metadata.filter(item => item.synthesized).length;
-  console.log(`[${MODULE}] Import completed:`, { requestId, source: safeName, pages: pages.length, chunks: saved.length, synthesized, embedded: embeddings.length, embeddingError: embeddingError || undefined });
-  return { inserted: saved.length, source: safeName, pages: pages.length, embedded: embeddings.length, synthesized, alreadyImported: false, reindexed: 0 };
+  console.log(`[${MODULE}] Import completed:`, { requestId, source: safeName, pages: pages.length, chunks: saved.length, requestedChunks: records.length, synthesized, embedded, embeddingError: embeddingError || undefined });
+  return { inserted: saved.length, source: safeName, pages: pages.length, embedded, synthesized, alreadyImported: false, reindexed: 0 };
 }

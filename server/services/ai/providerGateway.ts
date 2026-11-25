@@ -34,6 +34,7 @@ export interface GatewayConfig {
 export interface GatewayResult {
   text: string;
   resolvedModel: string;
+  finishReason?: string;
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -94,7 +95,7 @@ function buildAuthHeaders(config: GatewayConfig): Record<string, string> {
 }
 
 /** Parse response from various gateway formats */
-function parseGatewayResponse(raw: string, requestModel: string): { text: string; resolvedModel: string; usage?: any; cost?: number } {
+function parseGatewayResponse(raw: string, requestModel: string): { text: string; resolvedModel: string; finishReason?: string; usage?: any; cost?: number } {
   let parsed: any;
   const cleanedRaw = raw.trim().replace(/data:\s*\[DONE\]\s*$/i, '').trim();
 
@@ -182,7 +183,7 @@ function parseGatewayResponse(raw: string, requestModel: string): { text: string
   const cost = choice?.message?.provider_metadata?.gateway?.cost ||
                root.provider_metadata?.gateway?.cost;
 
-  return { text, resolvedModel, usage, cost: cost ? parseFloat(cost) : undefined };
+  return { text, resolvedModel, finishReason: choice.finish_reason, usage, cost: cost ? parseFloat(cost) : undefined };
 }
 
 /** Check if error is retryable */
@@ -285,6 +286,7 @@ export async function callGateway(
       return {
         text: result.text,
         resolvedModel: result.resolvedModel,
+        finishReason: result.finishReason,
         usage: result.usage,
         cost: result.cost,
         durationMs,
@@ -424,7 +426,7 @@ export function convertGeminiPayload(payload: any, systemOverride?: string): Gat
   if (Array.isArray(payload?.messages)) {
     for (const m of payload.messages) {
       if (!m?.role) continue;
-      const role = m.role === 'model' ? 'assistant' : m.role;
+      const role = m.role === 'assistant' || m.role === 'model' ? 'assistant' : m.role === 'system' ? 'system' : 'user';
       messages.push({ role, content: m.content ?? '' });
     }
     return messages;
@@ -434,7 +436,7 @@ export function convertGeminiPayload(payload: any, systemOverride?: string): Gat
   const contents = Array.isArray(payload?.contents) ? payload.contents : [];
 
   for (const content of contents) {
-    const role = content?.role === 'model' ? 'assistant' : (content?.role || 'user');
+    const role = content?.role === 'assistant' || content?.role === 'model' ? 'assistant' : content?.role === 'system' ? 'system' : 'user';
     const parts = Array.isArray(content?.parts) ? content.parts : [];
 
     const openaiParts: GatewayContentPart[] = [];

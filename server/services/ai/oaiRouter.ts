@@ -34,6 +34,7 @@ export type AITaskType = 'chat' | 'coach' | 'vision' | 'verify' | 'food' | 'meal
 export interface AICallResult {
   text: string;
   resolvedModel?: string;
+  finishReason?: string;
   usage?: any;
   cost?: number;
   durationMs?: number;
@@ -147,7 +148,7 @@ export async function callAI(
 
     // 3. Convert payload to OpenAI format
     const messages = convertGeminiPayload(payload, options.system);
-    if (debugMode) debugData.requestPayload = payload;
+    if (debugMode) debugData.requestPayload = { messages };
 
     if (TRACE) {
       console.log(`[TRACE] Messages prepared for gateway: ${messages.length} messages`);
@@ -214,6 +215,14 @@ export async function callAI(
           // Call gateway
           const result = await callGateway(gatewayConfig, messages, requestId);
 
+          if (debugMode) {
+            debugData.responsePayload = {
+              text: result.text,
+              resolvedModel: result.resolvedModel,
+              finishReason: result.finishReason,
+            };
+          }
+
           const durationMs = Date.now() - startTime;
           const attemptDuration = Date.now() - attemptStartTime;
 
@@ -253,6 +262,7 @@ export async function callAI(
           return {
             text: result.text,
             resolvedModel: result.resolvedModel,
+            finishReason: result.finishReason,
             usage: result.usage,
             cost: result.cost,
             durationMs,

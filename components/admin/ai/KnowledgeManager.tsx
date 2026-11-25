@@ -124,7 +124,13 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
         const reindexMessage = result.reindexed ? ` Đã lập chỉ mục ngữ nghĩa cho ${result.reindexed} đoạn còn thiếu.` : '';
         const resynthesisMessage = result.needsResynthesis ? ' Bản hiện tại được nhập bằng cách trích chữ cũ; hãy xóa tài liệu này rồi nhập lại để tạo kiến thức tổng hợp.' : '';
         setStatus({ text: `Tài liệu ${result.source} đã được nhập trước đó; không tạo bản trùng.${resynthesisMessage}${reindexMessage}`, error: false });
+        setScanResults(null);
+        onRefresh();
+        console.log('[KnowledgeManager] Duplicate document confirmed in database; knowledge list refreshed:', { source: result.source, reindexed: result.reindexed });
         return;
+      }
+      if (!Number.isInteger(result?.inserted) || result.inserted < 1) {
+        throw new Error(`Máy chủ không xác nhận đã lưu đoạn kiến thức${result?.requestId ? ` (mã ${result.requestId})` : ''}. Hãy kiểm tra log nhập tài liệu.`);
       }
       const embeddedMessage = result?.embedded ? ` ${result.embedded} đoạn đã lập chỉ mục ngữ nghĩa.` : ' Đang dùng tìm kiếm từ khóa; bật tác vụ Embedding trong Quản trị AI để dùng tìm kiếm ngữ nghĩa.';
       const synthesizedMessage = typeof result?.synthesized === 'number'
