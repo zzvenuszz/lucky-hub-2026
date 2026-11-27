@@ -25,10 +25,12 @@ async function runPdfOperation<T>(
   operation: string,
   pageNumber: number | undefined,
   action: () => Promise<T>,
+  onLog?: KnowledgeDocumentInput['onLog'],
 ): Promise<T> {
   const startedAt = Date.now();
   const context = { requestId, operation, ...(pageNumber ? { pageNumber } : {}) };
   console.log(`[${MODULE}] PDF operation started:`, context);
+  onLog?.(`Bắt đầu thao tác PDF: ${operation}${pageNumber ? ` · trang ${pageNumber}` : ''}`, 'info', context);
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -39,10 +41,12 @@ async function runPdfOperation<T>(
     ]);
   } catch (error: any) {
     console.error(`[${MODULE}] PDF operation failed:`, { ...context, durationMs: Date.now() - startedAt, name: error?.name, message: error?.message || error });
+    onLog?.(`Thao tác PDF lỗi: ${operation}${pageNumber ? ` · trang ${pageNumber}` : ''}`, 'error', { ...context, durationMs: Date.now() - startedAt, name: error?.name, message: error?.message || String(error) });
     throw error;
   } finally {
     if (timeout) clearTimeout(timeout);
     console.log(`[${MODULE}] PDF operation finished:`, { ...context, durationMs: Date.now() - startedAt });
+    onLog?.(`Kết thúc thao tác PDF: ${operation}${pageNumber ? ` · trang ${pageNumber}` : ''}`, 'info', { ...context, durationMs: Date.now() - startedAt });
   }
 }
 
@@ -62,6 +66,7 @@ export interface KnowledgeDocumentInput {
   userId: string;
   requestId?: string;
   onProgress?: (progress: KnowledgeImportProgress) => Promise<void> | void;
+  onLog?: (message: string, level?: 'info' | 'warn' | 'error', details?: Record<string, unknown>) => void;
 }
 
 const normalizeText = (value: string): string => value
@@ -120,11 +125,12 @@ Chỉ trả về nội dung đã đọc có cấu trúc, không đưa lời khuy
   return normalizeText(response.text || '');
 }
 
-async function extractPdfPages(buffer: Buffer, userId: string, requestId: string, onProgress?: KnowledgeDocumentInput['onProgress']): Promise<Array<{ pageNumber: number; text: string }>> {
+async function extractPdfPages(buffer: Buffer, userId: string, requestId: string, onProgress?: KnowledgeDocumentInput['onProgress'], onLog?: KnowledgeDocumentInput['onLog']): Promise<Array<{ pageNumber: number; text: string }>> {
   const parser = new PDFParse({ data: new Uint8Array(buffer), verbosity: 0 });
   try {
     console.log(`[${MODULE}] PDF text extraction started:`, { requestId, bytes: buffer.length });
-    const info = await runPdfOperation(requestId, 'getInfo', undefined, () => parser.getInfo());
+    const info = await runPdfOperation(requestId, 'getInfo', undefined, () => parser.getInfo(), onLog);
+    onLog?.(`PDF có ${info.total} trang.`, 'info', { totalPages: info.total });
     if (info.total > MAX_PDF_PAGES) throw new Error(`PDF vượt quá giới hạn ${MAX_PDF_PAGES} trang.`);
     if (info.total < 1) throw new Error('PDF không có trang để nhập.');
 
@@ -135,7 +141,7 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
       await onProgress?.({ stage: 'reading', pageNumber, totalPages: info.total, percent: pageProgress, message: `Đang xử lý trang ${pageNumber}/${info.total} - Đang đọc nội dung...` });
       let text = '';
       try {
-        const pageResult = await runPdfOperation(requestId, 'getText', pageNumber, () => parser.getText({ partial: [pageNumber] }));
+        const pageResult = await runPdfOperation(requestId, 'getText', pageNumber, () => parser.getText({ partial: [pageNumber] }), onLog);
         text = normalizeText(pageResult.pages.find(page => page.num === pageNumber)?.text || '');
       } catch (error: any) {
         if (error instanceof PdfOperationTimeoutError) throw error;
@@ -144,7 +150,7 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
 
       let hasEmbeddedImages = false;
       try {
-        const embeddedImages = await runPdfOperation(requestId, 'getImage', pageNumber, () => parser.getImage({ partial: [pageNumber], imageThreshold: 80, imageBuffer: false, imageDataUrl: false }));
+        const embeddedImages = await runPdfOperation(requestId, 'getImage', pageNumber, () => parser.getImage({ partial: [pageNumber], imageThreshold: 80, imageBuffer: false, imageDataUrl: false }), onLog);
         hasEmbeddedImages = !!embeddedImages.pages.find(page => page.pageNumber === pageNumber)?.images.length;
       } catch (error: any) {
         if (error instanceof PdfOperationTimeoutError) throw error;
@@ -155,7 +161,7 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
         scannedPages += 1;
         await onProgress?.({ stage: 'ocr', pageNumber, totalPages: info.total, percent: pageProgress, message: `Đang xử lý trang ${pageNumber}/${info.total} - ${hasEmbeddedImages ? 'Đang đọc chữ và hình ảnh...' : 'Đang nhận diện hình ảnh...'}` });
         console.log(`[${MODULE}] PDF OCR page started:`, { requestId, pageNumber, totalPages: info.total, scannedPages, hasEmbeddedImages, maxOutputTokens: OCR_MAX_OUTPUT_TOKENS_PER_PAGE });
-        const screenshots = await runPdfOperation(requestId, 'getScreenshot', pageNumber, () => parser.getScreenshot({ partial: [pageNumber], scale: 1, imageBuffer: true, imageDataUrl: false }));
+        const screenshots = await runPdfOperation(requestId, 'getScreenshot', pageNumber, () => parser.getScreenshot({ partial: [pageNumber], scale: 1, imageBuffer: true, imageDataUrl: false }), onLog);
         const screenshot = screenshots.pages.find(page => page.pageNumber === pageNumber);
         if (!screenshot) throw new Error(`Không tạo được ảnh để đọc trang PDF ${pageNumber}.`);
         const referenceText = text.length > 12000 ? `${text.slice(0, 12000)}\n...[đã rút gọn phần text tham chiếu]` : text || '(không có text trích xuất)';
@@ -166,11 +172,13 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
         ];
         let response;
         try {
+          onLog?.(`Gửi trang ${pageNumber}/${info.total} đến AI để OCR.`, 'info', { pageNumber, totalPages: info.total, requestId: `${requestId}-PDFOCR-P${pageNumber}` });
           response = await callAI(`${requestId}-PDFOCR-P${pageNumber}`, 'vision', {
             contents: [{ role: 'user', parts }],
           }, { userId, maxTokens: OCR_MAX_OUTPUT_TOKENS_PER_PAGE, timeoutMs: 90000, retries: 0, temperature: 0.1, reasoningEffort: 'none' });
         } catch (error: any) {
           console.error(`[${MODULE}] PDF OCR request failed:`, { requestId, aiRequestId: `${requestId}-PDFOCR-P${pageNumber}`, pageNumber, totalPages: info.total, errorCode: error?.errorCode, httpStatus: error?.status, name: error?.name, message: error?.message, stack: error?.stack });
+          onLog?.(`AI OCR trang ${pageNumber}/${info.total} thất bại.`, 'error', { pageNumber, totalPages: info.total, requestId: `${requestId}-PDFOCR-P${pageNumber}`, errorCode: error?.errorCode, httpStatus: error?.status, name: error?.name, message: error?.message });
           if (/timeout/i.test(String(error?.message || ''))) {
             throw new Error(`AI hết thời gian đọc trang PDF ${pageNumber}/${info.total}. Hãy thử lại; nếu tiếp tục lỗi, tách PDF để nhập từng phần nhỏ hơn.`);
           }
@@ -180,6 +188,7 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
           throw new Error(`Nội dung trang PDF ${pageNumber}/${info.total} bị cắt do hết giới hạn ${OCR_MAX_OUTPUT_TOKENS_PER_PAGE} token.`);
         }
         const responseText = response.text || '';
+        onLog?.(`AI OCR trang ${pageNumber}/${info.total} hoàn tất.`, 'info', { pageNumber, totalPages: info.total, finishReason: response.finishReason, characters: responseText.length });
         const marker = new RegExp(`\\[TRANG\\s+${pageNumber}\\]`, 'i');
         const match = marker.exec(responseText);
         const supplementalText = normalizeText(match ? responseText.slice(match.index + match[0].length) : responseText);
@@ -219,6 +228,7 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   if (!buffer.length || buffer.length > MAX_FILE_BYTES) throw new Error('Tệp trống hoặc vượt giới hạn 10 MB.');
   if (input.mimeType === 'application/pdf' && !buffer.subarray(0, 1024).toString('latin1').includes('%PDF-')) throw new Error('Tệp không có cấu trúc PDF hợp lệ hoặc đã bị hỏng.');
   console.log(`[${MODULE}] Import started:`, { requestId, source: safeName, mimeType: input.mimeType, bytes: buffer.length, userId: input.userId });
+  input.onLog?.('Bắt đầu nhập tài liệu.', 'info', { requestId, source: safeName, mimeType: input.mimeType, bytes: buffer.length });
   const documentId = createHash('sha256').update(buffer).digest('hex');
   const existingChunks = await Knowledge.find({ documentId }).select('+embedding content').lean().exec();
   if (existingChunks.length) {
@@ -239,13 +249,14 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
       console.warn(`[${MODULE}] Existing source kept; missing vectors were not fully rebuilt:`, { requestId, error: error?.message || error, reindexed });
     }
     const needsResynthesis = existingChunks.some((chunk: any) => !String(chunk.content || '').includes('Ứng dụng tham khảo trong chăm sóc sức khỏe:'));
+    input.onLog?.('Tài liệu đã tồn tại; bỏ qua tạo bản trùng.', 'info', { existingChunks: existingChunks.length, reindexed, needsResynthesis });
     return { inserted: 0, source: safeName, pages: 0, embedded: 0, alreadyImported: true, needsResynthesis, reindexed };
   }
 
   let pages: Array<{ pageNumber: number; text: string }>;
   if (input.mimeType === 'application/pdf') {
     await input.onProgress?.({ stage: 'extracting', pageNumber: 0, totalPages: 0, percent: 1, message: 'Đang đọc cấu trúc PDF và xác định số trang...' });
-    pages = await extractPdfPages(buffer, input.userId, requestId, input.onProgress);
+    pages = await extractPdfPages(buffer, input.userId, requestId, input.onProgress, input.onLog);
   } else {
     pages = [{ pageNumber: 1, text: await extractImageText(buffer, input.mimeType, input.userId, requestId, input.onProgress) }];
   }
@@ -254,6 +265,7 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   if (!records.length) throw new Error('Không trích xuất được văn bản. Tệp có thể chỉ chứa ảnh mờ hoặc không có nội dung đọc được.');
   if (records.length > 1000) throw new Error('Tài liệu tạo ra quá nhiều đoạn kiến thức (tối đa 1.000).');
   console.log(`[${MODULE}] Document segmentation completed:`, { requestId, pages: pages.length, chunks: records.length });
+  input.onLog?.('Đã trích xuất và chia đoạn tài liệu.', 'info', { pages: pages.length, chunks: records.length });
   await input.onProgress?.({ stage: 'synthesizing', pageNumber: pages.length, totalPages: pages.length, percent: 65, message: `Đã đọc ${pages.length} trang. Đang tổng hợp ${records.length} đoạn kiến thức...` });
   const metadata = await generateKnowledgeMetadata(records, input.userId, requestId, async progress => {
     await input.onProgress?.({
@@ -265,6 +277,7 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
     });
   });
   console.log(`[${MODULE}] Knowledge synthesis completed:`, { requestId, chunks: records.length, synthesized: metadata.filter(item => item.synthesized).length });
+  input.onLog?.('Hoàn tất tổng hợp kiến thức.', 'info', { chunks: records.length, synthesized: metadata.filter(item => item.synthesized).length });
 
   const knowledgeContents = records.map((record, index) => metadata[index]?.content || record.content);
   const docs = records.map((record, index) => ({
@@ -288,6 +301,7 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
     throw error;
   }
   console.log(`[${MODULE}] Knowledge saved before embedding:`, { requestId, source: safeName, chunks: saved.length });
+  input.onLog?.('Đã lưu các đoạn kiến thức; bắt đầu lập chỉ mục.', 'info', { chunks: saved.length });
 
   const embeddings: number[][] = [];
   const embeddingModels: string[] = [];
@@ -311,5 +325,6 @@ export async function importKnowledgeDocument(input: KnowledgeDocumentInput): Pr
   }
   const synthesized = metadata.filter(item => item.synthesized).length;
   console.log(`[${MODULE}] Import completed:`, { requestId, source: safeName, pages: pages.length, chunks: saved.length, requestedChunks: records.length, synthesized, embedded, embeddingError: embeddingError || undefined });
+  input.onLog?.('Nhập tài liệu hoàn tất.', embeddingError ? 'warn' : 'info', { pages: pages.length, chunks: saved.length, synthesized, embedded, embeddingError: embeddingError || undefined });
   return { inserted: saved.length, source: safeName, pages: pages.length, embedded, synthesized, alreadyImported: false, reindexed: 0 };
 }

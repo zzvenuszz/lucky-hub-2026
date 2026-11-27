@@ -24,6 +24,12 @@ export interface KnowledgeDocumentImportJob {
     needsResynthesis?: boolean;
     reindexed: number;
   } | null;
+  logs?: Array<{
+    timestamp: string;
+    level: 'info' | 'warn' | 'error';
+    message: string;
+    details?: Record<string, unknown>;
+  }>;
   updatedAt?: string;
 }
 

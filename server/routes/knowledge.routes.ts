@@ -94,6 +94,7 @@ router.get('/import-document/jobs/:jobId', requirePermission(RESOURCES.AI.MANAGE
     message: job.message,
     error: job.error,
     result: job.result,
+    logs: job.logs,
     updatedAt: job.updatedAt,
   });
 });

@@ -19,6 +19,7 @@ const CATEGORIES = [
 ];
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ACTIVE_IMPORT_JOB_KEY = 'lucky_hub_knowledge_import_job';
+const LAST_IMPORT_JOB_KEY = 'lucky_hub_knowledge_last_import_job';
 const getKnowledgeId = (item: AIKnowledge): string => item.id || String((item as any)._id || '');
 
 const wait = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms));
@@ -75,10 +76,13 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
   const [scanResults, setScanResults] = useState<{ scanned: number; candidates: number; conflicts: KnowledgeScanPair[]; similar: KnowledgeScanPair[] } | null>(null);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
   const [importProgress, setImportProgress] = useState<KnowledgeDocumentImportJob | null>(null);
+  const [importLogsExpanded, setImportLogsExpanded] = useState(false);
+  const [logsCopyMessage, setLogsCopyMessage] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const finishImportJob = useCallback((job: KnowledgeDocumentImportJob) => {
     localStorage.removeItem(ACTIVE_IMPORT_JOB_KEY);
+    localStorage.setItem(LAST_IMPORT_JOB_KEY, job.jobId);
     if (job.status === 'failed') {
       setStatus({ text: job.error || job.message || 'Không thể nhập tài liệu.', error: true });
       window.debugLog?.(`[KnowledgeDocument] Nhập thất bại: ${job.error || job.message}`, 'error');
@@ -110,7 +114,17 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
 
   useEffect(() => {
     const jobId = localStorage.getItem(ACTIVE_IMPORT_JOB_KEY);
-    if (!jobId) return;
+    if (!jobId) {
+      const lastJobId = localStorage.getItem(LAST_IMPORT_JOB_KEY);
+      if (!lastJobId) return;
+      let active = true;
+      Database.getKnowledgeDocumentImportJob(lastJobId).then(job => {
+        if (active && job) setImportProgress(job);
+      }).catch(error => {
+        console.warn('[KnowledgeManager] Could not restore document import logs:', error?.message || error);
+      });
+      return () => { active = false; };
+    }
     let active = true;
     setUploading(true);
     watchKnowledgeDocumentImportJob(jobId, job => {
@@ -127,6 +141,33 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
     });
     return () => { active = false; };
   }, []);
+
+  const handleCopyImportLogs = useCallback(async () => {
+    const logs = importProgress?.logs || [];
+    const content = logs.map(log => `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.message}${log.details ? ` ${JSON.stringify(log.details)}` : ''}`).join('\n');
+    if (!content) {
+      setLogsCopyMessage('Chưa có log để sao chép.');
+      return;
+    }
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = content;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (!copied) throw new Error('Không thể sao chép logs.');
+      }
+      setLogsCopyMessage('Đã sao chép logs.');
+    } catch (error: any) {
+      setLogsCopyMessage(error?.message || 'Không thể truy cập clipboard.');
+    }
+  }, [importProgress?.logs]);
 
   const documents = useMemo(() => {
     const groups = new Map<string, { documentId: string; source: string; category: string; chunks: AIKnowledge[] }>();
@@ -189,6 +230,8 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
     }
     setUploading(true);
     setImportProgress(null);
+    setImportLogsExpanded(false);
+    setLogsCopyMessage('');
     setStatus({ text: 'Đang tải tài liệu lên để bắt đầu tác vụ nhập…', error: false });
     window.debugLog?.('[KnowledgeDocument] Bắt đầu nhập tài liệu.', 'system');
     console.log('[KnowledgeManager] Document upload started:', { fileName: file.name, mimeType, bytes: file.size, category: uploadCategory });
@@ -204,6 +247,7 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
       });
       if (!started?.jobId) throw new Error('Máy chủ không tạo được tác vụ nhập tài liệu.');
       localStorage.setItem(ACTIVE_IMPORT_JOB_KEY, started.jobId);
+      localStorage.setItem(LAST_IMPORT_JOB_KEY, started.jobId);
       window.debugLog?.(`[KnowledgeDocument] Đã tạo tác vụ nhập ${started.jobId}.`, 'system');
       const job = await watchKnowledgeDocumentImportJob(started.jobId, setImportProgress);
       if (!job) throw new Error('Theo dõi tác vụ nhập đã bị gián đoạn.');
@@ -294,6 +338,21 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
               <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${importProgress.percent}%` }} />
             </div>
             {importProgress.totalPages > 0 && <div className="text-[9px] text-slate-500">Trang {importProgress.pageNumber}/{importProgress.totalPages} · {importProgress.fileName}</div>}
+            <div className="border-t border-slate-100 pt-2">
+              <div className="flex items-center justify-between gap-2">
+                <button type="button" onClick={() => setImportLogsExpanded(value => !value)} className="text-[10px] font-bold text-slate-600 hover:text-emerald-700">
+                  {importLogsExpanded ? 'Ẩn logs' : `Xem logs (${importProgress.logs?.length || 0})`}
+                </button>
+                <button type="button" disabled={!importProgress.logs?.length} onClick={handleCopyImportLogs} className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700 disabled:opacity-40">📋 Copy logs</button>
+              </div>
+              {logsCopyMessage && <div className="mt-1 text-[9px] text-slate-500">{logsCopyMessage}</div>}
+              {importLogsExpanded && <div className="mt-2 max-h-72 overflow-auto rounded-lg bg-slate-950 p-3 font-mono text-[10px] leading-relaxed text-slate-100">
+                {importProgress.logs?.length ? importProgress.logs.map((log, index) => <div key={`${log.timestamp}-${index}`} className={`whitespace-pre-wrap break-words ${log.level === 'error' ? 'text-rose-300' : log.level === 'warn' ? 'text-amber-200' : ''}`}>
+                  <span className="text-slate-400">[{new Date(log.timestamp).toLocaleTimeString()}] [{log.level.toUpperCase()}]</span> {log.message}{log.details ? ` ${JSON.stringify(log.details)}` : ''}
+                </div>) : <div className="text-slate-400">Không có logs trong bộ nhớ server. Logs không được lưu vào database và sẽ mất khi server khởi động lại.</div>}
+              </div>}
+              <div className="mt-1 text-[9px] text-slate-400">Logs giữ trong bộ nhớ server, không lưu vào database.</div>
+            </div>
           </div>}
         </div>
         {status && <div role="status" className={`rounded-xl px-4 py-3 text-xs font-bold ${status.error ? 'bg-rose-50 text-rose-700' : 'bg-white text-emerald-700'}`}>{status.text}</div>}

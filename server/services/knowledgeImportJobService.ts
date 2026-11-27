@@ -5,6 +5,29 @@ import { invalidateKnowledgeRetrievalCache } from './knowledgeRetrievalService.t
 const MODULE = 'KnowledgeImportJob';
 const JOB_RETENTION_DAYS = 7;
 const STALE_JOB_TIMEOUT_MS = 3 * 60 * 1000;
+const MAX_LOG_ENTRIES_PER_JOB = 5000;
+const MAX_LOGGED_JOBS = 10;
+
+export interface KnowledgeImportJobLog {
+  timestamp: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+const inMemoryJobLogs = new Map<string, KnowledgeImportJobLog[]>();
+
+function appendJobLog(jobId: string, message: string, level: KnowledgeImportJobLog['level'] = 'info', details?: Record<string, unknown>): void {
+  const logs = inMemoryJobLogs.get(jobId) || [];
+  logs.push({ timestamp: new Date().toISOString(), level, message, ...(details ? { details } : {}) });
+  if (logs.length > MAX_LOG_ENTRIES_PER_JOB) logs.splice(0, logs.length - MAX_LOG_ENTRIES_PER_JOB);
+  inMemoryJobLogs.set(jobId, logs);
+  while (inMemoryJobLogs.size > MAX_LOGGED_JOBS) {
+    const oldestJobId = inMemoryJobLogs.keys().next().value;
+    if (!oldestJobId) break;
+    inMemoryJobLogs.delete(oldestJobId);
+  }
+}
 
 export interface KnowledgeDocumentImportJobResult {
   inserted: number;
@@ -27,20 +50,27 @@ export async function createKnowledgeDocumentImportJob(userId: string, fileName:
     expiresAt: new Date(Date.now() + JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000),
   });
   console.log(`[${MODULE}] Job queued:`, { jobId: job._id.toString(), userId, fileName: job.fileName });
+  appendJobLog(job._id.toString(), 'Tác vụ nhập tài liệu đã được tạo.', 'info', { fileName: job.fileName });
   return job._id.toString();
 }
 
 export async function runKnowledgeDocumentImportJob(jobId: string, input: KnowledgeDocumentInput): Promise<void> {
   const jobFilter = { _id: jobId, userId: input.userId };
   try {
+    appendJobLog(jobId, 'Worker bắt đầu xử lý tài liệu.', 'info', { fileName: input.fileName, mimeType: input.mimeType });
     await KnowledgeImportJob.updateOne(jobFilter, {
       $set: { status: 'processing', stage: 'extracting', percent: 0, message: 'Đang chuẩn bị đọc tài liệu...' },
     });
     const result: KnowledgeDocumentImportJobResult = await importKnowledgeDocument({
       ...input,
       requestId: jobId,
+      onLog: (message, level = 'info', details) => {
+        appendJobLog(jobId, message, level, details);
+        input.onLog?.(message, level, details);
+      },
       onProgress: async progress => {
         console.log(`[${MODULE}] Progress:`, { jobId, stage: progress.stage, page: `${progress.pageNumber}/${progress.totalPages}`, percent: progress.percent, message: progress.message });
+        appendJobLog(jobId, progress.message, 'info', { stage: progress.stage, pageNumber: progress.pageNumber, totalPages: progress.totalPages, percent: progress.percent });
         await KnowledgeImportJob.updateOne(jobFilter, {
           $set: {
             status: 'processing',
@@ -68,6 +98,7 @@ export async function runKnowledgeDocumentImportJob(jobId: string, input: Knowle
       },
     });
     console.log(`[${MODULE}] Job completed:`, { jobId, inserted: result.inserted, pages: result.pages, alreadyImported: result.alreadyImported });
+    appendJobLog(jobId, 'Tác vụ nhập tài liệu hoàn tất.', 'info', { inserted: result.inserted, pages: result.pages, alreadyImported: result.alreadyImported });
   } catch (error: any) {
     const rawMessage = String(error?.message || 'Không thể nhập tài liệu.');
     const message = rawMessage.includes('The string did not match the expected pattern')
@@ -83,6 +114,7 @@ export async function runKnowledgeDocumentImportJob(jobId: string, input: Knowle
       },
     });
     console.error(`[${MODULE}] Job failed:`, { jobId, userId: input.userId, name: error?.name, errorCode: error?.errorCode, message, stack: error?.stack });
+    appendJobLog(jobId, `Tác vụ nhập thất bại: ${message}`, 'error', { name: error?.name, errorCode: error?.errorCode });
   }
 }
 
@@ -99,10 +131,12 @@ export async function getKnowledgeDocumentImportJob(jobId: string, userId: strin
     );
     if (result.modifiedCount) {
       console.error(`[${MODULE}] Stale job marked failed:`, { jobId, userId, lastUpdatedAt: job.updatedAt, stage: job.stage, pageNumber: job.pageNumber, totalPages: job.totalPages });
+      appendJobLog(jobId, 'Tác vụ bị đánh dấu thất bại vì không cập nhật tiến độ quá 3 phút.', 'error', { stage: job.stage, pageNumber: job.pageNumber, totalPages: job.totalPages });
     }
   }
-  return KnowledgeImportJob.findOne({ _id: jobId, userId })
+  const latestJob = await KnowledgeImportJob.findOne({ _id: jobId, userId })
     .select('fileName status stage pageNumber totalPages percent message error result createdAt updatedAt')
     .lean()
     .exec();
+  return latestJob ? { ...latestJob, logs: inMemoryJobLogs.get(jobId) || [] } : null;
 }
