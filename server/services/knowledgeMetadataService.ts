@@ -8,6 +8,11 @@ export interface KnowledgeMetadata {
 }
 
 const SYNTHESIS_BATCH_SIZE = 4;
+export interface KnowledgeMetadataProgress {
+  batchNumber: number;
+  totalBatches: number;
+  percent: number;
+}
 const STOP_WORDS = new Set(['nhung', 'duoc', 'trong', 'khong', 'cua', 'voi', 'cho', 'khi', 'mot', 'cac', 'nay', 'theo', 'den', 'nen', 'thi', 'la', 'va', 'hoac', 'tai', 'from', 'with', 'that', 'this', 'have', 'will', 'your', 'into']);
 const GENERIC_TAG_WORDS = new Set(['general', 'content', 'visual', 'short', 'blue', 'green', 'red', 'black', 'white', 'yellow', 'image', 'photo', 'picture', 'color', 'colors', 'document', 'file', 'knowledge', 'text', 'information', 'topic', 'summary', 'chung', 'noi', 'dung', 'hinh', 'anh', 'mau', 'sac', 'ngan', 'tai', 'lieu', 'kien', 'thuc', 'van', 'ban']);
 const GENERIC_TAGS = new Set(['general', 'content', 'visual', 'short', 'blue', 'green', 'red', 'black', 'white', 'yellow', 'image', 'photo', 'picture', 'color', 'colors', 'document', 'file', 'knowledge', 'text', 'information', 'topic', 'summary', 'noi dung', 'hinh anh', 'mau sac', 'tai lieu', 'kien thuc', 'van ban']);
@@ -114,10 +119,18 @@ function parseJson(text: string): any {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
-export async function generateKnowledgeMetadata(records: Array<{ content: string }>, userId: string, requestId: string): Promise<KnowledgeMetadata[]> {
+export async function generateKnowledgeMetadata(
+  records: Array<{ content: string }>,
+  userId: string,
+  requestId: string,
+  onProgress?: (progress: KnowledgeMetadataProgress) => Promise<void> | void,
+): Promise<KnowledgeMetadata[]> {
   const generated = records.map(record => fallbackMetadata(record.content));
+  const totalBatches = Math.ceil(records.length / SYNTHESIS_BATCH_SIZE);
   for (let offset = 0; offset < records.length; offset += SYNTHESIS_BATCH_SIZE) {
     const batch = records.slice(offset, offset + SYNTHESIS_BATCH_SIZE);
+    const batchNumber = Math.floor(offset / SYNTHESIS_BATCH_SIZE) + 1;
+    await onProgress?.({ batchNumber, totalBatches, percent: Math.round((batchNumber - 1) / totalBatches * 100) });
     try {
       const promptData = batch.map((record, index) => ({ index, sourceText: record.content.slice(0, 2800) }));
       const response = await callAI(`${requestId}-SYN${offset / SYNTHESIS_BATCH_SIZE + 1}`, 'coach', {
@@ -166,6 +179,7 @@ ${JSON.stringify(promptData)}` }] }],
     } catch (error: any) {
       console.warn('[KnowledgeMetadata] AI synthesis unavailable; source text fallback used:', { requestId, batch: offset / SYNTHESIS_BATCH_SIZE + 1, error: error?.message || error });
     }
+    await onProgress?.({ batchNumber, totalBatches, percent: Math.round(batchNumber / totalBatches * 100) });
   }
   console.log('[KnowledgeMetadata] Knowledge synthesis completed:', { requestId, entries: generated.length, synthesized: generated.filter(item => item.synthesized).length, aiBatches: Math.ceil(records.length / SYNTHESIS_BATCH_SIZE) });
   return generated;

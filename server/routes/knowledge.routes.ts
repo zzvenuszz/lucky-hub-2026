@@ -8,6 +8,7 @@ import { importKnowledgeDocument } from '../services/knowledgeDocumentService.ts
 import { callAIEmbeddings } from '../services/ai/oaiRouter.ts';
 import { invalidateKnowledgeRetrievalCache } from '../services/knowledgeRetrievalService.ts';
 import { scanKnowledgeConflicts } from '../services/knowledgeConflictService.ts';
+import { createKnowledgeDocumentImportJob, getKnowledgeDocumentImportJob, runKnowledgeDocumentImportJob } from '../services/knowledgeImportJobService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -53,6 +54,50 @@ router.post('/', requirePermission(RESOURCES.AI.MANAGE), validateBody(
 });
 
 // POST /api/knowledge/import-document (new document ingestion endpoint)
+router.post('/import-document/jobs', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  const body = req.body || {};
+  const userId = String((req as any).user?.userId || 'admin');
+  try {
+    const jobId = await createKnowledgeDocumentImportJob(userId, String(body.fileName || 'tai-lieu'));
+    res.status(202).json({ success: true, jobId, status: 'queued' });
+    setImmediate(() => {
+      void runKnowledgeDocumentImportJob(jobId, {
+        fileName: String(body.fileName || ''),
+        mimeType: String(body.mimeType || ''),
+        base64: String(body.base64 || ''),
+        category: String(body.category || 'general'),
+        userId,
+      }).catch(error => {
+        console.error('[Knowledge] Background document import worker failed:', { jobId, message: error?.message || error, stack: error?.stack });
+      });
+    });
+  } catch (error: any) {
+    console.error('[Knowledge] Could not create document import job:', { userId, fileName: body.fileName, message: error?.message || error });
+    res.status(500).json({ message: 'Không thể khởi tạo tác vụ nhập tài liệu.' });
+  }
+});
+
+// GET /api/knowledge/import-document/jobs/:jobId
+router.get('/import-document/jobs/:jobId', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  if (!/^[a-f\d]{24}$/i.test(req.params.jobId)) return res.status(404).json({ message: 'Không tìm thấy tác vụ nhập tài liệu.' });
+  const userId = String((req as any).user?.userId || 'admin');
+  const job = await getKnowledgeDocumentImportJob(req.params.jobId, userId);
+  if (!job) return res.status(404).json({ message: 'Không tìm thấy tác vụ nhập tài liệu.' });
+  res.json({
+    jobId: String(job._id),
+    fileName: job.fileName,
+    status: job.status,
+    stage: job.stage,
+    pageNumber: job.pageNumber,
+    totalPages: job.totalPages,
+    percent: job.percent,
+    message: job.message,
+    error: job.error,
+    result: job.result,
+    updatedAt: job.updatedAt,
+  });
+});
+
 router.post('/import-document', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
   const requestId = Math.random().toString(36).slice(2, 10).toUpperCase();
   try {

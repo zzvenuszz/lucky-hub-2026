@@ -4,6 +4,29 @@ const API_BASE = '/api';
 let isOfflineMode = false;
 const inFlightGetRequests = new Map<string, Promise<unknown>>();
 
+export interface KnowledgeDocumentImportJob {
+  jobId: string;
+  fileName: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  stage: string;
+  pageNumber: number;
+  totalPages: number;
+  percent: number;
+  message: string;
+  error?: string;
+  result?: {
+    inserted: number;
+    source: string;
+    pages: number;
+    embedded: number;
+    synthesized?: number;
+    alreadyImported: boolean;
+    needsResynthesis?: boolean;
+    reindexed: number;
+  } | null;
+  updatedAt?: string;
+}
+
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   return headers;
@@ -40,8 +63,26 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
       signal: controller.signal
     });
     
+    const contentType = res.headers.get('content-type') || 'không xác định';
+    const responseText = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      const bodyPreview = responseText
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 180);
+      const responseKind = !responseText.trim()
+        ? 'rỗng'
+        : /html|^\s*</i.test(`${contentType} ${responseText}`) ? 'HTML' : 'không phải JSON';
+      throw new Error(`${res.ok ? 'Phản hồi' : `Lỗi API ${res.status}`} ${responseKind} thay vì JSON (${contentType})${bodyPreview ? `: ${bodyPreview}` : ''}`);
+    }
+
     if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
+      const errorData = data && typeof data === 'object' ? data : {};
       const duration = Date.now() - startTime;
       const requestIdSuffix = errorData.requestId ? ` (Mã xử lý: ${errorData.requestId})` : '';
       const msg = `${errorData.message || `Lỗi API ${res.status}`}${requestIdSuffix}`;
@@ -55,7 +96,6 @@ async function request<T>(url: string, method = 'GET', body?: any, timeout = 150
       if (window.debugLog) window.debugLog(`[DB] FAIL ${normalizedMethod} ${url}: ${msg}`, "error", duration);
       throw new Error(msg);
     }
-    const data = await res.json();
     const duration = Date.now() - startTime;
     if (window.debugLog) window.debugLog(`[DB] OK ${normalizedMethod} ${url}`, "database", duration);
     return data;
@@ -171,6 +211,8 @@ export const Database = {
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data, 60000),
   updateKnowledge: (id: string, data: Partial<AIKnowledge>) => request<AIKnowledge>(`${API_BASE}/knowledge/${encodeURIComponent(id)}`, 'PUT', data, 60000),
   importKnowledgeDocument: (data: { fileName: string; mimeType: string; base64: string; category: string }) => request<{ success: boolean; requestId: string; inserted: number; synthesized?: number; needsResynthesis?: boolean; source: string; pages: number; embedded: number; alreadyImported: boolean; reindexed: number }>(`${API_BASE}/knowledge/import-document`, 'POST', data, 300000),
+  startKnowledgeDocumentImport: (data: { fileName: string; mimeType: string; base64: string; category: string }) => request<{ success: boolean; jobId: string; status: 'queued' }>(`${API_BASE}/knowledge/import-document/jobs`, 'POST', data, 300000),
+  getKnowledgeDocumentImportJob: (jobId: string) => request<KnowledgeDocumentImportJob>(`${API_BASE}/knowledge/import-document/jobs/${encodeURIComponent(jobId)}`),
   deleteKnowledgeDocument: (documentId: string) => request(`${API_BASE}/knowledge/document/${encodeURIComponent(documentId)}`, 'DELETE'),
   deleteKnowledge: (id: string) => request(`${API_BASE}/knowledge/${id}`, 'DELETE'),
   getRules: async () => (await request<AIRule[]>(`${API_BASE}/rules`)) ?? [],

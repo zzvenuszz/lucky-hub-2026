@@ -1,6 +1,6 @@
-import React, { memo, useCallback, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AIKnowledge } from '../../../types.ts';
-import { Database } from '../../../services/database.ts';
+import { Database, KnowledgeDocumentImportJob } from '../../../services/database.ts';
 import TagEditor from './TagEditor.tsx';
 import KnowledgeEntryEditor from './KnowledgeEntryEditor.tsx';
 
@@ -18,7 +18,36 @@ const CATEGORIES = [
   ['disease', 'Bệnh lý'],
 ];
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const ACTIVE_IMPORT_JOB_KEY = 'lucky_hub_knowledge_import_job';
 const getKnowledgeId = (item: AIKnowledge): string => item.id || String((item as any)._id || '');
+
+const wait = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms));
+
+async function watchKnowledgeDocumentImportJob(
+  jobId: string,
+  onProgress: (job: KnowledgeDocumentImportJob) => void,
+  shouldContinue: () => boolean = () => true,
+): Promise<KnowledgeDocumentImportJob | null> {
+  let consecutiveErrors = 0;
+  while (shouldContinue()) {
+    let job: KnowledgeDocumentImportJob | null;
+    try {
+      job = await Database.getKnowledgeDocumentImportJob(jobId);
+      consecutiveErrors = 0;
+    } catch (error) {
+      consecutiveErrors += 1;
+      if (/Lỗi API 404/.test(String((error as any)?.message || error))) throw error;
+      if (consecutiveErrors >= 10) throw error;
+      await wait(3000);
+      continue;
+    }
+    if (!job) throw new Error(`Không tìm thấy trạng thái tác vụ nhập ${jobId}.`);
+    onProgress(job);
+    if (job.status === 'completed' || job.status === 'failed') return job;
+    await wait(5000);
+  }
+  return null;
+}
 
 interface KnowledgeScanPair {
   first: AIKnowledge;
@@ -45,7 +74,59 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
   const [scanningConflicts, setScanningConflicts] = useState(false);
   const [scanResults, setScanResults] = useState<{ scanned: number; candidates: number; conflicts: KnowledgeScanPair[]; similar: KnowledgeScanPair[] } | null>(null);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
+  const [importProgress, setImportProgress] = useState<KnowledgeDocumentImportJob | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const finishImportJob = useCallback((job: KnowledgeDocumentImportJob) => {
+    localStorage.removeItem(ACTIVE_IMPORT_JOB_KEY);
+    if (job.status === 'failed') {
+      setStatus({ text: job.error || job.message || 'Không thể nhập tài liệu.', error: true });
+      window.debugLog?.(`[KnowledgeDocument] Nhập thất bại: ${job.error || job.message}`, 'error');
+      return;
+    }
+    const result = job.result;
+    if (!result) {
+      setStatus({ text: 'Tác vụ kết thúc nhưng máy chủ không trả kết quả nhập.', error: true });
+      return;
+    }
+    if (result.alreadyImported) {
+      const reindexMessage = result.reindexed ? ` Đã lập chỉ mục ngữ nghĩa cho ${result.reindexed} đoạn còn thiếu.` : '';
+      const resynthesisMessage = result.needsResynthesis ? ' Bản hiện tại được nhập bằng cách trích chữ cũ; hãy xóa tài liệu này rồi nhập lại để tạo kiến thức tổng hợp.' : '';
+      setStatus({ text: `Tài liệu ${result.source} đã được nhập trước đó; không tạo bản trùng.${resynthesisMessage}${reindexMessage}`, error: false });
+      console.log('[KnowledgeManager] Duplicate document confirmed in database; knowledge list refreshed:', { source: result.source, reindexed: result.reindexed });
+    } else {
+      const embeddedMessage = result.embedded ? ` ${result.embedded} đoạn đã lập chỉ mục ngữ nghĩa.` : ' Đang dùng tìm kiếm từ khóa; bật tác vụ Embedding trong Quản trị AI để dùng tìm kiếm ngữ nghĩa.';
+      const synthesizedMessage = typeof result.synthesized === 'number' ? ` AI đã tổng hợp ${result.synthesized}/${result.inserted} đoạn thành kiến thức có ngữ cảnh.` : '';
+      setStatus({ text: `Đã nhập ${result.inserted} đoạn từ ${result.source}.${synthesizedMessage}${embeddedMessage}`, error: false });
+      window.debugLog?.(`[KnowledgeDocument] Nhập xong: ${result.inserted} đoạn, tổng hợp AI ${result.synthesized || 0} đoạn, mã ${job.jobId}.`, 'system');
+      console.log('[KnowledgeManager] Document upload completed:', { jobId: job.jobId, ...result });
+    }
+    setScanResults(null);
+    onRefresh();
+  }, [onRefresh]);
+
+  const finishImportJobRef = useRef(finishImportJob);
+  finishImportJobRef.current = finishImportJob;
+
+  useEffect(() => {
+    const jobId = localStorage.getItem(ACTIVE_IMPORT_JOB_KEY);
+    if (!jobId) return;
+    let active = true;
+    setUploading(true);
+    watchKnowledgeDocumentImportJob(jobId, job => {
+      if (active) setImportProgress(job);
+    }, () => active).then(job => {
+      if (active && job) finishImportJobRef.current(job);
+    }).catch(error => {
+      if (active) {
+        if (/Lỗi API 404|Không tìm thấy trạng thái tác vụ/.test(String(error?.message || error))) localStorage.removeItem(ACTIVE_IMPORT_JOB_KEY);
+        setStatus({ text: error?.message || 'Không thể lấy tiến độ nhập tài liệu.', error: true });
+      }
+    }).finally(() => {
+      if (active) setUploading(false);
+    });
+    return () => { active = false; };
+  }, []);
 
   const documents = useMemo(() => {
     const groups = new Map<string, { documentId: string; source: string; category: string; chunks: AIKnowledge[] }>();
@@ -107,40 +188,26 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
       return;
     }
     setUploading(true);
-    setStatus({ text: 'Đang đọc, phân đoạn và lập chỉ mục tài liệu…', error: false });
+    setImportProgress(null);
+    setStatus({ text: 'Đang tải tài liệu lên để bắt đầu tác vụ nhập…', error: false });
     window.debugLog?.('[KnowledgeDocument] Bắt đầu nhập tài liệu.', 'system');
     console.log('[KnowledgeManager] Document upload started:', { fileName: file.name, mimeType, bytes: file.size, category: uploadCategory });
     try {
       const dataUrl = await readFileAsDataUrl(file);
       window.debugLog?.(`[KnowledgeDocument] Đọc tệp thành công (${file.name}, ${file.size} bytes).`, 'system');
-      window.debugLog?.('[KnowledgeDocument] Đang gửi tài liệu đến máy chủ để trích xuất và tổng hợp.', 'system');
-      const result = await Database.importKnowledgeDocument({
+      window.debugLog?.('[KnowledgeDocument] Đang gửi tài liệu đến máy chủ để tạo tác vụ nhập.', 'system');
+      const started = await Database.startKnowledgeDocumentImport({
         fileName: file.name,
         mimeType,
         base64: dataUrl.split(',')[1] || '',
         category: uploadCategory,
       });
-      if (result?.alreadyImported) {
-        const reindexMessage = result.reindexed ? ` Đã lập chỉ mục ngữ nghĩa cho ${result.reindexed} đoạn còn thiếu.` : '';
-        const resynthesisMessage = result.needsResynthesis ? ' Bản hiện tại được nhập bằng cách trích chữ cũ; hãy xóa tài liệu này rồi nhập lại để tạo kiến thức tổng hợp.' : '';
-        setStatus({ text: `Tài liệu ${result.source} đã được nhập trước đó; không tạo bản trùng.${resynthesisMessage}${reindexMessage}`, error: false });
-        setScanResults(null);
-        onRefresh();
-        console.log('[KnowledgeManager] Duplicate document confirmed in database; knowledge list refreshed:', { source: result.source, reindexed: result.reindexed });
-        return;
-      }
-      if (!Number.isInteger(result?.inserted) || result.inserted < 1) {
-        throw new Error(`Máy chủ không xác nhận đã lưu đoạn kiến thức${result?.requestId ? ` (mã ${result.requestId})` : ''}. Hãy kiểm tra log nhập tài liệu.`);
-      }
-      const embeddedMessage = result?.embedded ? ` ${result.embedded} đoạn đã lập chỉ mục ngữ nghĩa.` : ' Đang dùng tìm kiếm từ khóa; bật tác vụ Embedding trong Quản trị AI để dùng tìm kiếm ngữ nghĩa.';
-      const synthesizedMessage = typeof result?.synthesized === 'number'
-        ? ` AI đã tổng hợp ${result.synthesized}/${result.inserted} đoạn thành kiến thức có ngữ cảnh.`
-        : '';
-      setStatus({ text: `Đã nhập ${result?.inserted || 0} đoạn từ ${result?.source || file.name}.${synthesizedMessage}${embeddedMessage}`, error: false });
-      window.debugLog?.(`[KnowledgeDocument] Nhập xong: ${result?.inserted || 0} đoạn, tổng hợp AI ${result?.synthesized || 0} đoạn${result?.requestId ? `, mã ${result.requestId}` : ''}.`, 'system');
-      setScanResults(null);
-      console.log('[KnowledgeManager] Document upload completed:', result);
-      onRefresh();
+      if (!started?.jobId) throw new Error('Máy chủ không tạo được tác vụ nhập tài liệu.');
+      localStorage.setItem(ACTIVE_IMPORT_JOB_KEY, started.jobId);
+      window.debugLog?.(`[KnowledgeDocument] Đã tạo tác vụ nhập ${started.jobId}.`, 'system');
+      const job = await watchKnowledgeDocumentImportJob(started.jobId, setImportProgress);
+      if (!job) throw new Error('Theo dõi tác vụ nhập đã bị gián đoạn.');
+      finishImportJob(job);
     } catch (error: any) {
       console.error('[KnowledgeManager] Document upload failed:', error);
       window.debugLog?.(`[KnowledgeDocument] Nhập thất bại: ${error?.message || error}`, 'error');
@@ -148,7 +215,7 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
     } finally {
       setUploading(false);
     }
-  }, [onRefresh, uploadCategory]);
+  }, [finishImportJob, uploadCategory]);
 
   const handleDelete = useCallback(async (id: string) => {
     if (!confirm('Xác nhận xóa kiến thức này?')) return;
@@ -210,7 +277,7 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
 
         <div className="border-t border-emerald-100 pt-4 space-y-3">
           <div className="text-xs font-black text-emerald-800">Nhập tài liệu để chatbot tra cứu</div>
-          <div className="text-[11px] leading-relaxed text-emerald-900/70">PDF, JPG, PNG hoặc WEBP · tối đa 10 MB. Mỗi PDF tối đa 200 trang, trong đó tối đa 24 trang cần OCR. Tài liệu được trích xuất, chia đoạn và lập chỉ mục; đây là Knowledge Base, không phải fine-tuning mô hình.</div>
+          <div className="text-[11px] leading-relaxed text-emerald-900/70">PDF, JPG, PNG hoặc WEBP · tối đa 10 MB. PDF tối đa 200 trang; trang có hình ảnh được nhận diện lần lượt và hiển thị tiến độ. Tài liệu được trích xuất, chia đoạn và lập chỉ mục; đây là Knowledge Base, không phải fine-tuning mô hình.</div>
           <select value={uploadCategory} onChange={e => setUploadCategory(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm bg-white shadow-sm border-none outline-none focus:ring-1 focus:ring-emerald-500">
             {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
@@ -218,6 +285,16 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
           <button disabled={uploading} onClick={() => fileInputRef.current?.click()} className="w-full py-4 bg-white text-emerald-700 border border-emerald-200 rounded-2xl font-black uppercase text-[10px] shadow-sm disabled:opacity-50">
             {uploading ? 'Đang xử lý tài liệu…' : '⬆️ Tải PDF / hình ảnh'}
           </button>
+          {importProgress && <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-2" role="status" aria-live="polite">
+            <div className="flex items-center justify-between gap-3 text-[10px] font-bold text-emerald-800">
+              <span>{importProgress.message}</span>
+              <span className="shrink-0">{importProgress.percent}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-emerald-50" role="progressbar" aria-label="Tiến độ nhập tài liệu" aria-valuemin={0} aria-valuemax={100} aria-valuenow={importProgress.percent}>
+              <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${importProgress.percent}%` }} />
+            </div>
+            {importProgress.totalPages > 0 && <div className="text-[9px] text-slate-500">Trang {importProgress.pageNumber}/{importProgress.totalPages} · {importProgress.fileName}</div>}
+          </div>}
         </div>
         {status && <div role="status" className={`rounded-xl px-4 py-3 text-xs font-bold ${status.error ? 'bg-rose-50 text-rose-700' : 'bg-white text-emerald-700'}`}>{status.text}</div>}
       </div>
