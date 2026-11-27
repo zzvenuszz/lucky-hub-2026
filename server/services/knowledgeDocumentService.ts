@@ -11,6 +11,40 @@ const MAX_PDF_PAGES = 200;
 const CHUNK_CHAR_LIMIT = 2800;
 const CHUNK_OVERLAP = 280;
 const OCR_MAX_OUTPUT_TOKENS_PER_PAGE = 10000;
+const PDF_OPERATION_TIMEOUT_MS = 60000;
+
+class PdfOperationTimeoutError extends Error {
+  constructor(operation: string, pageNumber?: number) {
+    super(`Bộ đọc PDF quá thời gian ${PDF_OPERATION_TIMEOUT_MS / 1000} giây tại bước ${operation}${pageNumber ? `, trang ${pageNumber}` : ''}.`);
+    this.name = 'PdfOperationTimeoutError';
+  }
+}
+
+async function runPdfOperation<T>(
+  requestId: string,
+  operation: string,
+  pageNumber: number | undefined,
+  action: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  const context = { requestId, operation, ...(pageNumber ? { pageNumber } : {}) };
+  console.log(`[${MODULE}] PDF operation started:`, context);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      action(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new PdfOperationTimeoutError(operation, pageNumber)), PDF_OPERATION_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (error: any) {
+    console.error(`[${MODULE}] PDF operation failed:`, { ...context, durationMs: Date.now() - startedAt, name: error?.name, message: error?.message || error });
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    console.log(`[${MODULE}] PDF operation finished:`, { ...context, durationMs: Date.now() - startedAt });
+  }
+}
 
 export interface KnowledgeImportProgress {
   stage: 'extracting' | 'reading' | 'ocr' | 'synthesizing' | 'saving' | 'embedding';
@@ -90,7 +124,7 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
   const parser = new PDFParse({ data: new Uint8Array(buffer), verbosity: 0 });
   try {
     console.log(`[${MODULE}] PDF text extraction started:`, { requestId, bytes: buffer.length });
-    const info = await parser.getInfo();
+    const info = await runPdfOperation(requestId, 'getInfo', undefined, () => parser.getInfo());
     if (info.total > MAX_PDF_PAGES) throw new Error(`PDF vượt quá giới hạn ${MAX_PDF_PAGES} trang.`);
     if (info.total < 1) throw new Error('PDF không có trang để nhập.');
 
@@ -101,17 +135,19 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
       await onProgress?.({ stage: 'reading', pageNumber, totalPages: info.total, percent: pageProgress, message: `Đang xử lý trang ${pageNumber}/${info.total} - Đang đọc nội dung...` });
       let text = '';
       try {
-        const pageResult = await parser.getText({ partial: [pageNumber] });
+        const pageResult = await runPdfOperation(requestId, 'getText', pageNumber, () => parser.getText({ partial: [pageNumber] }));
         text = normalizeText(pageResult.pages.find(page => page.num === pageNumber)?.text || '');
       } catch (error: any) {
+        if (error instanceof PdfOperationTimeoutError) throw error;
         console.warn(`[${MODULE}] PDF text extraction failed; OCR fallback scheduled:`, { requestId, pageNumber, name: error?.name, message: error?.message });
       }
 
       let hasEmbeddedImages = false;
       try {
-        const embeddedImages = await parser.getImage({ partial: [pageNumber], imageThreshold: 80, imageBuffer: false, imageDataUrl: false });
+        const embeddedImages = await runPdfOperation(requestId, 'getImage', pageNumber, () => parser.getImage({ partial: [pageNumber], imageThreshold: 80, imageBuffer: false, imageDataUrl: false }));
         hasEmbeddedImages = !!embeddedImages.pages.find(page => page.pageNumber === pageNumber)?.images.length;
       } catch (error: any) {
+        if (error instanceof PdfOperationTimeoutError) throw error;
         hasEmbeddedImages = true;
         console.warn(`[${MODULE}] Embedded image detection failed; full-page OCR scheduled:`, { requestId, pageNumber, message: error?.message || error });
       }
@@ -119,7 +155,7 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
         scannedPages += 1;
         await onProgress?.({ stage: 'ocr', pageNumber, totalPages: info.total, percent: pageProgress, message: `Đang xử lý trang ${pageNumber}/${info.total} - ${hasEmbeddedImages ? 'Đang đọc chữ và hình ảnh...' : 'Đang nhận diện hình ảnh...'}` });
         console.log(`[${MODULE}] PDF OCR page started:`, { requestId, pageNumber, totalPages: info.total, scannedPages, hasEmbeddedImages, maxOutputTokens: OCR_MAX_OUTPUT_TOKENS_PER_PAGE });
-        const screenshots = await parser.getScreenshot({ partial: [pageNumber], scale: 1, imageBuffer: true, imageDataUrl: false });
+        const screenshots = await runPdfOperation(requestId, 'getScreenshot', pageNumber, () => parser.getScreenshot({ partial: [pageNumber], scale: 1, imageBuffer: true, imageDataUrl: false }));
         const screenshot = screenshots.pages.find(page => page.pageNumber === pageNumber);
         if (!screenshot) throw new Error(`Không tạo được ảnh để đọc trang PDF ${pageNumber}.`);
         const referenceText = text.length > 12000 ? `${text.slice(0, 12000)}\n...[đã rút gọn phần text tham chiếu]` : text || '(không có text trích xuất)';

@@ -4,6 +4,7 @@ import { invalidateKnowledgeRetrievalCache } from './knowledgeRetrievalService.t
 
 const MODULE = 'KnowledgeImportJob';
 const JOB_RETENTION_DAYS = 7;
+const STALE_JOB_TIMEOUT_MS = 3 * 60 * 1000;
 
 export interface KnowledgeDocumentImportJobResult {
   inserted: number;
@@ -86,6 +87,20 @@ export async function runKnowledgeDocumentImportJob(jobId: string, input: Knowle
 }
 
 export async function getKnowledgeDocumentImportJob(jobId: string, userId: string) {
+  const job = await KnowledgeImportJob.findOne({ _id: jobId, userId })
+    .select('fileName status stage pageNumber totalPages percent message error result createdAt updatedAt')
+    .lean()
+    .exec();
+  if (job?.status === 'processing' && Date.now() - new Date(job.updatedAt).getTime() > STALE_JOB_TIMEOUT_MS) {
+    const error = 'Tác vụ không cập nhật tiến độ trong hơn 3 phút và đã được dừng. Hãy nhập lại tài liệu; nếu lỗi lặp lại, hãy lưu PDF thành bản mới rồi thử lại.';
+    const result = await KnowledgeImportJob.updateOne(
+      { _id: jobId, userId, status: 'processing', updatedAt: job.updatedAt },
+      { $set: { status: 'failed', stage: 'failed', message: `Nhập tài liệu thất bại: ${error}`, error, expiresAt: new Date(Date.now() + JOB_RETENTION_DAYS * 24 * 60 * 60 * 1000) } },
+    );
+    if (result.modifiedCount) {
+      console.error(`[${MODULE}] Stale job marked failed:`, { jobId, userId, lastUpdatedAt: job.updatedAt, stage: job.stage, pageNumber: job.pageNumber, totalPages: job.totalPages });
+    }
+  }
   return KnowledgeImportJob.findOne({ _id: jobId, userId })
     .select('fileName status stage pageNumber totalPages percent message error result createdAt updatedAt')
     .lean()
