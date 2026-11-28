@@ -14,10 +14,11 @@ interface ChatWindowProps {
 
 function scrollToBottomDom(container: HTMLDivElement | null, smooth = false) {
   if (!container) return;
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   requestAnimationFrame(() => {
     container.scrollTo({ 
       top: container.scrollHeight, 
-      behavior: smooth ? 'smooth' : 'instant' as any 
+      behavior: smooth && !prefersReducedMotion ? 'smooth' : 'instant' as any
     });
   });
 }
@@ -51,6 +52,9 @@ const ChatWindow: React.FC<ChatWindowProps> = memo(({ chat, currentUid }) => {
   const isAtBottomRef = useRef(true);
   const initialScrollDone = useRef(false);
   const prevDateGroups = useRef<string[]>([]);
+  const previousMessagesRef = useRef({ chatId: chat.id, count: chat.messages.length });
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
 
   // Scroll xuống cuối khi lần đầu mở chat
   useEffect(() => {
@@ -61,12 +65,30 @@ const ChatWindow: React.FC<ChatWindowProps> = memo(({ chat, currentUid }) => {
     const timeoutId = setTimeout(() => {
       scrollToBottomDom(container);
       isAtBottomRef.current = true;
+      setIsAtBottom(true);
+      setHasNewMessages(false);
       initialScrollDone.current = true;
       console.log(`[ChatWindow] Initial scroll to bottom for chat ${chat.id}`);
     }, 100);
 
     return () => clearTimeout(timeoutId);
   }, [chat.id]);
+
+  useEffect(() => {
+    const previous = previousMessagesRef.current;
+    if (previous.chatId !== chat.id) {
+      previousMessagesRef.current = { chatId: chat.id, count: chat.messages.length };
+      setHasNewMessages(false);
+      return;
+    }
+    if (chat.messages.length > previous.count) {
+      const addedMessages = chat.messages.slice(previous.count);
+      if (!isAtBottomRef.current && addedMessages.some(message => message.senderId !== currentUid)) {
+        setHasNewMessages(true);
+      }
+    }
+    previousMessagesRef.current = { chatId: chat.id, count: chat.messages.length };
+  }, [chat.id, chat.messages, currentUid]);
 
   // Auto scroll khi có message mới (nếu đang ở bottom)
   useEffect(() => {
@@ -79,12 +101,17 @@ const ChatWindow: React.FC<ChatWindowProps> = memo(({ chat, currentUid }) => {
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    isAtBottomRef.current = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+    const atBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
+    isAtBottomRef.current = atBottom;
+    setIsAtBottom(previous => previous === atBottom ? previous : atBottom);
+    if (atBottom) setHasNewMessages(false);
   }, []);
 
   const handleScrollToBottom = useCallback(() => {
     scrollToBottomDom(scrollRef.current, true);
     isAtBottomRef.current = true;
+    setIsAtBottom(true);
+    setHasNewMessages(false);
   }, []);
 
   // Group messages by date
@@ -157,7 +184,7 @@ const ChatWindow: React.FC<ChatWindowProps> = memo(({ chat, currentUid }) => {
         )}
       </div>
 
-      {!isAtBottomRef.current && chat.messages.length > 0 && (
+      {!isAtBottom && hasNewMessages && chat.messages.length > 0 && (
         <button onClick={handleScrollToBottom} className="absolute bottom-20 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-emerald-100 bg-white px-4 py-2 text-xs font-black text-emerald-600 shadow-xl transition hover:bg-emerald-50">
           <span className="animate-bounce text-lg">↓</span>
           <span>Tin nhắn mới</span>

@@ -123,6 +123,23 @@
         .animate-spin {
             animation-duration: 1.8s !important;
         }
+        /* Làm dịu các animation lặp liên tục trên toàn ứng dụng. */
+        .animate-bounce {
+            animation-duration: 1.6s !important;
+        }
+        .animate-pulse {
+            animation-duration: 2.8s !important;
+        }
+        .animate-ping {
+            animation-duration: 1.8s !important;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                scroll-behavior: auto !important;
+                transition-duration: 0.01ms !important;
+                animation: none !important;
+            }
+        }
 
         /* 🎬 Button press & loading animations */
         @keyframes btn-ripple {
