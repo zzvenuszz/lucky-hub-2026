@@ -15,6 +15,65 @@ import { normalizeKnowledgeTags } from '../services/knowledgeTagService.ts';
 const router = Router();
 router.use(authMiddleware);
 
+const normalizeTagKey = (value: string) => value.toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+
+async function removeTrainingTagIfUnused(knowledgeIds: unknown[], topic: string, exceptReviewId?: string): Promise<void> {
+  const tagKey = normalizeTagKey(topic);
+  for (const rawId of knowledgeIds) {
+    const id = String(rawId);
+    const otherReviews = await AITrainingReview.find({
+      ...(exceptReviewId ? { _id: { $ne: exceptReviewId } } : {}),
+      status: 'approved',
+      approvedKnowledgeIds: id,
+    }).select('approvedTopic').lean().exec();
+    if (otherReviews.some(review => normalizeTagKey(review.approvedTopic || '') === tagKey)) continue;
+    const entry = await Knowledge.findById(id);
+    if (!entry) continue;
+    const remainingTags = (entry.tags || []).filter(tag => normalizeTagKey(tag) !== tagKey);
+    if (remainingTags.length === (entry.tags || []).length) continue;
+    entry.tags = normalizeKnowledgeTags(remainingTags);
+    await entry.save();
+  }
+}
+
+function validTrainingTopic(value: unknown): value is string {
+  return typeof value === 'string' && !!value.trim() && value.trim().length <= 42 && value.trim().split(/\s+/).length <= 4;
+}
+
+function getReviewKnowledgeIds(review: any): string[] {
+  return (review.suggestedKnowledgeIds || []).map(String);
+}
+
+function getApprovedKnowledgeIds(review: any): string[] {
+  return (review.approvedKnowledgeIds || []).map(String);
+}
+
+async function pruneTrainingReferences(removedKnowledgeIds: string[]): Promise<{ updated: number; deleted: number }> {
+  const removedIds = new Set(removedKnowledgeIds);
+  if (!removedIds.size) return { updated: 0, deleted: 0 };
+  const relatedReviews = await AITrainingReview.find({
+    $or: [
+      { suggestedKnowledgeIds: { $in: Array.from(removedIds) } },
+      { approvedKnowledgeIds: { $in: Array.from(removedIds) } },
+    ],
+  });
+  let deleted = 0;
+  for (const review of relatedReviews) {
+    review.suggestedKnowledgeIds = review.suggestedKnowledgeIds.filter(id => !removedIds.has(String(id))) as any;
+    review.approvedKnowledgeIds = review.approvedKnowledgeIds.filter(id => !removedIds.has(String(id))) as any;
+    const noActiveAssociations = review.status === 'approved'
+      ? review.approvedKnowledgeIds.length === 0
+      : review.suggestedKnowledgeIds.length === 0;
+    if (noActiveAssociations) {
+      await review.deleteOne();
+      deleted += 1;
+    } else {
+      await review.save();
+    }
+  }
+  return { updated: relatedReviews.length - deleted, deleted };
+}
+
 // GET /api/knowledge
 router.get('/', async (req: Request, res: Response) => {
   const data = await Knowledge.find();
@@ -71,12 +130,14 @@ router.post('/normalize-tags', requirePermission(RESOURCES.AI.MANAGE), async (_r
 
 router.patch('/training/reviews/:id', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
   const { decision, topic, knowledgeIds } = req.body || {};
-  if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ message: 'Quyết định duyệt không hợp lệ.' });
+  if (!['approve', 'reject', 'update'].includes(decision)) return res.status(400).json({ message: 'Quyết định duyệt không hợp lệ.' });
   try {
     const review = await AITrainingReview.findById(req.params.id);
     if (!review) return res.status(404).json({ message: 'Không tìm thấy đề xuất training.' });
-    if (review.status !== 'pending') return res.status(409).json({ message: 'Đề xuất này đã được xử lý.' });
+    if (decision === 'approve' && review.status !== 'pending') return res.status(409).json({ message: 'Đề xuất này đã được xử lý.' });
+    if (decision === 'update' && review.status !== 'approved') return res.status(409).json({ message: 'Chỉ có thể sửa mục đã duyệt.' });
     if (decision === 'reject') {
+      if (review.status !== 'pending') return res.status(409).json({ message: 'Chỉ có thể bỏ qua đề xuất đang chờ duyệt.' });
       review.status = 'rejected';
       review.reviewedBy = String(req.user?.userId || '');
       review.reviewedAt = new Date();
@@ -87,16 +148,23 @@ router.patch('/training/reviews/:id', requirePermission(RESOURCES.AI.MANAGE), as
     }
 
     const approvedTopic = typeof topic === 'string' ? topic.trim().replace(/^#+/, '').replace(/\s+/g, ' ') : '';
-    if (!approvedTopic || approvedTopic.length > 42 || approvedTopic.split(/\s+/).length > 4) {
+    if (!validTrainingTopic(approvedTopic)) {
       return res.status(400).json({ message: 'Chủ đề cần ngắn tối đa 4 từ và 42 ký tự.' });
     }
-    const proposedIds = new Set(review.suggestedKnowledgeIds.map(String));
+    const proposedIds = new Set(getReviewKnowledgeIds(review));
     const approvedIds = Array.isArray(knowledgeIds)
       ? Array.from(new Set(knowledgeIds.filter((id: unknown): id is string => typeof id === 'string' && proposedIds.has(id))))
       : [];
     if (!approvedIds.length) return res.status(400).json({ message: 'Hãy chọn ít nhất một mục kiến thức liên quan.' });
 
+    const previousTopic = review.approvedTopic;
+    const previousIds = getApprovedKnowledgeIds(review);
+    if (decision === 'update' && previousTopic) {
+      const removeIds = previousIds.filter(id => previousTopic !== approvedTopic || !approvedIds.includes(id));
+      await removeTrainingTagIfUnused(removeIds, previousTopic, String(review._id));
+    }
     const entries = await Knowledge.find({ _id: { $in: approvedIds } });
+    if (entries.length !== approvedIds.length) return res.status(409).json({ message: 'Một số mục kiến thức đã bị xóa. Hãy tải lại danh sách rồi duyệt lại.' });
     for (const entry of entries) {
       entry.tags = normalizeKnowledgeTags([approvedTopic, ...(entry.tags || [])]);
       await entry.save();
@@ -108,11 +176,28 @@ router.patch('/training/reviews/:id', requirePermission(RESOURCES.AI.MANAGE), as
     review.reviewedAt = new Date();
     await review.save();
     invalidateKnowledgeRetrievalCache();
-    console.log('[AITrainingReview] Proposal approved and feedback applied:', { id: review.id, topic: approvedTopic, knowledge: entries.length, reviewer: review.reviewedBy });
+    console.log(`[AITrainingReview] Proposal ${decision === 'update' ? 'updated' : 'approved'} and feedback applied:`, { id: review.id, topic: approvedTopic, knowledge: entries.length, reviewer: review.reviewedBy });
     res.json({ success: true, status: review.status, topic: approvedTopic, appliedTo: entries.length });
   } catch (error: any) {
     console.error('[AITrainingReview] Proposal update failed:', error?.message || error);
     res.status(500).json({ message: 'Không thể cập nhật đề xuất training.' });
+  }
+});
+
+router.delete('/training/reviews/:id', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  try {
+    const review = await AITrainingReview.findById(req.params.id);
+    if (!review) return res.status(404).json({ message: 'Không tìm thấy mục training.' });
+    if (review.status === 'approved' && review.approvedTopic) {
+      await removeTrainingTagIfUnused(getApprovedKnowledgeIds(review), review.approvedTopic, String(review._id));
+    }
+    await review.deleteOne();
+    invalidateKnowledgeRetrievalCache();
+    console.log('[AITrainingReview] Training item deleted:', { id: String(review._id), status: review.status });
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[AITrainingReview] Training item deletion failed:', error?.message || error);
+    res.status(500).json({ message: 'Không thể xóa mục training.' });
   }
 });
 
@@ -212,10 +297,17 @@ router.post('/import-document', requirePermission(RESOURCES.AI.MANAGE), async (r
 
 // DELETE /api/knowledge/document/:documentId (new bulk delete endpoint)
 router.delete('/document/:documentId', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
-  const result = await Knowledge.deleteMany({ documentId: req.params.documentId });
-  invalidateKnowledgeRetrievalCache();
-  console.log('[Knowledge] Source document deleted:', { documentId: req.params.documentId, deletedCount: result.deletedCount || 0 });
-  res.json({ success: true, deletedCount: result.deletedCount || 0 });
+  try {
+    const entries = await Knowledge.find({ documentId: req.params.documentId }).select('_id').lean().exec();
+    const training = await pruneTrainingReferences(entries.map(entry => String(entry._id)));
+    const result = await Knowledge.deleteMany({ documentId: req.params.documentId });
+    invalidateKnowledgeRetrievalCache();
+    console.log('[Knowledge] Source document and linked training removed:', { documentId: req.params.documentId, deletedCount: result.deletedCount || 0, updatedTraining: training.updated, deletedTraining: training.deleted });
+    res.json({ success: true, deletedCount: result.deletedCount || 0, removedTraining: training.deleted, updatedTraining: training.updated });
+  } catch (error: any) {
+    console.error('[Knowledge] Source document deletion failed:', { documentId: req.params.documentId, message: error?.message || error });
+    res.status(500).json({ message: 'Không thể xóa tài liệu và dữ liệu training liên quan.' });
+  }
 });
 
 // PUT /api/knowledge/:id
@@ -266,9 +358,18 @@ router.put('/:id', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, 
 
 // DELETE /api/knowledge/:id
 router.delete('/:id', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
-  await Knowledge.findByIdAndDelete(req.params.id);
-  invalidateKnowledgeRetrievalCache();
-  res.json({ success: true });
+  try {
+    const entry = await Knowledge.findById(req.params.id).select('_id');
+    if (!entry) return res.status(404).json({ message: 'Không tìm thấy kiến thức.' });
+    const training = await pruneTrainingReferences([String(entry._id)]);
+    await entry.deleteOne();
+    invalidateKnowledgeRetrievalCache();
+    console.log('[Knowledge] Entry and linked training removed:', { id: String(entry._id), deletedTraining: training.deleted, updatedTraining: training.updated });
+    res.json({ success: true, removedTraining: training.deleted, updatedTraining: training.updated });
+  } catch (error: any) {
+    console.error('[Knowledge] Entry deletion failed:', { id: req.params.id, message: error?.message || error });
+    res.status(500).json({ message: 'Không thể xóa kiến thức.' });
+  }
 });
 
 export default router;

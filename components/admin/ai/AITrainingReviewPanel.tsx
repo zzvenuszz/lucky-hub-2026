@@ -8,6 +8,7 @@ interface AITrainingReviewPanelProps {
 
 const AITrainingReviewPanel: React.FC<AITrainingReviewPanelProps> = memo(({ knowledge }) => {
   const [reviews, setReviews] = useState<AITrainingReview[]>([]);
+  const [queueStatus, setQueueStatus] = useState<'pending' | 'approved'>('pending');
   const [selectedTopics, setSelectedTopics] = useState<Record<string, string>>({});
   const [selectedKnowledge, setSelectedKnowledge] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
@@ -17,10 +18,10 @@ const AITrainingReviewPanel: React.FC<AITrainingReviewPanelProps> = memo(({ know
   const loadReviews = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await Database.getAITrainingReviews('pending');
+      const result = await Database.getAITrainingReviews(queueStatus);
       setReviews(result || []);
-      setSelectedTopics(current => Object.fromEntries((result || []).map(item => [item.id, current[item.id] || item.topics[0]?.label || ''])));
-      setSelectedKnowledge(current => Object.fromEntries((result || []).map(item => [item.id, current[item.id] ?? []])));
+      setSelectedTopics(current => Object.fromEntries((result || []).map(item => [item.id, current[item.id] || item.approvedTopic || item.topics[0]?.label || ''])));
+      setSelectedKnowledge(current => Object.fromEntries((result || []).map(item => [item.id, current[item.id] ?? (item.status === 'approved' ? item.approvedKnowledgeIds : [])])));
       setError('');
     } catch (loadError: any) {
       console.error('[AITrainingReviewPanel] Failed to load proposals:', loadError?.message || loadError);
@@ -28,11 +29,11 @@ const AITrainingReviewPanel: React.FC<AITrainingReviewPanelProps> = memo(({ know
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [queueStatus]);
 
   useEffect(() => { void loadReviews(); }, [loadReviews]);
 
-  const handleReview = useCallback(async (review: AITrainingReview, decision: 'approve' | 'reject') => {
+  const handleReview = useCallback(async (review: AITrainingReview, decision: 'approve' | 'reject' | 'update') => {
     setBusyId(review.id);
     try {
       await Database.reviewAITrainingProposal(review.id, {
@@ -41,7 +42,11 @@ const AITrainingReviewPanel: React.FC<AITrainingReviewPanelProps> = memo(({ know
         knowledgeIds: selectedKnowledge[review.id] || [],
       });
       console.log('[AITrainingReviewPanel] Proposal reviewed:', { reviewId: review.id, decision });
-      setReviews(current => current.filter(item => item.id !== review.id));
+      if (decision === 'update') {
+        setReviews(current => current.map(item => item.id === review.id ? { ...item, approvedTopic: selectedTopics[review.id], approvedKnowledgeIds: selectedKnowledge[review.id] || [] } : item));
+      } else {
+        setReviews(current => current.filter(item => item.id !== review.id));
+      }
       setError('');
     } catch (reviewError: any) {
       console.error('[AITrainingReviewPanel] Proposal review failed:', reviewError?.message || reviewError);
@@ -50,6 +55,22 @@ const AITrainingReviewPanel: React.FC<AITrainingReviewPanelProps> = memo(({ know
       setBusyId('');
     }
   }, [selectedKnowledge, selectedTopics]);
+
+  const handleDelete = useCallback(async (review: AITrainingReview) => {
+    if (!window.confirm('Xóa mục training này? Tag liên quan sẽ được gỡ khỏi kiến thức nếu không còn mục training nào khác sử dụng.')) return;
+    setBusyId(review.id);
+    try {
+      await Database.deleteAITrainingReview(review.id);
+      setReviews(current => current.filter(item => item.id !== review.id));
+      console.log('[AITrainingReviewPanel] Training item deleted:', { reviewId: review.id });
+      setError('');
+    } catch (deleteError: any) {
+      console.error('[AITrainingReviewPanel] Training item deletion failed:', deleteError?.message || deleteError);
+      setError(deleteError?.message || 'Không thể xóa mục training.');
+    } finally {
+      setBusyId('');
+    }
+  }, []);
 
   const toggleKnowledge = useCallback((reviewId: string, knowledgeId: string) => {
     setSelectedKnowledge(current => {
@@ -67,8 +88,12 @@ const AITrainingReviewPanel: React.FC<AITrainingReviewPanelProps> = memo(({ know
         </div>
         <button type="button" onClick={() => void loadReviews()} disabled={loading} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-50">Làm mới</button>
       </div>
+      <div className="mb-4 flex gap-2">
+        <button type="button" onClick={() => setQueueStatus('pending')} className={`rounded-xl px-3 py-2 text-xs font-black ${queueStatus === 'pending' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Chờ duyệt</button>
+        <button type="button" onClick={() => setQueueStatus('approved')} className={`rounded-xl px-3 py-2 text-xs font-black ${queueStatus === 'approved' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Đã huấn luyện</button>
+      </div>
       {error && <div role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-700">{error}</div>}
-      {loading ? <div className="py-8 text-center text-sm text-slate-400">Đang tải đề xuất…</div> : reviews.length === 0 ? <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">Chưa có đề xuất chờ duyệt. Đề xuất sẽ xuất hiện khi AI truy xuất được kiến thức cho câu chat.</div> : (
+      {loading ? <div className="py-8 text-center text-sm text-slate-400">Đang tải đề xuất…</div> : reviews.length === 0 ? <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-500">{queueStatus === 'pending' ? 'Chưa có đề xuất chờ duyệt. Đề xuất sẽ xuất hiện khi AI truy xuất được kiến thức cho câu chat.' : 'Chưa có mục training nào được duyệt.'}</div> : (
         <div className="space-y-4">
           {reviews.map(review => {
             const selectedIds = selectedKnowledge[review.id] || [];
@@ -88,8 +113,13 @@ const AITrainingReviewPanel: React.FC<AITrainingReviewPanelProps> = memo(({ know
                   })}
                 </div>
                 <div className="mt-4 flex justify-end gap-2">
-                  <button type="button" disabled={busyId === review.id} onClick={() => void handleReview(review, 'reject')} className="rounded-xl border border-rose-200 px-4 py-2 text-xs font-black text-rose-700 disabled:opacity-50">Bỏ qua</button>
-                  <button type="button" disabled={busyId === review.id || !selectedIds.length} onClick={() => void handleReview(review, 'approve')} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{busyId === review.id ? 'Đang lưu…' : 'Duyệt và áp dụng'}</button>
+                  {review.status === 'approved' ? <>
+                    <button type="button" disabled={busyId === review.id} onClick={() => void handleDelete(review)} className="rounded-xl border border-rose-200 px-4 py-2 text-xs font-black text-rose-700 disabled:opacity-50">Xóa training</button>
+                    <button type="button" disabled={busyId === review.id || !selectedIds.length} onClick={() => void handleReview(review, 'update')} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{busyId === review.id ? 'Đang lưu…' : 'Lưu chỉnh sửa'}</button>
+                  </> : <>
+                    <button type="button" disabled={busyId === review.id} onClick={() => void handleReview(review, 'reject')} className="rounded-xl border border-rose-200 px-4 py-2 text-xs font-black text-rose-700 disabled:opacity-50">Bỏ qua</button>
+                    <button type="button" disabled={busyId === review.id || !selectedIds.length} onClick={() => void handleReview(review, 'approve')} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50">{busyId === review.id ? 'Đang lưu…' : 'Duyệt và áp dụng'}</button>
+                  </>}
                 </div>
               </article>
             );
