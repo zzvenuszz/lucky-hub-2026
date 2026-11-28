@@ -9,6 +9,8 @@ import { callAIEmbeddings } from '../services/ai/oaiRouter.ts';
 import { invalidateKnowledgeRetrievalCache } from '../services/knowledgeRetrievalService.ts';
 import { scanKnowledgeConflicts } from '../services/knowledgeConflictService.ts';
 import { createKnowledgeDocumentImportJob, getKnowledgeDocumentImportJob, runKnowledgeDocumentImportJob } from '../services/knowledgeImportJobService.ts';
+import { AITrainingReview } from '../models/AITrainingReview.ts';
+import { normalizeKnowledgeTags } from '../services/knowledgeTagService.ts';
 
 const router = Router();
 router.use(authMiddleware);
@@ -31,13 +33,96 @@ router.post('/scan-conflicts', requirePermission(RESOURCES.AI.MANAGE), async (re
   }
 });
 
+router.get('/training/reviews', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  try {
+    const status = ['pending', 'approved', 'rejected'].includes(String(req.query.status)) ? String(req.query.status) : 'pending';
+    const reviews = await AITrainingReview.find({ status }).sort({ createdAt: -1 }).limit(100).lean().exec();
+    res.json(reviews.map(review => ({
+      ...review,
+      id: String(review._id),
+      suggestedKnowledgeIds: (review.suggestedKnowledgeIds || []).map(String),
+      approvedKnowledgeIds: (review.approvedKnowledgeIds || []).map(String),
+    })));
+  } catch (error: any) {
+    console.error('[AITrainingReview] Queue load failed:', error?.message || error);
+    res.status(500).json({ message: 'Không thể tải hàng chờ duyệt.' });
+  }
+});
+
+router.post('/normalize-tags', requirePermission(RESOURCES.AI.MANAGE), async (_req: Request, res: Response) => {
+  try {
+    const entries = await Knowledge.find({ tags: { $exists: true, $ne: [] } }).select('keyword tags').exec();
+    let updated = 0;
+    for (const entry of entries) {
+      const tags = normalizeKnowledgeTags(entry.tags, entry.keyword);
+      if (JSON.stringify(tags) === JSON.stringify(entry.tags || [])) continue;
+      entry.tags = tags;
+      await entry.save();
+      updated += 1;
+    }
+    invalidateKnowledgeRetrievalCache();
+    console.log('[Knowledge] Existing tags normalized:', { scanned: entries.length, updated });
+    res.json({ success: true, scanned: entries.length, updated });
+  } catch (error: any) {
+    console.error('[Knowledge] Existing tag normalization failed:', error?.message || error);
+    res.status(500).json({ message: 'Không thể chuẩn hóa tag hiện có.' });
+  }
+});
+
+router.patch('/training/reviews/:id', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, res: Response) => {
+  const { decision, topic, knowledgeIds } = req.body || {};
+  if (!['approve', 'reject'].includes(decision)) return res.status(400).json({ message: 'Quyết định duyệt không hợp lệ.' });
+  try {
+    const review = await AITrainingReview.findById(req.params.id);
+    if (!review) return res.status(404).json({ message: 'Không tìm thấy đề xuất training.' });
+    if (review.status !== 'pending') return res.status(409).json({ message: 'Đề xuất này đã được xử lý.' });
+    if (decision === 'reject') {
+      review.status = 'rejected';
+      review.reviewedBy = String(req.user?.userId || '');
+      review.reviewedAt = new Date();
+      await review.save();
+      invalidateKnowledgeRetrievalCache();
+      console.log('[AITrainingReview] Proposal rejected:', { id: review.id, reviewer: review.reviewedBy });
+      return res.json({ success: true, status: review.status });
+    }
+
+    const approvedTopic = typeof topic === 'string' ? topic.trim().replace(/^#+/, '').replace(/\s+/g, ' ') : '';
+    if (!approvedTopic || approvedTopic.length > 42 || approvedTopic.split(/\s+/).length > 4) {
+      return res.status(400).json({ message: 'Chủ đề cần ngắn tối đa 4 từ và 42 ký tự.' });
+    }
+    const proposedIds = new Set(review.suggestedKnowledgeIds.map(String));
+    const approvedIds = Array.isArray(knowledgeIds)
+      ? Array.from(new Set(knowledgeIds.filter((id: unknown): id is string => typeof id === 'string' && proposedIds.has(id))))
+      : [];
+    if (!approvedIds.length) return res.status(400).json({ message: 'Hãy chọn ít nhất một mục kiến thức liên quan.' });
+
+    const entries = await Knowledge.find({ _id: { $in: approvedIds } });
+    for (const entry of entries) {
+      entry.tags = normalizeKnowledgeTags([approvedTopic, ...(entry.tags || [])]);
+      await entry.save();
+    }
+    review.status = 'approved';
+    review.approvedTopic = approvedTopic;
+    review.approvedKnowledgeIds = entries.map(entry => entry._id);
+    review.reviewedBy = String(req.user?.userId || '');
+    review.reviewedAt = new Date();
+    await review.save();
+    invalidateKnowledgeRetrievalCache();
+    console.log('[AITrainingReview] Proposal approved and feedback applied:', { id: review.id, topic: approvedTopic, knowledge: entries.length, reviewer: review.reviewedBy });
+    res.json({ success: true, status: review.status, topic: approvedTopic, appliedTo: entries.length });
+  } catch (error: any) {
+    console.error('[AITrainingReview] Proposal update failed:', error?.message || error);
+    res.status(500).json({ message: 'Không thể cập nhật đề xuất training.' });
+  }
+});
+
 // POST /api/knowledge
 router.post('/', requirePermission(RESOURCES.AI.MANAGE), validateBody(
   { field: 'keyword', type: 'string', required: true, max: 200 },
   { field: 'content', type: 'string', required: true, max: 5000 }
 ), async (req: Request, res: Response) => {
   console.log('[Knowledge] Manual entry save started:', { keyword: req.body.keyword, category: req.body.category || 'general' });
-  const k = new Knowledge(req.body);
+  const k = new Knowledge({ ...req.body, tags: normalizeKnowledgeTags(req.body.tags, String(req.body.keyword || '')) });
   try {
     const result = await callAIEmbeddings(`knowledge-save-${Date.now().toString(36)}`, [String(req.body.content)], (req as any).user?.userId || 'admin');
     k.embedding = result.embeddings[0];
@@ -145,7 +230,7 @@ router.put('/:id', requirePermission(RESOURCES.AI.MANAGE), async (req: Request, 
   const allowedCategories = ['nutrition', 'meal_plan', 'exercise', 'health_advice', 'disease', 'general'];
   if (category && !allowedCategories.includes(category)) return res.status(400).json({ message: 'Danh mục kiến thức không hợp lệ.' });
   const cleanTags = Array.isArray(tags)
-    ? Array.from(new Set(tags.filter((tag: unknown) => typeof tag === 'string').map((tag: string) => tag.trim().replace(/^#+/, '').slice(0, 40)).filter(Boolean))).slice(0, 20)
+    ? normalizeKnowledgeTags(tags, keyword.trim())
     : [];
 
   try {

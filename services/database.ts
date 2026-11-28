@@ -214,6 +214,9 @@ export const Database = {
   // Knowledge & Rules
   getKnowledge: async () => (await request<AIKnowledge[]>(`${API_BASE}/knowledge`)) ?? [],
   scanKnowledgeConflicts: () => request<{ success: boolean; scanned: number; candidates: number; conflicts: Array<{ first: AIKnowledge; second: AIKnowledge; reason: string; score: number }>; similar: Array<{ first: AIKnowledge; second: AIKnowledge; reason: string; score: number }> }>(`${API_BASE}/knowledge/scan-conflicts`, 'POST', {}, 180000),
+  getAITrainingReviews: (status = 'pending') => request<AITrainingReview[]>(`${API_BASE}/knowledge/training/reviews?status=${encodeURIComponent(status)}`),
+  reviewAITrainingProposal: (id: string, data: { decision: 'approve' | 'reject'; topic?: string; knowledgeIds?: string[] }) => request<{ success: boolean; status: string; topic?: string; appliedTo?: number }>(`${API_BASE}/knowledge/training/reviews/${encodeURIComponent(id)}`, 'PATCH', data),
+  normalizeKnowledgeTags: () => request<{ success: boolean; scanned: number; updated: number }>(`${API_BASE}/knowledge/normalize-tags`, 'POST', {}),
   addKnowledge: (data: Omit<AIKnowledge, 'id'>) => request<AIKnowledge>(`${API_BASE}/knowledge`, 'POST', data, 60000),
   updateKnowledge: (id: string, data: Partial<AIKnowledge>) => request<AIKnowledge>(`${API_BASE}/knowledge/${encodeURIComponent(id)}`, 'PUT', data, 60000),
   importKnowledgeDocument: (data: { fileName: string; mimeType: string; base64: string; category: string }) => request<{ success: boolean; requestId: string; inserted: number; synthesized?: number; needsResynthesis?: boolean; source: string; pages: number; embedded: number; alreadyImported: boolean; reindexed: number }>(`${API_BASE}/knowledge/import-document`, 'POST', data, 300000),
@@ -359,3 +362,13 @@ export const Database = {
   setAIDebugMode: (enabled: boolean) => request<{ success: boolean, debugMode: boolean }>(`${API_BASE}/admin/ai/logs/debug-mode`, 'PUT', { enabled }),
   cleanAILogs: async (olderThanDays: number) => (await request<{ deletedCount: number }>(`${API_BASE}/admin/ai/logs?olderThanDays=${encodeURIComponent(olderThanDays)}`, 'DELETE')) ?? { deletedCount: 0 },
 };
+
+export interface AITrainingReview {
+  id: string;
+  query: string;
+  topics: Array<{ label: string; score: number }>;
+  suggestedKnowledgeIds: string[];
+  approvedKnowledgeIds: string[];
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}

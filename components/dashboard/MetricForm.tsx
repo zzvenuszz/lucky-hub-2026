@@ -556,7 +556,9 @@ const MetricForm: React.FC<MetricFormProps> = ({ onSave, onSaveBulk, existingDat
                       // iOS hint to show Next button on numeric keypad
                       enterKeyHint="next"
                       // Store ref for custom focus handling
-                      ref={el => (inputRefs.current[idx] = el)}
+                      ref={el => {
+                        inputRefs.current[idx] = el;
+                      }}
                       onKeyDown={e => {
                         if (e.key === 'Enter') {
                           e.preventDefault();

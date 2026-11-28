@@ -4,6 +4,7 @@ import { Goal } from '../models/Goal.ts';
 import { Knowledge } from '../models/Knowledge.ts';
 import { Rule } from '../models/Rule.ts';
 import { classifyKnowledgeCategories, searchRelevantKnowledge as retrieveRelevantKnowledge } from './knowledgeRetrievalService.ts';
+import { queueAITrainingReview } from './aiTrainingReviewService.ts';
 
 const MODULE = 'ChatContextService';
 
@@ -312,24 +313,15 @@ export async function buildChatSystemContext(
 
     // 2. Then fetch knowledge & rules in parallel using userContext - with individual error handling
     let relevantKnowledge: any[] = [];
-    let baseNutritionKnowledge: any[] = [];
     let rules: any[] = [];
 
     const queryCategories = classifyKnowledgeCategories(userMessage);
     try {
       relevantKnowledge = await searchRelevantKnowledge(userMessage, (userContext.goals || []).map(g => g.type), { limit: 5, categories: queryCategories });
+      void queueAITrainingReview(userMessage, relevantKnowledge);
     } catch (e) {
       logger.error('searchRelevantKnowledge failed', e);
       relevantKnowledge = [];
-    }
-
-    try {
-      if (queryCategories.includes('nutrition') && relevantKnowledge.length < 2) {
-        baseNutritionKnowledge = await getBaseKnowledge('nutrition', 1);
-      }
-    } catch (e) {
-      logger.error('getBaseKnowledge failed', e);
-      baseNutritionKnowledge = [];
     }
 
     try {
@@ -361,17 +353,8 @@ export async function buildChatSystemContext(
       knowledgeParts.push('=== KIẾN THỨC LIÊN QUAN (từ Knowledge Base) ===');
       for (const [i, entry] of relevantKnowledge.entries()) {
         const sourceLabel = entry.source ? ` | Nguồn: ${entry.source}${entry.pageNumber ? `, trang ${entry.pageNumber}` : ''}` : '';
-        const section = `[${i + 1}] ${entry.keyword}${sourceLabel}: ${entry.content}`;
-        if (knowledgeChars + section.length > KNOWLEDGE_CHAR_BUDGET) continue;
-        knowledgeParts.push(section);
-        knowledgeChars += section.length;
-      }
-    }
-
-    if (Array.isArray(baseNutritionKnowledge) && baseNutritionKnowledge.length > 0) {
-      knowledgeParts.push('\n=== KIẾN THỨC DINH DƯỠNG CƠ BẢN ===');
-      for (const [i, entry] of baseNutritionKnowledge.entries()) {
-        const section = `[Nền ${i + 1}] ${entry.keyword}: ${entry.content}`;
+        const tagLabel = entry.tags?.length ? ` | Tags: ${entry.tags.join(', ')}` : '';
+        const section = `[${i + 1}] ${entry.keyword}${tagLabel}${sourceLabel}: ${entry.content}`;
         if (knowledgeChars + section.length > KNOWLEDGE_CHAR_BUDGET) continue;
         knowledgeParts.push(section);
         knowledgeChars += section.length;
@@ -415,7 +398,7 @@ ${knowledgeContext}
 ${rulesStr}
 
 === ƯU TIÊN KIẾN THỨC VÀ HƯỚNG DẪN TRẢ LỜI ===
-1. Nếu phần Knowledge Base phía trên có dữ kiện liên quan câu hỏi, hãy dùng các dữ kiện đó làm căn cứ chính và áp dụng trực tiếp vào tình huống người dùng. Không bỏ qua, không trả lời chung chung như chưa có dữ liệu khi thông tin đã có trong Knowledge Base.
+1. Dùng mức độ phù hợp của chủ đề, cách diễn đạt gần nghĩa và nội dung để chọn Knowledge liên quan; tag chỉ là một tín hiệu. Nếu Knowledge Base có dữ kiện phù hợp, hãy ưu tiên áp dụng nội dung đó và không trả lời chung chung như chưa có dữ liệu.
 2. Nếu không có mục Knowledge phù hợp, hãy dùng kiến thức khoa học phổ biến đáng tin cậy, nói rõ khi còn thiếu dữ liệu và không bịa số liệu hoặc nguồn trích dẫn.
 3. Trả lời tiếng Việt như một cuộc trò chuyện tự nhiên, chuyên nghiệp, thân thiện. Không mở đầu bằng tên hoặc nhãn "Trợ lý Lucky:"; xưng "mình" khi cần và gọi người dùng là "bạn" hoặc tên.
 4. Mặc định dùng văn bản thuần với đoạn ngắn. Tránh dấu **, dấu * để nhấn mạnh, tiêu đề Markdown và danh sách dài; chỉ dùng gạch đầu dòng khi thật sự giúp dễ hiểu.
@@ -429,7 +412,6 @@ ${rulesStr}
     logger.info(`System context built in ${duration}ms`, {
       categories: queryCategories,
       retrievedKnowledge: relevantKnowledge.length,
-      baseKnowledge: baseNutritionKnowledge.length,
       knowledgeChars,
       rulesUsed: selectedRules.length,
       rulesChars: ruleChars,

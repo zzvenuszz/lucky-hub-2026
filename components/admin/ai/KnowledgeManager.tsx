@@ -73,6 +73,7 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
   const [editingEntry, setEditingEntry] = useState<AIKnowledge | null>(null);
   const [savingEntry, setSavingEntry] = useState(false);
   const [scanningConflicts, setScanningConflicts] = useState(false);
+  const [normalizingTags, setNormalizingTags] = useState(false);
   const [scanResults, setScanResults] = useState<{ scanned: number; candidates: number; conflicts: KnowledgeScanPair[]; similar: KnowledgeScanPair[] } | null>(null);
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null);
   const [importProgress, setImportProgress] = useState<KnowledgeDocumentImportJob | null>(null);
@@ -290,6 +291,22 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
     }
   }, [knowledge]);
 
+  const handleNormalizeTags = useCallback(async () => {
+    setNormalizingTags(true);
+    setStatus({ text: 'Đang chuẩn hóa các tag dài thành cụm ngắn…', error: false });
+    try {
+      const result = await Database.normalizeKnowledgeTags();
+      setStatus({ text: `Đã quét ${result.scanned} mục kiến thức và chuẩn hóa tag trong ${result.updated} mục.`, error: false });
+      console.log('[KnowledgeManager] Existing tags normalized:', result);
+      onRefresh();
+    } catch (error: any) {
+      console.error('[KnowledgeManager] Existing tag normalization failed:', error?.message || error);
+      setStatus({ text: error?.message || 'Không thể chuẩn hóa tag hiện có.', error: true });
+    } finally {
+      setNormalizingTags(false);
+    }
+  }, [onRefresh]);
+
   const handleDeleteDocument = useCallback(async (documentId: string, source: string) => {
     if (!confirm(`Xóa toàn bộ kiến thức được nhập từ “${source}”?`)) return;
     setBusyDocumentId(documentId);
@@ -359,11 +376,16 @@ const KnowledgeManager: React.FC<KnowledgeManagerProps> = ({ knowledge, onRefres
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-3 px-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4">
           <h4 className="font-black text-slate-400 uppercase tracking-widest text-[10px]">Kho kiến thức ({knowledge.length})</h4>
-          <button type="button" disabled={scanningConflicts || !knowledge.length} onClick={handleScanConflicts} className="shrink-0 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-black uppercase disabled:opacity-50">
-            {scanningConflicts ? 'Đang rà soát…' : '🔎 Rà soát xung đột'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={normalizingTags || !knowledge.length} onClick={handleNormalizeTags} className="shrink-0 px-4 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-black uppercase disabled:opacity-50">
+              {normalizingTags ? 'Đang chuẩn hóa…' : '🏷️ Chuẩn hóa tag cũ'}
+            </button>
+            <button type="button" disabled={scanningConflicts || !knowledge.length} onClick={handleScanConflicts} className="shrink-0 px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-black uppercase disabled:opacity-50">
+              {scanningConflicts ? 'Đang rà soát…' : '🔎 Rà soát xung đột'}
+            </button>
+          </div>
         </div>
         {scanResults && <div className="space-y-3">
           {!!scanResults.conflicts.length && <div className="space-y-2">

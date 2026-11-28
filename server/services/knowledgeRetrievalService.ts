@@ -1,4 +1,5 @@
 import { Knowledge } from '../models/Knowledge.ts';
+import { AITrainingReview } from '../models/AITrainingReview.ts';
 import { callAIEmbeddings } from './ai/oaiRouter.ts';
 
 export type KnowledgeCategory = 'nutrition' | 'meal_plan' | 'exercise' | 'health_advice' | 'disease' | 'general';
@@ -20,6 +21,7 @@ let vectorCache: { expiresAt: number; entries: RetrievedKnowledge[] } | null = n
 let lastEmbeddingWarningAt = 0;
 let lastTextIndexWarningAt = 0;
 let embeddingUnavailableUntil = 0;
+let rejectedFeedbackCache: { expiresAt: number; entries: Array<{ query: string; knowledgeIds: string[] }> } | null = null;
 
 const normalize = (text: string): string => text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 const STOP_WORDS = new Set(['cua', 'nhung', 'nhu', 'cho', 'voi', 'theo', 'la', 'gi', 'nao', 'sao', 'toi', 'ban', 'minh', 'hay', 'va', 'co', 'khong', 'cac', 'mot', 'nhieu', 'duoc', 'lam', 'the', 'nay', 'do', 'bi', 've', 'tu', 'trong', 'khi', 'can', 'nen', 'giup', 'xin', 'hoi']);
@@ -41,7 +43,15 @@ export function classifyKnowledgeCategories(query: string): KnowledgeCategory[] 
 function tokenize(text: string): string[] {
   return Array.from(new Set(normalize(text).match(/[a-z0-9]{2,}/g) || []))
     .filter(word => !STOP_WORDS.has(word))
-    .slice(0, 12);
+    .slice(0, 24);
+}
+
+function getDirectTagMatches(entry: RetrievedKnowledge, query: string): string[] {
+  const queryWords = new Set(tokenize(query));
+  return (entry.tags || []).filter(tag => {
+    const tagWords = tokenize(tag);
+    return tagWords.length > 0 && tagWords.every(word => queryWords.has(word));
+  });
 }
 
 function cosineSimilarity(left: number[], right: number[]): number {
@@ -78,6 +88,20 @@ async function getVectorEntries(): Promise<RetrievedKnowledge[]> {
 
 export function invalidateKnowledgeRetrievalCache(): void {
   vectorCache = null;
+  rejectedFeedbackCache = null;
+}
+
+async function getRejectedFeedback(): Promise<Array<{ query: string; knowledgeIds: string[] }>> {
+  if (rejectedFeedbackCache && rejectedFeedbackCache.expiresAt > Date.now()) return rejectedFeedbackCache.entries;
+  const reviews = await AITrainingReview.find({ status: 'rejected' })
+    .select('query suggestedKnowledgeIds')
+    .sort({ reviewedAt: -1 })
+    .limit(500)
+    .lean()
+    .exec();
+  const entries = reviews.map(review => ({ query: review.query, knowledgeIds: (review.suggestedKnowledgeIds || []).map(String) }));
+  rejectedFeedbackCache = { expiresAt: Date.now() + CACHE_TTL_MS, entries };
+  return entries;
 }
 
 export async function searchRelevantKnowledge(
@@ -90,7 +114,7 @@ export async function searchRelevantKnowledge(
   const sourceWords = `${query} ${healthGoals.join(' ')}`.match(/[\p{L}\p{N}]{2,}/gu) || [];
   const words = tokenize(`${query} ${healthGoals.join(' ')}`);
   if (!words.length) return [];
-  const rawTerms = sourceWords.filter(word => !STOP_WORDS.has(normalize(word)) && normalize(word).length > 1).slice(0, 12);
+  const rawTerms = sourceWords.filter(word => !STOP_WORDS.has(normalize(word)) && normalize(word).length > 1).slice(0, 24);
   const escaped = Array.from(new Set([...rawTerms, ...words])).map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const regex = new RegExp(escaped.join('|'), 'i');
   // Category prediction is only a hint; don't exclude matching Knowledge when the classifier misses its category.
@@ -119,7 +143,7 @@ export async function searchRelevantKnowledge(
   const lexicalCandidates = [...lexicalDocs, ...textIndexDocs];
   const bestLexicalScore = lexicalCandidates.reduce((best, entry) => Math.max(best, lexicalScore(entry, words)), 0);
 
-  const shouldCheckSemantic = bestLexicalScore < 0.55 && words.length >= 4 && query.trim().length >= 20;
+  const shouldCheckSemantic = bestLexicalScore < 0.65 && words.length >= 2 && query.trim().length >= 8;
   const vectorEntries = shouldCheckSemantic ? await getVectorEntries().catch(error => {
     console.error('[KnowledgeRetrieval] Failed to load cached vectors:', error?.message || error);
     return [] as RetrievedKnowledge[];
@@ -152,12 +176,34 @@ export async function searchRelevantKnowledge(
 
   const scored = Array.from(candidates.values()).map(entry => {
     const entryLexicalScore = lexicalScore(entry, words);
+    const directTagMatches = getDirectTagMatches(entry, query);
     const hasSemanticScore = !!(queryVector && entry.embedding);
     const semanticScore = hasSemanticScore ? Math.max(0, cosineSimilarity(queryVector as number[], entry.embedding as number[])) : 0;
     const categoryBoost = categories.includes(entry.category) ? 0.06 : 0;
-    const score = (hasSemanticScore ? (semanticScore * 0.65 + entryLexicalScore * 0.35) : entryLexicalScore) + categoryBoost;
-    return { ...entry, score, hasSemanticScore, embedding: undefined };
-  }).filter(entry => entry.score >= (entry.hasSemanticScore ? 0.24 : 0.08))
+    const baseScore = (hasSemanticScore ? (semanticScore * 0.65 + entryLexicalScore * 0.35) : entryLexicalScore) + categoryBoost;
+    const score = directTagMatches.length ? Math.max(baseScore, 0.72 + categoryBoost) : baseScore;
+    return { ...entry, score, hasSemanticScore, directTagMatches, embedding: undefined };
+  });
+  const rejectedFeedback = await getRejectedFeedback().catch(error => {
+    console.warn('[KnowledgeRetrieval] Could not load rejected training feedback:', error?.message || error);
+    return [];
+  });
+  const feedbackWords = new Set(words);
+  const feedbackMatchedIds = new Set<string>();
+  rejectedFeedback.forEach(feedback => {
+    const rejectedWords = tokenize(feedback.query);
+    if (!rejectedWords.length) return;
+    const overlap = rejectedWords.filter(word => feedbackWords.has(word)).length / Math.max(1, rejectedWords.length);
+    if (overlap >= 0.7) feedback.knowledgeIds.forEach(id => feedbackMatchedIds.add(id));
+  });
+  const adjusted = scored.map(entry => feedbackMatchedIds.has(String(entry._id))
+    ? { ...entry, score: entry.score * 0.2 }
+    : entry);
+  const ranked = adjusted.filter(entry => {
+    const wasRejected = feedbackMatchedIds.has(String(entry._id));
+    if (wasRejected && entry.score < 0.45) return false;
+    return entry.score >= (entry.hasSemanticScore ? 0.24 : 0.08);
+  })
     .sort((a, b) => b.score - a.score)
     .slice(0, Math.max(1, Math.min(limit, 8)));
 
@@ -166,10 +212,11 @@ export async function searchRelevantKnowledge(
     lexicalCandidates: lexicalDocs.length + textIndexDocs.length,
     semanticEnabled: !!queryVector,
     semanticSkippedForStrongLexicalMatch: !shouldUseSemantic && bestLexicalScore >= 0.55,
-    selected: scored.length,
-    categories: scored.map(entry => entry.category),
-    sources: scored.map(entry => ({ source: entry.source || entry.keyword, pageNumber: entry.pageNumber || null, score: Number(entry.score.toFixed(3)) })),
+    selected: ranked.length,
+    categories: ranked.map(entry => entry.category),
+    rejectedFeedbackApplied: feedbackMatchedIds.size,
+    sources: ranked.map(entry => ({ source: entry.source || entry.keyword, pageNumber: entry.pageNumber || null, score: Number(entry.score.toFixed(3)), matchedTags: entry.directTagMatches })),
     durationMs: Date.now() - startedAt,
   });
-  return scored.map(({ hasSemanticScore: _hasSemanticScore, ...entry }) => entry);
+  return ranked.map(({ hasSemanticScore: _hasSemanticScore, directTagMatches: _directTagMatches, ...entry }) => entry);
 }

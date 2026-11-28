@@ -1,4 +1,5 @@
 import { callAI } from './ai/oaiRouter.ts';
+import { normalizeKnowledgeTags } from './knowledgeTagService.ts';
 
 export interface KnowledgeMetadata {
   keyword: string;
@@ -71,12 +72,13 @@ function normalizeGeneratedTags(rawTags: unknown[], content: string, keyword: st
     });
   if (includeKeywordPhrase && titleWords.length > 1 && !isGenericTag(titleTag)) normalized.unshift(titleTag);
   const seen = new Set<string>();
-  return normalized.filter(tag => {
+  const uniqueTags = normalized.filter(tag => {
     const key = normalizeForMatch(tag);
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 8);
+  });
+  return normalizeKnowledgeTags(uniqueTags, includeKeywordPhrase ? keyword : '').slice(0, 8);
 }
 
 function fallbackTags(content: string, keyword: string): string[] {
