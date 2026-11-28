@@ -126,8 +126,7 @@ Chỉ trả về nội dung đã đọc có cấu trúc, không đưa lời khuy
 }
 
 async function extractPdfPages(buffer: Buffer, userId: string, requestId: string, onProgress?: KnowledgeDocumentInput['onProgress'], onLog?: KnowledgeDocumentInput['onLog']): Promise<Array<{ pageNumber: number; text: string }>> {
-  const parserData = new Uint8Array(buffer);
-  let parser = new PDFParse({ data: parserData, verbosity: 0 });
+  let parser = new PDFParse({ data: new Uint8Array(buffer), verbosity: 0 });
   try {
     console.log(`[${MODULE}] PDF text extraction started:`, { requestId, bytes: buffer.length });
     const info = await runPdfOperation(requestId, 'getInfo', undefined, () => parser.getInfo(), onLog);
@@ -159,7 +158,8 @@ async function extractPdfPages(buffer: Buffer, userId: string, requestId: string
           console.warn(`[${MODULE}] Embedded image detection timed out; restarting parser and scheduling full-page OCR:`, { requestId, pageNumber, message: error.message });
           onLog?.(`Nhận diện ảnh trang ${pageNumber} quá thời gian; khởi tạo lại bộ đọc và thử OCR toàn trang.`, 'warn', { requestId, pageNumber, timeoutMs: PDF_OPERATION_TIMEOUT_MS });
           await parser.destroy();
-          parser = new PDFParse({ data: parserData, verbosity: 0 });
+          // pdf.js transfers the input ArrayBuffer to its worker, so each parser needs a fresh copy.
+          parser = new PDFParse({ data: new Uint8Array(buffer), verbosity: 0 });
         } else {
           console.warn(`[${MODULE}] Embedded image detection failed; full-page OCR scheduled:`, { requestId, pageNumber, message: error?.message || error });
         }
